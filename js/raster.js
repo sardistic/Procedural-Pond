@@ -11,6 +11,7 @@ const LIGHT = (() => {
 const SHADOW_X = 0.3, SHADOW_Y = 0.42;
 const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => v / 16 - 0.5);
 const CAUSTIC_SIZE = 128;
+const SURFACE_Z = 46; // the water surface; fog fades out toward it
 
 class Raster {
   constructor(W, H) {
@@ -18,11 +19,16 @@ class Raster {
     const n = W * H;
     this.col = new Uint32Array(n);
     this.z = new Float32Array(n);
-    this.zBase = new Float32Array(n); // static scenery heights (rocks), floor = 0
+    this.zBase = new Float32Array(n); // static scenery heights (rocks, pebbles), floor = 0
     this.id = new Uint16Array(n);
     this.sh = new Uint8Array(n);      // tallest caster whose shadow lands here
     this.alpha = 1;                   // < 1 draws an ordered-dither fraction of pixels (fades)
     this.castShadows = true;
+    this.clip = [0, 0, W - 1, H - 1]; // only this rectangle is rasterized (the visible part)
+  }
+
+  setClip(x0, y0, x1, y1) {
+    this.clip = [Math.max(0, x0 | 0), Math.max(0, y0 | 0), Math.min(this.W - 1, x1 | 0), Math.min(this.H - 1, y1 | 0)];
   }
 
   begin() {
@@ -44,8 +50,7 @@ class Raster {
     const p = x + y * W;
     if (h <= this.z[p]) return;
     const l = nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2] + BAYER4[(x & 3) | ((y & 3) << 2)] * 0.16;
-    const c = m[l < 0.3 ? 0 : l < 0.55 ? 1 : l < 0.88 ? 2 : 3];
-    this.col[p] = c;
+    this.col[p] = m[l < 0.3 ? 0 : l < 0.55 ? 1 : l < 0.88 ? 2 : 3];
     this.z[p] = h;
     this.id[p] = id;
   }
@@ -54,13 +59,13 @@ class Raster {
   // relative to radius (1 = round, <1 = flat). shader is a material or
   // (u along 0..1, v across -1..1, x, y) => material|null.
   tube(ax, ay, ar, az, bx, by, br, bz, hs, shader, id, u0 = 0, u1 = 1) {
-    const W = this.W, H = this.H;
+    const [cx0, cy0, cx1, cy1] = this.clip;
     if (ar < 0.72) ar = 0.72;
     if (br < 0.72) br = 0.72;
-    const x0 = Math.max(0, Math.floor(Math.min(ax - ar, bx - br)));
-    const x1 = Math.min(W - 1, Math.ceil(Math.max(ax + ar, bx + br)));
-    const y0 = Math.max(0, Math.floor(Math.min(ay - ar, by - br)));
-    const y1 = Math.min(H - 1, Math.ceil(Math.max(ay + ar, by + br)));
+    const x0 = Math.max(cx0, Math.floor(Math.min(ax - ar, bx - br)));
+    const x1 = Math.min(cx1, Math.ceil(Math.max(ax + ar, bx + br)));
+    const y0 = Math.max(cy0, Math.floor(Math.min(ay - ar, by - br)));
+    const y1 = Math.min(cy1, Math.ceil(Math.max(ay + ar, by + br)));
     if (x0 > x1 || y0 > y1) return;
     const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
     const invL2 = L2 > 1e-9 ? 1 / L2 : 0, invL = L2 > 1e-9 ? 1 / Math.sqrt(L2) : 0;
@@ -93,12 +98,12 @@ class Raster {
   // Rotated half-ellipsoid: semi-axes a (along ang) and b, dome height hs.
   // Function shaders get local coords (lx, ly) in -1..1.
   ellipsoid(cx, cy, a, b, ang, z0, hs, shader, id) {
-    const W = this.W, H = this.H;
+    const [cx0, cy0, cx1, cy1] = this.clip;
     if (a < 0.6) a = 0.6;
     if (b < 0.6) b = 0.6;
     const R = Math.max(a, b);
-    const x0 = Math.max(0, Math.floor(cx - R)), x1 = Math.min(W - 1, Math.ceil(cx + R));
-    const y0 = Math.max(0, Math.floor(cy - R)), y1 = Math.min(H - 1, Math.ceil(cy + R));
+    const x0 = Math.max(cx0, Math.floor(cx - R)), x1 = Math.min(cx1, Math.ceil(cx + R));
+    const y0 = Math.max(cy0, Math.floor(cy - R)), y1 = Math.min(cy1, Math.ceil(cy + R));
     if (x0 > x1 || y0 > y1) return;
     const ca = Math.cos(ang), sa = Math.sin(ang), ia = 1 / a, ib = 1 / b;
     const fn = typeof shader === 'function';
@@ -125,27 +130,40 @@ class Raster {
   }
 
   dot(x, y, h, m, id) {
-    const xi = Math.floor(x), yi = Math.floor(y);
-    if (xi < 0 || yi < 0 || xi >= this.W || yi >= this.H) return;
+    const xi = Math.floor(x), yi = Math.floor(y), [cx0, cy0, cx1, cy1] = this.clip;
+    if (xi < cx0 || yi < cy0 || xi > cx1 || yi > cy1) return;
     this.put(xi, yi, h, m, 0, 0, 1, id);
   }
 
-  // Resolve the frame into `out`: outlines where a shape meets anything lower,
-  // cast shadows, animated caustics on the floor, and an optional light tint.
-  // Emissive ids resist the tint: level 1 half as much, level 2 not at all.
-  compose(out, s) {
+  // Resolve a rectangle of the frame into `out`:
+  // - outlines where a shape meets anything lower (two pixels wide for rare animals)
+  // - cast shadows and animated caustics on the floor
+  // - refraction: the floor shimmers under the surface
+  // - depth fog: the deeper a pixel, the more it takes on the water colour
+  // - an optional light tint (emissive ids resist it: level 1 half, level 2 fully)
+  compose(out, s, rect = [0, 0, this.W - 1, this.H - 1]) {
     const { W, H, id, col, z, zBase, sh } = this;
-    const { bg, bgLight, caustic, outline, emissive, tint, fade } = s;
-    const doCaustics = s.caustics, doShadows = s.shadows, doOutlines = s.outlines;
+    const { bg, bgLight, caustic, outline, emissive, tint, fade, thick, wob, fog } = s;
+    const doCaustics = s.caustics, doShadows = s.shadows, doOutlines = s.outlines, anyThick = s.anyThick && thick;
     const mr = tint ? Math.round(tint[0] * 256) : 256, mg = tint ? Math.round(tint[1] * 256) : 256, mb = tint ? Math.round(tint[2] * 256) : 256;
-    const TM = CAUSTIC_SIZE - 1, t = s.t;
     const sr = (mr + 256) >> 1, sg = (mg + 256) >> 1, sb = (mb + 256) >> 1;
+    const TM = CAUSTIC_SIZE - 1, t = s.t, causticT = s.causticT || 0.09;
     const o1x = Math.floor(t * 3.1), o1y = Math.floor(t * 1.7);
     const o2x = Math.floor(-t * 2.3), o2y = Math.floor(t * 2.7);
-    for (let y = 0, p = 0; y < H; y++) {
-      for (let x = 0; x < W; x++, p++) {
+    // Fog strength by height, in 64 steps from the floor up to the surface.
+    let fogA = null, fr = 0, fgc = 0, fb = 0;
+    if (fog && fog.amount > 0) {
+      fogA = new Int32Array(65);
+      for (let k = 0; k <= 64; k++) fogA[k] = Math.round(256 * fog.amount * Math.max(0, 1 - k / 64));
+      fr = fog.color & 255; fgc = (fog.color >> 8) & 255; fb = (fog.color >>> 16) & 255;
+    }
+    const fogK = 64 / SURFACE_Z;
+    const wx = wob ? wob.x : null, wy = wob ? wob.y : null;
+    const [rx0, ry0, rx1, ry1] = rect;
+    for (let y = ry0; y <= ry1; y++) {
+      for (let x = rx0, p = rx0 + y * W; x <= rx1; x++, p++) {
         const i = id[p];
-        let c, n;
+        let c, n, depth;
         if (i === 0) {
           const zb = zBase[p];
           let best = 0, bz = zb + 0.5;
@@ -154,17 +172,35 @@ class Raster {
             if (x < W - 1 && id[n = p + 1] && z[n] > bz) { best = id[n]; bz = z[n]; }
             if (y > 0 && id[n = p - W] && z[n] > bz) { best = id[n]; bz = z[n]; }
             if (y < H - 1 && id[n = p + W] && z[n] > bz) { best = id[n]; bz = z[n]; }
+            if (!best && anyThick) {
+              // Second ring, only for rare animals flagged with a thick outline.
+              const zt = zb + 0.5;
+              if ((x > 1 && thick[id[n = p - 2]] && z[n] > zt) || (x < W - 2 && thick[id[n = p + 2]] && z[n] > zt) ||
+                  (y > 1 && thick[id[n = p - 2 * W]] && z[n] > zt) || (y < H - 2 && thick[id[n = p + 2 * W]] && z[n] > zt) ||
+                  (x > 0 && y > 0 && thick[id[n = p - W - 1]] && z[n] > zt) || (x < W - 1 && y > 0 && thick[id[n = p - W + 1]] && z[n] > zt) ||
+                  (x > 0 && y < H - 1 && thick[id[n = p + W - 1]] && z[n] > zt) || (x < W - 1 && y < H - 1 && thick[id[n = p + W + 1]] && z[n] > zt)) {
+                best = id[n]; bz = z[n];
+              }
+            }
           }
           if (best && !fade[best]) {
             c = outline[best];
+            depth = bz;
           } else {
+            let q = p;
+            if (wx) {
+              const qx = x + wx[y], qy = y + wy[x];
+              q = (qx < 0 ? 0 : qx >= W ? W - 1 : qx) + (qy < 0 ? 0 : qy >= H ? H - 1 : qy) * W;
+            }
             c = doCaustics && caustic[((x + o1x) & TM) | (((y + o1y) & TM) << 7)] +
-                caustic[((y + o2y) & TM) | (((x + o2x) & TM) << 7)] < 0.09 ? bgLight[p] : bg[p];
+                caustic[((y + o2y) & TM) | (((x + o2x) & TM) << 7)] < causticT ? bgLight[q] : bg[q];
             if (doShadows && sh[p] > zb + 1.5) c = shadeColor(c);
+            depth = zBase[q];
           }
         } else {
           c = col[p];
-          const zp = z[p] + 2.5;
+          depth = z[p];
+          const zp = depth + 2.5;
           if (doOutlines &&
               ((x > 0 && id[n = p - 1] && id[n] !== i && z[n] > zp && !fade[id[n]]) ||
                (x < W - 1 && id[n = p + 1] && id[n] !== i && z[n] > zp && !fade[id[n]]) ||
@@ -174,15 +210,19 @@ class Raster {
           } else if (doShadows && sh[p] > z[p] + 4) {
             c = shadeColor(c);
           }
-          const e = emissive[i];
-          if (e) {
-            if (tint && e === 1) c = (0xff000000 | ((((c >>> 16) & 255) * sb >> 8) << 16) | ((((c >>> 8) & 255) * sg >> 8) << 8) | ((c & 255) * sr >> 8)) >>> 0;
-            out[p] = c;
-            continue;
+        }
+        if (fogA) {
+          const k = (depth * fogK) | 0, a = fogA[k < 0 ? 0 : k > 64 ? 64 : k];
+          if (a) {
+            const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
+            c = (0xff000000 | ((cb + (((fb - cb) * a) >> 8)) << 16) | ((cg + (((fgc - cg) * a) >> 8)) << 8) | (cr + (((fr - cr) * a) >> 8))) >>> 0;
           }
         }
         if (tint) {
-          c = (0xff000000 | ((((c >>> 16) & 255) * mb >> 8) << 16) | ((((c >>> 8) & 255) * mg >> 8) << 8) | ((c & 255) * mr >> 8)) >>> 0;
+          const e = i ? emissive[i] : 0;
+          if (e === 2) { out[p] = c; continue; }
+          const tr = e ? sr : mr, tg = e ? sg : mg, tb = e ? sb : mb;
+          c = (0xff000000 | ((((c >>> 16) & 255) * tb >> 8) << 16) | ((((c >>> 8) & 255) * tg >> 8) << 8) | ((c & 255) * tr >> 8)) >>> 0;
         }
         out[p] = c;
       }

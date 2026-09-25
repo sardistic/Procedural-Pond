@@ -13,9 +13,26 @@ const PATTERN_WORDS = {
   twotone: ['Painted', 'Two-tone'], dotline: ['Beaded', 'Dotted'], netted: ['Netted', 'Lace'],
 };
 const SHAPE_NOUNS = {
-  slender: [['Darter', 'Rasbora', 'Minnow'], ['Pike', 'Gar', 'Needlefish']],
-  deep: [['Gourami', 'Molly', 'Platy'], ['Angelfish', 'Discus', 'Bream']],
-  plain: [['Tetra', 'Danio', 'Barb'], ['Carp', 'Perch', 'Cichlid']],
+  fresh: {
+    slender: [['Darter', 'Rasbora', 'Minnow'], ['Pike', 'Gar', 'Needlefish']],
+    deep: [['Gourami', 'Molly', 'Platy'], ['Angelfish', 'Discus', 'Bream']],
+    plain: [['Tetra', 'Danio', 'Barb'], ['Carp', 'Perch', 'Cichlid']],
+  },
+  salt: {
+    slender: [['Goby', 'Blenny', 'Dartfish'], ['Barracuda', 'Trumpetfish', 'Houndfish']],
+    deep: [['Damsel', 'Chromis', 'Butterflyfish'], ['Tang', 'Batfish', 'Angelfish']],
+    plain: [['Wrasse', 'Anthias', 'Cardinalfish'], ['Snapper', 'Grouper', 'Grunt']],
+  },
+};
+
+// Which water a newly invented species lives in, given the pond's habitat setting.
+const wildHabitat = (world) => {
+  const h = world.opts.habitat || 'mixed';
+  return h === 'mixed' ? (Math.random() < 0.5 ? 'fresh' : 'salt') : h;
+};
+const wildSpeciesFor = (world) => {
+  const known = WILD_SPECIES.filter((s) => fitsHabitat(world, s.habitat));
+  return known.length && Math.random() < 0.5 ? pick(known) : genWildSpecies(wildHabitat(world));
 };
 
 function hueName(h, s) {
@@ -32,7 +49,8 @@ function personName() {
   return s[0].toUpperCase() + s.slice(1);
 }
 
-function genWildSpecies() {
+function genWildSpecies(habitat = Math.random() < 0.5 ? 'fresh' : 'salt') {
+  const reef = habitat === 'salt';
   const small = Math.random() < 0.55;
   const nb = randi(7, 12);
   const length = small ? rand(9, 16) : rand(18, 32);
@@ -51,20 +69,21 @@ function genWildSpecies() {
   const links = new Array(nb - 1 + tailJoints).fill(link);
   for (let i = 0; i < tailJoints; i++) widths.push(0);
 
-  // Palette from a colour scheme.
-  const h = rand(0, 360), s = rand(0.35, 0.85), l = rand(0.4, 0.62);
-  const scheme = pick(['analog', 'comp', 'mono', 'neutral', 'split']);
+  // Palette from a colour scheme: reef fish are vivid, freshwater fish more subdued.
+  const h = rand(0, 360), s = reef ? rand(0.6, 0.95) : rand(0.25, 0.75), l = rand(0.4, 0.62);
+  const scheme = pick(reef ? ['analog', 'comp', 'comp', 'split', 'mono'] : ['analog', 'comp', 'mono', 'neutral', 'neutral', 'split']);
   const ah = scheme === 'analog' ? h + rand(25, 55) : scheme === 'comp' ? h + 180 : scheme === 'split' ? h + 150 : h;
   const base = scheme === 'neutral' ? ramp(h, 0.08, l) : ramp(h, s, l);
   const accent = scheme === 'mono' ? ramp(h, s, l > 0.5 ? l - 0.22 : l + 0.2) : ramp(ah, Math.min(1, s + 0.1), clamp(l + rand(-0.15, 0.15), 0.3, 0.7));
   const fin = ramp(Math.random() < 0.5 ? h : ah, s * 0.7, Math.min(0.78, l + 0.18));
-  const pattern = pick(Object.keys(PATTERN_WORDS));
+  const pattern = pick(reef ? ['bars', 'stripe', 'eyespot', 'twotone', 'spots', 'saddle', 'bars', 'twotone', 'netted', 'gradient'] : Object.keys(PATTERN_WORDS));
   const shape = depth < 0.11 ? 'slender' : depth > 0.16 ? 'deep' : 'plain';
 
   const zBand = pick([[2, 8], [8, 22], [20, 36]]);
   const sp = {
     id: WILD_SPECIES.length + 1,
-    name: `${pick(PATTERN_WORDS[pattern])} ${hueName(scheme === 'neutral' ? ah : h, scheme === 'neutral' ? 0.5 : s)} ${pick(SHAPE_NOUNS[shape][small ? 0 : 1])}`,
+    name: `${pick(PATTERN_WORDS[pattern])} ${hueName(scheme === 'neutral' ? ah : h, scheme === 'neutral' ? 0.5 : s)} ${pick(SHAPE_NOUNS[habitat][shape][small ? 0 : 1])}`,
+    habitat,
     nb, links, widths, W, tail, tailLen, tailJoints,
     fins: rand(0.4, 1.1), dorsal: pick([null, 'ridge', 'sail']), hs: rand(0.8, 1.3),
     base, accent, fin, pattern, freq: rand(3, 9), size: rand(0.1, 0.35),
@@ -106,7 +125,7 @@ function wildPattern(sp, seed) {
 }
 
 class WildFish extends Fish {
-  constructor(world, x, y, sp = WILD_SPECIES.length && Math.random() < 0.5 ? pick(WILD_SPECIES) : genWildSpecies(), school = null) {
+  constructor(world, x, y, sp = wildSpeciesFor(world), school = null) {
     super(world, x, y, {
       species: 'wild',
       links: sp.links.slice(), widths: sp.widths.slice(),
@@ -172,7 +191,7 @@ SPECIES.wild = {
   label: 'Wild fish', color: '#9a6ade',
   // Half the time a brand-new species is discovered; schooling species arrive as a group.
   spawn: (w, x, y) => {
-    const sp = WILD_SPECIES.length && Math.random() < 0.5 ? pick(WILD_SPECIES) : genWildSpecies();
+    const sp = wildSpeciesFor(w);
     if (!sp.schooling) return [new WildFish(w, x, y, sp)];
     const school = { tx: x, ty: y, tz: (sp.zMin + sp.zMax) / 2, until: 0, wild: sp };
     return Array.from({ length: randi(5, 9) }, () => new WildFish(w, x + rand(-8, 8), y + rand(-8, 8), sp, school));

@@ -3,51 +3,112 @@
 // animals migrating in and out, plankton, gnats, ripples, bubbles and weather.
 
 // ---- genes ------------------------------------------------------------------
+// Continuous genes (size, colour, body shape, speed) blend between parents and
+// drift. Albino, melanistic and piebald are recessive: every animal carries 0, 1
+// or 2 copies, and only two copies show. Two carriers can surprise you with a
+// rare baby. Shiny is a rare mutation with its own palette and sparkles.
+
+const RECESSIVE = ['albino', 'melanistic', 'piebald'];
+const CARRIER_RATE = { albino: 0.1, melanistic: 0.08, piebald: 0.12 };
+const allele = (p) => (Math.random() < p ? 1 : 0) + (Math.random() < p ? 1 : 0);
 
 function makeGenome() {
-  return { size: rand(0.85, 1.15), hue: rand(-12, 12), sat: rand(0.88, 1.12), light: rand(0.94, 1.06), speed: rand(0.9, 1.15) };
+  const g = {
+    size: rand(0.85, 1.15) * (Math.random() < 0.02 ? 1.3 : 1),
+    hue: rand(-18, 18), sat: rand(0.85, 1.18), light: rand(0.92, 1.08), speed: rand(0.88, 1.18),
+    girth: rand(0.88, 1.14), length: rand(0.92, 1.1),
+    shiny: Math.random() < 1 / 120, shinyHue: rand(100, 240), seed: randi(0, 9999),
+  };
+  for (const k of RECESSIVE) g[k] = allele(CARRIER_RATE[k]);
+  return g;
 }
 
-const GENE_LIMITS = { size: [0.7, 1.35], hue: [-30, 30], sat: [0.7, 1.3], light: [0.85, 1.15], speed: [0.75, 1.3] };
-const GENE_DRIFT = { size: 0.05, hue: 5, sat: 0.05, light: 0.03, speed: 0.05 };
+const GENE_LIMITS = {
+  size: [0.7, 1.5], hue: [-40, 40], sat: [0.7, 1.35], light: [0.82, 1.18], speed: [0.75, 1.3],
+  girth: [0.8, 1.25], length: [0.85, 1.18],
+};
+const GENE_DRIFT = { size: 0.05, hue: 6, sat: 0.05, light: 0.03, speed: 0.05, girth: 0.04, length: 0.03 };
+
+// Pass on one copy of a recessive gene from a parent holding n copies.
+const passOn = (n) => (n === 2 ? 1 : n === 1 ? (Math.random() < 0.5 ? 1 : 0) : 0);
 
 // Blend two parents, then mutate a little, so lineages drift over generations.
 function childGenome(a, b) {
-  const g = {};
+  const g = { seed: randi(0, 9999) };
   for (const k of Object.keys(GENE_LIMITS)) {
     const v = lerp(a[k], b[k], Math.random()) + (Math.random() + Math.random() - 1) * GENE_DRIFT[k];
     g[k] = clamp(v, ...GENE_LIMITS[k]);
   }
+  for (const k of RECESSIVE) g[k] = Math.min(2, passOn(a[k] || 0) + passOn(b[k] || 0) + (Math.random() < 1 / 400 ? 1 : 0));
+  const shinyParent = a.shiny ? a : b.shiny ? b : null;
+  g.shiny = Math.random() < (shinyParent ? 0.2 : 1 / 250);
+  g.shinyHue = shinyParent ? shinyParent.shinyHue : rand(100, 240);
   return g;
 }
+
+// Visible rare traits, most striking first.
+function traitsOf(g) {
+  const t = [];
+  if (g.shiny) t.push('shiny');
+  if (g.albino === 2) t.push('albino');
+  else if (g.melanistic === 2) t.push('melanistic');
+  if (g.piebald === 2) t.push('piebald');
+  if (g.size > 1.3) t.push('giant');
+  return t;
+}
+const carriesOf = (g) => RECESSIVE.filter((k) => g[k] === 1);
+const RARE_OUTLINE = { shiny: hexToInt('#ffd166'), albino: hexToInt('#ff9eb5'), melanistic: hexToInt('#a78bfa'), piebald: hexToInt('#7ee0c3') };
+const RED_EYE = solid('#d8203a');
+const PIEBALD_WHITE = mat('#9aa0a6', '#d0d4d6', '#f0f0ec', '#ffffff');
 
 const isMat = (v) => Array.isArray(v) && v.length === 4 && typeof v[0] === 'number' && v[0] >= 0xff000000;
 
 function makeDye(g) {
-  const cache = new Map();
+  const cache = new Map(), albino = g.albino === 2, melanistic = !albino && g.melanistic === 2;
   return (m) => {
     let d = cache.get(m);
     if (!d) {
-      d = m.map((c) => { const [h, s, l] = rgbToHsl(c); return hsl(h + g.hue, s * g.sat, l * g.light); });
+      d = m.map((c) => {
+        let [h, s, l] = rgbToHsl(c);
+        h += g.hue; s *= g.sat; l *= g.light;
+        if (g.shiny) { h += g.shinyHue; s = Math.min(1, s * 1.2 + 0.12); }
+        if (albino) { s *= 0.12; l = 0.62 + l * 0.38; h = 350; }
+        else if (melanistic) { l *= 0.38; s *= 0.45; }
+        return hsl(h, s, l);
+      });
       cache.set(m, d);
     }
     return d;
   };
 }
 
-// Re-colour an individual: its own materials, baked pattern tables, and its variety object.
-function dyeCreature(c, dye) {
+// Re-colour an individual: its own materials, baked pattern tables (with
+// piebald patches painted in), and its variety object.
+function dyeCreature(c, g) {
+  const dye = makeDye(g), piebald = g.piebald === 2;
   for (const k of Object.keys(c)) {
     const v = c[k];
     if (isMat(v)) c[k] = dye(v);
     else if (typeof v === 'function' && v.table) {
-      for (let i = 0; i < v.table.length; i++) if (isMat(v.table[i])) v.table[i] = dye(v.table[i]);
+      const T = v.table;
+      for (let i = 0; i < T.length; i++) if (isMat(T[i])) T[i] = dye(T[i]);
+      if (piebald && v.dims) {
+        const [nu, nv, u0] = v.dims;
+        for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+          const u = u0 + (i + 0.5) / nu * (1 - u0), vv = (j + 0.5) / nv * 2 - 1;
+          if (isMat(T[i + j * nu]) && vnoise(u * 5 + g.seed, vv * 2.2, 91) > 0.56) T[i + j * nu] = PIEBALD_WHITE;
+        }
+      }
     } else if (k === 'v' && v && typeof v === 'object' && !Array.isArray(v)) {
       const o = { ...v };
       for (const kk of Object.keys(o)) if (isMat(o[kk])) o[kk] = dye(o[kk]);
       c[k] = o;
     }
   }
+  if (g.albino === 2) c.eyeMat = RED_EYE;
+  // Rare animals are marked with a thick outline in their trait's colour.
+  const rare = traitsOf(g).find((t) => RARE_OUTLINE[t]);
+  if (rare && c.id) { OUTLINE[c.id] = RARE_OUTLINE[rare]; THICK[c.id] = 1; }
 }
 
 // ---- life -------------------------------------------------------------------
@@ -58,7 +119,7 @@ const LIFESPAN = {
 };
 const GROUPS = new Set(['tetra', 'shrimp', 'snail', 'duck', 'wild', 'clown']);
 const NO_LIFE = new Set(['firefly', 'gnat']);
-const EATS = new Set(['koi', 'tetra', 'eel', 'axolotl', 'turtle', 'crab', 'ray', 'frog', 'snake', 'snail', 'clown', 'puffer', 'octopus', 'duck', 'shrimp', 'wild', 'tadpole']);
+const EATS = new Set(['koi', 'tetra', 'eel', 'axolotl', 'turtle', 'crab', 'ray', 'frog', 'snake', 'snail', 'clown', 'puffer', 'octopus', 'duck', 'shrimp', 'wild', 'tadpole', 'starfish']);
 const SCALABLE = new Set(['koi', 'tetra', 'eel', 'clown', 'puffer', 'ray', 'snake', 'wild', 'tadpole', 'axolotl', 'turtle', 'crab', 'snail', 'shrimp', 'frog']);
 const LEG_KEYS = ['reach', 'l1', 'l2', 'r1', 'r2', 'foot', 'stepDist', 'inset'];
 const BREED = {
@@ -74,12 +135,12 @@ const BREED = {
 const SINGULAR = {
   koi: 'Koi', tetra: 'Tetra', eel: 'Eel', axolotl: 'Axolotl', turtle: 'Turtle', crab: 'Crab', ray: 'Stingray', frog: 'Frog',
   snake: 'Water snake', snail: 'Snail', jelly: 'Jellyfish', clown: 'Clownfish', puffer: 'Pufferfish', octopus: 'Octopus',
-  duck: 'Duck', shrimp: 'Shrimp', dragonfly: 'Dragonfly', firefly: 'Firefly', gnat: 'Gnat', tadpole: 'Tadpole',
+  duck: 'Duck', shrimp: 'Shrimp', dragonfly: 'Dragonfly', firefly: 'Firefly', gnat: 'Gnat', tadpole: 'Tadpole', starfish: 'Starfish',
 };
-const ECO = { births: 0, arrivals: 0, departures: 0, eaten: 0 };
+const ECO = { births: 0, arrivals: 0, departures: 0, eaten: 0, rares: 0 };
 const ARRIVE_VERB = { dragonfly: 'flew in', frog: 'hopped in', crab: 'scuttled in', snail: 'crept in', turtle: 'paddled in', axolotl: 'wandered in' };
 // Seconds from full to empty. Grazers nibble algae as they go, so they rarely go hungry.
-const METABOLISM = { snail: 900, crab: 600, turtle: 700, ray: 600, frog: 520, shrimp: 500 };
+const METABOLISM = { snail: 900, crab: 600, turtle: 700, ray: 600, frog: 520, shrimp: 500, starfish: 1500 };
 
 // ---- journal: a running story of the pond --------------------------------------
 
@@ -102,10 +163,11 @@ function captureBase(c) {
 }
 
 function applyScale(c, s) {
-  const b = c.body, base = c.base;
-  for (let i = 0; i < b.links.length; i++) b.links[i] = base.links[i] * s;
-  for (let i = 0; i < b.w.length; i++) b.w[i] = base.w[i] * s;
-  if (base.puff) c.baseW = base.puff.map((v) => v * s);
+  const b = c.body, base = c.base, g = c.life ? c.life.genome : null;
+  const ls = s * (g ? g.length : 1), ws = s * (g ? g.girth : 1);
+  for (let i = 0; i < b.links.length; i++) b.links[i] = base.links[i] * ls;
+  for (let i = 0; i < b.w.length; i++) b.w[i] = base.w[i] * ws;
+  if (base.puff) c.baseW = base.puff.map((v) => v * ws);
   (c.legs || []).forEach((L, i) => { for (const k in base.legs[i]) L[k] = base.legs[i][k] * s; });
   c.appliedScale = s;
 }
@@ -120,8 +182,11 @@ function initLife(c, { genome = makeGenome(), gen = 0, scale = 1, age, alpha = 1
     age: age ?? rand(0.05, 0.5) * lifespan,
     energy: rand(0.6, 0.9), cooldown: rand(40, 100),
   };
-  dyeCreature(c, makeDye(genome));
+  dyeCreature(c, genome);
   if (SCALABLE.has(c.species)) { captureBase(c); applyScale(c, scale * genome.size); }
+  if (c.species === 'starfish') c.len *= genome.size;
+  c.life.traits = traitsOf(genome);
+  if (c.life.traits.length) ECO.rares++;
   if (c.cruise) c.cruise *= genome.speed;
   if (c.maxSpeed) c.maxSpeed *= genome.speed;
   return c;
@@ -194,6 +259,22 @@ class Bubble {
   }
 }
 
+// A little four-point twinkle that marks shiny animals.
+const SPARKLE = solid('#fff6c8');
+class Sparkle {
+  constructor(x, y, z) { this.x = x; this.y = y; this.z = z; this.t = 0; }
+  update(dt) { this.t += dt; return this.t < 0.6; }
+  draw(r) {
+    const k = Math.sin(this.t / 0.6 * PI), arm = Math.round(k * 2);
+    r.alpha = 1;
+    r.dot(this.x, this.y, this.z, SPARKLE, FX_ID);
+    for (let i = 1; i <= arm; i++) {
+      r.dot(this.x + i, this.y, this.z, SPARKLE, FX_ID); r.dot(this.x - i, this.y, this.z, SPARKLE, FX_ID);
+      r.dot(this.x, this.y + i, this.z, SPARKLE, FX_ID); r.dot(this.x, this.y - i, this.z, SPARKLE, FX_ID);
+    }
+  }
+}
+
 function addRipple(world, x, y, size = 1, silent = false) {
   if (world.effects.length < 220) world.effects.push(new Ripple(x, y, size));
   if (!silent && typeof Sound !== 'undefined') Sound.plop(x / world.W, size);
@@ -229,14 +310,18 @@ class Eggs {
     this.alpha = Math.min(1, this.alpha + dt);
     this.timer -= dt;
     if (this.timer > 0) return true;
-    let first = null, n = 0;
+    const babies = [];
     for (const cell of this.cells) {
       const baby = makeBaby(world, this.parent, this.mate, this.x + cell.ox, this.y + cell.oy);
-      if (baby) { world.creatures.push(baby); ECO.births++; n++; first = first || baby; }
+      if (baby) { world.creatures.push(baby); ECO.births++; babies.push(baby); }
     }
-    if (first) {
+    if (babies.length) {
+      const first = babies[0], n = babies.length;
       const young = first.species === 'tadpole' ? `${n} tadpole${n > 1 ? 's' : ''}` : `${n} young ${plural(describe(first).label, n)}`;
       logEvent(world, `${this.parent.life.name} & ${this.mate.life.name}'s eggs hatched: ${young} (gen ${first.life.gen})`, first);
+      for (const b of babies) {
+        if (b.life.traits.length) logEvent(world, `✦ A rare ${b.life.traits.join(' ')} ${describe(b).label} hatched: ${b.life.name}!`, b);
+      }
     }
     if (this.z > 30) addRipple(world, this.x, this.y, 0.8);
     return false;
@@ -436,6 +521,14 @@ function updateLife(world, dt) {
     if (c.species === 'octopus' && c.jet > 1.1 && !c.puffed) { addBubbles(world, c.x, c.y, c.z, 5); c.puffed = true; }
     if (c.species === 'octopus' && c.jet <= 0) c.puffed = false;
     if (c instanceof Fish && c.z < 40 && Math.random() < dt * 0.04) addBubbles(world, c.body.x[0], c.body.y[0], c.z + 1, 1);
+    if (c.life && c.life.genome.shiny && (c.alpha ?? 1) > 0.5) {
+      c.sparkT = (c.sparkT || 0) - dt;
+      if (c.sparkT <= 0 && world.effects.length < 220) {
+        const b = c.body, i = randi(0, b.n - 1);
+        world.effects.push(new Sparkle(b.x[i] + rand(-3, 3), b.y[i] + rand(-3, 3), (c.z || 0) + 6));
+        c.sparkT = rand(0.5, 1.3);
+      }
+    }
 
     const L = c.life;
     if (!L || !on) continue;
@@ -508,7 +601,7 @@ function assignHunts(world) {
 }
 
 function breed(world) {
-  if (world.creatures.length > 130) return; // the pond is full
+  if (world.creatures.length > (world.maxPop || 130)) return; // the pond is full
   const counts = {};
   for (const c of world.creatures) if (!c.leaving) counts[breedKey(c)] = (counts[breedKey(c)] || 0) + 1;
   for (const e of world.eggs) counts[e.key] = (counts[e.key] || 0) + e.cells.length;
@@ -567,7 +660,7 @@ function arrive(world, kind, discover = false) {
   const y = side === 2 ? 4 : side === 3 ? H - 4 : rand(20, H - 20);
   let group;
   if (discover) {
-    const sp = genWildSpecies();
+    const sp = genWildSpecies(wildHabitat(world));
     const school = sp.schooling ? { tx: x, ty: y, tz: (sp.zMin + sp.zMax) / 2, until: 0, wild: sp } : null;
     group = Array.from({ length: sp.schooling ? randi(5, 8) : randi(1, 2) }, () => new WildFish(world, x + rand(-4, 4), y + rand(-4, 4), sp, school));
     world.targets.wild = (world.targets.wild || 0) + group.length;
@@ -591,6 +684,9 @@ function arrive(world, kind, discover = false) {
   else if (kind === 'duck') logEvent(world, 'A duck family paddled in', c);
   else if (group.length > 1) logEvent(world, `${SCHOOLING(c) ? 'A school' : 'A group'} of ${group.length} ${plural(describe(c).label, group.length)} arrived`, c);
   else logEvent(world, `${who(c)} ${ARRIVE_VERB[kind] || 'swam in'}`, c);
+  for (const r of group) {
+    if (r.life && r.life.traits.length) logEvent(world, `✦ A rare ${r.life.traits.join(' ')} ${describe(r).label} arrived: ${r.life.name}`, r);
+  }
 }
 
 // ---- inspector ----------------------------------------------------------------
@@ -607,5 +703,8 @@ function describe(c) {
   else if (L && L.energy < 0.35) mood = 'hungry';
   else if (L && L.scale < 0.9) mood = 'growing';
   const stage = !L ? '' : L.scale < 0.6 ? 'young' : L.age > L.lifespan * 0.8 ? 'elder' : 'adult';
-  return { name: L ? L.name : '', label, stage, mood, gen: L ? L.gen : null, age: L ? L.age : null, energy: L ? L.energy : null };
+  return {
+    name: L ? L.name : '', label, stage, mood, gen: L ? L.gen : null, age: L ? L.age : null, energy: L ? L.energy : null,
+    traits: L ? L.traits : [], carries: L ? carriesOf(L.genome) : [],
+  };
 }

@@ -13,16 +13,21 @@ The pixel font loads from Google Fonts and falls back to monospace when offline.
 
 - **Animals:** koi, tetra schools, eels, axolotls, turtles, crabs, stingrays, frogs, water snakes, snails, jellyfish, clownfish (each pair adopts an anemone and chases off intruders), pufferfish (inflate when threatened), octopus (FABRIK arms, camouflage, jets away in ink), duck families (ducklings follow in a line), shrimp (flick backwards when startled) and dragonflies. Fireflies come out on their own after dark. Each button adds one at a random spot.
 - **Tools:** *Feed* drops food pellets. *Net* removes whatever animal, plant or rock you click. Every other tool places that plant or object where you click: weed, eelgrass, anemone, marimo moss ball, duckweed, lily pad or rock. Dragging an animal always leads it by the head.
+- **World and view:** the pond is a fixed world (Small 720×405, Medium 960×540 or Large 1280×720 pixels) that is larger than the screen. You start one zoom step closer than "whole pond", so animals swim in and out of view. Pan by dragging empty water, with the arrow keys or WASD, or by clicking the minimap in the bottom-right. Only the visible part is rendered each frame.
+- **Habitat:** *Fresh*, *Both* or *Salt*, under the pond name. Each habitat has its own species, plants, and default floor and water.
+  - Fresh: koi, tetras, frogs, ducks, axolotls, turtles, lily pads, duckweed, marimo.
+  - Salt: reef wild fish, clownfish in anemones, corals, urchins, starfish, jellies, octopus, rays.
+  - Both: everything together.
 - **Scene:**
-  - floor: rippled sand, gravel, leafy soil or pool tiles
-  - water tint
+  - floor: sand, coral sand, pebble bed, river stones, leaf litter or pool tiles. The pebbles, stones, leaves, shells and twigs are small 3D objects drawn by the same renderer as the animals.
+  - water: teal, pond green, clear lagoon, tropical reef, deep blue or murky swamp. Water is more than a tint: depth fog makes the floor fade into the water colour while things near the surface stay crisp, the floor shimmers with refraction, particles drift in the current, and sun glints flash on the surface. Each preset has its own clarity.
   - light: a day/night cycle by default, or fixed day, dusk or night. At night, jellyfish and green anemones stay a little brighter than their surroundings, and fireflies light up fully. The clock at the top of the panel shows the time of day; click it or press **L** to switch modes. A day-length slider sets the cycle speed.
-  - pixel size
+  - world size
   - current strength and sim speed
   - caustics, shadows and outlines on or off
 
   Settings are saved in localStorage.
-- **Zoom:** scroll wheel or pinch, the +/− buttons, or the **+**, **−** and **0** keys. Drag empty water to pan. Zoom steps keep pixels whole so the art stays crisp.
+- **Zoom:** scroll wheel or pinch, the +/− buttons, or the **+**, **−** and **0** keys. The zoom level is a whole number of screen pixels per pond pixel (the label shows 2×, 3× and so on), so the art stays crisp.
 - **Share:** every pond has a seed name such as `misty-reed-42`, shown under the title. *Share* copies a link (`?pond=misty-reed-42`, plus the floor and water if changed). Anyone who opens it gets the same layout and starting animals. *New pond* rolls a new seed.
 - **Journal:** a running story of the pond: hatchings, arrivals, new species, who caught whom, dawn and dusk, rain. The newest entry pops up at the bottom-left. Click an entry to follow the animal it mentions.
 - **Follow and Tour:** double-click an animal (or hover it and press **F**) to ride along with it. *Tour* (**T**) lets the camera wander between whatever is interesting. Esc or dragging stops it.
@@ -33,7 +38,8 @@ The pixel font loads from Google Fonts and falls back to monospace when offline.
 
 With **Life** on (Scene section), the pond runs itself:
 
-- **Genes:** every animal has its own size, colour, saturation, brightness and speed. Babies blend their parents' genes with a small mutation, so lineages drift over generations.
+- **Genes:** every animal has its own size, body length and girth, hue, saturation, brightness and speed. Babies blend their parents' genes with a small mutation, so lineages drift over generations. Occasionally a giant appears.
+- **Rare morphs:** albino (white with red eyes), melanistic (near-black) and piebald (white patches) are recessive. An animal can carry one hidden copy and pass it on, so two carriers can produce a rare baby. Shiny is a rare mutation with a swapped palette and sparkles. Rare animals get a thick outline in their trait's colour (gold shiny, pink albino, purple melanistic, mint piebald). The journal announces them, and the hover card shows their traits and what they carry.
 - **Hunger and growth:** animals burn energy and forage. Plants shed drifting plankton, and your pellets are a treat. Babies hatch small and grow.
 - **Breeding:** well-fed adults near a mate lay eggs. Fish eggs stick to plants, snail eggs go on rocks, and frog spawn floats at the surface. Frog eggs hatch into tadpoles that turn into froglets.
 - **Predators and prey:** hungry eels, snakes, octopuses and predatory wild fish hunt small fish, shrimp, tadpoles and babies, and prey flee. Frogs snap gnats and fireflies with their tongues.
@@ -66,6 +72,7 @@ With **Life** on (Scene section), the pond runs itself:
   Rocks are z-tested against animals.
 - `js/main.js`: the loop, the day/night cycle, fireflies, options, tools, zoom and pan, input and the HUD.
 - `js/sound.js`: the Web Audio soundscape.
+- Starfish live in `js/wildlife.js`; corals and urchins live in `js/plants.js`.
 
 ## Hosting
 

@@ -644,3 +644,75 @@ Object.assign(SPECIES, {
   },
   dragonfly: { label: 'Dragonfly', color: '#2a88e0', spawn: (w, x, y) => [new Dragonfly(w, x, y)] },
 });
+
+// ---- starfish: glides slowly on the floor, arms curling --------------------------
+
+const STAR_MATS = [
+  mat('#7a2a0a', '#b8481a', '#e8743a', '#ffae70'), mat('#6a0e1a', '#a01c2a', '#d8343a', '#ff7a6a'),
+  mat('#1a2a7a', '#2a46b8', '#3a6ee8', '#88b0ff'), mat('#4a1a5a', '#74308a', '#a04cb8', '#d08ae4'),
+  mat('#7a6a2a', '#a8923e', '#d8bc58', '#f8e290'),
+];
+
+class Starfish extends Creature {
+  constructor(world, x, y) {
+    super(world, x, y);
+    this.species = 'starfish';
+    this.m = pick(STAR_MATS);
+    this.arms = Math.random() < 0.1 ? 6 : 5;
+    this.len = rand(3.5, 6);
+    this.rot = rand(0, TAU);
+    this.z = 0.6;
+    this.cruise = 0.9; this.maxSpeed = 2.2; this.turnRate = 0.5; this.sight = 30;
+    this.body = new Chain(x, y, this.heading, [1], [2, 1.5], PI);
+    this.id = newId(outlineOf(this.m));
+    const bump = [this.m[1], this.m[2], this.m[3], this.m[3]];
+    this.skin = bakeShader((u, v) => (Math.sin(u * 42) * Math.sin(v * 5 + 1) > 0.55 ? bump : this.m), 32, 8);
+    this.mode = 'pause';
+  }
+
+  hit(px, py) { return Math.hypot(px - this.x, py - this.y) < this.len + 2; }
+
+  update(dt, world) {
+    this.timer -= dt;
+    let gx = Math.cos(this.heading), gy = Math.sin(this.heading), want = 0;
+    if (this.grabbed) {
+      [gx, gy, want] = this.pointerGoal(world);
+    } else {
+      const hungry = !this.life || this.life.energy < 0.8;
+      const f = world.nearestFood(this.x, this.y, this.sight, (fd) => fd.z < 3 && (hungry || fd.kind === 'pellet'));
+      if (f) {
+        gx = f.x - this.x; gy = f.y - this.y; want = this.cruise;
+        if (Math.hypot(gx, gy) < 2.5) eat(world, this, f);
+      } else if (this.mode === 'walk') {
+        if (this.timer <= 0 || Math.hypot(this.tx - this.x, this.ty - this.y) < 4) { this.mode = 'pause'; this.timer = rand(4, 12); }
+        gx = this.tx - this.x; gy = this.ty - this.y; want = this.cruise;
+      } else if (this.timer <= 0) {
+        this.mode = 'walk'; this.newTarget(world, true); this.timer = rand(8, 16);
+      }
+    }
+    const gl = Math.hypot(gx, gy) || 1, [ax, ay] = this.grabbed ? [0, 0] : this.avoid(world, 0);
+    this.turnToward(Math.atan2(gy / gl + ay * 2, gx / gl + ax * 2), this.grabbed ? 4 : this.turnRate, dt);
+    this.speed += (want - this.speed) * Math.min(1, dt * 1.5);
+    this.x = clamp(this.x + Math.cos(this.heading) * this.speed * dt, 3, world.W - 3);
+    this.y = clamp(this.y + Math.sin(this.heading) * this.speed * dt, 3, world.H - 3);
+    this.rot += dt * 0.05 * (this.speed + 0.2);
+    this.body.resolve(this.x, this.y, this.heading);
+  }
+
+  draw(r, t) {
+    const { x, y, z, id } = this, n = this.arms, seg = this.len / 3;
+    r.ellipsoid(x, y, 1.9, 1.9, 0, z, 1.4, this.m, id);
+    for (let k = 0; k < n; k++) {
+      let px = x, py = y, rad = 1.5, a = this.rot + k * TAU / n;
+      const curl = Math.sin(t * 0.5 + k * 1.7 + this.phase) * 0.16;
+      for (let s = 0; s < 3; s++) {
+        a += curl;
+        const nx = px + Math.cos(a) * seg, ny = py + Math.sin(a) * seg, nr = lerp(1.5, 0.45, (s + 1) / 3);
+        r.tube(px, py, rad, z + 0.5 - s * 0.15, nx, ny, nr, z + 0.3 - s * 0.1, 0.9, this.skin, id, s / 3, (s + 1) / 3);
+        px = nx; py = ny; rad = nr;
+      }
+    }
+  }
+}
+
+SPECIES.starfish = { label: 'Starfish', color: '#e8743a', spawn: (w, x, y) => [new Starfish(w, x, y)] };

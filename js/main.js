@@ -5,9 +5,16 @@ const ctx = canvas.getContext('2d');
 
 const OPTS_KEY = 'procedural-pond.opts';
 const DEFAULT_OPTS = {
-  v: 2, pixel: 'auto', floor: 'sand', water: 'teal', light: 'cycle', dayLength: 180,
+  v: 3, world: 'medium', habitat: 'mixed', floor: 'sand', water: 'teal', light: 'cycle', dayLength: 180,
   current: 25, speed: 1, caustics: true, shadows: true, outlines: true, life: true, weather: true, sound: false,
 };
+// The pond is a fixed-size world, larger than the screen at the default zoom.
+const WORLD_SIZES = {
+  small: { label: 'Small', size: [720, 405] },
+  medium: { label: 'Medium', size: [960, 540] },
+  large: { label: 'Large', size: [1280, 720] },
+};
+const HABITAT_DEFAULTS = { fresh: { water: 'pond', floor: 'sand' }, mixed: { water: 'teal', floor: 'sand' }, salt: { water: 'reef', floor: 'coral' } };
 const NIGHT = [0.28, 0.38, 0.66];
 const LIGHTS = {
   cycle: { label: 'Day/night cycle' },
@@ -25,8 +32,10 @@ const CYCLE = [
 function loadOpts() {
   try {
     const stored = JSON.parse(localStorage.getItem(OPTS_KEY) || '{}');
-    if (stored.v !== 2) delete stored.light; // older saves predate the cycle; default to it
-    return { ...DEFAULT_OPTS, ...stored, v: 2 };
+    if (!stored.v || stored.v < 2) delete stored.light; // older saves predate the cycle
+    if (!stored.v || stored.v < 3) delete stored.pixel; // pixel size became zoom
+    if (FLOOR_ALIASES[stored.floor]) stored.floor = FLOOR_ALIASES[stored.floor];
+    return { ...DEFAULT_OPTS, ...stored, v: 3 };
   } catch { return { ...DEFAULT_OPTS }; }
 }
 function saveOpts() {
@@ -34,11 +43,11 @@ function saveOpts() {
 }
 
 const world = {
-  W: 0, H: 0, scale: 1, t: 0, clock: 0.3, darkness: 0, light: null,
-  raster: null, bg: null, bgLight: null,
+  W: 0, H: 0, t: 0, clock: 0.3, darkness: 0, light: null,
+  raster: null, bg: null, bgLight: null, waterColor: 0, motes: null, wob: null, glints: [],
   caustic: makeCausticTile(),
   creatures: [], plants: [], pads: [], food: [], rocks: [], pebbles: [],
-  effects: [], eggs: [], swarms: [], targets: {}, journal: [], journalDirty: false, seed: '',
+  effects: [], eggs: [], swarms: [], targets: {}, journal: [], journalDirty: false, seed: '', maxPop: 200,
   weather: { rain: 0, target: 0, next: rand(60, 140), gust: 0 },
   current: { s: 0, angle: 0, base: rand(-PI, PI), x: 0, y: 0 },
   pointer: { x: -999, y: -999, inside: false },
@@ -56,10 +65,11 @@ const world = {
   },
 };
 
-// A shared link carries the pond seed, and optionally its floor and water.
+// A shared link carries the pond seed and its habitat, floor and water.
 const params = new URLSearchParams(location.search);
-for (const [k, table] of [['floor', FLOORS], ['water', WATERS], ['light', LIGHTS]]) {
-  if (table[params.get(k)]) world.opts[k] = params.get(k);
+for (const [k, table] of [['floor', FLOORS], ['water', WATERS], ['light', LIGHTS], ['habitat', HABITATS], ['world', WORLD_SIZES]]) {
+  const v = FLOOR_ALIASES[params.get(k)] || params.get(k);
+  if (table[v]) world.opts[k] = v;
 }
 world.seed = (params.get('pond') || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40) || newSeedName();
 
@@ -80,47 +90,40 @@ function lighting() {
 }
 
 let image, out;
-const MAX_CREATURES = 250;
 
-// Size the low-res buffer to the window. Existing things keep their relative
-// positions; pass regen to lay out fresh scenery instead.
+// (Re)create the world buffers. The world only changes size when the World
+// option changes; window resizes just move the view.
 function layout(regen) {
-  const auto = Math.max(2, Math.round(Math.sqrt(innerWidth * innerHeight / 120000)));
-  const scale = world.opts.pixel === 'auto' ? auto : +world.opts.pixel;
-  const W = Math.ceil(innerWidth / scale), H = Math.ceil(innerHeight / scale);
-  const sx = world.W ? W / world.W : 1, sy = world.H ? H / world.H : 1;
-  world.scale = scale; world.W = W; world.H = H;
-  canvas.width = W; canvas.height = H;
-  canvas.style.width = W * scale + 'px';
-  canvas.style.height = H * scale + 'px';
-  world.raster = new Raster(W, H);
-  image = ctx.createImageData(W, H);
-  out = new Uint32Array(image.data.buffer);
-  if (regen) {
-    buildPond();
-  } else {
-    for (const o of [...world.rocks, ...world.pebbles, ...world.plants, ...world.pads, ...world.food]) { o.x *= sx; o.y *= sy; }
+  const [W, H] = (WORLD_SIZES[world.opts.world] || WORLD_SIZES.medium).size;
+  if (W !== world.W || H !== world.H) {
+    world.W = W; world.H = H;
+    canvas.width = W; canvas.height = H;
+    canvas.style.width = `${W}px`;
+    canvas.style.height = `${H}px`;
+    world.raster = new Raster(W, H);
+    world.wob = { x: new Int8Array(H), y: new Int8Array(W) };
+    image = ctx.createImageData(W, H);
+    out = new Uint32Array(image.data.buffer);
+    regen = true;
   }
-  for (const c of world.creatures) {
-    c.x = clamp(c.x * sx, 2, W - 2); c.y = clamp(c.y * sy, 2, H - 2);
-    if (c.place) c.place(c.x, c.y); else c.body.place(c.x, c.y, c.heading);
-  }
+  world.maxPop = Math.round(W * H / 2400);
+  if (regen) buildPond();
   bakeBackground(world);
-  view.z = 1;
-  applyView();
+  paintMinimapBackground();
+  resetView();
 }
 
 function openSpot() {
   const { W, H } = world;
   for (let i = 0; i < 20; i++) {
-    const x = rand(W * 0.15, W * 0.85), y = rand(H * 0.15, H * 0.85);
+    const x = rand(W * 0.08, W * 0.92), y = rand(H * 0.08, H * 0.92);
     if (!world.rocks.some((r) => Math.hypot(r.x - x, r.y - y) < Math.max(r.a, r.b) + 8)) return [x, y];
   }
   return [W / 2, H / 2];
 }
 
 function spawn(kind, x, y) {
-  if (world.creatures.length >= MAX_CREATURES) return;
+  if (world.creatures.length >= world.maxPop + 60) return;
   if (x === undefined) [x, y] = openSpot();
   const group = SPECIES[kind].spawn(world, x, y);
   for (const c of group) initLife(c, { alpha: 0 });
@@ -129,42 +132,34 @@ function spawn(kind, x, y) {
   updateCounts();
 }
 
-// Scenery and starting animals are generated from the seed at a fixed reference
-// size, then stretched to the window, so a link makes the same pond on any screen.
-const REF_W = 480, REF_H = 270;
-
+// Scenery and starting animals come from the seed (and habitat), so a shared
+// link reproduces the same pond. Everything after that is free-running.
 function buildPond() {
   release();
   stopFollow();
-  Object.assign(world, { creatures: [], food: [], eggs: [], effects: [], swarms: [], targets: {}, journal: [] });
-  Object.assign(ECO, { births: 0, arrivals: 0, departures: 0, eaten: 0 });
+  Object.assign(world, { creatures: [], food: [], eggs: [], effects: [], swarms: [], targets: {}, journal: [], glints: [] });
+  Object.assign(ECO, { births: 0, arrivals: 0, departures: 0, eaten: 0, rares: 0 });
   WILD_SPECIES.length = 0;
-  const W = world.W, H = world.H;
-  world.W = REF_W; world.H = REF_H;
-  try {
-    withSeed(world.seed, () => { generateScenery(world); populate(); });
-  } finally {
-    world.W = W; world.H = H;
-  }
-  const sx = W / REF_W, sy = H / REF_H;
-  for (const o of [...world.rocks, ...world.pebbles, ...world.plants, ...world.pads]) { o.x *= sx; o.y *= sy; }
-  for (const c of world.creatures) {
-    c.x = clamp(c.x * sx, 2, W - 2); c.y = clamp(c.y * sy, 2, H - 2);
-    c.tx *= sx; c.ty *= sy;
-    if (c.place) c.place(c.x, c.y); else c.body.place(c.x, c.y, c.heading);
-  }
+  withSeed(`${world.seed}/${world.opts.habitat}`, () => { generateScenery(world); populate(); });
   $('seed-name').textContent = world.seed;
-  logEvent(world, `You found a pond called ${world.seed}`);
+  const kind = { fresh: 'freshwater pond', salt: 'saltwater pond', mixed: 'pond' }[world.opts.habitat];
+  logEvent(world, `You found a ${kind} called ${world.seed}`);
+  refreshSpeciesButtons();
 }
 
+// Starting population scales with the world's area and fits the habitat.
+const POPULATION = {
+  koi: 1.5, tetra: 0.5, eel: 0.3, axolotl: 0.35, turtle: 0.3, crab: 0.5, ray: 0.35, frog: 0.6, snail: 0.35, jelly: 0.6,
+  clown: 0.35, puffer: 0.3, octopus: 0.25, duck: 0.25, shrimp: 0.4, dragonfly: 0.35, wild: 0.5, starfish: 0.8, snake: 0.1,
+};
 function populate() {
-  const area = world.W * world.H;
-  const koi = clamp(Math.round(area / 25000), 3, 6);
-  for (let i = 0; i < koi; i++) spawn('koi');
-  spawn('tetra');
-  if (area > 60000) spawn('tetra');
-  for (const kind of ['eel', 'axolotl', 'turtle', 'crab', 'crab', 'ray', 'frog', 'frog', 'snail', 'jelly', 'jelly',
-    'clown', 'puffer', 'octopus', 'duck', 'shrimp', 'dragonfly', 'wild', 'wild']) spawn(kind);
+  const m = world.W * world.H / (480 * 270), pure = world.opts.habitat !== 'mixed';
+  for (const [kind, per] of Object.entries(POPULATION)) {
+    if (!fitsHabitat(world, SPECIES_HABITAT[kind])) continue;
+    const n = per * m * (pure ? 1.4 : 1) * (kind === 'wild' && world.opts.habitat === 'salt' ? 2 : 1);
+    const count = Math.floor(n) + (Math.random() < n % 1 ? 1 : 0);
+    for (let i = 0; i < count; i++) spawn(kind);
+  }
 }
 
 // ---- simulation & render ------------------------------------------------------
@@ -195,6 +190,8 @@ function update(dt) {
   for (const p of world.pads) p.update(dt, world);
   for (const f of world.food) f.update(dt, world);
   world.food = world.food.filter((f) => !f.eaten);
+  world.motes.update(dt, world);
+  updateGlints(dt);
 }
 
 // Fireflies drift in after dark and fly off at dawn.
@@ -210,32 +207,73 @@ function updateFireflies(dt) {
   if (world.creatures.some((c) => c.gone)) world.creatures = world.creatures.filter((c) => !c.gone);
 }
 
-function render() {
+// Sun glints: brief sparkles on the surface in daylight.
+const GLINT = hexToInt('#f6fcff'), GLINT_SOFT = hexToInt('#cfe6ee');
+function updateGlints(dt) {
+  world.glints = world.glints.filter((g) => (g.t += dt) < 0.35);
+  const [x0, y0, x1, y1] = visibleRect();
+  const k = (1 - world.darkness) * (1 - world.weather.rain) * (world.opts.caustics ? 1 : 0.4);
+  let n = (x1 - x0) * (y1 - y0) * 0.000007 * k * dt * 60;
+  while (Math.random() < n) { world.glints.push({ x: randi(x0 + 1, x1 - 1), y: randi(y0 + 1, y1 - 1), t: 0, star: Math.random() < 0.25 }); n--; }
+}
+
+function drawGlints() {
+  const W = world.W;
+  for (const g of world.glints) {
+    const p = g.x + g.y * W;
+    out[p] = g.t > 0.07 && g.t < 0.28 ? GLINT : GLINT_SOFT;
+    if (g.star && g.t > 0.1 && g.t < 0.24) { out[p - 1] = out[p + 1] = out[p - W] = out[p + W] = GLINT_SOFT; }
+  }
+}
+
+// The part of the world on screen, in world pixels.
+function visibleRect() {
+  const k = view.k, W = world.W, H = world.H;
+  return [
+    clamp(Math.floor(-view.tx / k), 0, W - 1), clamp(Math.floor(-view.ty / k), 0, H - 1),
+    clamp(Math.ceil((innerWidth - view.tx) / k), 0, W - 1), clamp(Math.ceil((innerHeight - view.ty) / k), 0, H - 1),
+  ];
+}
+
+function render(full = false) {
   const r = world.raster, t = world.t, o = world.opts;
   const light = world.light || (world.light = lighting());
+  const rect = full ? [0, 0, world.W - 1, world.H - 1] : visibleRect();
+  // Rasterize a margin above/left of the view: shadows of things just off-screen still land on it.
+  r.setClip(rect[0] - 30, rect[1] - 30, rect[2] + 3, rect[3] + 3);
   r.begin();
   for (const p of world.plants) p.draw(r, t, world);
   for (const p of world.pads) p.draw(r, t, world);
   for (const f of world.food) f.draw(r, t, world);
+  let anyThick = false;
   for (const c of world.creatures) {
     const a = c.alpha ?? 1;
     r.alpha = a;
     FADE[c.id] = a < 1 ? 1 : 0;
+    if (THICK[c.id]) anyThick = true;
     c.draw(r, t, world);
   }
   r.alpha = 1;
   for (const e of world.eggs) e.draw(r, t);
+  world.motes.draw(r);
   r.castShadows = false;
   for (const e of world.effects) e.draw(r, t);
   r.castShadows = true;
   r.alpha = 1;
+  // Refraction: rows and columns of the floor shift by a pixel as the surface moves.
+  const water = WATERS[o.water] || WATERS.teal, wob = world.wob, amp = water.wobble * (1 + Math.max(0, world.weather.gust) * 0.5);
+  for (let y = rect[1]; y <= rect[3]; y++) wob.x[y] = Math.round(Math.sin(y * 0.19 + t * 1.9) * amp * (0.55 + 0.45 * Math.sin(t * 0.4 + y * 0.013)));
+  for (let x = rect[0]; x <= rect[2]; x++) wob.y[x] = Math.round(Math.sin(x * 0.15 + t * 1.6) * amp * (0.55 + 0.45 * Math.sin(t * 0.35 + x * 0.011)));
   r.compose(out, {
     bg: world.bg, bgLight: world.bgLight, caustic: world.caustic, t,
-    outline: OUTLINE, emissive: EMISSIVE, fade: FADE, tint: light.tint,
-    caustics: o.caustics && light.caustics, shadows: o.shadows, outlines: o.outlines,
-  });
+    outline: OUTLINE, emissive: EMISSIVE, fade: FADE, thick: THICK, anyThick, tint: light.tint,
+    caustics: o.caustics && light.caustics, causticT: water.caustic, shadows: o.shadows, outlines: o.outlines,
+    fog: { color: world.waterColor, amount: water.fog }, wob,
+  }, rect);
+  drawGlints();
   if (world.bones) drawBones();
-  ctx.putImageData(image, 0, 0);
+  if (full || world.bones) ctx.putImageData(image, 0, 0);
+  else ctx.putImageData(image, 0, 0, rect[0], rect[1], rect[2] - rect[0] + 1, rect[3] - rect[1] + 1);
   updateClock(light);
 }
 
@@ -273,7 +311,7 @@ function drawBones() {
   }
 }
 
-let last = performance.now(), countTimer = 0;
+let last = performance.now(), countTimer = 0, mapTimer = 0;
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
@@ -284,21 +322,25 @@ function frame(now) {
   Sound.update(world, world.paused ? 0 : dt);
   countTimer -= dt;
   if (countTimer <= 0) { countTimer = 0.5; updateCounts(); renderJournal(); }
+  mapTimer -= dt;
+  if (mapTimer <= 0) { mapTimer = 0.12; drawMinimap(); }
   requestAnimationFrame(frame);
 }
 
 // ---- tools --------------------------------------------------------------------
 
 const TOOLS = {
-  feed: { label: 'Feed', hint: 'click to feed · drag animals · scroll to zoom' },
+  feed: { label: 'Feed', hint: 'click to feed · drag animals · scroll to zoom · drag water to pan' },
   net: { label: 'Net', hint: 'click an animal, plant or rock to remove it' },
   weed: { label: 'Weed', place: (x, y) => world.plants.push(new Weed(x, y)) },
   eelgrass: { label: 'Eelgrass', place: (x, y) => world.plants.push(new Eelgrass(x, y)) },
   anemone: { label: 'Anemone', place: (x, y) => world.plants.push(new Anemone(x, y)) },
+  coral: { label: 'Coral', place: (x, y) => world.plants.push(new Coral(x, y)) },
+  urchin: { label: 'Urchin', place: (x, y) => world.plants.push(new Urchin(x, y)) },
   marimo: { label: 'Marimo', place: (x, y) => world.plants.push(new Marimo(x, y)) },
   duckweed: { label: 'Duckweed', place: (x, y) => world.plants.push(new Duckweed(x, y)) },
   lily: { label: 'Lily pad', place: (x, y) => world.pads.push(new LilyPad(world, x, y)) },
-  rock: { label: 'Rock', place: (x, y) => { world.rocks.push(makeRock(x, y, rand(5, 10))); bakeBackground(world); } },
+  rock: { label: 'Rock', place: (x, y) => { world.rocks.push(makeRock(x, y, rand(5, 10))); bakeBackground(world); paintMinimapBackground(); } },
 };
 
 function useTool(x, y) {
@@ -330,38 +372,46 @@ function removeAt(x, y) {
     if (i >= 0) { list[i].dead = true; list.splice(i, 1); return; }
   }
   const ri = world.rocks.findIndex((r) => Math.hypot(r.x - x, r.y - y) < Math.max(r.a, r.b));
-  if (ri >= 0) { world.rocks.splice(ri, 1); bakeBackground(world); }
+  if (ri >= 0) { world.rocks.splice(ri, 1); bakeBackground(world); paintMinimapBackground(); }
 }
 
-// ---- zoom & pan -----------------------------------------------------------------
-// The canvas is scaled with a CSS transform. Zoom levels keep each world pixel a
-// whole number of screen pixels so the pixel art stays crisp.
+// ---- view: zoom & pan -------------------------------------------------------------
+// The canvas holds the whole world; a CSS transform scales it by a whole number
+// k of screen pixels per world pixel (so the art stays crisp) and pans it.
 
-const view = { z: 1, tx: 0, ty: 0 };
+const view = { k: 3, tx: 0, ty: 0 };
 const zoomLabel = document.getElementById('zoom-level');
+const fitK = () => Math.max(1, Math.floor(Math.min(innerWidth / world.W, innerHeight / world.H)));
+const defaultK = () => fitK() + 1; // one step closer than "whole pond on screen"
 
 function applyView() {
-  const w = world.W * world.scale * view.z, h = world.H * world.scale * view.z;
-  view.tx = Math.round(clamp(view.tx, Math.min(0, innerWidth - w), 0));
-  view.ty = Math.round(clamp(view.ty, Math.min(0, innerHeight - h), 0));
-  canvas.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.z})`;
-  zoomLabel.textContent = `${Math.round(view.z * 100)}%`;
+  const w = world.W * view.k, h = world.H * view.k;
+  view.tx = w <= innerWidth ? Math.round((innerWidth - w) / 2) : Math.round(clamp(view.tx, innerWidth - w, 0));
+  view.ty = h <= innerHeight ? Math.round((innerHeight - h) / 2) : Math.round(clamp(view.ty, innerHeight - h, 0));
+  canvas.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.k})`;
+  zoomLabel.textContent = `${view.k}×`;
 }
 
 function zoomTo(k, cx = innerWidth / 2, cy = innerHeight / 2) {
-  const s = world.scale, nz = clamp(Math.round(k), s, s * 8) / s;
-  view.tx = cx - (cx - view.tx) * (nz / view.z);
-  view.ty = cy - (cy - view.ty) * (nz / view.z);
-  view.z = nz;
+  const nk = clamp(Math.round(k), 1, 16);
+  view.tx = cx - (cx - view.tx) * (nk / view.k);
+  view.ty = cy - (cy - view.ty) * (nk / view.k);
+  view.k = nk;
   applyView();
 }
 
-function zoomStep(dir, cx, cy) {
-  const k = Math.round(view.z * world.scale);
-  zoomTo(dir > 0 ? Math.max(k + 1, Math.round(k * 1.25)) : Math.min(k - 1, Math.round(k / 1.25)), cx, cy);
+const zoomStep = (dir, cx, cy) => zoomTo(view.k + dir, cx, cy);
+
+function centerOn(x, y) {
+  view.tx = innerWidth / 2 - x * view.k;
+  view.ty = innerHeight / 2 - y * view.k;
+  applyView();
 }
 
-function resetZoom() { view.z = 1; applyView(); }
+function resetView() {
+  view.k = defaultK();
+  centerOn(world.W / 2, world.H / 2);
+}
 
 let wheelAcc = 0;
 canvas.addEventListener('wheel', (e) => {
@@ -397,7 +447,7 @@ canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
   if (touches.size === 2) {
     const [a, b] = [...touches.values()];
-    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, k: view.z * world.scale, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, k: view.k, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
     press = null;
     release();
     return;
@@ -465,8 +515,7 @@ const alive = (c) => c && !c.gone && !c.caught && world.creatures.includes(c);
 
 function follow(c) {
   cam.follow = c;
-  cam.fx = view.tx; cam.fy = view.ty;
-  if (c && view.z < 2.5) zoomTo(world.scale * 3);
+  if (c && view.k < defaultK() + 1) zoomTo(defaultK() + 1);
   cam.fx = view.tx; cam.fy = view.ty;
   updateChip();
 }
@@ -495,7 +544,7 @@ function updateCamera(dt) {
   }
   const c = cam.follow;
   if (!c) return;
-  const k = world.scale * view.z, e = Math.min(1, dt * 3);
+  const k = view.k, e = Math.min(1, dt * 3);
   cam.fx += (innerWidth / 2 - c.x * k - cam.fx) * e;
   cam.fy += (innerHeight / 2 - c.y * k - cam.fy) * e;
   view.tx = cam.fx; view.ty = cam.fy;
@@ -511,6 +560,52 @@ function updateChip() {
   const text = c ? `${cam.tour ? 'Touring' : 'Following'} ${c.life ? `${c.life.name} the ${describe(c).label}` : describe(c).label}` : 'Touring…';
   if (text !== chipName) { chipName = text; chip.querySelector('span').textContent = text; }
 }
+
+// ---- minimap ------------------------------------------------------------------------
+// The whole pond in miniature: the floor, a dot per animal, and the view rectangle.
+// Click or drag on it to jump there.
+
+const mini = document.getElementById('minimap'), mctx = mini.getContext('2d');
+const miniBg = document.createElement('canvas');
+
+function paintMinimapBackground() {
+  const src = document.createElement('canvas');
+  src.width = world.W; src.height = world.H;
+  src.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(world.bg.buffer.slice(0)), world.W, world.H), 0, 0);
+  miniBg.width = mini.width; miniBg.height = mini.height;
+  const g = miniBg.getContext('2d');
+  g.imageSmoothingEnabled = true;
+  g.drawImage(src, 0, 0, miniBg.width, miniBg.height);
+  g.globalAlpha = 0.45;
+  g.fillStyle = `#${[world.waterColor & 255, (world.waterColor >> 8) & 255, (world.waterColor >>> 16) & 255].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+  g.fillRect(0, 0, miniBg.width, miniBg.height);
+  g.globalAlpha = 1;
+}
+
+function drawMinimap() {
+  const mw = mini.width, mh = mini.height, sx = mw / world.W, sy = mh / world.H;
+  mctx.drawImage(miniBg, 0, 0);
+  for (const c of world.creatures) {
+    if (c.species === 'gnat' || c.species === 'firefly') continue;
+    const rare = c.life && c.life.traits.length;
+    mctx.fillStyle = rare ? '#ffd166' : c.species === 'wild' ? c.sp.color : (SPECIES[c.species] || {}).color || '#dff6f0';
+    const s = rare ? 3 : 2;
+    mctx.fillRect(Math.round(c.x * sx) - 1, Math.round(c.y * sy) - 1, s, s);
+  }
+  const [x0, y0, x1, y1] = visibleRect();
+  mctx.strokeStyle = '#ffd166';
+  mctx.lineWidth = 1;
+  mctx.strokeRect(Math.round(x0 * sx) + 0.5, Math.round(y0 * sy) + 0.5, Math.max(2, Math.round((x1 - x0) * sx)) - 1, Math.max(2, Math.round((y1 - y0) * sy)) - 1);
+}
+
+function miniJump(e) {
+  const r = mini.getBoundingClientRect();
+  stopFollow();
+  centerOn((e.clientX - r.left) / r.width * world.W, (e.clientY - r.top) / r.height * world.H);
+  drawMinimap();
+}
+mini.addEventListener('pointerdown', (e) => { mini.setPointerCapture(e.pointerId); miniJump(e); });
+mini.addEventListener('pointermove', (e) => { if (e.buttons) miniJump(e); });
 
 // ---- HUD ----------------------------------------------------------------------
 
@@ -542,7 +637,8 @@ function updateCounts() {
   for (const c of world.creatures) if (c.species === 'wild') wild.set(c.sp, (wild.get(c.sp) || 0) + 1);
   $('wildlist').innerHTML = [...wild].map(([sp, k]) => `<li><i style="--c:${sp.color}"></i>${sp.name}<b>${k}</b></li>`).join('');
   $('wildcount').textContent = WILD_SPECIES.length ? `${WILD_SPECIES.length} discovered` : '';
-  $('stats').textContent = `born ${ECO.births} · arrived ${ECO.arrivals} · left ${ECO.departures} · eaten ${ECO.eaten}`;
+  const rares = world.creatures.filter((c) => c.life && c.life.traits.length).length;
+  $('stats').textContent = `born ${ECO.births} · arrived ${ECO.arrivals} · left ${ECO.departures} · eaten ${ECO.eaten} · rares here ${rares}`;
 }
 
 // Journal: newest first; entries about an animal that is still around can be clicked to follow it.
@@ -581,8 +677,7 @@ function shareUrl() {
   const u = new URL(location.href);
   u.search = ''; u.hash = '';
   u.searchParams.set('pond', world.seed);
-  if (world.opts.floor !== DEFAULT_OPTS.floor) u.searchParams.set('floor', world.opts.floor);
-  if (world.opts.water !== DEFAULT_OPTS.water) u.searchParams.set('water', world.opts.water);
+  for (const k of ['habitat', 'floor', 'water', 'world']) if (world.opts[k] !== DEFAULT_OPTS[k]) u.searchParams.set(k, world.opts[k]);
   return u.toString();
 }
 
@@ -598,6 +693,7 @@ function updateCard(dt) {
   const d = describe(c), age = d.age == null ? '' : `${Math.floor(d.age / 60)}m ${String(Math.floor(d.age % 60)).padStart(2, '0')}s`;
   card.querySelector('.nm').textContent = d.name || d.label;
   card.querySelector('.sp').textContent = d.name ? d.label : '';
+  card.querySelector('.traits').textContent = [d.traits.length && `✦ ${d.traits.join(' · ')}`, d.carries.length && `carries ${d.carries.join(', ')}`].filter(Boolean).join('  ·  ');
   card.querySelector('.meta').textContent = [d.stage, d.gen != null && `gen ${d.gen}`, age].filter(Boolean).join(' · ');
   card.querySelector('.mood').textContent = d.mood;
   const bar = card.querySelector('.bar');
@@ -621,23 +717,47 @@ for (const [name, t] of Object.entries(TOOLS)) {
   $('tools').append(b);
 }
 
+// Only offer animals and plants that live in this habitat.
+function refreshSpeciesButtons() {
+  for (const b of document.querySelectorAll('[data-spawn]')) b.hidden = !fitsHabitat(world, SPECIES_HABITAT[b.dataset.spawn]);
+  for (const b of $('tools').children) {
+    const salt = ['anemone', 'coral', 'urchin'].includes(b.dataset.tool), fresh = ['marimo', 'duckweed', 'lily'].includes(b.dataset.tool);
+    b.hidden = (salt && !fitsHabitat(world, 'salt')) || (fresh && !fitsHabitat(world, 'fresh'));
+  }
+  for (const b of document.querySelectorAll('[data-hab]')) b.setAttribute('aria-pressed', b.dataset.hab === world.opts.habitat);
+}
+
 function fillSelect(el, entries, value) {
+  el.replaceChildren();
   for (const [v, label] of entries) el.append(new Option(label, v));
   el.value = value;
 }
 fillSelect($('opt-floor'), Object.entries(FLOORS).map(([k, f]) => [k, f.label]), world.opts.floor);
 fillSelect($('opt-water'), Object.entries(WATERS).map(([k, w]) => [k, w.label]), world.opts.water);
 fillSelect($('opt-light'), Object.entries(LIGHTS).map(([k, l]) => [k, l.label]), world.opts.light);
-fillSelect($('opt-pixel'), [['auto', 'Auto'], ...[2, 3, 4, 5, 6, 8].map((n) => [String(n), `${n}×`])], String(world.opts.pixel));
+fillSelect($('opt-world'), Object.entries(WORLD_SIZES).map(([k, w]) => [k, w.label]), world.opts.world);
 
 function setOpt(key, value) {
   world.opts[key] = value;
   saveOpts();
 }
-$('opt-floor').addEventListener('change', (e) => { setOpt('floor', e.target.value); bakeBackground(world); });
-$('opt-water').addEventListener('change', (e) => { setOpt('water', e.target.value); bakeBackground(world); });
+const rebake = () => { bakeBackground(world); paintMinimapBackground(); };
+$('opt-floor').addEventListener('change', (e) => { setOpt('floor', e.target.value); rebake(); });
+$('opt-water').addEventListener('change', (e) => { setOpt('water', e.target.value); rebake(); });
 $('opt-light').addEventListener('change', (e) => setOpt('light', e.target.value));
-$('opt-pixel').addEventListener('change', (e) => { setOpt('pixel', e.target.value); layout(false); });
+$('opt-world').addEventListener('change', (e) => { setOpt('world', e.target.value); layout(true); });
+
+// Switching habitat picks fitting water and floor, then regrows the pond from the same seed.
+function setHabitat(h) {
+  setOpt('habitat', h);
+  const d = HABITAT_DEFAULTS[h];
+  setOpt('water', d.water); setOpt('floor', d.floor);
+  $('opt-water').value = d.water; $('opt-floor').value = d.floor;
+  const u = new URL(shareUrl());
+  history.replaceState(null, '', u.search);
+  layout(true);
+}
+for (const b of document.querySelectorAll('[data-hab]')) b.addEventListener('click', () => setHabitat(b.dataset.hab));
 
 function bindRange(id, key, fmt) {
   const input = $(id), output = input.nextElementSibling;
@@ -662,10 +782,7 @@ let clockText = '';
 function updateClock(light) {
   const o = world.opts, c = world.clock;
   const icon = light.darkness > 0.6 ? '☾' : light.tint ? '◐' : '☀';
-  const hh = Math.floor(c * 24), mm = Math.floor((c * 24 % 1) * 60);
-  const text = o.light === 'cycle'
-    ? `${icon} ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
-    : `${icon} ${o.light}`;
+  const text = o.light === 'cycle' ? `${icon} ${clockLabel(c)}` : `${icon} ${o.light}`;
   if (text !== clockText) { clockText = text; clockBtn.textContent = text; }
 }
 function setLight(mode) {
@@ -684,12 +801,12 @@ $('collapse').addEventListener('click', () => setHud(false));
 $('show-hud').addEventListener('click', () => setHud(true));
 $('zoom-in').addEventListener('click', () => zoomStep(1));
 $('zoom-out').addEventListener('click', () => zoomStep(-1));
-zoomLabel.addEventListener('click', resetZoom);
+zoomLabel.addEventListener('click', resetView);
 $('clear').addEventListener('click', () => { release(); world.creatures = []; world.eggs = []; world.targets = {}; updateCounts(); });
 $('reset').addEventListener('click', () => {
   world.seed = newSeedName();
   world.current.base = rand(-PI, PI);
-  history.replaceState(null, '', `?pond=${world.seed}`);
+  history.replaceState(null, '', new URL(shareUrl()).search);
   layout(true);
 });
 $('share').addEventListener('click', async () => {
@@ -717,39 +834,45 @@ $('sound').addEventListener('click', () => setSound(!Sound.on));
 // Browsers only allow audio after a gesture, so a saved "on" resumes at the first interaction.
 if (world.opts.sound) addEventListener('pointerdown', () => { if (!Sound.on) setSound(true); }, { once: true });
 
-// Save the current frame, upscaled with hard pixel edges.
+// Save the whole pond (not just the view), upscaled with hard pixel edges.
 $('snapshot').addEventListener('click', () => {
-  const k = Math.max(world.scale, 4), c = document.createElement('canvas');
+  render(true);
+  const k = 3, c = document.createElement('canvas');
   c.width = world.W * k; c.height = world.H * k;
   const g = c.getContext('2d');
   g.imageSmoothingEnabled = false;
   g.drawImage(canvas, 0, 0, c.width, c.height);
   const a = document.createElement('a');
-  a.download = `pond-${Date.now()}.png`;
+  a.download = `pond-${world.seed}.png`;
   a.href = c.toDataURL('image/png');
   a.click();
 });
 
+const PAN_KEYS = { arrowleft: [1, 0], arrowright: [-1, 0], arrowup: [0, 1], arrowdown: [0, -1], a: [1, 0], d: [-1, 0], w: [0, 1], s: [0, -1] };
 addEventListener('keydown', (e) => {
-  if (e.target.closest && e.target.closest('button, select, input') && (e.key === ' ' || e.key === 'Enter')) return;
+  if (e.target.closest && (e.target.closest('select, input') || (e.target.closest('button') && (e.key === ' ' || e.key === 'Enter')))) return;
+  const pan = PAN_KEYS[e.key.toLowerCase()];
+  if (pan && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    stopFollow();
+    view.tx += pan[0] * 80; view.ty += pan[1] * 80;
+    applyView();
+    return;
+  }
   if (e.key === 'b' || e.key === 'B') setBones(!world.bones);
   else if (e.key === ' ') { e.preventDefault(); setPaused(!world.paused); }
   else if (e.key === 'h' || e.key === 'H') setHud(hud.classList.contains('hidden'));
   else if (e.key === 'l' || e.key === 'L') clockBtn.click();
   else if (e.key === '+' || e.key === '=') zoomStep(1);
   else if (e.key === '-' || e.key === '_') zoomStep(-1);
-  else if (e.key === '0') resetZoom();
+  else if (e.key === '0') resetView();
   else if (e.key === 'f' || e.key === 'F') { if (world.hover) follow(world.hover); else stopFollow(); }
   else if (e.key === 't' || e.key === 'T') $('tour').click();
   else if (e.key === 'm' || e.key === 'M') $('sound').click();
   else if (e.key === 'Escape') stopFollow();
 });
 
-let resizeTimer;
-addEventListener('resize', () => {
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => layout(false), 150);
-});
+addEventListener('resize', () => applyView());
 
 setTool('feed');
 if (!params.get('pond')) history.replaceState(null, '', `?pond=${world.seed}${location.hash}`);

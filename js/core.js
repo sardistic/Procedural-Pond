@@ -90,6 +90,7 @@ function bakeShader(fn, nu = 64, nv = 16, u0 = 0) {
     return T[i + j * nu];
   };
   shader.table = T; // exposed so an individual's genes can re-dye it
+  shader.dims = [nu, nv, u0];
   return shader;
 }
 

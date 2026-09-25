@@ -16,9 +16,10 @@ function pushFrom(world, x, y, reach, maxZ) {
 }
 
 class Weed {
-  constructor(x, y) {
+  constructor(x, y, habitat = null) {
     this.x = x; this.y = y;
-    const m = pick([PAL.weed, PAL.weed, PAL.weedKelp, PAL.weedRed]);
+    const m = pick(habitat === 'salt' ? [PAL.weedKelp, PAL.weedRed, PAL.weedKelp] : habitat === 'fresh'
+      ? [PAL.weed, PAL.weed, PAL.weedKelp] : [PAL.weed, PAL.weed, PAL.weedKelp, PAL.weedRed]);
     this.id = newId(outlineOf(m));
     this.px = 0; this.py = 0;
     this.strands = Array.from({ length: randi(3, 6) }, () => ({
@@ -259,5 +260,106 @@ class LilyPad {
       r.ellipsoid(cx + Math.cos(a) * 2, cy + Math.sin(a) * 2, 2.4, 1.1, a, 45.5, 1.5, PAL.petal, this.id);
     }
     r.ellipsoid(cx, cy, 1.3, 1.3, 0, 47, 1, PAL.petalCore, this.id);
+  }
+}
+
+// ---- saltwater: corals and urchins --------------------------------------------------
+
+const CORAL_MATS = [
+  mat('#8a3a5a', '#c05a80', '#ec84a6', '#ffc0d4'), mat('#8a4a1a', '#c0702a', '#ec9a44', '#ffc88a'),
+  mat('#4a2a7a', '#6a44a8', '#9068d4', '#c8a8f4'), mat('#7a6a14', '#b09a22', '#e0c83c', '#fff08a'),
+  mat('#1a6a6a', '#2a9a94', '#44c4b8', '#94f0e0'), mat('#8a1a1a', '#b82a24', '#e04a3a', '#ff8a70'),
+];
+const lighten = (m) => [m[1], m[2], m[3], m[3]];
+const deepen = (m) => [m[0], m[0], m[1], m[2]];
+
+// Staghorn (branching), brain (maze dome), fan (swaying ribs) or tube (organ pipes).
+class Coral {
+  constructor(x, y, kind = pick(['staghorn', 'staghorn', 'brain', 'fan', 'tube'])) {
+    this.x = x; this.y = y; this.kind = kind;
+    this.m = pick(CORAL_MATS);
+    this.id = newId(outlineOf(this.m));
+    this.phase = rand(0, TAU);
+    const tip = lighten(this.m);
+    if (kind === 'staghorn') {
+      // Branches grow outward and upward, forking now and then; built once, static.
+      this.segs = [];
+      const grow = (px, py, pz, a, r, depth) => {
+        const len = rand(3, 5), nx = px + Math.cos(a) * len, ny = py + Math.sin(a) * len, nz = pz + 2.2, nr = r * 0.78;
+        this.segs.push([px, py, r, pz, nx, ny, nr, nz]);
+        if (depth < 3) grow(nx, ny, nz, a + rand(-0.4, 0.4), nr, depth + 1);
+        if (depth < 2 && Math.random() < 0.55) grow(nx, ny, nz, a + (Math.random() < 0.5 ? 0.7 : -0.7), nr * 0.9, depth + 1);
+      };
+      for (let k = randi(3, 5); k > 0; k--) grow(x, y, 0, rand(0, TAU), rand(1.2, 1.6), 0);
+      this.R = 16;
+      this.skin = (u) => (u > 0.7 ? tip : this.m);
+    } else if (kind === 'brain') {
+      this.r = rand(4, 7);
+      this.R = this.r;
+      const groove = deepen(this.m), s = rand(0, 99);
+      this.skin = bakeShader((lx, ly) => (Math.abs(Math.sin(lx * 7 + vnoise(lx * 2 + s, ly * 2, 81) * 6 + ly * 3)) < 0.3 ? groove : this.m), 40, 40, -1);
+    } else if (kind === 'fan') {
+      this.ribs = Array.from({ length: randi(7, 11) }, (_, k, a) => ({ a: rand(-PI, PI), len: rand(6, 10) }));
+      const base = rand(0, TAU);
+      this.ribs.forEach((rb, k, all) => { rb.a = base + (k / (all.length - 1) - 0.5) * 1.9; });
+      this.R = 11;
+    } else {
+      this.tubes = Array.from({ length: randi(5, 9) }, () => ({ ox: rand(-3.5, 3.5), oy: rand(-3.5, 3.5), r: rand(1.1, 1.8), h: rand(2.5, 4.5) }));
+      this.R = 6;
+      const hole = mat('#1a0a14', '#2a1020', '#3a1a2c', '#4a2438');
+      this.skin = (lx, ly) => (lx * lx + ly * ly < 0.3 ? hole : lx * lx + ly * ly < 0.55 ? tip : this.m);
+    }
+  }
+
+  hit(x, y) { return Math.hypot(x - this.x, y - this.y) < this.R; }
+  update() {}
+
+  draw(r, t) {
+    const id = this.id;
+    if (this.kind === 'staghorn') {
+      for (const [ax, ay, ar, az, bx, by, br, bz] of this.segs) r.tube(ax, ay, ar, az, bx, by, br, bz, 0.9, this.skin, id);
+    } else if (this.kind === 'brain') {
+      r.ellipsoid(this.x, this.y, this.r, this.r * 0.9, 0, 0, this.r * 0.7, this.skin, id);
+    } else if (this.kind === 'fan') {
+      const sway = Math.sin(t * 0.9 + this.phase) * 0.06;
+      for (const rb of this.ribs) {
+        let px = this.x, py = this.y, a = rb.a + sway, rad = 0.9;
+        for (let k = 1; k <= 3; k++) {
+          const seg = rb.len / 3, nx = px + Math.cos(a) * seg, ny = py + Math.sin(a) * seg;
+          r.tube(px, py, rad, k * 1.2 - 1.2, nx, ny, rad * 0.8, k * 1.2, 0.6, k === 3 ? lighten(this.m) : this.m, id);
+          if (k === 2) r.tube(nx, ny, 0.6, 2.4, nx + Math.cos(a + 0.5) * seg * 0.7, ny + Math.sin(a + 0.5) * seg * 0.7, 0.5, 3, 0.6, this.m, id);
+          px = nx; py = ny; rad *= 0.8; a += sway * 0.5;
+        }
+      }
+    } else {
+      for (const tb of this.tubes) r.ellipsoid(this.x + tb.ox, this.y + tb.oy, tb.r, tb.r, 0, 0, tb.h, this.skin, id);
+    }
+  }
+}
+
+const URCHIN = [mat('#140a1a', '#24122e', '#3a2048', '#5a3a6e'), mat('#1a0a0a', '#301414', '#4a2020', '#6e3a34')];
+
+// A spiky ball whose spines slowly wave.
+class Urchin {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.r = rand(1.6, 2.4);
+    this.m = pick(URCHIN);
+    this.id = newId(hexToInt('#050208'));
+    this.phase = rand(0, TAU);
+    this.spines = Array.from({ length: randi(12, 16) }, (_, k, a) => k / 14 * TAU + rand(-0.15, 0.15));
+  }
+
+  hit(x, y) { return Math.hypot(x - this.x, y - this.y) < this.r + 3; }
+  update() {}
+
+  draw(r, t) {
+    const { x, y, id } = this;
+    r.ellipsoid(x, y, this.r, this.r, 0, 0, this.r * 0.9, this.m, id);
+    for (let k = 0; k < this.spines.length; k++) {
+      const a = this.spines[k] + Math.sin(t * 1.3 + k * 0.7 + this.phase) * 0.12, L = this.r + 2.8;
+      r.tube(x + Math.cos(a) * this.r * 0.6, y + Math.sin(a) * this.r * 0.6, 0.45, this.r * 0.6,
+        x + Math.cos(a) * L, y + Math.sin(a) * L, 0.4, this.r * 0.9, 0.8, this.m, id);
+    }
   }
 }

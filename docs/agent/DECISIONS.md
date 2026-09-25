@@ -14,11 +14,41 @@ banded Bayer-dithered lighting, outlines, height-offset shadows, dithered alpha
 fades and an optional light tint. The canvas is upscaled with
 `image-rendering: pixelated`. There is no WebGL.
 
-## Seeded ponds are generated at a reference size
-`buildPond()` in `js/main.js` generates scenery and the starting population at
-480x270 under `withSeed(seed)`, then stretches positions to the window. This
-lets a `?pond=<seed>` link reproduce the same pond on any screen size. Only the
-starting state is deterministic; the running simulation is not.
+## Fixed-size world, integer zoom, clipped rendering
+The world is a fixed buffer (`WORLD_SIZES`: 720x405, 960x540 or 1280x720) that
+does not depend on the window size. The canvas is shown with a CSS transform at
+a whole number `view.k` of screen pixels per world pixel. The default is one
+step past fitting the whole pond, so the world extends beyond the view. Each
+frame only the visible rectangle is rasterized (`Raster.setClip`, with a
+30px margin for shadows from off-screen things), composed, and uploaded with a
+dirty-rect `putImageData`. Window resizes only re-apply the view. A seed
+therefore reproduces the same pond on every device.
+
+## Seeded ponds
+`buildPond()` generates scenery and the starting population under
+`withSeed(seed/habitat)`, and floor decor under `withSeed(seed/floor/<key>)`.
+Only the starting state is deterministic; the running simulation is not.
+
+## Water is rendered, not baked
+The floor is baked in true colour. `Raster.compose` applies depth fog, where
+water colour increases with depth below `SURFACE_Z`, plus a one-pixel
+row/column refraction offset on floor pixels and a per-water caustic
+threshold. Sun glints are drawn into the output afterwards; motes are
+rasterized as outline-less dots.
+
+## Habitats
+`SPECIES_HABITAT` and `fitsHabitat()` in `js/scene.js` decide which animals and
+plants a pond gets and which buttons are shown. Wild species carry their own
+habitat. Switching habitat applies `HABITAT_DEFAULTS` for water and floor, and
+regrows the pond.
+
+## Genetics
+Recessive morphs (albino, melanistic, piebald) are allele counts from 0 to 2
+per animal, and each parent passes one copy on. Shiny is a mutation
+(inherited 20% of the time). `dyeCreature` recolours the individual, paints
+piebald patches into baked shader tables (`shader.dims`), and marks rare ids in
+`THICK` with a coloured `OUTLINE`. Compose draws the second outline ring only
+when a thick id is on screen.
 
 ## Ecosystem lives outside the creature classes
 `js/life.js` attaches `c.life` (genes, age, energy, growth) with `initLife`. It

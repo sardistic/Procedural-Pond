@@ -56,12 +56,15 @@ const PAL = {
   marimo: mat('#0e2c12', '#1a4a1c', '#2a6e28', '#4a9a3a'),
   marimoLight: mat('#1a4a1c', '#2a6e28', '#4a9a3a', '#7cc458'),
   duckweed: mat('#1e5a14', '#34881e', '#58b42c', '#9ae05a'),
+  eelFresh: mat('#1e1c10', '#34301a', '#4e4826', '#6e6838'),
+  eelFreshBelly: mat('#5a5430', '#7a7244', '#9a905a', '#bab078'),
 };
 
 const EYE = solid('#0a0c10');
 const EYE_SHINE = solid('#f4f8ff');
 const OUTLINE = new Uint32Array(65536);
 const EMISSIVE = new Uint8Array(65536); // 1 = stays brighter at night, 2 = its own light source
+const THICK = new Uint8Array(65536);    // rare animals get a two-pixel outline
 const FOOD_ID = 1;
 OUTLINE[FOOD_ID] = hexToInt('#1c1008');
 
@@ -71,6 +74,7 @@ function newId(outline) {
   if (NEXT_ID > 65000) NEXT_ID = 10;
   OUTLINE[id] = outline;
   EMISSIVE[id] = 0;
+  THICK[id] = 0;
   return id;
 }
 const outlineOf = (m) => mixColor(m[0], 0xff000000, 0.55);
@@ -151,7 +155,7 @@ class Creature {
     const b = this.body;
     for (const s of [-1, 1]) {
       const ex = b.px(0, s * off, -inset), ey = b.py(0, s * off, -inset);
-      r.dot(ex, ey, z, EYE, this.id);
+      r.dot(ex, ey, z, this.eyeMat || EYE, this.id);
       if (shine) r.dot(ex - 0.6, ey - 0.6, z + 0.1, EYE_SHINE, this.id);
     }
   }
@@ -349,14 +353,15 @@ class Tetra extends Fish {
 }
 
 const EEL_VARIETIES = [
-  { skin: 'moray', spot: 'morayDot', mode: 'spots' },
-  { skin: 'ribbon', spot: 'ribbonFin', mode: 'ribbon' },
-  { skin: 'snowflake', spot: 'snowBlot', mode: 'blotch' },
+  { skin: 'moray', spot: 'morayDot', mode: 'spots', habitat: 'salt' },
+  { skin: 'ribbon', spot: 'ribbonFin', mode: 'ribbon', habitat: 'salt' },
+  { skin: 'snowflake', spot: 'snowBlot', mode: 'blotch', habitat: 'salt' },
+  { skin: 'eelFresh', spot: 'eelFreshBelly', mode: 'plain', habitat: 'fresh' },
 ];
 
 class Eel extends Fish {
   constructor(world, x, y) {
-    const v = pick(EEL_VARIETIES);
+    const v = pick(EEL_VARIETIES.filter((e) => fitsHabitat(world, e.habitat)));
     const n = 34;
     super(world, x, y, {
       species: 'eel',
@@ -371,6 +376,7 @@ class Eel extends Fish {
     const base = PAL[v.skin], spot = PAL[v.spot], sx = rand(0, 100);
     this.skin = bakeShader((u, vv) => {
       if (v.mode === 'ribbon') return Math.abs(vv) < 0.3 || u < 0.04 ? spot : base;
+      if (v.mode === 'plain') return Math.abs(vv) > 0.72 ? spot : base;
       if (v.mode === 'blotch') {
         if (vnoise(u * 22 + sx, vv * 1.5, 3) > 0.6) return spot;
         return vnoise(u * 60 + sx, vv * 3, 9) > 0.78 ? PAL.morayDot : base;

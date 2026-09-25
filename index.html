@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css?v=4">
 
   <script type="application/ld+json">
   {
@@ -72,6 +72,11 @@
     </header>
     <p class="hint" id="hint">click to feed · drag animals · scroll to zoom</p>
     <p class="seed">pond <b id="seed-name"></b></p>
+    <div class="seg" role="group" aria-label="Habitat">
+      <button type="button" data-hab="fresh" title="Freshwater: koi, frogs, ducks, lily pads">Fresh</button>
+      <button type="button" data-hab="mixed" title="Everything together">Both</button>
+      <button type="button" data-hab="salt" title="Saltwater: reef fish, corals, starfish, octopus">Salt</button>
+    </div>
 
     <details open>
       <summary>Animals</summary>
@@ -99,7 +104,7 @@
         <label>Water <select id="opt-water"></select></label>
         <label>Light <select id="opt-light"></select></label>
         <label>Day length <input type="range" id="opt-day" min="60" max="600" step="30"><output></output></label>
-        <label>Pixels <select id="opt-pixel"></select></label>
+        <label>World <select id="opt-world"></select></label>
         <label>Current <input type="range" id="opt-current" min="0" max="100" step="5"><output></output></label>
         <label>Speed <input type="range" id="opt-speed" min="0.25" max="3" step="0.25"><output></output></label>
       </div>
@@ -123,6 +128,8 @@
         <li>New fish species are invented as you watch, each with its own shape, colours, pattern and name.</li>
         <li>Animals get hungry, grow up, lay eggs, pass their genes on, hunt, flee and eventually move on.</li>
         <li>A day/night cycle with fireflies, rain showers, wind, ripples and an optional generative soundscape.</li>
+        <li>Freshwater, saltwater or both: reef fish, corals and starfish, or koi, frogs and lily pads.</li>
+        <li>Genetics with rare albino, melanistic, piebald and shiny animals that breed true.</li>
         <li>Every pond has a seed: share the link and friends get the same pond.</li>
       </ul>
       <p>Made by <a href="https://sardistic.com/">sardistic</a>. <a href="https://github.com/sardistic/Procedural-Pond">Source on GitHub</a>.</p>
@@ -136,11 +143,12 @@
       <button type="button" id="sound" aria-pressed="false" title="Generative soundscape (M)">Sound</button>
       <button type="button" id="share" title="Copy a link to this pond">Share</button>
     </div>
-    <p class="keys">B bones · Space pause · L light · F follow · T tour · M sound · +/− zoom · H hide</p>
+    <p class="keys">Arrows/WASD pan · +/− zoom · F follow · T tour · B bones · Space pause · L light · M sound · H hide</p>
   </aside>
   <div id="inspect" class="inspect" hidden>
     <b class="nm"></b>
     <span class="sp"></span>
+    <span class="traits"></span>
     <span class="meta"></span>
     <div class="bar" title="energy"><i></i></div>
     <span class="mood"></span>
@@ -152,6 +160,7 @@
   <p id="ticker" class="ticker" aria-live="polite"></p>
   <button type="button" id="show-hud" class="icon" hidden aria-label="Show panel" title="Show panel (H)">☰</button>
 
+  <canvas id="minimap" class="minimap" width="192" height="108" aria-label="Map of the whole pond; click to jump"></canvas>
   <div class="zoom" role="group" aria-label="Zoom">
     <button type="button" id="zoom-out" class="icon" aria-label="Zoom out" title="Zoom out (-)">−</button>
     <button type="button" id="zoom-level" title="Reset zoom (0)">100%</button>
@@ -162,16 +171,16 @@
     inspired by <a href="https://github.com/argonautcode/animal-proc-anim" target="_blank" rel="noopener">argonautcode/animal-proc-anim</a>
   </footer>
 
-  <script src="js/core.js?v=3"></script>
-  <script src="js/raster.js?v=3"></script>
-  <script src="js/creatures.js?v=3"></script>
-  <script src="js/critters.js?v=3"></script>
-  <script src="js/wildlife.js?v=3"></script>
-  <script src="js/wildfish.js?v=3"></script>
-  <script src="js/sound.js?v=3"></script>
-  <script src="js/life.js?v=3"></script>
-  <script src="js/plants.js?v=3"></script>
-  <script src="js/scene.js?v=3"></script>
-  <script src="js/main.js?v=3"></script>
+  <script src="js/core.js?v=4"></script>
+  <script src="js/raster.js?v=4"></script>
+  <script src="js/creatures.js?v=4"></script>
+  <script src="js/critters.js?v=4"></script>
+  <script src="js/wildlife.js?v=4"></script>
+  <script src="js/wildfish.js?v=4"></script>
+  <script src="js/sound.js?v=4"></script>
+  <script src="js/life.js?v=4"></script>
+  <script src="js/plants.js?v=4"></script>
+  <script src="js/scene.js?v=4"></script>
+  <script src="js/main.js?v=4"></script>
 </body>
 </html>

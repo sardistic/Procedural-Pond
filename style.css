@@ -360,6 +360,30 @@ button.clock {
   color: var(--text);
 }
 
+.seg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.inspect .traits { color: #ffd166; }
+.inspect .traits:empty { display: none; }
+
+.minimap {
+  position: fixed;
+  right: 12px;
+  bottom: 64px;
+  width: 192px;
+  height: 108px;
+  image-rendering: pixelated;
+  border: 2px solid var(--edge);
+  box-shadow: 3px 3px 0 var(--ink);
+  background: var(--ink);
+  cursor: pointer;
+  touch-action: none;
+}
+
 #show-hud {
   position: fixed;
   top: 16px;
@@ -386,4 +410,5 @@ footer a { color: var(--text); }
   .zoom { bottom: 12px; }
   .ticker { bottom: 52px; max-width: calc(100vw - 32px); }
   .follow { top: auto; bottom: 90px; }
+  .minimap { width: 128px; height: 72px; bottom: 52px; }
 }
