@@ -15,8 +15,12 @@ fades and an optional light tint. The canvas is upscaled with
 `image-rendering: pixelated`. There is no WebGL.
 
 ## Fixed-size world, integer zoom, clipped rendering
-The world is a fixed buffer (`WORLD_SIZES`: 720x405, 960x540 or 1280x720) that
-does not depend on the window size. The canvas is shown with a CSS transform at
+The world is a buffer that does not change with window resizes. The default,
+`auto`, is half the window in each direction at load or at New pond, clamped to
+between 360x300 and 1400x900; share links carry it as `size=WxH`. Fixed
+presets are 720x405, 960x540 and 1280x720. The minimum zoom is `coverK`, where
+the pond covers the window, so there is never an empty border and every
+wheel or pinch lands on the pond. The canvas is shown with a CSS transform at
 a whole number `view.k` of screen pixels per world pixel. The default is one
 step past fitting the whole pond, so the world extends beyond the view. Each
 frame only the visible rectangle is rasterized (`Raster.setClip`, with a

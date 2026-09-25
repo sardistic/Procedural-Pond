@@ -5,11 +5,13 @@ const ctx = canvas.getContext('2d');
 
 const OPTS_KEY = 'procedural-pond.opts';
 const DEFAULT_OPTS = {
-  v: 3, world: 'medium', habitat: 'mixed', floor: 'sand', water: 'teal', light: 'cycle', dayLength: 180,
+  v: 4, world: 'auto', habitat: 'mixed', floor: 'sand', water: 'teal', light: 'cycle', dayLength: 180,
   current: 25, speed: 1, caustics: true, shadows: true, outlines: true, life: true, weather: true, sound: false,
 };
 // The pond is a fixed-size world, larger than the screen at the default zoom.
+// "Fit screen" makes it the window at 2x pixels, so zoom 2 fills the screen exactly.
 const WORLD_SIZES = {
+  auto: { label: 'Fit screen (2×)' },
   small: { label: 'Small', size: [720, 405] },
   medium: { label: 'Medium', size: [960, 540] },
   large: { label: 'Large', size: [1280, 720] },
@@ -34,8 +36,9 @@ function loadOpts() {
     const stored = JSON.parse(localStorage.getItem(OPTS_KEY) || '{}');
     if (!stored.v || stored.v < 2) delete stored.light; // older saves predate the cycle
     if (!stored.v || stored.v < 3) delete stored.pixel; // pixel size became zoom
+    if (!stored.v || stored.v < 4) delete stored.world; // world size now follows the screen by default
     if (FLOOR_ALIASES[stored.floor]) stored.floor = FLOOR_ALIASES[stored.floor];
-    return { ...DEFAULT_OPTS, ...stored, v: 3 };
+    return { ...DEFAULT_OPTS, ...stored, v: 4 };
   } catch { return { ...DEFAULT_OPTS }; }
 }
 function saveOpts() {
@@ -73,6 +76,17 @@ for (const [k, table] of [['floor', FLOORS], ['water', WATERS], ['light', LIGHTS
 }
 world.seed = (params.get('pond') || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40) || newSeedName();
 
+// Screen-sized worlds: half the window in each direction (2x pixels), within sane
+// bounds. A shared link carries the exact size so the recipient gets the same pond.
+const screenWorld = () => [clamp(Math.round(innerWidth / 2), 360, 1400), clamp(Math.round(innerHeight / 2), 300, 900)];
+world.autoSize = (() => {
+  const m = /^(\d{3,4})x(\d{3,4})$/.exec(params.get('size') || '');
+  if (!m) return screenWorld();
+  world.opts.world = 'auto';
+  return [clamp(+m[1], 360, 1400), clamp(+m[2], 300, 900)];
+})();
+const worldDims = () => (WORLD_SIZES[world.opts.world] || WORLD_SIZES.auto).size || world.autoSize;
+
 function lighting() {
   const o = world.opts;
   let tint = (LIGHTS[o.light] || LIGHTS.cycle).tint;
@@ -94,7 +108,7 @@ let image, out;
 // (Re)create the world buffers. The world only changes size when the World
 // option changes; window resizes just move the view.
 function layout(regen) {
-  const [W, H] = (WORLD_SIZES[world.opts.world] || WORLD_SIZES.medium).size;
+  const [W, H] = worldDims();
   if (W !== world.W || H !== world.H) {
     world.W = W; world.H = H;
     canvas.width = W; canvas.height = H;
@@ -313,7 +327,8 @@ function drawBones() {
 
 let last = performance.now(), countTimer = 0, mapTimer = 0;
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  // The first rAF timestamp can predate the load-time performance.now(); never step backwards.
+  const dt = clamp((now - last) / 1000, 0, 0.05);
   last = now;
   if (!world.paused) update(dt * world.opts.speed);
   updateCamera(dt);
@@ -381,10 +396,13 @@ function removeAt(x, y) {
 
 const view = { k: 3, tx: 0, ty: 0 };
 const zoomLabel = document.getElementById('zoom-level');
-const fitK = () => Math.max(1, Math.floor(Math.min(innerWidth / world.W, innerHeight / world.H)));
-const defaultK = () => fitK() + 1; // one step closer than "whole pond on screen"
+// Never zoom out past the point where the pond covers the whole window: no empty
+// border, and wheel/pinch gestures always land on the pond.
+const coverK = () => Math.max(1, Math.ceil(Math.min(16, Math.max(innerWidth / world.W, innerHeight / world.H)) - 1e-6));
+const defaultK = () => coverK() + 1; // one step in, so the pond carries on past the edges
 
 function applyView() {
+  if (view.k < coverK()) view.k = coverK();
   const w = world.W * view.k, h = world.H * view.k;
   view.tx = w <= innerWidth ? Math.round((innerWidth - w) / 2) : Math.round(clamp(view.tx, innerWidth - w, 0));
   view.ty = h <= innerHeight ? Math.round((innerHeight - h) / 2) : Math.round(clamp(view.ty, innerHeight - h, 0));
@@ -393,7 +411,7 @@ function applyView() {
 }
 
 function zoomTo(k, cx = innerWidth / 2, cy = innerHeight / 2) {
-  const nk = clamp(Math.round(k), 1, 16);
+  const nk = clamp(Math.round(k), coverK(), 16);
   view.tx = cx - (cx - view.tx) * (nk / view.k);
   view.ty = cy - (cy - view.ty) * (nk / view.k);
   view.k = nk;
@@ -678,6 +696,7 @@ function shareUrl() {
   u.search = ''; u.hash = '';
   u.searchParams.set('pond', world.seed);
   for (const k of ['habitat', 'floor', 'water', 'world']) if (world.opts[k] !== DEFAULT_OPTS[k]) u.searchParams.set(k, world.opts[k]);
+  if (world.opts.world === 'auto') u.searchParams.set('size', `${world.W}x${world.H}`);
   return u.toString();
 }
 
@@ -745,7 +764,12 @@ const rebake = () => { bakeBackground(world); paintMinimapBackground(); };
 $('opt-floor').addEventListener('change', (e) => { setOpt('floor', e.target.value); rebake(); });
 $('opt-water').addEventListener('change', (e) => { setOpt('water', e.target.value); rebake(); });
 $('opt-light').addEventListener('change', (e) => setOpt('light', e.target.value));
-$('opt-world').addEventListener('change', (e) => { setOpt('world', e.target.value); layout(true); });
+$('opt-world').addEventListener('change', (e) => {
+  setOpt('world', e.target.value);
+  if (e.target.value === 'auto') world.autoSize = screenWorld();
+  layout(true);
+  history.replaceState(null, '', new URL(shareUrl()).search);
+});
 
 // Switching habitat picks fitting water and floor, then regrows the pond from the same seed.
 function setHabitat(h) {
@@ -805,9 +829,10 @@ zoomLabel.addEventListener('click', resetView);
 $('clear').addEventListener('click', () => { release(); world.creatures = []; world.eggs = []; world.targets = {}; updateCounts(); });
 $('reset').addEventListener('click', () => {
   world.seed = newSeedName();
+  world.autoSize = screenWorld(); // a new pond fits the window as it is now
   world.current.base = rand(-PI, PI);
-  history.replaceState(null, '', new URL(shareUrl()).search);
   layout(true);
+  history.replaceState(null, '', new URL(shareUrl()).search);
 });
 $('share').addEventListener('click', async () => {
   const url = shareUrl();
@@ -875,7 +900,8 @@ addEventListener('keydown', (e) => {
 addEventListener('resize', () => applyView());
 
 setTool('feed');
-if (!params.get('pond')) history.replaceState(null, '', `?pond=${world.seed}${location.hash}`);
 layout(true);
+if (innerWidth < 600) setHud(false); // on phones the pond comes first; ☰ opens the panel
+if (!params.get('pond') || (world.opts.world === 'auto' && !params.get('size'))) history.replaceState(null, '', `${new URL(shareUrl()).search}${location.hash}`);
 if (location.hash.includes('bones')) setBones(true);
 requestAnimationFrame(frame);
