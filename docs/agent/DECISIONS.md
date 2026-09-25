@@ -36,8 +36,8 @@ The `Dockerfile` copies named site files only, so docs, tools and deploy
 config never become public. When adding a new top-level asset, add it to the
 `Dockerfile`. `deploy/nginx.conf` serves HTML with `no-cache` and JS/CSS for a
 week. Bump the `?v=N` query on script and style tags in `index.html` whenever
-those files change. The Content-Security-Policy only allows self-hosted scripts
-and Google Fonts.
+those files change. The Content-Security-Policy only allows self-hosted scripts, Google Fonts,
+and Cloudflare's Web Analytics beacon, which Cloudflare injects at the edge.
 
 ## Icons come from the renderer
 `tools/make-icons.js` renders a koi with the game's own code and writes
