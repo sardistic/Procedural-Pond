@@ -1,0 +1,15 @@
+{
+  "name": "Procedural Pond",
+  "short_name": "Pond",
+  "description": "A living pixel-art pond of procedurally animated animals that grow, breed, hunt and migrate.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0e3a46",
+  "theme_color": "#0e3a46",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

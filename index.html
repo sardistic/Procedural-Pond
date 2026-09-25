@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Procedural Pond · a living pixel-art aquarium</title>
+  <meta name="description" content="Watch a living pixel-art pond: procedurally animated koi, frogs, octopus and ever-new fish species that hunt, breed and migrate, right in your browser.">
+  <link rel="canonical" href="https://pond.sardistic.com/">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="author" content="sardistic">
+  <meta name="theme-color" content="#0e3a46">
+  <meta name="color-scheme" content="dark">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Procedural Pond">
+  <meta property="og:title" content="Procedural Pond · a living pixel-art aquarium">
+  <meta property="og:description" content="Procedurally animated koi, frogs, octopus and newly invented fish that grow, breed, hunt and migrate. Feed them, follow them, share your pond.">
+  <meta property="og:url" content="https://pond.sardistic.com/">
+  <meta property="og:image" content="https://pond.sardistic.com/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="A top-down pixel-art pond with koi, lily pads, a turtle and schooling fish">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Procedural Pond · a living pixel-art aquarium">
+  <meta name="twitter:description" content="Procedurally animated koi, frogs, octopus and newly invented fish that grow, breed, hunt and migrate.">
+  <meta name="twitter:image" content="https://pond.sardistic.com/og.png">
+  <meta name="twitter:image:alt" content="A top-down pixel-art pond with koi, lily pads, a turtle and schooling fish">
+
+  <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=3">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Procedural Pond",
+    "url": "https://pond.sardistic.com/",
+    "description": "A living pixel-art pond of procedurally animated animals. Koi, frogs, octopus, ducks and procedurally invented fish species grow, breed, hunt and migrate in a self-running ecosystem with a day/night cycle and weather.",
+    "applicationCategory": "EntertainmentApplication",
+    "genre": "Simulation",
+    "operatingSystem": "Any (runs in a web browser)",
+    "browserRequirements": "Requires JavaScript and HTML5 canvas",
+    "isAccessibleForFree": true,
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "image": "https://pond.sardistic.com/og.png",
+    "screenshot": "https://pond.sardistic.com/og.png",
+    "inLanguage": "en",
+    "author": { "@type": "Person", "name": "sardistic", "url": "https://sardistic.com/" },
+    "sameAs": ["https://github.com/sardistic/Procedural-Pond"]
+  }
+  </script>
+</head>
+<body>
+  <canvas id="pond" aria-label="A living pixel-art pond of procedurally animated animals"></canvas>
+  <div class="vignette" aria-hidden="true"></div>
+  <noscript>
+    <p class="noscript">Procedural Pond is a living pixel-art aquarium that runs in your browser. Please enable JavaScript to watch it.</p>
+  </noscript>
+
+  <aside id="hud">
+    <header>
+      <h1>Procedural Pond</h1>
+      <button type="button" id="clock" class="clock" title="Time of day. Click to switch cycle / day / dusk / night (L)">☀ 07:12</button>
+      <button type="button" id="collapse" class="icon" aria-label="Hide panel" title="Hide panel (H)">–</button>
+    </header>
+    <p class="hint" id="hint">click to feed · drag animals · scroll to zoom</p>
+    <p class="seed">pond <b id="seed-name"></b></p>
+
+    <details open>
+      <summary>Animals</summary>
+      <div class="grid2" id="animals"></div>
+      <p class="sub">Wild species <span id="wildcount"></span></p>
+      <ul class="wildlist" id="wildlist"></ul>
+      <p class="stats" id="stats"></p>
+      <button type="button" id="clear" class="wide">Clear animals</button>
+    </details>
+
+    <details>
+      <summary>Journal</summary>
+      <ol class="journal" id="journal"></ol>
+    </details>
+
+    <details>
+      <summary>Tools &amp; plants</summary>
+      <div class="grid3" id="tools"></div>
+    </details>
+
+    <details>
+      <summary>Scene</summary>
+      <div class="fields">
+        <label>Floor <select id="opt-floor"></select></label>
+        <label>Water <select id="opt-water"></select></label>
+        <label>Light <select id="opt-light"></select></label>
+        <label>Day length <input type="range" id="opt-day" min="60" max="600" step="30"><output></output></label>
+        <label>Pixels <select id="opt-pixel"></select></label>
+        <label>Current <input type="range" id="opt-current" min="0" max="100" step="5"><output></output></label>
+        <label>Speed <input type="range" id="opt-speed" min="0.25" max="3" step="0.25"><output></output></label>
+      </div>
+      <div class="grid3">
+        <button type="button" data-toggle="caustics">Caustics</button>
+        <button type="button" data-toggle="shadows">Shadows</button>
+        <button type="button" data-toggle="outlines">Outlines</button>
+        <button type="button" data-toggle="life" title="Hunger, growth, breeding, predators and migration">Life</button>
+        <button type="button" data-toggle="weather" title="Rain showers and wind gusts">Weather</button>
+      </div>
+      <button type="button" id="reset" class="wide">New pond</button>
+    </details>
+
+    <details class="about">
+      <summary>About</summary>
+      <h2>A living pixel-art pond</h2>
+      <p>Procedural Pond is a self-running aquarium in your browser. Every animal is a chain of joints that follows its head, the idea from argonautcode's procedural animation sketch, drawn by a tiny voxel renderer into chunky, shaded pixel art.</p>
+      <h3>What happens here</h3>
+      <ul>
+        <li>Koi, tetras, eels, axolotls, turtles, crabs, stingrays, frogs, snakes, snails, jellyfish, clownfish, pufferfish, an octopus, ducks, shrimp and dragonflies.</li>
+        <li>New fish species are invented as you watch, each with its own shape, colours, pattern and name.</li>
+        <li>Animals get hungry, grow up, lay eggs, pass their genes on, hunt, flee and eventually move on.</li>
+        <li>A day/night cycle with fireflies, rain showers, wind, ripples and an optional generative soundscape.</li>
+        <li>Every pond has a seed: share the link and friends get the same pond.</li>
+      </ul>
+      <p>Made by <a href="https://sardistic.com/">sardistic</a>. <a href="https://github.com/sardistic/Procedural-Pond">Source on GitHub</a>.</p>
+    </details>
+
+    <div class="grid3 foot">
+      <button type="button" id="bones" aria-pressed="false" title="Show the spine chains and leg IK (B)">Bones</button>
+      <button type="button" id="pause" aria-pressed="false" title="Pause (Space)">Pause</button>
+      <button type="button" id="snapshot" title="Save a PNG of the pond">Photo</button>
+      <button type="button" id="tour" aria-pressed="false" title="Let the camera wander between animals (T)">Tour</button>
+      <button type="button" id="sound" aria-pressed="false" title="Generative soundscape (M)">Sound</button>
+      <button type="button" id="share" title="Copy a link to this pond">Share</button>
+    </div>
+    <p class="keys">B bones · Space pause · L light · F follow · T tour · M sound · +/− zoom · H hide</p>
+  </aside>
+  <div id="inspect" class="inspect" hidden>
+    <b class="nm"></b>
+    <span class="sp"></span>
+    <span class="meta"></span>
+    <div class="bar" title="energy"><i></i></div>
+    <span class="mood"></span>
+  </div>
+  <div id="follow" class="follow" hidden>
+    <span></span>
+    <button type="button" id="follow-stop" title="Stop following (Esc)">Stop</button>
+  </div>
+  <p id="ticker" class="ticker" aria-live="polite"></p>
+  <button type="button" id="show-hud" class="icon" hidden aria-label="Show panel" title="Show panel (H)">☰</button>
+
+  <div class="zoom" role="group" aria-label="Zoom">
+    <button type="button" id="zoom-out" class="icon" aria-label="Zoom out" title="Zoom out (-)">−</button>
+    <button type="button" id="zoom-level" title="Reset zoom (0)">100%</button>
+    <button type="button" id="zoom-in" class="icon" aria-label="Zoom in" title="Zoom in (+)">+</button>
+  </div>
+
+  <footer>
+    inspired by <a href="https://github.com/argonautcode/animal-proc-anim" target="_blank" rel="noopener">argonautcode/animal-proc-anim</a>
+  </footer>
+
+  <script src="js/core.js?v=3"></script>
+  <script src="js/raster.js?v=3"></script>
+  <script src="js/creatures.js?v=3"></script>
+  <script src="js/critters.js?v=3"></script>
+  <script src="js/wildlife.js?v=3"></script>
+  <script src="js/wildfish.js?v=3"></script>
+  <script src="js/sound.js?v=3"></script>
+  <script src="js/life.js?v=3"></script>
+  <script src="js/plants.js?v=3"></script>
+  <script src="js/scene.js?v=3"></script>
+  <script src="js/main.js?v=3"></script>
+</body>
+</html>

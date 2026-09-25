@@ -1,0 +1,8 @@
+# Local agent working state: never committed
+docs/agent/HANDOFF.md
+.agent/runtime/
+
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
