@@ -43,7 +43,7 @@ function saveOpts() {
 }
 
 const world = {
-  W: 0, H: 0, t: 0, clock: 0.3, darkness: 0, light: null,
+  W: 0, H: 0, t: 0, clock: 0.4, darkness: 0, light: null, // start mid-morning
   raster: null, bg: null, bgLight: null, waterColor: 0, motes: null, wob: null, glints: [],
   caustic: makeCausticTile(),
   creatures: [], plants: [], pads: [], food: [], rocks: [], pebbles: [],
