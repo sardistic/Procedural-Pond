@@ -115,7 +115,7 @@ function recycleValue(c) {
   if (!c.life) return 0;
   const kind = c.species === 'tadpole' ? 'frog' : c.species, s = SPECIES_STATS[kind] || SPECIES_STATS.wild;
   const one = spawnCost(kind) / (s.group || 1), grown = 0.4 + 0.6 * Math.min(1, c.life.scale);
-  return Math.max(1, Math.round(one * 0.4 * grown + TIER_ESSENCE[tierOf(c.life.traits)]));
+  return Math.max(1, Math.round((one * 0.4 * grown + TIER_ESSENCE[tierOf(c.life.traits)]) * (typeof gradeWorth === 'function' ? gradeWorth(c.life.genome) : 1)));
 }
 
 // Bigger ponds hold more animals, so they'd out-earn small ones: points scale by the
@@ -132,7 +132,7 @@ function award(world, n, why, subject = null, opts = {}) {
   n = Math.round(n * (opts.flat ? 1 : difficulty(world).points * sizeFairness(world)));
   if (!G || n <= 0) return 0;
   G.points += n;
-  G.pearls += n;
+  G.pearls += typeof hasArtifact === 'function' && hasArtifact(world, 'pearlheart') ? Math.round(n * 1.25) : n; // the heart of pearl
   G.earned[why] = (G.earned[why] || 0) + n;
   const top = G.recent[0];
   if (top && top.why === why && world.t - top.t < 30) { top.n += n; top.t = world.t; } else {

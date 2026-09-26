@@ -23,14 +23,18 @@ const DEEP_COLOR = { salt: hexToInt('#02040e'), fresh: hexToInt('#050806'), mixe
 // ---- depth is the score -------------------------------------------------------------------------
 // A pond's score is its deepest point, in fathoms, rising through the real zones:
 // in salt water the twilight zone starts near 110 fathoms, the midnight zone 550 and
-// the abyss 2,200 (the hadal trenches beyond reach 6,000); a deep lake 60, a sunless
-// cave 300, a drowned cathedral 900. Between these points it rises geometrically.
+// the abyss 2,200, the hadal trench 6,000; then past any real sea: the black
+// below 20,000, the drowned city 80,000, the dreaming dark 400,000. Fresh water
+// runs shallower all the way. Between these points it rises geometrically; past
+// the last it keeps going, slowly and steadily (no runaway).
 const FATHOM_KNOTS = {
-  salt: [[0, 2], [2, 8], [5, 110], [11, 550], [22, 2200], [40, 6000]],
-  fresh: [[0, 1], [2, 4], [5, 60], [11, 300], [22, 900], [40, 1700]],
+  salt: [[0, 2], [2, 8], [5, 110], [11, 550], [22, 2200], [40, 6000], [70, 20000], [120, 80000], [200, 400000]],
+  fresh: [[0, 1], [2, 4], [5, 60], [11, 300], [22, 900], [40, 1700], [70, 6000], [120, 24000], [200, 120000]],
 };
+const FATHOM_TAIL = { salt: 2000, fresh: 600 }; // fathoms per unit of erosion past the last knot
 function fathomsOf(e, branch) {
-  const K = FATHOM_KNOTS[branch] || FATHOM_KNOTS.salt;
+  const K = FATHOM_KNOTS[branch] || FATHOM_KNOTS.salt, last = K[K.length - 1];
+  if (e > last[0]) return Math.round(last[1] + (e - last[0]) * (FATHOM_TAIL[branch] || FATHOM_TAIL.salt));
   let i = 0;
   while (i < K.length - 2 && e > K[i + 1][0]) i++;
   const [e0, f0] = K[i], [e1, f1] = K[i + 1], t = (e - e0) / (e1 - e0);
@@ -135,7 +139,8 @@ function updateErosion(world, dt) {
   const tideRate = !world.shore ? 0 : hab === 'fresh' ? 0.07 + 0.12 * tide.surf : 0.05 + 0.26 * tide.surf * Math.max(0.3, tide.range);
   // Time alive, structures built (deep ones more), and the pond's plant life.
   const builtRate = Math.min(0.1, (world.structures || []).reduce((a, s) => a + (STRUCTURES[s.kind].tier ? 0.03 : 0.012), 0));
-  const rates = { tide: tideRate, time: 0.05, built: builtRate, growth: 0.05 * (world.maturity ?? 1) };
+  const lode = typeof hasArtifact === 'function' && hasArtifact(world, 'lodestone') ? 1.5 : 1; // the lodestone of the deep
+  const rates = { tide: tideRate * lode, time: 0.05 * lode, built: builtRate * lode, growth: 0.05 * (world.maturity ?? 1) * lode };
   for (const [k, r] of Object.entries(rates)) { P[k] = (P[k] || 0) + r * days; E.acc += r * days; }
   const before = E.e;
   E.pts = pointsDepth(world.game ? world.game.points : 0);
@@ -188,10 +193,12 @@ function tierEta(world) {
 const etaLabel = (s) => (s == null ? '' : s < 90 ? 'about a minute' : s < 3600 ? `about ${Math.round(s / 60)} minutes` : `about ${(s / 3600).toFixed(s < 36000 ? 1 : 0)} hours`);
 
 // Spend essence to wear the pond faster.
-const deepenCost = (world) => 12 + 10 * (world.erosion ? world.erosion.tier : 0);
+// Wearing it deeper with essence gets dearer each time (a sink for a rich pond).
+const deepenCost = (world) => Math.round((12 + 10 * (world.erosion ? world.erosion.tier : 0)) * 1.15 ** ((world.erosion && world.erosion.bought) || 0));
 function deepenPond(world) {
   const cost = deepenCost(world);
   if (!spendEssence(world, cost)) return false;
+  world.erosion.bought = (world.erosion.bought || 0) + 1;
   deepenBy(world, 1, 'essence');
   world.erosion.next = 0;
   return true;

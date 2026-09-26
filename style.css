@@ -22,6 +22,14 @@ html, body {
   font-family: 'Silkscreen', ui-monospace, monospace;
 }
 
+.beyond {
+  position: fixed;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
 #pond {
   position: fixed;
   inset: 0;
@@ -627,6 +635,15 @@ output {
 .score-btn .prl b { color: #cfe8f0; }
 .score-btn .ess b, .score-top .ess { color: #c38bff; }
 .score-btn .cor b { color: #5af0a8; }
+.price.cor { color: #5af0a8; }
+.sky-artifacts { display: grid; gap: 6px; margin-top: 8px; }
+.sky-artifacts h3 { margin: 0; }
+.artifact { display: grid; gap: 3px; padding: 6px; border: 2px solid #3a6a5e; background: linear-gradient(135deg, #0a1a14, #10202a); }
+.artifact b { font-weight: 400; color: #8af0c0; }
+.artifact .note { margin: 0; }
+.artifact button { padding: 4px; box-shadow: none; }
+.artifact button.on { color: var(--hot); border-color: var(--hot); }
+.sc-boosts.grades .boost { min-width: 0; }
 .corrupt { display: inline-block; flex: none; width: 7px; height: 7px; margin: 0 3px 0 1px; transform: rotate(45deg); background: linear-gradient(135deg, #c0ffd8, #1a0e22 70%); box-shadow: 0 0 0 1px #3aff9a inset, 1px 1px 0 var(--ink); vertical-align: 0; }
 .essence { display: inline-block; flex: none; width: 7px; height: 7px; margin: 0 3px 0 1px; transform: rotate(45deg); background: linear-gradient(135deg, #f0d8ff, #9a5ae0); box-shadow: 1px 1px 0 var(--ink); vertical-align: 0; }
 .pearl, .score-btn .pearl { width: 7px; height: 7px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffffff, #cfe2ea 55%, #7d9aa6); box-shadow: 1px 1px 0 var(--ink); }

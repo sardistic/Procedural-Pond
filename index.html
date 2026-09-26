@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=17">
+  <link rel="stylesheet" href="style.css?v=18">
 
   <script type="application/ld+json">
   {
@@ -175,6 +175,7 @@
       <div class="tide-row"><span>Tide</span><div class="tidebar"><i id="tide-fill"></i></div></div>
       <p class="note" id="tide-text"></p>
       <p class="note" id="surf-text"></p>
+      <div id="sky-artifacts" class="sky-artifacts" hidden></div>
       <div class="fields">
         <label>Light <select id="opt-light"></select></label>
         <label>Day length <input type="range" id="opt-day" min="60" max="600" step="30"><output></output></label>
@@ -230,7 +231,10 @@
           <li>Corruption (the green diamond) comes from marked animals as they live and change. It buys the eldritch paths (in the depths), corrupted plants, the dark island, and eldritch traits on a marked animal's card.</li>
           <li>Popular, high-scoring ponds draw litter along the tide line: click it to clear it (a pearl or more each). Left alone it spoils the water, and a dirty, busy pond risks a blight at dawn (a bloom, or a sickness in a crowded species). Aerators make blights rarer.</li>
           <li>Structures and plants built in deep water let the pond hold more animals, draw deep life up, and in time bring deep species within reach without paying to unlock them. Anything left standing on the floor slowly scours it deeper.</li>
-          <li>All ponds share one long beach: from the end of yours, pull on past it (or click the tab there) and you're asked whether to walk into the next player's pond. You can look around but not touch anything, and go on to the one after. Return brings you home.</li>
+          <li>All ponds share one long beach: the next player's pond lies right past the end of yours. Drag on past the end and let go more than halfway, and you walk into it (clicking the tab there asks first). You can look around but not touch anything, walk on to the one after, or back home the same way.</li>
+          <li>Sinks for everything: the deepest tiers' structures (up to the Sleeper's cradle), trait trees ten levels deep, hunters (a predator's card: jaws, burst and senses for pearls, hunger, maw and tenacity for essence, contagion and devour for corruption), graded spawns (Good to Pristine), and deepening by hand.</li>
+          <li>Breeding habitats (spawning gravel, amphibian pool, reef nursery, brood chamber) let their kinds breed and lay more; what stands around one shapes the young, for better (glowing plants, springs, corals) or worse (litter, carrion, the idol). Crowded species fight and sicken; the last few are spared.</li>
+          <li>Rare genes are rare: gifts (iridescent, starry, titan …) are rarer than anything before, and curses (ravenous, barren, frail …) pass on too, far oftener if you run the pond fast or shorten its days. Fossils come in grades; a relic holds an artifact to call storms, tides and surf from the sky tracker.</li>
           <li>Animals like certain plants and rocks nearby (hover one to see), calm water, and their own kind of water. Comfortable, well-fed animals age slower and rarely wander off; aggressive water drives them away and keeps newcomers out. Spirulina keeps them fed for longer; brine shrimp brings them into breeding condition.</li>
         </ul>
       </details>
@@ -334,31 +338,36 @@
     </div>
   </div>
 
-  <script src="js/core.js?v=19"></script>
-  <script src="js/raster.js?v=19"></script>
-  <script src="js/creatures.js?v=19"></script>
-  <script src="js/critters.js?v=19"></script>
-  <script src="js/wildlife.js?v=19"></script>
-  <script src="js/wildfish.js?v=19"></script>
-  <script src="js/sound.js?v=19"></script>
-  <script src="js/life.js?v=19"></script>
-  <script src="js/plants.js?v=19"></script>
-  <script src="js/scene.js?v=19"></script>
-  <script src="js/structures.js?v=19"></script>
-  <script src="js/erosion.js?v=19"></script>
-  <script src="js/sky.js?v=19"></script>
-  <script src="js/ecology.js?v=19"></script>
-  <script src="js/game.js?v=19"></script>
-  <script src="js/deep.js?v=19"></script>
-  <script src="js/remains.js?v=19"></script>
-  <script src="js/eldritch.js?v=19"></script>
-  <script src="js/coast.js?v=19"></script>
-  <script src="js/gulls.js?v=19"></script>
-  <script src="js/traits.js?v=19"></script>
-  <script src="js/save.js?v=19"></script>
-  <script src="js/link.js?v=19"></script>
-  <script src="js/net.js?v=19"></script>
-  <script src="js/hud.js?v=19"></script>
-  <script src="js/main.js?v=22"></script>
+  <script src="js/core.js?v=20"></script>
+  <script src="js/raster.js?v=20"></script>
+  <script src="js/creatures.js?v=20"></script>
+  <script src="js/critters.js?v=20"></script>
+  <script src="js/wildlife.js?v=20"></script>
+  <script src="js/wildfish.js?v=20"></script>
+  <script src="js/sound.js?v=20"></script>
+  <script src="js/life.js?v=20"></script>
+  <script src="js/plants.js?v=20"></script>
+  <script src="js/scene.js?v=20"></script>
+  <script src="js/structures.js?v=20"></script>
+  <script src="js/erosion.js?v=20"></script>
+  <script src="js/sky.js?v=20"></script>
+  <script src="js/ecology.js?v=20"></script>
+  <script src="js/game.js?v=20"></script>
+  <script src="js/deep.js?v=20"></script>
+  <script src="js/remains.js?v=20"></script>
+  <script src="js/eldritch.js?v=20"></script>
+  <script src="js/coast.js?v=20"></script>
+  <script src="js/gulls.js?v=20"></script>
+  <script src="js/traits.js?v=20"></script>
+  <script src="js/save.js?v=20"></script>
+  <script src="js/link.js?v=20"></script>
+  <script src="js/abyss.js?v=20"></script>
+  <script src="js/quirks.js?v=20"></script>
+  <script src="js/hunters.js?v=20"></script>
+  <script src="js/habitats.js?v=20"></script>
+  <script src="js/artifacts.js?v=20"></script>
+  <script src="js/net.js?v=20"></script>
+  <script src="js/hud.js?v=20"></script>
+  <script src="js/main.js?v=23"></script>
 </body>
 </html>

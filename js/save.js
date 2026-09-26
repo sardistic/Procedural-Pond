@@ -105,6 +105,7 @@ function serializePond(world) {
     structures: (world.structures || []).map((s) => ({ k: s.kind, x: r2(s.x), y: r2(s.y), s: s.seed, born: r2(s.born), lv: s.lv, stack: s.stack, branch: s.branch, blv: s.blv })),
     litter: (world.litter || []).map((l) => ({ k: l.k, x: r2(l.x), y: r2(l.y), b: r2(l.born), hp: l.hp, s: l.seed })),
     blight: world.blight || null,
+    meta: world.meta || null,
     fossils: (world.fossils || []).map((f) => ({ x: r2(f.x), y: r2(f.y), k: f.kind, g: f.gene, born: r2(f.born) })),
     erosion: world.erosion || null, expandPx: world.expandPx || 0, base: world.expandPx ? baseSize(world) : [world.W, world.H],
     hatchery: world.hatchery ? { ...world.hatchery, stock: packStock(world.hatchery) } : null,
@@ -124,6 +125,8 @@ function serializePond(world) {
         name: c.life.name, age: r2(c.life.age), energy: r2(c.life.energy), cooldown: r2(c.life.cooldown), fed: r2(c.life.fed || 0), comfort: r2(c.life.comfort ?? 0.5),
         corruption: c.life.genome.eld ? r2(c.life.corruption || 0) : undefined, bound: c.life.bound || undefined,
         absorbed: c.life.absorbed || undefined, ascended: c.life.ascended || undefined, boosts: c.life.boosts || undefined,
+        quirks: c.life.quirks && c.life.quirks.length ? c.life.quirks : undefined, ill: c.life.ill && c.life.ill.length ? c.life.ill : undefined,
+        hunt: c.life.hunt || undefined, hunter: c.life.hunter || undefined, madCount: c.life.madCount || undefined,
         lifespan: r2(c.life.lifespan), gen: c.life.gen, scale: c.life.scale, old: !!c.life.old, inbred: r2(c.life.inbred || 0),
         genome: c.life.genome, traits: c.life.traits, parents: c.life.parents,
       },
@@ -194,6 +197,7 @@ function restorePond(world, d) {
     s.lv ? { lv: s.lv } : {}, s.stack ? { stack: s.stack } : {}, s.branch ? { branch: s.branch, blv: s.blv || 1 } : {}));
   world.litter = (d.litter || []).filter((l) => LITTER[l.k]).map((l) => new Litter(l.k, l.x, l.y, l.b ?? world.days, l.hp, l.s));
   world.blight = d.blight || null;
+  world.meta = d.meta || null;
   Object.assign(world, { riverW: 0, islandKey: null, scourKey: null }); // the river is re-cut at its width for the pond's age
   world.fossils = (d.fossils || []).map((f) => new Fossil(f.x, f.y, f.k, f.g, f.born));
   world.remains = [];
@@ -238,8 +242,10 @@ function restorePond(world, d) {
       name: r.L.name, energy: r.L.energy, cooldown: r.L.cooldown, lifespan: r.L.lifespan, old: r.L.old, parents: r.L.parents || null,
       fed: r.L.fed || 0, comfort: r.L.comfort ?? 0.5, corruption: r.L.corruption || 0, bound: !!r.L.bound,
       absorbed: r.L.absorbed || 0, ascended: !!r.L.ascended, boosts: r.L.boosts || null,
+      quirks: r.L.quirks || [], ill: r.L.ill || [], hunt: r.L.hunt || null, hunter: !!r.L.hunter, madCount: r.L.madCount || 0,
     });
-    if (c.life.genome.eld || c.life.ascended) c.life.traits = eldTraits(c.life);
+    c.life.traits = eldTraits(c.life);
+    refreshBuffs(c);
     c.sn = r.sn ?? null;
     return c;
   });

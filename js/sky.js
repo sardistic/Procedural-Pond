@@ -53,6 +53,7 @@ function updateSky(world, dt) {
   tide.flow = cos * tide.range; // + flooding toward the beach, - ebbing away
   const surf = tidal ? (0.3 + 0.7 * m.spring) * SURF_BASE[hab] + Math.max(0, world.weather.gust) * 0.35 + world.weather.rain * 0.25 : 0;
   tide.surf = clamp(surf, 0, 1.4);
+  if (tidal && typeof metaTide === 'function') metaTide(world, tide); // the moonstone, the tide bell, the wind conch
   tide.wave = (tide.wave + dt * (0.2 + tide.surf * 0.12)) % 1000;
 
   const spring = m.spring > 0.75, which = Math.abs(m.age - 0.5) < 0.25 ? 'full' : 'new';

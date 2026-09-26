@@ -43,10 +43,14 @@ const fill = (s, c) => s.replace('{n}', c.life.name).replace('{l}', describe(c).
 const eldPath = (world, k) => !!(world.game && world.game.eldPaths && world.game.eldPaths[k]);
 
 // Visible traits with the mark's stage: 'touched' becomes 'changed', then 'eldritch' (and 'ascended').
+// (Also everything an animal picks up in life: madness quirks, infections, the hunt.)
 function eldTraits(L) {
   const t = traitsOf(L.genome), st = eldStage(L);
   if (st > 0) t[t.indexOf('touched')] = st === 2 ? 'eldritch' : 'changed';
   if (L.ascended && !t.includes('ascended')) t.unshift('ascended');
+  for (const q of L.quirks || []) t.push(q);
+  for (const i of L.ill || []) t.push(i);
+  if (L.hunter) t.push('awakened');
   return t;
 }
 
@@ -107,6 +111,7 @@ function eldRate(world, c) {
   for (const m of world.creatures) {
     if (DEEP[m.species] && DEEP[m.species].mythic && Math.hypot(m.x - c.x, m.y - c.y) < 160) { k *= 2; break; }
   }
+  if (typeof eldStructRate === 'function') k *= eldStructRate(world, c); // the gate, the cradle
   return L.bound ? 0 : k;
 }
 
@@ -161,7 +166,7 @@ function tryAbsorb(world, c, st) {
   if (!kin.length) return;
   const target = world.targets[c.species] || kin.length;
   const over = kin.length + 1 > target * 1.15 || world.creatures.length > (world.maxPop || 130) * 0.85;
-  if (Math.random() > (over ? 0.03 : 0.002) * st * (eldPath(world, 'hunger') ? 2 : 1)) return;
+  if (Math.random() > (over ? 0.03 : 0.002) * st * (eldPath(world, 'hunger') ? 2 : 1) * (c.life.quirks && c.life.quirks.includes('many-mouthed') ? 2 : 1)) return;
   let best = null, bd = 70 * 70;
   for (const o of kin) { const d = (o.x - c.x) ** 2 + (o.y - c.y) ** 2; if (d < bd) { bd = d; best = o; } }
   if (!best) return;
@@ -225,13 +230,14 @@ function updateEldritch(world, dt) {
     L.corruption = Math.min(1, (L.corruption || 0) + eldRate(world, c) * step);
     const now = eldStage(L);
     // Corruption, the resource: the marked yield it as they live, more as they change.
-    gainCorruption(world, 0.003 * (1 + now * 2) * (L.ascended ? 3 : 1) * thin * step, null, { quiet: true });
+    gainCorruption(world, 0.003 * (1 + now * 2) * (L.ascended ? 3 : 1) * (L.quirks && L.quirks.includes('dreaming') ? 2 : 1) * thin * step, null, { quiet: true });
     if (now !== before) {
       L.traits = eldTraits(L);
       const rare = L.traits.find((t) => RARE_OUTLINE[t]);
       if (rare && c.id) { OUTLINE[c.id] = RARE_OUTLINE[rare]; THICK[c.id] = 1; }
       logEvent(world, fill(ELD_STAGE_LINES[now], c), c, { cat: 'rare', pri: now === 2 ? 3 : 2 });
       scatterFrom(world, c, now === 2 ? 3.5 : 2.5);
+      if (typeof maybeQuirk === 'function') maybeQuirk(world, c); // sometimes something stays with it
       gainCorruption(world, now === 2 ? 15 : 5, c);
       if (now === 2) {
         const G = world.game, key = `eld:${c.species === 'wild' ? c.sp.id : c.species}`, first = !G.seen.includes(key);

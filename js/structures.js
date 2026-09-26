@@ -548,6 +548,8 @@ function dawnStructures(world) {
   applyStains(world);
   dawnFinds(world);
   if (typeof dawnCoast === 'function') dawnCoast(world);
+  if (typeof dawnAbyss === 'function') dawnAbyss(world);
+  if (typeof dawnQuirks === 'function') dawnQuirks(world);
 }
 
 // Plants take root around structures, rocks and plants that have been there a while.

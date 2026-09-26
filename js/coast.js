@@ -119,7 +119,7 @@ const islandRadius = (world, s) => s.R * (1 + 0.16 * ((s.stack || 1) - 1)) * isl
 function applyIslands(world) {
   const shore = world.shore, { W, H } = world;
   for (const s of world.structures || []) {
-    if (s.kind !== 'island') continue;
+    if (s.kind !== 'island' || s.anim) continue;
     const R0 = islandRadius(world, s), R = R0 * 1.4, top = 0.97 + 0.06 * ((s.stack || 1) - 1);
     for (let y = Math.max(0, Math.floor(s.y - R)); y <= Math.min(H - 1, Math.ceil(s.y + R)); y++) {
       for (let x = Math.max(0, Math.floor(s.x - R)); x <= Math.min(W - 1, Math.ceil(s.x + R)); x++) {
@@ -312,7 +312,7 @@ function blightStep(world) {
   }
   for (const c of world.creatures) {
     const L = c.life;
-    if (!L || c.dying || c.leaving || c.absorbing) continue;
+    if (!L || c.dying || c.leaving || c.absorbing || (typeof lastFew === 'function' && lastFew(world, c))) continue;
     if (B.k === 'bloom' ? (L.energy < 0.35 || L.age > L.lifespan * 0.85) && Math.random() < 0.002 : c.species === B.sp && Math.random() < 0.0015) {
       c.dying = { t: 0, why: B.k === 'bloom' ? `choked in the ${BLIGHTS.bloom.label(world).replace(/^an? /, '')}` : 'of sickness' };
     }
@@ -442,8 +442,8 @@ function scourSources(world) {
     if (k > 0.05) out.push({ x, y, k: Math.round(k * 10) / 10 });
   };
   for (const s of world.structures || []) add(s.x, s.y, s.born, 1);
-  for (const r of world.rocks) if (r.oi == null) add(r.x, r.y, r.born ?? world.days - 30, 0.5);
-  for (const p of world.plants) if (p.oi == null) add(p.x, p.y, p.born, 0.3);
+  for (const r of world.rocks || []) if (r.oi == null) add(r.x, r.y, r.born ?? world.days - 30, 0.5);
+  for (const p of world.plants || []) if (p.oi == null) add(p.x, p.y, p.born, 0.3);
   return out;
 }
 const scourKey = (world) => scourSources(world).map((s) => `${Math.round(s.x)},${Math.round(s.y)},${s.k}`).join(';');

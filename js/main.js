@@ -51,7 +51,7 @@ const world = {
   moon0: 0, tide0: 0, moon: null, tide: { level: 0.5, range: 0, rising: true, flow: 0, surf: 0, wave: 0 },
   shore: null, shoreSide: 3, shoreN: [0, 1], bgDry: null, spawning: 0, spawnNight: -1, records: null, journalSeq: 0,
   raster: null, bg: null, bgLight: null, waterColor: 0, motes: null, wob: null, glints: [],
-  caustic: makeCausticTile(),
+  caustic: makeCausticTile(), clouds: makeCloudTile(),
   creatures: [], plants: [], pads: [], food: [], rocks: [], pebbles: [],
   effects: [], eggs: [], swarms: [], targets: {}, journal: [], journalDirty: false, seed: '', maxPop: 200, structures: [], hatchery: null, remains: [], fossils: [],
   weather: { rain: 0, target: 0, next: rand(60, 140), gust: 0 },
@@ -130,10 +130,10 @@ function layout(regen) {
     out = new Uint32Array(image.data.buffer);
     regen = true;
   }
-  world.maxPopBase = Math.round(W * H / 2400);
+  world.maxPopBase = Math.min(460, Math.round(W * H / 2400)); // (a vast pond still has a limit)
   world.maxPop = world.maxPopBase + (world.maxPopBonus || 0); // what's built in the deep lets it hold more
   // The minimap keeps the pond's shape.
-  mini.height = clamp(Math.round(mini.width * H / W), 54, 200);
+  mini.height = clamp(Math.round(mini.width * (view.r % 2 ? W / H : H / W)), 54, 200);
   mini.style.height = `${mini.height}px`;
   if (regen) buildPond();
   bakeBackground(world);
@@ -164,8 +164,8 @@ function spawn(kind, x, y, how = 'founder') {
 // Buying spawn with essence (the dock's spawn card). Each animal in it settles in
 // with its species' chance (lower in harder habitats, higher when hardy); those
 // that don't fade away and half their share comes back.
-function buyAnimal(kind, enh = [], ancient = null) {
-  const price = spawnPrice(kind, enh);
+function buyAnimal(kind, enh = [], ancient = null, grade = 0) {
+  const price = Math.round(spawnPrice(kind, enh) * GRADE_PRICE[grade]); // a guaranteed grade costs more
   if (world.creatures.length >= world.maxPop + 60) { showTicker('The pond is full: no room for more'); return false; }
   if (!spendEssence(world, price)) { notEnough(price, 'essence'); return false; }
   const [x, y] = openSpot();
@@ -176,9 +176,11 @@ function buyAnimal(kind, enh = [], ancient = null) {
   group.forEach((c, i) => {
     // The first of the spawn carries the fossil's gene, and shows it.
     if (i === 0 && ai >= 0) { initLife(c, { alpha: 0, genome: applyAncientGene(genomeFor(c.seed), ancient) }); genes.splice(ai, 1); } else initLife(c, { alpha: 0 });
+    meetGrade(c, grade);
     applyEnhancements(c, enh);
+    spawnFx(c);
     noteBorn(world, c, 'bought');
-    if (Math.random() >= p && !(i === 0 && ai >= 0)) { c.unsettled = 3; failed++; } // a fossil's gift always takes
+    if (Math.random() >= p * (c.life && c.life.genome.sickly ? CURSES.sickly.settle : 1) && !(i === 0 && ai >= 0)) { c.unsettled = 3; failed++; } // a fossil's gift always takes
   });
   world.creatures.push(...group);
   const ok = group.length - failed, label = describe(group[0]).label;
@@ -384,6 +386,8 @@ function update(dt) {
   updateEldritch(world, dt);
   updateCoast(world, dt);
   updateGulls(world, dt);
+  updateQuirks(world, dt);
+  updateBalance(world, dt);
   updateZones(world, dt);
   updateGame(world, dt);
   for (const c of world.creatures) {
@@ -399,6 +403,7 @@ function update(dt) {
   for (const p of world.plants) p.update(dt, world);
   for (const p of world.pads) p.update(dt, world);
   updateStructures(world, dt);
+  updateBuildAnims(dt);
   updatePlantLife(world, dt);
   for (const f of world.food) f.update(dt, world);
   world.food = world.food.filter((f) => !f.eaten);
@@ -449,10 +454,10 @@ function drawGlints() {
 
 // The part of the world on screen, in world pixels.
 function visibleRect() {
-  const k = view.k, W = world.W, H = world.H;
+  const W = world.W, H = world.H, a = screenToWorld(0, 0), b = screenToWorld(innerWidth, innerHeight);
   return [
-    clamp(Math.floor(-view.tx / k), 0, W - 1), clamp(Math.floor(-view.ty / k), 0, H - 1),
-    clamp(Math.ceil((innerWidth - view.tx) / k), 0, W - 1), clamp(Math.ceil((innerHeight - view.ty) / k), 0, H - 1),
+    clamp(Math.floor(Math.min(a[0], b[0])), 0, W - 1), clamp(Math.floor(Math.min(a[1], b[1])), 0, H - 1),
+    clamp(Math.ceil(Math.max(a[0], b[0])), 0, W - 1), clamp(Math.ceil(Math.max(a[1], b[1])), 0, H - 1),
   ];
 }
 
@@ -464,7 +469,7 @@ function render(full = false) {
   r.setClip(rect[0] - 30, rect[1] - 30, rect[2] + 3, rect[3] + 3);
   r.begin();
   for (const p of world.plants) drawGrown(r, p, t);
-  for (const s of world.structures) if (DRAW[s.kind]) DRAW[s.kind](r, s, t, world);
+  for (const s of world.structures) { if (s.anim) drawBuildAnim(r, s, t); else if (DRAW[s.kind]) DRAW[s.kind](r, s, t, world); }
   drawRiver(r, world, t);
   for (const l of world.litter) l.draw(r, t, world);
   for (const rm of world.remains) rm.draw(r, t);
@@ -479,6 +484,7 @@ function render(full = false) {
     if (THICK[c.id]) anyThick = true;
     c.draw(r, t, world);
     if (c.life && c.life.genome.eld) drawEldritch(r, c, t, world);
+    if (c.life) drawQuirks(r, c, t);
   }
   r.alpha = 1;
   for (const e of world.eggs) e.draw(r, t);
@@ -504,13 +510,20 @@ function render(full = false) {
     shore: world.shore, bgDry: world.bgDry, tide: world.tide.level, surf: world.tide.surf, wave: world.tide.wave,
     depth: world.depth, deepColor: DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed,
     voidSkin: world.eldMarks && world.eldMarks.length || world.plants.some((p) => p.tr && p.tr.eld) ? VOID_SKIN : null,
-    swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6],
+    swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6], clouds: world.clouds, sky: skyReflection(light), skyK: 1 - world.weather.rain * 0.7,
   }, rect);
   drawGlints();
   if (world.bones) drawBones();
   if (full || world.bones) ctx.putImageData(image, 0, 0);
   else ctx.putImageData(image, 0, 0, rect[0], rect[1], rect[2] - rect[0] + 1, rect[3] - rect[1] + 1);
   updateSkyHud(light);
+}
+
+// The colour calm water reflects: a pale day sky, warm at dawn and dusk, deep blue at night.
+const SKY_DAY = hexToInt('#d8eaf4'), SKY_DUSK = hexToInt('#f0b890'), SKY_NIGHT = hexToInt('#2a3452');
+function skyReflection(light) {
+  const d = light.darkness || 0, dusk = Math.max(0, 1 - Math.abs(d - 0.45) * 3);
+  return mixColor(mixColor(SKY_DAY, SKY_NIGHT, d), SKY_DUSK, dusk * 0.6);
 }
 
 // A plant drawn at its size as it grows (and shrinks as it dies back).
@@ -564,6 +577,7 @@ function frame(now) {
   last = now;
   if (!world.paused) update(dt * world.opts.speed);
   updateCamera(dt);
+  updateGlide(dt);
   render();
   updateCard(dt);
   Sound.update(world, world.paused ? 0 : dt, visibleRect(), view.k);
@@ -609,6 +623,13 @@ const TOOLS = {
   snow: { label: 'Marine snow', food: 'snow', price: 4, tier: 3, spread: 22, n: 9, hint: 'marine snow drifts down slowly over a wide patch: food that reaches the deep' },
   blackcoral: { ...plantTool('blackcoral', 'Black coral'), habitat: 'salt', tier: 3, deepMin: 0.3 },
   glowcap: { ...plantTool('glowcap', 'Glowcaps'), habitat: 'fresh', tier: 3, deepMin: 0.3 },
+  chum: { label: 'Chum', food: 'chum', price: 25, tier: 5, n: 5, spread: 6, hint: 'chum: a bloody feast; hunters and the deep come to it' },
+  tubeworms: { ...plantTool('tubeworms', 'Tube worms'), habitat: 'salt', tier: 5, deepMin: 0.5 },
+  paleroots: { ...plantTool('paleroots', 'Pale roots'), habitat: 'fresh', tier: 5, deepMin: 0.5 },
+  sealily: { ...plantTool('sealily', 'Sea lilies'), habitat: 'salt', tier: 6, deepMin: 0.6 },
+  weepmoss: { ...plantTool('weepmoss', 'Weeping moss'), habitat: 'fresh', tier: 6, deepMin: 0.6 },
+  starweed: { ...plantTool('starweed', 'Star-weed'), tier: 7, deepMin: 0.6 },
+  offering: { label: 'Offering', food: 'offering', price: 120, tier: 7, n: 4, spread: 5, hint: 'offerings: the marked that eat them change faster, and the pond yields corruption' },
   rock: {
     label: 'Rock', price: PLANT_PRICE.rock, likedBy: 'rock',
     place: (x, y) => { const rk = makeRock(x, y, rand(5, 10)); rk.born = world.days; world.rocks.push(rk); bakeBackground(world); paintMinimapBackground(); },
@@ -616,7 +637,7 @@ const TOOLS = {
 };
 // Structures (the Build section): bought with pearls, some also with essence.
 for (const [kind, def] of Object.entries(STRUCTURES)) {
-  TOOLS[`build-${kind}`] = { label: def.label, build: kind, price: def.pearls, essence: def.essence, likedBy: kind, hint: `click to build: ${def.desc}` };
+  TOOLS[`build-${kind}`] = { label: def.label, build: kind, price: def.pearls, essence: def.essence, corruption: def.corruption, tier: def.tier, habitat: def.habitat, likedBy: kind, hint: `click to build: ${def.desc}` };
 }
 
 // Deepening: the world grows toward the deep side by a fraction of its original
@@ -640,6 +661,72 @@ function expandWorld(frac, why) {
   saveNow();
 }
 
+// ---- arrivals: each structure comes into the pond in its own way -----------------------------------
+// An island rises out of a boil of bubbles; a ship sinks down from the surface and
+// settles in a cloud of silt; the deep monuments rise slowly out of the dark; the
+// rest push up out of the floor. Until it's done it's drawn live (scaled, lifted),
+// then baked into the floor like the others.
+const BUILD_ANIM = { island: 5, ship: 4.5, gate: 7, cradle: 9, spire: 5, rootcathedral: 5, brinepool: 3, ossuary: 3.5 };
+function startBuildAnim(s) {
+  s.anim = { t: 0, dur: BUILD_ANIM[s.kind] || 2.5 };
+  if (STRUCTURES[s.kind].tier >= 5) Sound.omen(s.x, s.y);
+}
+
+function updateBuildAnims(dt) {
+  for (const s of world.structures) {
+    const A = s.anim;
+    if (!A) continue;
+    A.t += dt;
+    const u = Math.min(1, A.t / A.dur), R = STRUCTURES[s.kind].size;
+    if (s.kind === 'island') {
+      if (Math.random() < dt * 40) addBubbles(world, s.x + rand(-1, 1) * s.R * (0.3 + u), s.y + rand(-1, 1) * s.R * (0.3 + u), 1, 2);
+      if (Math.random() < dt * 5) addRipple(world, s.x + rand(-12, 12), s.y + rand(-12, 12), 1.2 + u, true);
+    } else if (s.kind === 'ship') {
+      if (Math.random() < dt * 14) addBubbles(world, s.x + rand(-R * 0.7, R * 0.7), s.y + rand(-R * 0.4, R * 0.4), 44 * (1 - u) + 2, 1);
+      if (A.t < 0.2 && !A.splashed) { A.splashed = true; addRipple(world, s.x, s.y, 3); }
+    } else if (Math.random() < dt * 10) addBubbles(world, s.x + rand(-R, R) * 0.6, s.y + rand(-R, R) * 0.6, 1, 1);
+    if (A.t >= A.dur) {
+      delete s.anim;
+      // It settles: a ring of silt and bubbles, and it's part of the floor now.
+      for (let k = 0; k < 14; k++) { const a = k / 14 * TAU; addBubbles(world, s.x + Math.cos(a) * R, s.y + Math.sin(a) * R, 1, 1); }
+      addRipple(world, s.x, s.y, s.kind === 'ship' || s.kind === 'island' ? 3 : 1.5);
+      structuresChanged(!!STRUCTURES[s.kind].shore);
+    }
+  }
+}
+
+function drawBuildAnim(r, s, t) {
+  const u = Math.min(1, s.anim.t / s.anim.dur), e = u * u * (3 - 2 * u);
+  let k = 1, kz = e, zoff = 0;
+  if (s.kind === 'ship') { kz = 1; zoff = (1 - e) * 42; } // sinking down from the surface
+  else if (s.kind === 'island') { k = 0.35 + 0.65 * e; } // rising, and spreading as it comes up
+  else if (STRUCTURES[s.kind].tier >= 5) kz = e * e; // the deep ones rise slow, then all at once
+  r.setScale(s.x, s.y, k, Math.max(0.02, kz), zoff);
+  if (s.kind === 'island') r.ellipsoid(s.x, s.y, s.R * 1.15, s.R * 1.15, 0, 0, 4, SM.sand, animNext(s)(SM.sand));
+  const next = animNext(s);
+  withSeed(`bake/${s.seed}`, () => BAKE[s.kind](r, s, next));
+  r.setScale();
+}
+// Outline ids for a structure drawn live, the same ones every frame.
+function animNext(s) {
+  const ids = s.animIds || (s.animIds = []);
+  let i = 0;
+  return (m) => { if (!ids[i]) ids[i] = newId(outlineOf(m)); return ids[i++]; };
+}
+
+// A new animal arrives in a ring of bubbles and a flash; something from the deep
+// rises trailing them; the mythic make the whole pond scatter.
+function spawnFx(c) {
+  const b = c.body, x = c.x, y = c.y;
+  for (let k = 0; k < 10; k++) { const a = k / 10 * TAU; addBubbles(world, x + Math.cos(a) * 6, y + Math.sin(a) * 6, 1, 1); }
+  addRipple(world, x, y, 1.5, true);
+  if (world.effects.length < 200) for (let k = 0; k < 4; k++) world.effects.push(new Sparkle(x + rand(-4, 4), y + rand(-4, 4), (c.z || 4) + 4));
+  if (DEEP[c.species]) {
+    if (b) for (let k = 0; k < 8; k++) addBubbles(world, b.x[0] + rand(-3, 3), b.y[0] + rand(-3, 3), 1, 2);
+    if (DEEP[c.species].mythic) { scatterFrom(world, c, 4); Sound.omen(x, y); }
+  }
+}
+
 // Rebuild what depends on the floor after structures change (islands reshape the beach).
 function structuresChanged(reshape) {
   if (reshape && world.shore) makeShore(world);
@@ -656,12 +743,15 @@ function build(kind, x, y) {
   if (why) { showTicker(`Can't build a ${def.label.toLowerCase()} here: ${why}`); return; }
   if (world.game.pearls < def.pearls) { notEnough(def.pearls, 'pearls'); return; }
   if ((world.game.essence || 0) < def.essence) { notEnough(def.essence, 'essence'); return; }
+  if (def.corruption && (world.game.corruption || 0) < def.corruption) { notEnough(def.corruption, 'corruption'); return; }
+  if (def.corruption) spendCorruption(world, def.corruption);
   spend(world, def.pearls);
   spendEssence(world, def.essence);
   floatAward(x, y, `−${def.pearls}`, 'spend');
-  world.structures.push(makeStructure(kind, world, x, y));
+  const made = makeStructure(kind, world, x, y);
+  startBuildAnim(made); // it arrives in its own way, then settles into the floor
+  world.structures.push(made);
   if (kind === 'hatchery' && !world.hatchery) world.hatchery = newHatchery();
-  structuresChanged(!!def.shore);
   logEvent(world, `You built ${withArticle(def.label.toLowerCase())}: ${def.desc}`, null, { cat: 'pond', pri: 2 });
   if (kind === 'hatchery') setHatchery(true);
 }
@@ -736,35 +826,57 @@ function removeAt(x, y) {
 // The canvas holds the whole world; a CSS transform scales it by a whole number
 // k of screen pixels per world pixel (so the art stays crisp) and pans it.
 
-const view = { k: 3, tx: 0, ty: 0 };
+const view = { k: 3, tx: 0, ty: 0, r: 0, free: false };
+// The view can be turned a quarter at a time (r), so a neighbour's pond shows with
+// its beach on the same side of the screen as yours. World ↔ screen:
+const ROT_SIDE = [[0, 1, 2, 3], [2, 3, 1, 0], [1, 0, 3, 2], [3, 2, 0, 1]]; // where each side of the pond ends up on screen
+const displaySide = (side, r = view.r) => ROT_SIDE[r][side];
+const screenSize = (W = world.W, H = world.H, r = view.r) => (r % 2 ? [H * view.k, W * view.k] : [W * view.k, H * view.k]);
+function worldToScreen(x, y) {
+  const k = view.k, W = world.W, H = world.H;
+  return view.r === 1 ? [view.tx + k * (H - y), view.ty + k * x] : view.r === 2 ? [view.tx + k * (W - x), view.ty + k * (H - y)]
+    : view.r === 3 ? [view.tx + k * y, view.ty + k * (W - x)] : [view.tx + k * x, view.ty + k * y];
+}
+function screenToWorld(sx, sy) {
+  const u = (sx - view.tx) / view.k, v = (sy - view.ty) / view.k, W = world.W, H = world.H;
+  return view.r === 1 ? [v, H - u] : view.r === 2 ? [W - u, H - v] : view.r === 3 ? [W - v, u] : [u, v];
+}
+const canvasTransform = (tx, ty, k, r, W, H) => (r === 1 ? `translate(${tx + H * k}px, ${ty}px) scale(${k}) rotate(90deg)`
+  : r === 2 ? `translate(${tx + W * k}px, ${ty + H * k}px) scale(${k}) rotate(180deg)`
+  : r === 3 ? `translate(${tx}px, ${ty + W * k}px) scale(${k}) rotate(270deg)` : `translate(${tx}px, ${ty}px) scale(${k})`);
 const zoomLabel = document.getElementById('zoom-level');
 // Never zoom out past the point where the pond covers the whole window: no empty
 // border, and wheel/pinch gestures always land on the pond.
-const coverK = () => Math.max(1, Math.ceil(Math.min(16, Math.max(innerWidth / world.W, innerHeight / world.H)) - 1e-6));
+const coverK = () => { const [w, h] = view.r % 2 ? [world.H, world.W] : [world.W, world.H]; return Math.max(1, Math.ceil(Math.min(16, Math.max(innerWidth / w, innerHeight / h)) - 1e-6)); };
 const defaultK = () => coverK() + 1; // one step in, so the pond carries on past the edges
 
+// (Walking the beach keeps the zoom you walked in with, even where a pond is narrower than the screen.)
+const minK = () => (view.minK ? Math.min(view.minK, coverK()) : coverK());
 function applyView() {
-  if (view.k < coverK()) view.k = coverK();
-  const w = world.W * view.k, h = world.H * view.k;
-  view.tx = w <= innerWidth ? Math.round((innerWidth - w) / 2) : Math.round(clamp(view.tx, innerWidth - w, 0));
-  view.ty = h <= innerHeight ? Math.round((innerHeight - h) / 2) : Math.round(clamp(view.ty, innerHeight - h, 0));
-  canvas.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.k})`;
+  if (view.k < minK()) view.k = minK();
+  const [w, h] = screenSize(), ax = beachAxisX();
+  // (While you walk along the beach, the camera may run on past the end, into the next pond.)
+  const freeX = view.free && ax, freeY = view.free && !ax;
+  view.tx = freeX ? Math.round(view.tx) : w <= innerWidth ? Math.round((innerWidth - w) / 2) : Math.round(clamp(view.tx, innerWidth - w, 0));
+  view.ty = freeY ? Math.round(view.ty) : h <= innerHeight ? Math.round((innerHeight - h) / 2) : Math.round(clamp(view.ty, innerHeight - h, 0));
+  canvas.style.transform = canvasTransform(view.tx, view.ty, view.k, view.r, world.W, world.H);
   zoomLabel.textContent = `${view.k}×`;
+  if (typeof placeBeyond === 'function') placeBeyond();
 }
 
 function zoomTo(k, cx = innerWidth / 2, cy = innerHeight / 2) {
-  const nk = clamp(Math.round(k), coverK(), 16);
-  view.tx = cx - (cx - view.tx) * (nk / view.k);
-  view.ty = cy - (cy - view.ty) * (nk / view.k);
+  const nk = clamp(Math.round(k), minK(), 16), [wx, wy] = screenToWorld(cx, cy);
   view.k = nk;
+  const [sx, sy] = worldToScreen(wx, wy);
+  view.tx += cx - sx; view.ty += cy - sy;
   applyView();
 }
 
 const zoomStep = (dir, cx, cy) => zoomTo(view.k + dir, cx, cy);
 
 function centerOn(x, y) {
-  view.tx = innerWidth / 2 - x * view.k;
-  view.ty = innerHeight / 2 - y * view.k;
+  const [sx, sy] = worldToScreen(x, y);
+  view.tx += innerWidth / 2 - sx; view.ty += innerHeight / 2 - sy;
   applyView();
 }
 
@@ -790,9 +902,7 @@ const touches = new Map();
 let press = null, pinch = null;
 
 function toWorld(e) {
-  const rect = canvas.getBoundingClientRect();
-  world.pointer.x = (e.clientX - rect.left) / rect.width * world.W;
-  world.pointer.y = (e.clientY - rect.top) / rect.height * world.H;
+  [world.pointer.x, world.pointer.y] = screenToWorld(e.clientX, e.clientY);
   world.pointer.inside = true;
 }
 
@@ -864,12 +974,16 @@ canvas.addEventListener('pointermove', (e) => {
     const dx = e.clientX - press.cx, dy = e.clientY - press.cy;
     if (!press.panning && dx * dx + dy * dy > 36) { press.panning = true; canvas.style.cursor = 'move'; stopFollow(); }
     if (press.panning) {
-      const wx = press.tx + dx, wy = press.ty + dy;
+      const wx = press.tx + dx, wy = press.ty + dy, ax = beachAxisX();
+      view.glide = null; view.free = false;
       view.tx = wx; view.ty = wy; applyView();
-      // Past the end of the beach: the next pond along (see neighbours). Only when
-      // the view was already at that end when the drag began, so ordinary panning never counts.
-      const over = beachAxisX() ? wx - view.tx : wy - view.ty;
-      press.over = (over > 0 && press.ends.west) || (over < 0 && press.ends.east) ? over : 0;
+      // Past the end of the beach: the next pond along (see neighbours). Only when the
+      // view was already at that end when the drag began, so ordinary panning never counts;
+      // once what's beyond is drawn, the camera walks on into it.
+      const over = ax ? wx - view.tx : wy - view.ty, side = over > 0 ? 'west' : 'east';
+      press.over = over && press.ends[side] ? over : 0;
+      if (press.over && BEACH[side] && BEACH[side].snap) { view.free = true; if (ax) view.tx = wx; else view.ty = wy; applyView(); }
+      else if (press.over && BEACH[side]) ensureBeyond(side);
       edgePull(press.over);
     }
     return;
@@ -886,7 +1000,8 @@ function pointerEnd(e) {
   touches.delete(e.pointerId);
   if (touches.size < 2) pinch = null;
   if (press) clearTimeout(press.longT);
-  if (press && press.panning && Math.abs(press.over) >= edgePullNeeded()) askNeighbour(press.over > 0 ? 'west' : 'east');
+  // Let go more than about halfway across and you're there; sooner, and you spring back.
+  if (press && press.panning && view.free) { if (!(Math.abs(press.over) >= crossNeeded() && crossTo(press.over > 0 ? 'west' : 'east'))) glideToRest(); }
   edgePull(0);
   if (press && press.done) press = null; // a long press opened a card
   if (press && !press.panning && e.type === 'pointerup') {
@@ -988,8 +1103,14 @@ const TENSION = hexToInt('#ef3a3a'), FRESH_TINT = hexToInt('#5ad25a'), SALT_TINT
 
 // Each minimap pixel averages a 3x3 sample of its patch of pond, once as water and
 // once as dry sand; which one it shows follows the tide.
+// (Drawn the pond's own way round, then turned with the view: see miniDims and miniMatrix.)
+const miniDims = () => (view.r % 2 ? [mini.height, mini.width] : [mini.width, mini.height]);
+const miniMatrix = () => {
+  const [DW, DH] = miniDims();
+  return view.r === 1 ? [0, 1, -1, 0, DH, 0] : view.r === 2 ? [-1, 0, 0, -1, DW, DH] : view.r === 3 ? [0, -1, 1, 0, 0, DW] : [1, 0, 0, 1, 0, 0];
+};
 function paintMinimapBackground() {
-  const mw = mini.width, mh = mini.height, { W, H, bg, bgDry, shore } = world, water = world.waterColor;
+  const [mw, mh] = miniDims(), { W, H, bg, bgDry, shore } = world, water = world.waterColor;
   const deep = DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed;
   miniCell = new Int32Array(mw * mh); miniWet = new Uint32Array(mw * mh); miniDry = new Uint32Array(mw * mh);
   const avg = (cs) => {
@@ -1026,7 +1147,7 @@ function refreshMinimapBackground() {
   const key = `${tideL}|${layer}|${layer === 'map' ? 0 : Math.floor(world.t)}`;
   if (key === miniKey) return;
   miniKey = key;
-  const mw = mini.width, mh = mini.height, img = new ImageData(mw, mh), px = new Uint32Array(img.data.buffer);
+  const [mw, mh] = miniDims(), img = new ImageData(mw, mh), px = new Uint32Array(img.data.buffer);
   for (let k = 0; k < px.length; k++) {
     const p = miniCell[k], dry = shore && shore[p] > tideL;
     let c = dry ? miniDry[k] : miniWet[k];
@@ -1052,8 +1173,9 @@ function setMiniLayer(i) {
 }
 
 function drawMinimap() {
-  const mw = mini.width, mh = mini.height, sx = mw / world.W, sy = mh / world.H;
+  const [mw, mh] = miniDims(), sx = mw / world.W, sy = mh / world.H;
   refreshMinimapBackground();
+  mctx.setTransform(...miniMatrix());
   mctx.drawImage(miniBg, 0, 0);
   for (const c of world.creatures) {
     if (c.species === 'gnat' || c.species === 'firefly') continue;
@@ -1066,12 +1188,15 @@ function drawMinimap() {
   mctx.strokeStyle = '#ffd166';
   mctx.lineWidth = 1;
   mctx.strokeRect(Math.round(x0 * sx) + 0.5, Math.round(y0 * sy) + 0.5, Math.max(2, Math.round((x1 - x0) * sx)) - 1, Math.max(2, Math.round((y1 - y0) * sy)) - 1);
+  mctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 function miniJump(e) {
-  const r = mini.getBoundingClientRect();
+  const r = mini.getBoundingClientRect(), [DW, DH] = miniDims();
+  const X = (e.clientX - r.left) / r.width * mini.width, Y = (e.clientY - r.top) / r.height * mini.height;
+  const [u, v] = view.r === 1 ? [Y, DH - X] : view.r === 2 ? [DW - X, DH - Y] : view.r === 3 ? [DW - Y, X] : [X, Y];
   stopFollow();
-  centerOn((e.clientX - r.left) / r.width * world.W, (e.clientY - r.top) / r.height * world.H);
+  centerOn(u / DW * world.W, v / DH * world.H);
   drawMinimap();
 }
 mini.addEventListener('pointerdown', (e) => { mini.setPointerCapture(e.pointerId); miniJump(e); });
@@ -1082,21 +1207,27 @@ document.getElementById('map-layer').addEventListener('click', () => {
 });
 
 // ---- neighbours: the shared beach ----------------------------------------------------------------
-// Every pond lies on one long beach with the others, in the order they were
-// made. Drag past the end of your beach and you walk into the next pond along:
-// someone else's, run here from its owner's latest save (the master copy on the
-// server) and brought up to date as they play. You can look around, follow
-// animals and read cards, but not touch anything. Drag on past its far end for
-// the next one, or back (or press Return) to go home.
+// Every pond lies on one long beach with the others, in the order they were made.
+// Past each end of your beach lies the next pond along, shown right there beside
+// yours at the same zoom and turned so its beach runs on from yours. Drag on past
+// the end (starting from the end) and the camera walks into it; let go more than
+// halfway across and you're there: that pond comes alive in place, run from its
+// owner's latest save (the master copy on the server, re-applied as they play),
+// to look at but not touch. Let go sooner and you spring back. The pond you left
+// waits behind you the same way, so walking home is just as seamless.
 const NB = { west: null, east: null, at: 0, busy: false };
-// How far to pull past the end: about half the screen, and never less than 320 px.
-const edgePullNeeded = () => Math.max(320, 0.45 * (beachAxisX() ? innerWidth : innerHeight));
+// What lies past each end of the beach on screen ('west' is left or up, 'east' right or down):
+// { id, info, home, save, snap: { canvas, W, H, r }, loading, rect }.
+const BEACH = { west: null, east: null };
+let homeInfo = null; // your own pond, while you're walking: { seed, id, path }
+const crossNeeded = () => Math.max(300, 0.45 * (beachAxisX() ? innerWidth : innerHeight));
+const edgePullNeeded = crossNeeded;
 // Whether the view is already at either end of the beach.
 function viewAtEnds() {
-  const ax = beachAxisX(), w = world.W * view.k, h = world.H * view.k;
+  const ax = beachAxisX(), [w, h] = screenSize();
   return ax ? { west: view.tx >= -1, east: view.tx <= innerWidth - w + 1 } : { west: view.ty >= -1, east: view.ty <= innerHeight - h + 1 };
 }
-const beachAxisX = () => (world.shoreSide ?? 3) >= 2; // a beach along the top or bottom runs left to right
+const beachAxisX = () => displaySide(world.shoreSide ?? 3) >= 2; // a beach along the top or bottom of the screen runs left to right
 
 async function refreshNeighbours() {
   if (NB.busy || !Net.base || IS_BOT) return;
@@ -1104,22 +1235,186 @@ async function refreshNeighbours() {
   const id = world.observe ? world.observe.id : world.link && world.link.id;
   const r = await fetchNeighbours(id);
   Object.assign(NB, { west: r.west, east: r.east, at: Date.now(), busy: false });
+  for (const side of ['west', 'east']) {
+    const cur = BEACH[side], n = NB[side];
+    if (cur && cur.back) continue; // the pond you came from stays where it is
+    if (!n) { BEACH[side] = null; continue; }
+    if (cur && cur.id === n.id) { cur.info = n; continue; }
+    BEACH[side] = { id: n.id, info: n, home: !!(homeInfo && n.id === homeInfo.id) };
+  }
   edgeHints();
+}
+
+// Render another pond from its save, whole, in its own orientation (for the view beyond the end).
+function snapshotPond(save) {
+  const keepWild = WILD_SPECIES.slice(), keepEco = { ...ECO }, [W, H] = save.size;
+  const pw = {
+    W, H, seed: save.seed, opts: { ...world.opts, ...save.opts }, shoreSide: save.shoreSide, expandPx: save.expandPx || 0,
+    creatures: [], food: [], eggs: [], effects: [], swarms: [], targets: {}, journal: [], glints: [], structures: [], remains: [], fossils: [], litter: [],
+    rocks: [], plants: [], pads: [], pebbles: [],
+    tide: { ...world.tide }, weather: { rain: 0, target: 0, next: 30, gust: 0 }, current: { s: 0, angle: 0, x: 0, y: 0, base: 0 },
+    pointer: { inside: false, x: -99, y: -99 }, days: 0, clock: 0.4, darkness: world.darkness, raster: new Raster(W, H), maturity: 1,
+    nearestFood: () => null,
+  };
+  try {
+    restorePond(pw, save);
+    pw.tide = { ...world.tide }; // the same tide both sides of the beach
+    bakeBackground(pw);
+    const r = pw.raster, t = world.t;
+    r.setClip(0, 0, W - 1, H - 1);
+    r.begin();
+    for (const p of [...pw.plants, ...pw.pads]) { const g = p.growth ?? 1; if (g < 0.999) r.setScale(p.x, p.y, Math.max(0.1, g)); p.draw(r, t, pw); r.setScale(); }
+    for (const st of pw.structures) if (DRAW[st.kind]) DRAW[st.kind](r, st, t, pw);
+    for (const c of pw.creatures) { r.alpha = 1; c.draw(r, t, pw); }
+    r.alpha = 1;
+    const cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    const g = cv.getContext('2d'), img = g.createImageData(W, H), px = new Uint32Array(img.data.buffer), water = WATERS[pw.opts.water] || WATERS.teal, light = world.light || lighting();
+    r.compose(px, {
+      bg: pw.bg, bgLight: pw.bgLight, caustic: world.caustic, t, outline: OUTLINE, emissive: EMISSIVE, fade: FADE, thick: THICK, anyThick: false, tint: light.tint,
+      caustics: false, causticT: water.caustic, shadows: true, outlines: true, fog: { color: pw.waterColor, amount: water.fog }, wob: null,
+      shore: pw.shore, bgDry: pw.bgDry, tide: pw.tide.level, surf: 0, wave: 0, depth: pw.depth, deepColor: DEEP_COLOR[pw.opts.habitat] || DEEP_COLOR.mixed,
+      voidSkin: null, swell: 0.3, swellDir: pw.shoreN || [0, 1],
+    });
+    g.putImageData(img, 0, 0);
+    return { canvas: cv, W, H, shoreSide: save.shoreSide };
+  } finally {
+    WILD_SPECIES.length = 0; WILD_SPECIES.push(...keepWild); Object.assign(ECO, keepEco);
+  }
+}
+
+// The pond you're in, as it looks right now, whole (it waits behind you when you walk on).
+function captureSnap() {
+  render(true);
+  const cv = document.createElement('canvas');
+  cv.width = world.W; cv.height = world.H;
+  cv.getContext('2d').drawImage(canvas, 0, 0);
+  return { canvas: cv, W: world.W, H: world.H, shoreSide: world.shoreSide, r: view.r };
+}
+
+// Fetch and draw what lies past one end (once, when you come near it).
+async function ensureBeyond(side) {
+  const B = BEACH[side];
+  if (!B || B.snap || B.loading) return;
+  B.loading = true;
+  try {
+    const got = B.home ? null : await fetchPond(B.id), save = B.home ? loadSave(homeInfo.seed) : got && got.save;
+    if (!save || !isSave(save)) return;
+    if (got) B.updated = got.updated;
+    await new Promise((res) => setTimeout(res, 0)); // (let the frame finish before the heavy drawing)
+    const snap = snapshotPond(save);
+    // Turned so its beach is on the same side of the screen as this one's.
+    const want = displaySide(world.shoreSide);
+    snap.r = [0, 1, 2, 3].find((r) => ROT_SIDE[r][snap.shoreSide] === want) || 0;
+    B.save = save; B.snap = snap;
+  } finally {
+    B.loading = false;
+  }
+  placeBeyond();
+}
+
+// Where the ponds beyond each end sit on screen: beside this one along the beach, their beaches lined up with its.
+const beyondEl = {};
+for (const side of ['west', 'east']) {
+  const cv = document.createElement('canvas');
+  cv.className = 'beyond';
+  cv.hidden = true;
+  canvas.before(cv);
+  beyondEl[side] = cv;
+}
+function placeBeyond() {
+  const ax = beachAxisX(), [w, h] = screenSize(), ds = displaySide(world.shoreSide ?? 3);
+  for (const side of ['west', 'east']) {
+    const B = BEACH[side], el = beyondEl[side];
+    if (!B || !B.snap) { el.hidden = true; continue; }
+    const S = B.snap, [bw, bh] = screenSize(S.W, S.H, S.r);
+    let x, y;
+    if (ax) { x = side === 'west' ? view.tx - bw : view.tx + w; y = ds === 3 ? view.ty + h - bh : view.ty; }
+    else { y = side === 'west' ? view.ty - bh : view.ty + h; x = ds === 1 ? view.tx + w - bw : view.tx; }
+    B.rect = [x, y];
+    if (el.snapOf !== S) { el.width = S.W; el.height = S.H; el.getContext('2d').drawImage(S.canvas, 0, 0); el.snapOf = S; }
+    el.style.transform = canvasTransform(x, y, view.k, S.r, S.W, S.H);
+    el.hidden = x > innerWidth || y > innerHeight || x + bw < 0 || y + bh < 0;
+  }
+}
+
+// Walk into the pond past one end: it comes alive exactly where its picture was.
+function crossTo(side) {
+  const B = BEACH[side];
+  if (!B || !B.snap || (!B.save && !B.home)) return false;
+  const other = side === 'west' ? 'east' : 'west', k = view.k;
+  placeBeyond();
+  const [bx, by] = B.rect;
+  if (!world.observe) { saveNow(); homeInfo = { seed: world.seed, id: world.link && world.link.id, path: world.link ? `/${world.link.id}` : `/?pond=${encodeURIComponent(world.seed)}` }; }
+  const leaving = { id: world.observe ? world.observe.id : homeInfo.id, home: !world.observe, back: true, snap: captureSnap(), info: { depth: pondFathoms(world), habitat: world.opts.habitat } };
+  const d = B.home ? loadSave(homeInfo.seed) : B.save;
+  if (!d) return false;
+  hideCreature(); hideObject(); closeSpawnCard(); setHatchery(false); setEvo(false);
+  world.observe = B.home ? null : { id: B.id, updated: B.updated || Date.now(), home: homeInfo, homeId: homeInfo.id, dir: side };
+  world.noSave = !B.home;
+  document.body.classList.toggle('observing', !B.home);
+  Object.assign(world.opts, d.opts);
+  world.seed = d.seed; world.shoreSide = d.shoreSide; world.expandPx = d.expandPx || 0; world.autoSize = (d.base || d.size).slice();
+  world.resume = d;
+  world.quietRestore = true;
+  view.r = B.snap.r;
+  layout(true);
+  world.quietRestore = false;
+  // Exactly where its picture was, at the same zoom, then settle into it.
+  view.minK = k;
+  view.k = k; view.tx = bx; view.ty = by; view.free = true;
+  applyView();
+  BEACH[other] = leaving;
+  BEACH[side] = null;
+  glideToRest();
+  if (B.home) {
+    homeInfo = null;
+    $('observe-bar').hidden = true;
+    updateLink();
+    logEvent(world, 'You walked back along the beach, home to your own pond', null, { cat: 'pond', pri: 1 });
+  } else {
+    $('observe-name').textContent = B.id;
+    $('observe-bar').hidden = false;
+    history.replaceState(null, '', `/${B.id}?observe=1`);
+    logEvent(world, `You walked along the beach into ${B.id}, someone else's pond. Look around; nothing here is yours to touch`, null, { cat: 'pond', pri: 2 });
+  }
+  NB.at = 0; // look up what's beyond this one
+  refreshNeighbours();
+  return true;
+}
+
+// The camera settles back inside the pond (after a short pull, or after crossing).
+function glideToRest() {
+  const f = view.free, tx = view.tx, ty = view.ty;
+  view.free = false; applyView();
+  const to = [view.tx, view.ty];
+  view.tx = tx; view.ty = ty; view.free = f || true;
+  applyView();
+  view.glide = to;
+}
+function updateGlide(dt) {
+  const g = view.glide;
+  if (!g) return;
+  // (At least a pixel a frame: the view is kept to whole pixels, so a smaller step would stall.)
+  const a = Math.min(1, dt * 8), step = (v, to) => (Math.abs(to - v) <= 1 ? to : v + Math.sign(to - v) * Math.max(1, Math.abs(to - v) * a));
+  view.tx = step(view.tx, g[0]); view.ty = step(view.ty, g[1]);
+  if (view.tx === g[0] && view.ty === g[1]) { view.glide = null; view.free = false; }
+  applyView();
 }
 
 // The tab at each end of the beach, naming the pond beyond.
 function edgeHints() {
-  const ax = beachAxisX(), w = world.W * view.k, h = world.H * view.k;
+  const ax = beachAxisX(), ends = viewAtEnds();
   for (const dir of ['west', 'east']) {
-    const el = $(`edge-${dir}`), n = NB[dir];
-    el.hidden = !n;
-    if (!n) continue;
+    const el = $(`edge-${dir}`), B = BEACH[dir];
+    el.hidden = !B;
+    if (!B) continue;
     el.classList.toggle('vertical', !ax);
-    const home = world.observe && n.id === world.observe.homeId;
-    el.querySelector('b').textContent = home ? 'your pond' : n.id;
-    el.querySelector('span').textContent = home ? 'drag here to go home' : `${(n.depth || 1).toLocaleString()} fm · ${HABITATS[n.habitat] || ''} · drag to visit`;
-    const atEnd = ax ? (dir === 'west' ? view.tx >= -1 : view.tx <= innerWidth - w + 1) : (dir === 'west' ? view.ty >= -1 : view.ty <= innerHeight - h + 1);
-    el.classList.toggle('near', atEnd);
+    const info = B.info || {};
+    el.querySelector('b').textContent = B.home ? 'your pond' : B.id;
+    el.querySelector('span').textContent = B.home ? 'drag on past the end to walk home' : `${(info.depth || 1).toLocaleString()} fm · ${HABITATS[info.habitat] || ''} · drag on past the end to walk over`;
+    el.classList.toggle('near', ends[dir]);
+    if (ends[dir]) ensureBeyond(dir); // near the end: draw what's beyond it
   }
 }
 
@@ -1127,44 +1422,36 @@ function edgePull(over) {
   const dir = over > 0 ? 'west' : 'east';
   for (const d of ['west', 'east']) {
     const el = $(`edge-${d}`);
-    const k = d === dir && NB[d] ? clamp(Math.abs(over) / edgePullNeeded(), 0, 1) : 0;
+    const k = d === dir && BEACH[d] ? clamp(Math.abs(over) / crossNeeded(), 0, 1) : 0;
     el.style.setProperty('--pull', k.toFixed(2));
     el.classList.toggle('pulling', k > 0.05);
     el.classList.toggle('ready', k >= 1);
   }
 }
 
-// Pulling all the way (or clicking the tab) only asks; going takes a click on Go.
+// Clicking a tab asks first; Go walks you over (the camera slides into it).
 function askNeighbour(dir) {
-  const n = NB[dir];
-  if (!n || HOME !== '/') return;
-  const home = world.observe && n.id === world.observe.homeId;
-  $('nb-ask-text').textContent = home ? 'Walk back home to your pond?' : `Walk along the beach into ${n.id}? It's someone else's pond: you can look, but not touch.`;
+  const B = BEACH[dir];
+  if (!B || HOME !== '/') return;
+  $('nb-ask-text').textContent = B.home ? 'Walk back home to your pond?' : `Walk along the beach into ${B.id}? It's someone else's pond: you can look, but not touch.`;
   $('nb-ask').dataset.dir = dir;
   $('nb-ask').hidden = false;
   $('nb-go').focus();
 }
-document.getElementById('nb-go').addEventListener('click', () => { document.getElementById('nb-ask').hidden = true; goNeighbour(document.getElementById('nb-ask').dataset.dir); });
+document.getElementById('nb-go').addEventListener('click', async () => {
+  const dir = document.getElementById('nb-ask').dataset.dir;
+  document.getElementById('nb-ask').hidden = true;
+  await ensureBeyond(dir);
+  crossTo(dir);
+});
 document.getElementById('nb-stay').addEventListener('click', () => { document.getElementById('nb-ask').hidden = true; });
 for (const d of ['west', 'east']) document.getElementById(`edge-${d}`).addEventListener('click', () => askNeighbour(d));
 
-// Walk into the next pond along (or back into your own).
-function goNeighbour(dir) {
-  const n = NB[dir];
-  if (!n || HOME !== '/') return;
-  const home = world.observe ? world.observe.home : { path: world.link ? `/${world.link.id}` : `/?pond=${encodeURIComponent(world.seed)}`, id: world.link && world.link.id };
-  const arrive = dir === 'east' ? 'west' : 'east'; // come in at the near end of theirs
-  if (!world.observe) saveNow();
-  world.noSave = true;
-  try { sessionStorage.setItem('pond.home', JSON.stringify(home)); } catch { /* private mode: Return still works from the address */ }
-  document.body.classList.add('leaving');
-  if (home.id && n.id === home.id) location.assign(`${home.path}${home.path.includes('?') ? '&' : '?'}edge=${arrive}`);
-  else location.assign(`/${n.id}?observe=1&edge=${arrive}`);
-}
-
 document.getElementById('observe-home').addEventListener('click', () => goHome());
 function goHome() {
-  const home = world.observe && world.observe.home;
+  const side = ['west', 'east'].find((s) => BEACH[s] && BEACH[s].home && BEACH[s].snap);
+  if (side && crossTo(side)) return;
+  const home = (world.observe && world.observe.home) || homeInfo;
   world.noSave = true;
   location.assign(home ? home.path : '/');
 }
@@ -1175,23 +1462,23 @@ async function observeSync(dt) {
   if (!world.observe || (observeTimer -= dt) > 0) return;
   observeTimer = 60;
   const got = await fetchPond(world.observe.id);
-  if (!got || !(got.updated > world.observe.updated + 120000)) return;
+  if (!got || !(got.updated > world.observe.updated + 120000) || view.free) return;
   world.observe.updated = got.updated;
-  const cx = (innerWidth / 2 - view.tx) / view.k, cy = (innerHeight / 2 - view.ty) / view.k, k = view.k;
+  const [cx, cy] = screenToWorld(innerWidth / 2, innerHeight / 2), k = view.k, r = view.r;
   world.resume = got.save;
   world.quietRestore = true;
   layout(true);
   world.quietRestore = false;
-  view.k = k;
+  view.k = k; view.r = r;
   centerOn(cx, cy);
   showTicker(`${world.observe.id} has moved on: brought up to date from its owner's pond`);
 }
 
-// Start at one end of the beach (arriving from a neighbour).
+// Start at one end of the beach (arriving from a neighbour by a link).
 function startAtEdge(edge) {
-  const ax = beachAxisX(), m = 0.18;
-  const x = ax ? (edge === 'west' ? world.W * m : world.W * (1 - m)) : world.W / 2, y = ax ? world.H / 2 : edge === 'west' ? world.H * m : world.H * (1 - m);
-  centerOn(x, y);
+  const ax = beachAxisX(), [w, h] = screenSize();
+  if (ax) view.tx = edge === 'west' ? 0 : innerWidth - w; else view.ty = edge === 'west' ? 0 : innerHeight - h;
+  applyView();
 }
 
 // ---- HUD ----------------------------------------------------------------------
@@ -1262,7 +1549,8 @@ for (const [name, t] of Object.entries(TOOLS)) {
     b.append(Object.assign(document.createElement('b'), { className: t.price ? 'price' : 'price free', textContent: t.price ? t.price : 'free' }));
     b.title = t.price ? `${t.label}: ${t.price} pearls${t.essence ? ` and ${t.essence} essence` : ''}` : `${t.label}: free`;
   }
-  if (t.essence) b.append(Object.assign(document.createElement('b'), { className: 'price ess', textContent: t.essence }));
+  if (t.essence) b.append(Object.assign(document.createElement('b'), { className: 'price ess', textContent: fmtShort(t.essence) }));
+  if (t.corruption) b.append(Object.assign(document.createElement('b'), { className: 'price cor', textContent: fmtShort(t.corruption) }));
   if (t.build) b.title += ` · ${STRUCTURES[t.build].desc}`;
   b.addEventListener('click', () => setTool(name));
   $(t.build ? 'builds' : 'tools').append(b);

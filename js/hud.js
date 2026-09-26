@@ -388,7 +388,7 @@ function renderCensus() {
         const b = el('button', c.life.traits.length ? 'member rare' : 'member');
         b.type = 'button';
         b.title = 'Follow';
-        b.append(el('b', null, c.life.name), el('span', 'sub', `${d.label === SPECIES[kind]?.label ? '' : `${d.label} · `}${d.stage} · gen ${d.gen} · ${ageLabel(d.age)}`),
+        b.append(el('b', null, c.life.name), el('span', 'sub', `${d.label === SPECIES[kind]?.label ? '' : `${d.label} · `}${d.stage} · gen ${d.gen} · ${ageLabel(d.age)} · ${GRADES[gradeOf(c.life.genome)].toLowerCase()}`),
           energyBar(d.energy), colored('span', 'mood', [d.traits.length && `✦ ${TIERS[d.tier]} ${d.traits.join(' ')}`, d.mood, comfortWord(d.comfort), d.fed && 'well fed'].filter(Boolean).join(' · ')));
         b.addEventListener('click', () => { if (alive(c)) { follow(c); showCreature(c); } });
         b.append(el('span', 'val', `◆${recycleValue(c)}`));
@@ -640,6 +640,37 @@ function updateSkyPanel() {
   }
   byId('tide-text').textContent = tideText;
   byId('surf-text').textContent = surfText;
+  renderArtifacts();
+}
+
+// Artifacts from relics (artifacts.js): the meta controls, and those that simply work.
+function renderArtifacts() {
+  const box = byId('sky-artifacts'), G = world.game, have = (G && G.artifacts) || {}, keys = Object.keys(ARTIFACTS).filter((k) => have[k]);
+  const sig = JSON.stringify([keys, world.meta, Math.floor(world.days * 20), !!world.observe]);
+  if (sig === box.dataset.sig) return;
+  box.dataset.sig = sig;
+  box.hidden = !keys.length;
+  if (!keys.length) return;
+  const parts = [el('h3', null, 'Artifacts')];
+  for (const k of keys) {
+    const A = ARTIFACTS[k], row = el('div', 'artifact');
+    row.append(el('b', null, A.label), colored('span', 'note', A.note));
+    if (A.controls) {
+      const M = world.meta && world.meta[A.key], active = metaNow(world, A.key), resting = M && world.days < (M.ready || 0);
+      const acts = el('div', 'grid2');
+      for (const [v, label] of Object.entries(A.controls)) {
+        const b = el('button', active === v ? 'on' : null, label);
+        b.type = 'button';
+        b.disabled = !!world.observe || resting;
+        b.title = resting ? `Resting: ready again in ${Math.max(1, Math.round((M.ready - world.days) * world.opts.dayLength / 60))} minutes` : '';
+        b.addEventListener('click', () => { useArtifact(world, k, v); box.dataset.sig = ''; updateSkyPanel(); });
+        acts.append(b);
+      }
+      row.append(acts);
+    }
+    parts.push(row);
+  }
+  box.replaceChildren(...parts);
 }
 
 
@@ -711,7 +742,7 @@ function closeSpawnCard() {
 function renderSpawnCard() {
   const kind = spawnUi.kind, box = byId('spawn-card');
   if (!kind) return;
-  const s = SPECIES_STATS[kind], G = world.game, enh = [...spawnUi.enh], price = spawnPrice(kind, enh);
+  const s = SPECIES_STATS[kind], G = world.game, enh = [...spawnUi.enh], grade = spawnUi.grade || 0, price = Math.round(spawnPrice(kind, enh) * GRADE_PRICE[grade]);
   const settle = settleChance(world, kind, enh.includes('hardy') ? ENHANCE.hardy.settle : 0), likes = LIKES[kind];
   const head = el('div', 'sc-head'), ic = el('span', 'ic');
   ic.append(iconImg(speciesIcon(kind), 32));
@@ -754,6 +785,18 @@ function renderSpawnCard() {
     b.addEventListener('click', () => { if (spawnUi.enh.has(key)) spawnUi.enh.delete(key); else spawnUi.enh.add(key); renderSpawnCard(); });
     boosts.append(b);
   }
+  // Quality: pay more for a spawn that's at least this good (its genes are chosen until they are).
+  const grades = el('div', 'sc-boosts grades');
+  grades.append(el('span', 'sc-sub', 'Quality (the spawn is chosen until every one is at least this good)'));
+  for (const gi of [0, 2, 3, 4, 5]) {
+    const b = el('button', 'boost'), nm = el('b', null, gi ? `${GRADES[gi]}${gi < 5 ? '+' : ''}` : 'Any');
+    b.type = 'button';
+    b.setAttribute('aria-pressed', grade === gi);
+    if (gi) nm.style.color = GRADE_COLOR[gi];
+    b.append(nm, el('span', 'bc', gi ? `×${GRADE_PRICE[gi]}` : 'as it comes'));
+    b.addEventListener('click', () => { spawnUi.grade = gi; renderSpawnCard(); });
+    grades.append(b);
+  }
   const genes = G.fossilGenes || [];
   let ancient = null;
   if (genes.length) {
@@ -777,9 +820,9 @@ function renderSpawnCard() {
   buy.title = buy.disabled ? `You have ${fmt(G.essence || 0)} essence. Recycle animals with the Net for more.` : '';
   buy.addEventListener('click', () => {
     const gene = spawnUi.ancient != null ? genes[spawnUi.ancient] : null;
-    if (buyAnimal(kind, [...spawnUi.enh], gene)) { spawnUi.ancient = null; renderSpawnCard(); }
+    if (buyAnimal(kind, [...spawnUi.enh], gene, spawnUi.grade || 0)) { spawnUi.ancient = null; renderSpawnCard(); }
   });
-  box.replaceChildren(...[head, facts, have, boosts, ancient, buy].filter(Boolean));
+  box.replaceChildren(...[head, facts, have, boosts, grades, ancient, buy].filter(Boolean));
   box.hidden = false;
   const bar = byId('animals').getBoundingClientRect(), a = spawnUi.anchor.getBoundingClientRect(), w = box.offsetWidth;
   box.style.left = `${Math.round(clamp(a.left + a.width / 2 - w / 2, 8, innerWidth - w - 8))}px`;
@@ -891,11 +934,18 @@ function renderCreature() {
     bar.append(fill);
     parts.push(bar, colored('p', 'cr-sub', [d.mood, comfortWord(L.comfort), aggressionWord(a), water && (mm > 0.3 ? `out of place in ${water === 'fresh' ? 'salt' : 'fresh'} water` : `in ${water} water`), d.fed && 'well fed', ...d.temper].filter(Boolean).join(' · ')));
   }
+  const gr = gradeOf(L.genome);
+  const gradeChip = chip(`${GRADES[gr]} quality`, GRADE_COLOR[gr]);
+  gradeChip.title = 'Graded from its genes: its working genes against the average, gifts up, curses down. It sets what it is worth.';
+  parts.push(Object.assign(el('div', 'chips'), {}).appendChild(gradeChip).parentNode);
   if (d.traits.length || d.carries.length) {
     const t = el('div', 'chips');
     for (const tr of d.traits) t.append(chip(tr, CLASS_COLOR[tr] || '#ffd166'));
     for (const k of d.carries) { const ch = chip(`carries ${k}`, CLASS_COLOR[k] || '#8fbcb8'); ch.classList.add('carrier'); t.append(ch); }
     parts.push(t);
+    // What its gifts, curses, quirks and ills do.
+    const notes = d.traits.filter((k) => TRAIT_NOTES[k]).map((k) => `${k}: ${TRAIT_NOTES[k]}`);
+    if (notes.length) parts.push(colored('p', 'note', notes.join(' · ')));
   }
   // The mark: its stage, how fast it's coming on, and what you can do about it.
   const st = eldStage(L);
@@ -933,11 +983,27 @@ function renderCreature() {
     const tree = el('div', 'trait-tree');
     for (const key of ANIMAL_TRAITS) {
       const E = ENHANCE[key], lv = animalLevel(c, key), cost = animalTraitCost(c, key);
-      tree.append(traitButton(E.label, 'essence', lv < 3 ? cost : null, `${E.label}: ${E.note}`, lv >= 3, () => buyAnimalTrait(world, c, key), pips(lv, 3), (GENE_INFO[E.buff] || {}).color, renderCreature));
+      tree.append(traitButton(E.label, 'essence', lv < ANIMAL_MAX ? cost : null, `${E.label}: ${E.note}`, lv >= ANIMAL_MAX, () => buyAnimalTrait(world, c, key), pips(lv, ANIMAL_MAX), (GENE_INFO[E.buff] || {}).color, renderCreature));
     }
     const eldKeys = Object.entries(ELD_TRAITS).filter(([, T]) => T.ok(c) && (!T.path || eldPath(world, T.path)));
     for (const [k, T] of eldKeys) tree.append(traitButton(T.label, 'corruption', T.cost(c), T.note, false, () => buyEldTrait(world, c, k), null, '#3aff9a', renderCreature));
     parts.push(tree);
+    // The hunt (hunters.js): a predator's ten-level ladders, or waking a grazer to it.
+    if (isPredator(c)) {
+      parts.push(el('h4', null, 'The hunt'));
+      const hunt = el('div', 'trait-tree');
+      for (const [k, H] of Object.entries(HUNT)) {
+        const lv = huntLv(c, k);
+        hunt.append(traitButton(H.label, H.cur, lv < HUNT_MAX ? huntCost(c, k) : null, H.note, lv >= HUNT_MAX, () => buyHunt(world, c, k), pips(lv, HUNT_MAX), H.cur === 'corruption' ? '#3aff9a' : '#ef6f6c', renderCreature));
+      }
+      parts.push(hunt);
+    } else if (canBeHunter(c)) {
+      const wake = el('div', 'trait-tree');
+      const b = traitButton('Wake it to the hunt', 'corruption', AWAKEN.corruption, `it starts to hunt smaller animals (and ${AWAKEN.essence} essence)`, false, () => awakenHunter(world, c), null, '#ef6f6c', renderCreature);
+      b.disabled = b.disabled || (world.game.essence || 0) < AWAKEN.essence;
+      wake.append(b);
+      parts.push(wake);
+    }
   }
   parts.push(el('h4', null, 'Genes'));
   const genes = el('ul', 'genes');
@@ -1145,7 +1211,17 @@ function drawSlice() {
   const toA = (i) => { const u = (i + 0.5) / S; return !share ? u * len : u < share ? u / share * beach : beach + (u - share) / (1 - share) * (len - beach); };
   const toI = (a) => (!share ? a / len : a < beach ? a / beach * share : share + (a - beach) / Math.max(1, len - beach) * (1 - share)) * S;
   const water = world.waterColor || SLICE_WATER, dark = DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed;
-  const ground = new Float32Array(S);
+  const ground = new Float32Array(S), bg = world.bg, bgDry = world.bgDry, W = world.W;
+  // The floor's own colour where the slice cuts it (the beach dry at the top of the tide), darkened by depth as the pond is.
+  const floorAt = (a) => {
+    let r = 0, gr = 0, b = 0, n = 0;
+    for (const f of [0.3, 0.5, 0.7]) {
+      const [x, y] = at(a, f), p = clamp(Math.round(x), 0, W - 1) + clamp(Math.round(y), 0, world.H - 1) * W;
+      const c = bg ? (bgDry && world.shore && world.shore[p] > tide * 255 ? bgDry[p] : bg[p]) : SLICE_SAND;
+      r += c & 255; gr += (c >> 8) & 255; b += (c >>> 16) & 255; n++;
+    }
+    return (0xff000000 | (Math.round(b / n) << 16) | (Math.round(gr / n) << 8) | Math.round(r / n)) >>> 0;
+  };
   for (let i = 0; i < S; i++) {
     const a = toA(i);
     let e = 0, d = 0;
@@ -1153,10 +1229,11 @@ function drawSlice() {
     // The beach, then a floor sloping gently down to the drop-off, then the deep shelves.
     const slope = clamp((a - beach) / Math.max(1, lip - beach), 0, 1);
     ground[i] = e > 0.02 ? 6 + (1 - e) * (toeY - 6) : d > 0.02 ? shelfY + d * (abyssY - shelfY) : toeY + slope * (shelfY - toeY);
-    const sand = mixColor(SLICE_SAND, 0xff2a3a44, slope * 0.35);
+    const top = mixColor(floorAt(a), dark, d * 0.85);
     for (let j = 0; j < T; j++) {
       let c;
-      if (j >= ground[i]) c = d > 0.05 ? SLICE_ROCK : e > 0.02 ? SLICE_SAND : sand;
+      // Under the floor: its colour, darkening into the layers below.
+      if (j >= ground[i]) c = mixColor(top, 0xff0a0c10, clamp((j - ground[i]) / 14, 0, 1) * 0.6);
       else if (j < surf) c = mixColor(SLICE_SKY, 0xff101820, world.darkness * 0.8);
       else c = mixColor(water, dark, clamp((j - surf) / (abyssY - surf), 0, 1) * 0.95);
       px[i + j * S] = c;
@@ -1335,7 +1412,7 @@ function updateScoreHud() {
 let floats = 0;
 function floatAward(x, y, text, kind = 'gain') {
   if (floats >= 8 || document.hidden) return;
-  const sx = x * view.k + view.tx, sy = y * view.k + view.ty;
+  const [sx, sy] = worldToScreen(x, y);
   if (sx < 0 || sy < 0 || sx > innerWidth || sy > innerHeight) return;
   const f = el('span', `float-pts ${kind}`, text);
   f.style.left = `${Math.round(sx)}px`;
@@ -1494,6 +1571,11 @@ function renderObject() {
       } else parts.push(el('p', 'note', 'Raise it to level 3 and it can go one of two ways: lanterns of life, or the whispering stone.'));
     }
     if (o.kind === 'hatchery') tree.append(traitButton('Open the hatchery', null, null, '', false, () => { hideObject(); setHatchery(true); return false; }, null, '#f8c050', renderObject));
+    if (def.habitatFor) {
+      const inf = habitatInfluences(world, o);
+      parts.push(colored('p', 'note', `Breeds: ${def.habitatFor.filter((k) => SINGULAR[k] && fitsHabitat(world, SPECIES_HABITAT[k] || 'both')).map((k) => plural(SINGULAR[k], 2).toLowerCase()).join(', ')}.`),
+        colored('p', 'note', inf.length ? `Around it: ${inf.join('; ')}.` : 'Nothing around it shapes the young yet: glowing plants, clean or warm water, coral, an island of life (or darker things, litter and carrion) within reach will.'));
+    }
   } else {
     const g = o.growth ?? 1, likes = typeof likedByText === 'function' ? likedByText(o.make) : '';
     parts.push(colored('p', 'cr-sub', `${Math.round(g * 100)}% grown · ${o.age != null ? `${Math.floor(o.age)} of about ${Math.round(o.span || 0)} days` : 'full grown'}${o.born != null ? ' · planted by you' : ''}`));

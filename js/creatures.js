@@ -253,9 +253,9 @@ class Fish extends Creature {
         (fd) => (hungry || fd.fed) && (!this.foodFilter || this.foodFilter(fd)));
       if (f) {
         gx = f.x - this.x; gy = f.y - this.y;
-        want = this.maxSpeed * (prey ? 1.25 : 1);
+        want = this.maxSpeed * (prey ? 1.25 * (typeof huntBurst === 'function' ? huntBurst(this) : 1) : 1);
         this.tz = clamp(f.z, this.zMin * 0.4, this.zMax);
-        const reach = this.widths[0] + 1.2 + (prey ? prey.body.w[0] : 0);
+        const reach = (this.widths[0] + 1.2 + (prey ? prey.body.w[0] : 0)) * (prey && typeof huntReach === 'function' ? huntReach(this) : 1);
         if (Math.hypot(gx, gy) < reach && Math.abs(f.z - this.z) < 8) {
           eat(world, this, f);
           this.timer = 0;

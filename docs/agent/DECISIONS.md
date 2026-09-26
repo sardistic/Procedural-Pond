@@ -422,3 +422,44 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
 
 ## Fair points for pond size
 `award` multiplies by `sizeFairness = clamp(√(960×540 / original area), 0.6, 1.5)`. Deepening doesn't count toward the area.
+
+## Past the abyss (js/abyss.js)
+- Four more tiers push the world further out and down: 40 the hadal trench / flooded crypts, 70 the black below / roots of the world, 120 the drowned / sunken city, 200 the dreaming dark. Each adds `expand` 0.25 to 0.3, so the pond keeps growing seaward.
+- Fathoms stretch to match (client `FATHOM_KNOTS` and the server's copy must agree): salt 6,000 / 20,000 / 80,000 / 400,000 fm at those erosion values, fresh 1,700 / 6,000 / 24,000 / 120,000, then a linear tail (salt +2,000, fresh +600 per erosion unit). A deep pond's score jumps; that's intended (the user asked for the depths to feel deep).
+- New life registers into the existing tables (`DEEP`, `SPECIES_STATS`, `CREATE`, `SPECIES`, `DEEP_PREDATORS`, …) and link `KIND_CODES` (codes ≥ 32 set bit 16 of the extra byte; the 5-bit field was full).
+- New sinks: structures from 600 pearls up to the unique Cyclopean gate (20k pearls, 2k essence) and the Sleeper's cradle (100k pearls, 10k essence, 1k corruption); five deep plants; chum and offerings; the deepen cost now grows ×1.15 per use; animal trait trees go to 10 levels (×1.75 each), structure traits to 10 (×1.8).
+
+## Hunters (js/hunters.js)
+- Any predator, or any swimmer woken to the hunt (50 essence + 25 corruption), can be levelled in eight ways, 10 levels each at base × 1.75^level: pearls (jaws, burst, senses), essence (hunger, maw, tenacity), corruption (contagion, devour). The hunt helpers feed `assignHunts`, `Fish.update` and `eat`; `onKill` handles devour (growth and corruption) and contagion (the mark if the hunter is marked, otherwise the rot).
+- Stored per animal as `life.hunt` / `life.hunter`, in saves and in a link trailer.
+
+## More genetics: gifts, curses, quality, quirks, ills (js/quirks.js)
+- A fifth seeded stream (`genome5/<seed>`) so every existing animal keeps exactly its old genes. Its keys stay out of `GENOME_KEYS`; links carry them as one bit field per animal in a trailer.
+- Gifts (1/500 to 1/2500) and curses (1/3000 base; 30% from one parent, 60% from two). Curses are the "evil permutations": `evilPressure = clamp((speed − 1) × 0.8 + max(0, 180 / dayLength − 1) × 0.6, 0, 4)` adds a 0.8% × pressure chance per birth, so a pond run fast or with short days breeds wrongness (appetite, barrenness, frailty, …).
+- Quality grades (Poor … Pristine) come from the working genes, gifts and curses. Buying a grade costs ×1 / 1 / 1.6 / 3.5 / 9 / 30 and re-rolls the spawn's genome under derived seeds (`<seed>/grade/<i>`) until it meets it, so it stays reproducible from the seed.
+- Madness quirks (30% × (1 + 0.3 × pressure) per stage change of a marked animal) and two ills (rot, madness). The madness spread was tuned down after a 60-animal epidemic in a sim: it needs 12 fits (4% then), spreads at night within 12 px at 0.0002, and dawn can cure both ills.
+- Everything else was made rarer (carriers ×0.6, shiny 1/300, glow 1/800, ghost 1/1000, dwarf 1/160, giant 0.8%, the mark 1/3000, child mutations about halved).
+
+## Habitats and population balance (js/habitats.js)
+- Habitat structures give breeding to species that never bred before (eels, rays, pufferfish, turtles, crabs, starfish, jellies, octopus and the deep species: `BREED[k].needs`); the species that already bred still breed anywhere, and lay half as many again at their habitat.
+- What stands within reach of a habitat nudges the young's genes (`habitatNudge`): glow, hardiness, size, longevity, luck, the mark, or curses from litter and carrion.
+- `updateBalance` (every 3 s) keeps numbers in check without crashes: a kind over `max(10, 1.5 × target)` fights (the weaker can die) and breeds the rot; a kind down to its last three is spared blights and sickness, seeks out mates and breeds sooner.
+
+## Fossils and artifacts (js/artifacts.js)
+- Fossils have grades (ammonite 50 … relic 0.5 by weight, rarer ones more often in deeper tiers); rarer ones pay more and hold the rarest of 1 + grade ancient-gene draws. A relic holds an artifact not yet found.
+- Artifacts are the "meta" controls from the sky tracker: storm glass (weather), moonstone (tidal range), tide bell (held high or low water), wind conch (surf), each for a day or half a day and then resting half a day; and passives (heart of pearl +25% pearls, lodestone ×1.5 erosion, eye of the deep ×2 deep arrivals). Hooks: `metaWeather` in `updateWeather`, `metaTide` in the sky. Links carry a bit field of the artifacts found.
+
+## Waves and the sky
+- Waves were redone for the deep: longer, faster wavelengths as the swell grows (`L1 = 40 + 50·swell`), each face lit or shadowed by its slope (`waveS`, up to about 50% toward white on the biggest), so big water reads as big. Whitecaps are sparse spray along the very tops of big crests (per-pixel hash with good bit mixing, gated by the patchy noise). The first try used the Worley tile as the gate and made solid blobs, and the old low-bit hash made stripes.
+- Calm water shows a sky reflection: a 128² cloud tile drifting across, mixed toward a sky colour for the time of day (`skyReflection`), fading with swell and rain.
+
+## Build animations
+- `s.anim` on a new structure: an island rises from bubbles, a ship falls and settles, deep monuments rise with an omen. `applyIslands` and the bake skip it until it settles (about 3 to 9 s). Spawns get a burst (`spawnFx`).
+
+## The seamless beach
+- Replaces the page-load walk. The pond beyond each end is rendered from its save (`snapshotPond`, a temporary world) into a `canvas.beyond` placed beside yours, turned (`view.r`, quarter turns; `worldToScreen` and friends are rotation-aware) so its beach lines up with yours, at the same zoom.
+- Dragging on past the end lets the camera run free into it. Letting go past `crossNeeded()` swaps the world in place (`crossTo` with `layout(true)`), keeping the zoom (`view.minK`) so the pixel density doesn't change; sooner, it glides back. The pond you left waits behind you as a captured snapshot. Clicking the tab still asks first.
+- `updateGlide` moves at least a pixel a frame: `applyView` rounds the view, so a smaller step stalled and left `view.free` on forever.
+
+## The side view
+- The "two tone" the user saw was the side view: a flat tan block for the beach against charcoal rock. It now takes the floor's own colours (from `bg`) with depth shading and sediment.

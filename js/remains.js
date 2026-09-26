@@ -186,9 +186,10 @@ function dawnFinds(world) {
   for (let i = 0; i < 40; i++) {
     const x = rand(12, world.W - 12), y = rand(12, world.H - 12), e = shoreAt(world, x, y);
     if (e < 0.42 || e > 0.9) continue;
-    const kind = pick(Object.keys(FOSSIL_KINDS));
-    world.fossils.push(new Fossil(x, y, kind, pickAncientGene(), world.days));
-    logEvent(world, `✦ The tide has uncovered something on the beach: ${FOSSIL_KINDS[kind]}, glinting in the sand`, null, { cat: 'rare', pri: 2 });
+    const kind = typeof pickFossil === 'function' ? pickFossil(world) : pick(Object.keys(FOSSIL_KINDS));
+    world.fossils.push(new Fossil(x, y, kind, typeof fossilGene === 'function' ? fossilGene(kind) : pickAncientGene(), world.days));
+    const grade = typeof FOSSIL_GRADES !== 'undefined' && FOSSIL_GRADES[kind] ? FOSSIL_GRADES[kind].grade : 0;
+    logEvent(world, `✦ The tide has uncovered something on the beach: ${FOSSIL_KINDS[kind]}, glinting in the sand${grade >= 3 ? ` (${TIERS[grade].toLowerCase()})` : ''}`, null, { cat: 'rare', pri: grade >= 3 ? 3 : 2 });
     return;
   }
 }
@@ -196,7 +197,9 @@ function dawnFinds(world) {
 function collectFossil(world, f) {
   world.fossils.splice(world.fossils.indexOf(f), 1);
   const G = world.game, tier = world.erosion ? world.erosion.tier : 0;
-  const ess = gainEssence(world, 15 + 5 * tier, 'fossils', f), pts = award(world, 25, 'fossils', f, { quiet: true });
+  const grade = typeof FOSSIL_GRADES !== 'undefined' && FOSSIL_GRADES[f.kind] ? FOSSIL_GRADES[f.kind].grade : 0, mult = 1 + grade * 1.5;
+  const ess = gainEssence(world, (15 + 5 * tier) * mult, 'fossils', f), pts = award(world, 25 * mult, 'fossils', f, { quiet: true });
+  if (f.kind === 'relic' && typeof findArtifact === 'function') findArtifact(world);
   G.fossilGenes = [...(G.fossilGenes || []), f.gene];
   deepenBy(world, 0.1);
   logEvent(world, `✦ You dug up ${FOSSIL_KINDS[f.kind]}: +${ess} essence, +${pts} points, and an ancient ${f.gene} gene to give a new spawn or a brood`, null, { cat: 'rare', pri: 3 });

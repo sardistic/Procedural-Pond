@@ -26,11 +26,11 @@ class Raster {
     this.alpha = 1;                   // < 1 draws an ordered-dither fraction of pixels (fades)
     this.castShadows = true;
     this.clip = [0, 0, W - 1, H - 1]; // only this rectangle is rasterized (the visible part)
-    this.k = 1; this.kz = 1; this.kx = 0; this.ky = 0; // draw scaled by k about (kx, ky): see setScale
+    this.k = 1; this.kz = 1; this.kzo = 0; this.kx = 0; this.ky = 0; this.scaled = false; // draw scaled by k about (kx, ky): see setScale
   }
 
-  // Everything drawn until the next setScale() is scaled about (x, y); heights by kz.
-  setScale(x = 0, y = 0, k = 1, kz = k) { this.kx = x; this.ky = y; this.k = k; this.kz = kz; }
+  // Everything drawn until the next setScale() is scaled about (x, y); heights by kz, then lifted by zoff.
+  setScale(x = 0, y = 0, k = 1, kz = k, zoff = 0) { this.kx = x; this.ky = y; this.k = k; this.kz = kz; this.kzo = zoff; this.scaled = k !== 1 || kz !== 1 || zoff !== 0; }
 
   setClip(x0, y0, x1, y1) {
     this.clip = [Math.max(0, x0 | 0), Math.max(0, y0 | 0), Math.min(this.W - 1, x1 | 0), Math.min(this.H - 1, y1 | 0)];
@@ -64,10 +64,10 @@ class Raster {
   // relative to radius (1 = round, <1 = flat). shader is a material or
   // (u along 0..1, v across -1..1, x, y) => material|null.
   tube(ax, ay, ar, az, bx, by, br, bz, hs, shader, id, u0 = 0, u1 = 1) {
-    if (this.k !== 1) {
+    if (this.scaled) {
       const k = this.k, sx = this.kx, sy = this.ky;
       ax = sx + (ax - sx) * k; ay = sy + (ay - sy) * k; bx = sx + (bx - sx) * k; by = sy + (by - sy) * k;
-      ar *= k; br *= k; az *= this.kz; bz *= this.kz;
+      ar *= k; br *= k; az = az * this.kz + this.kzo; bz = bz * this.kz + this.kzo;
     }
     const [cx0, cy0, cx1, cy1] = this.clip;
     if (ar < 0.72) ar = 0.72;
@@ -108,9 +108,9 @@ class Raster {
   // Rotated half-ellipsoid: semi-axes a (along ang) and b, dome height hs.
   // Function shaders get local coords (lx, ly) in -1..1.
   ellipsoid(cx, cy, a, b, ang, z0, hs, shader, id) {
-    if (this.k !== 1) {
+    if (this.scaled) {
       const k = this.k;
-      cx = this.kx + (cx - this.kx) * k; cy = this.ky + (cy - this.ky) * k; a *= k; b *= k; z0 *= this.kz; hs *= k;
+      cx = this.kx + (cx - this.kx) * k; cy = this.ky + (cy - this.ky) * k; a *= k; b *= k; z0 = z0 * this.kz + this.kzo; hs *= k;
     }
     const [cx0, cy0, cx1, cy1] = this.clip;
     if (a < 0.6) a = 0.6;
@@ -144,7 +144,7 @@ class Raster {
   }
 
   dot(x, y, h, m, id) {
-    if (this.k !== 1) { x = this.kx + (x - this.kx) * this.k; y = this.ky + (y - this.ky) * this.k; h *= this.kz; }
+    if (this.scaled) { x = this.kx + (x - this.kx) * this.k; y = this.ky + (y - this.ky) * this.k; h = h * this.kz + this.kzo; }
     const xi = Math.floor(x), yi = Math.floor(y), [cx0, cy0, cx1, cy1] = this.clip;
     if (xi < cx0 || yi < cy0 || xi > cx1 || yi > cy1) return;
     this.put(xi, yi, h, m, 0, 0, 1, id);
@@ -184,14 +184,17 @@ class Raster {
     // The eldritch: veins of void in marked skin, crawling slowly, with stars in them.
     const voidL = s.voidSkin || null, vox = Math.floor(t * 0.9), voy = Math.floor(t * 0.6), starT = Math.floor(t * 2) * 83492791;
     // Swell: two trains of waves rolling toward the beach, bigger over the deep, whitecaps on the biggest.
-    const swell = s.swell || 0, sw = s.swellDir || [0, 1];
-    const w1x = sw[0] * 1024 / 46, w1y = sw[1] * 1024 / 46, w1t = t * 9 * 1024 / 46;
-    const c2 = Math.cos(0.7), s2 = Math.sin(0.7), w2x = (sw[0] * c2 - sw[1] * s2) * 1024 / 29, w2y = (sw[0] * s2 + sw[1] * c2) * 1024 / 29, w2t = t * 6 * 1024 / 29;
+    // In a big swell the waves run longer and faster; calm water shows the sky instead.
+    const swell = s.swell || 0, sw = s.swellDir || [0, 1], L1 = 40 + 50 * swell, L2 = 26 + 20 * swell;
+    const w1x = sw[0] * 1024 / L1, w1y = sw[1] * 1024 / L1, w1t = t * (7 + 8 * swell) * 1024 / L1;
+    const c2 = Math.cos(0.7), s2 = Math.sin(0.7), w2x = (sw[0] * c2 - sw[1] * s2) * 1024 / L2, w2y = (sw[0] * s2 + sw[1] * c2) * 1024 / L2, w2t = t * (5 + 5 * swell) * 1024 / L2;
+    const clouds = s.clouds || null, sky = s.sky || 0xffe0d8c8, calm = clamp(1 - swell * 1.5, 0, 1) * (s.skyK ?? 1);
+    const skr = sky & 255, skg = (sky >> 8) & 255, skb = (sky >>> 16) & 255, cdx = t * 2.2, cdy = t * 0.7;
     const [rx0, ry0, rx1, ry1] = rect;
     for (let y = ry0; y <= ry1; y++) {
       for (let x = rx0, p = rx0 + y * W; x <= rx1; x++, p++) {
         const i = id[p];
-        let c, n, depth, fogScale = 1, waveE = 0;
+        let c, n, depth, fogScale = 1, waveS = 0, waveC = 0, refl = 0;
         if (shore) {
           const sp = shore[p];
           if (sp > tideL) fogScale = 0; else if (sp) fogScale = Math.min(1, (tideL - sp) / 60);
@@ -237,11 +240,25 @@ class Raster {
               depth = zBase[q];
               if (swell > 0) {
                 const dd = depthMap ? depthMap[p] : 0;
-                // Crests broken up along their length (a slow patchy noise), bigger over the deep.
+                // Each wave lit on the face toward the light and shadowed behind, broken up along
+                // its length by a slow patchy noise, and bigger over the deep.
                 const patch = 0.45 + caustic[(((x >> 2) + o1x) & TM) | ((((y >> 2) + o2y) & TM) << 7)] * 0.9;
-                waveE = (WAVE_TAB[((x * w1x + y * w1y - w1t) | 0) & 1023] + 0.55 * WAVE_TAB[((x * w2x + y * w2y - w2t) | 0) & 1023]) * swell * (0.8 + dd * 0.0045) * patch;
-                // Whitecaps: ragged patches of foam on the biggest crests out over the deep.
-                if (waveE > 2 && dd > 50 && caustic[(x & TM) | ((y & TM) << 7)] > 0.45 && ((Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ starT) & 3) !== 0) waveE = 9;
+                const i1 = ((x * w1x + y * w1y - w1t) | 0) & 1023, i2 = ((x * w2x + y * w2y - w2t) | 0) & 1023, amp = swell * (0.55 + dd * 0.004) * patch;
+                waveS = (WAVE_TAB[(i1 + 24) & 1023] - WAVE_TAB[(i1 - 24) & 1023] + 0.5 * (WAVE_TAB[(i2 + 24) & 1023] - WAVE_TAB[(i2 - 24) & 1023])) * amp;
+                waveC = (WAVE_TAB[i1] + 0.5 * WAVE_TAB[i2]) * amp;
+                // Whitecaps: foam breaking in thin, ragged runs right along the tops of the biggest crests.
+                if (swell > 0.45 && amp > 0.8 && patch > 0.95) {
+                  const top = Math.max(WAVE_TAB[i1] - 1.18, (WAVE_TAB[i2] - 1.24) * 0.8) * 6 * Math.min(1, (amp - 0.8) * 1.5) * Math.min(1, (patch - 0.95) * 3);
+                  if (top > 0) {
+                    const h = Math.imul(Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1) ^ starT, 0x9e3779b1) >>> 24;
+                    if (h < top * 300) waveC = h < top * 140 ? 9 : 8;
+                  }
+                }
+              }
+              // Calm water holds the sky: slow clouds drifting across it.
+              if (clouds && calm > 0.02) {
+                const cv = clouds[(((x * 0.3 + cdx) | 0) & 127) | ((((y * 0.45 + cdy) | 0) & 127) << 7)];
+                refl = calm * (0.05 + 0.26 * cv * cv);
               }
               if (se) {
                 // Foam at the water's edge, and waves that roll in toward it.
@@ -292,12 +309,19 @@ class Raster {
             c = (0xff000000 | ((cb + (((db - cb) * a) >> 8)) << 16) | ((cg + (((dg - cg) * a) >> 8)) << 8) | (cr + (((dr - cr) * a) >> 8))) >>> 0;
           }
         }
-        // Wave crests catch the light (after the deep has darkened the floor below them).
-        if (waveE === 9) { c = (x + y) & 1 ? 0xfff0f4f6 : 0xffd6e4ea; }
-        else if (waveE > 0.6) {
-          const a = Math.min(72, ((waveE - 0.6) * 60) | 0);
-          if (a > 36 || ((x ^ y) & 1)) { const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255; c = (0xff000000 | ((cb + (((0xe0 - cb) * a) >> 8)) << 16) | ((cg + (((0xec - cg) * a) >> 8)) << 8) | (cr + (((0xf4 - cr) * a) >> 8))) >>> 0; }
-        } else if (waveE < -0.3) { const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255; c = (0xff000000 | ((cb * 225 >> 8) << 16) | ((cg * 225 >> 8) << 8) | (cr * 225 >> 8)) >>> 0; }
+        // The surface over it all (after the deep has darkened the floor below): the sky in calm
+        // water, the lit and shadowed faces of waves, foam on the biggest.
+        if (waveC === 9) { c = (Math.imul(Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1) ^ starT, 0x9e3779b1) >>> 30) ? 0xfff0f4f6 : 0xffd6e4ea; }
+        else if (waveC === 8) { const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255; c = (0xff000000 | ((cb + ((0xf2 - cb) >> 1)) << 16) | ((cg + ((0xf0 - cg) >> 1)) << 8) | (cr + ((0xe8 - cr) >> 1))) >>> 0; }
+        else if (waveS || refl) {
+          let cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
+          if (refl > 0) { const a = (refl * 256) | 0; cr += ((skr - cr) * a) >> 8; cg += ((skg - cg) * a) >> 8; cb += ((skb - cb) * a) >> 8; }
+          if (waveS > 0.14) {
+            const a = Math.min(130, ((waveS - 0.14) * 140) | 0);
+            if (a > 22 || ((x ^ y) & 1)) { cr += ((0xe8 - cr) * a) >> 8; cg += ((0xf0 - cg) * a) >> 8; cb += ((0xf4 - cb) * a) >> 8; }
+          } else if (waveS < -0.14) { const f = 256 - Math.min(110, ((-waveS - 0.14) * 130) | 0); cr = (cr * f) >> 8; cg = (cg * f) >> 8; cb = (cb * f) >> 8; }
+          c = (0xff000000 | (cb << 16) | (cg << 8) | cr) >>> 0;
+        }
         if (tint) {
           const e = i ? emissive[i] : 0;
           if (e === 2) { out[p] = c; continue; }
@@ -315,6 +339,27 @@ const WAVE_TAB = new Float32Array(1024);
 for (let i = 0; i < 1024; i++) { const s = 0.5 + 0.5 * Math.sin(i / 1024 * Math.PI * 2); WAVE_TAB[i] = s * s * s * 1.8 - 0.45; }
 const WAVE_LIGHT = 0xfff4ece0, VOID_BLACK = 0xff14040a, VOID_RIM = 0xffc84a8a, VOID_STAR = 0xfffff0e8;
 const VOID_T = [0, 0.05, 0.08, 0.12, 0.17, 0.22, 0.28, 0.35]; // how much of a marked animal's skin opens onto the void, by level
+
+// Soft tileable cloud noise (128 × 128, 0..1): the sky's reflection on calm water.
+function makeCloudTile() {
+  const S = 128, T = new Float32Array(S * S), lat = [8, 16, 32].map((n) => ({ n, v: Array.from({ length: n * n }, () => Math.random()) }));
+  const sm = (t) => t * t * (3 - 2 * t);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      let v = 0, w = 0, amp = 1;
+      for (const L of lat) {
+        const fx = x / S * L.n, fy = y / S * L.n, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = sm(fx - x0), ty = sm(fy - y0);
+        const g = (i, j) => L.v[((j % L.n) * L.n) + (i % L.n)];
+        v += amp * lerp(lerp(g(x0, y0), g(x0 + 1, y0), tx), lerp(g(x0, y0 + 1), g(x0 + 1, y0 + 1), tx), ty); w += amp; amp *= 0.5;
+      }
+      T[x + y * S] = v / w;
+    }
+  }
+  let lo = 1, hi = 0;
+  for (const v of T) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  for (let i = 0; i < T.length; i++) T[i] = (T[i] - lo) / (hi - lo);
+  return T;
+}
 
 // Tileable Worley-noise web (F2 - F1), sampled twice with drifting offsets for caustics.
 function makeCausticTile(count = 14) {

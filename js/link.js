@@ -17,7 +17,8 @@ const LINK_V = 3; // 3 added the working genes and loci; 2 still decodes
 // Append-only code tables: an index written into a link must keep its meaning.
 const KIND_CODES = ['koi', 'tetra', 'eel', 'axolotl', 'turtle', 'crab', 'ray', 'frog', 'snake', 'snail', 'jelly', 'clown',
   'puffer', 'octopus', 'duck', 'shrimp', 'dragonfly', 'wild', 'starfish', 'tadpole',
-  'shark', 'sandshark', 'angler', 'gulper', 'vampire', 'isopod', 'catfish', 'cavefish', 'olm', 'kraken', 'leviathan', 'watcher'];
+  'shark', 'sandshark', 'angler', 'gulper', 'vampire', 'isopod', 'catfish', 'cavefish', 'olm', 'kraken', 'leviathan', 'watcher',
+  'snailfish', 'frilled', 'boneeel', 'siphon', 'squid', 'deepone', 'sleeper'];
 const PLANT_CODES = ['weed', 'eelgrass', 'anemone', 'coral', 'urchin', 'marimo', 'duckweed', 'lily', 'blackcoral', 'glowcap'];
 const HAB_CODES = ['fresh', 'mixed', 'salt'];
 const FLOOR_CODES = ['sand', 'coral', 'pebbles', 'river', 'leaves', 'tiles'];
@@ -137,8 +138,9 @@ function packPond(world) {
       sameGenome(g, childGenomeFor(c.seed, saved[par[0]].life.genome, saved[par[1]].life.genome));
     const explicit = !hasParents && !sameGenome(g, genomeFor(c.seed));
     const hasName = L.name !== nameFor(c.seed), hasLife = Math.abs(L.lifespan - lifespanFor(c.species, c.seed)) > 1;
-    const extra = (c.state === 'sit' ? 1 : 0) | (hasName ? 2 : 0) | (hasLife ? 4 : 0) | (numbered ? 0 : 8);
-    w.u8(KIND_CODES.indexOf(c.make) | (hasParents ? 32 : 0) | (explicit ? 64 : 0) | (extra ? 128 : 0));
+    // (Kinds past the first 32 set bit 16 of the extra byte: the code is then 32 more.)
+    const code = KIND_CODES.indexOf(c.make), extra = (c.state === 'sit' ? 1 : 0) | (hasName ? 2 : 0) | (hasLife ? 4 : 0) | (numbered ? 0 : 8) | (code >= 32 ? 16 : 0);
+    w.u8((code & 31) | (hasParents ? 32 : 0) | (explicit ? 64 : 0) | (extra ? 128 : 0));
     if (extra) w.u8(extra);
     if (numbered) { w.vu(zig(c.sn - prevSn)); prevSn = c.sn; }
     w.u8(Math.min(15, Math.floor(c.x / W * 16)) | (Math.min(15, Math.floor(c.y / H * 16)) << 4));
@@ -146,7 +148,7 @@ function packPond(world) {
     w.u8(Math.round(clamp(L.energy, 0, 1) * 15) | ((L.scale >= 0.999 ? 15 : Math.min(14, Math.round(L.scale * 15))) << 4));
     const a = c.args || {};
     if (c.make === 'koi') w.u8(a.variety == null ? 0 : a.variety + 1);
-    else if (c.make === 'tetra' || c.make === 'cavefish') w.u8(a.school ? schoolIdx.get(a.school) + 1 : 0);
+    else if (c.make === 'tetra' || c.make === 'cavefish' || c.make === 'snailfish') w.u8(a.school ? schoolIdx.get(a.school) + 1 : 0);
     else if (c.make === 'wild') { w.vu(a.sp ? a.sp.id : 0); w.u8(a.school ? schoolIdx.get(a.school) + 1 : 0); }
     else if (c.make === 'duck') w.vu(Math.max(0, DUCK_CODES.indexOf(a.kind)) | ((index.has(c.leader) ? index.get(c.leader) + 1 : 0) << 2));
     if (hasParents) { w.vu(i - par[0]); w.vu(i - par[1]); } else w.vu(L.gen);
@@ -215,6 +217,25 @@ function packPond(world) {
   const G2 = world.game || {};
   w.vu(Math.floor(G2.corruption || 0)); w.vu(Math.floor(G2.corruptionEarned || 0));
   w.u8(ELD_PATH_CODES.reduce((a, k, i) => a | (G2.eldPaths && G2.eldPaths[k] ? 1 << i : 0), 0));
+  // Later again: gifts and curses (the fifth gene stream; the reader starts everyone without them),
+  // madness quirks, infections, the hunt, and full structure levels past 3.
+  const g5 = saved.map((c, i) => [i, packG5(c.life.genome)]).filter(([, b]) => b);
+  w.vu(g5.length);
+  for (const [i, b] of g5) { w.vu(i); w.vu(b); }
+  const lived = saved.map((c, i) => [c, i]).filter(([c]) => (c.life.quirks && c.life.quirks.length) || (c.life.ill && c.life.ill.length) || c.life.hunter || c.life.hunt);
+  w.vu(lived.length);
+  for (const [c, i] of lived) {
+    const L = c.life, q = Object.keys(QUIRKS), il = Object.keys(ILLS), h = Object.keys(HUNT);
+    w.vu(i);
+    w.u8((L.quirks || []).reduce((a, k) => a | (q.includes(k) ? 1 << q.indexOf(k) : 0), 0) | (L.hunter ? 128 : 0));
+    w.u8((L.ill || []).reduce((a, k) => a | (il.includes(k) ? 1 << il.indexOf(k) : 0), 0));
+    for (const k of h) w.u8((L.hunt && L.hunt[k]) || 0);
+  }
+  w.u8(st.length);
+  for (const s of st) { w.u8((s.lv && s.lv.reach) || 0); w.u8((s.lv && s.lv.strength) || 0); }
+  // And the artifacts found in relics.
+  const arts = (world.game && world.game.artifacts) || {};
+  w.u8(ARTIFACT_CODES.reduce((a, k, i) => a | (arts[k] ? 1 << i : 0), 0));
   return w.bytes();
 }
 
@@ -258,7 +279,7 @@ function unpackV2(r, v = 2) {
   s.creatures = [];
   let prevSn = 0;
   for (let i = 0, n = r.vu(); i < n; i++) {
-    const b = r.u8(), k = KIND_CODES[b & 31], extra = b & 128 ? r.u8() : 0;
+    const b = r.u8(), extra = b & 128 ? r.u8() : 0, k = KIND_CODES[(b & 31) + (extra & 16 ? 32 : 0)];
     const numbered = !(extra & 8);
     let sn = null;
     if (numbered) { sn = prevSn + unzig(r.vu()); prevSn = sn; }
@@ -268,7 +289,7 @@ function unpackV2(r, v = 2) {
     const L = { age, energy: (es & 15) / 15, scale: (es >> 4) === 15 ? 1 : (es >> 4) / 15 };
     const a = {};
     if (k === 'koi') { const v = r.u8(); if (v) a.variety = v - 1; }
-    else if (k === 'tetra' || k === 'cavefish') { const j = r.u8(); a.school = j ? j - 1 : null; }
+    else if (k === 'tetra' || k === 'cavefish' || k === 'snailfish') { const j = r.u8(); a.school = j ? j - 1 : null; }
     else if (k === 'wild') { a.sp = r.vu(); const j = r.u8(); a.school = j ? j - 1 : null; }
     else if (k === 'duck') { const v = r.vu(); a.kind = DUCK_CODES[v & 3] || 'hen'; a.leader = v >> 2 ? (v >> 2) - 1 : null; }
     let pi = -1, mi = -1;
@@ -351,6 +372,22 @@ function unpackV2(r, v = 2) {
               s.game.corruption = r.vu(); s.game.corruptionEarned = r.vu();
               const bits = r.u8();
               s.game.eldPaths = Object.fromEntries(ELD_PATH_CODES.filter((k, i) => bits & (1 << i)).map((k) => [k, true]));
+            }
+            if (r.i < r.b.length) {
+              s.g5 = new Map();
+              for (let n = r.vu(); n > 0; n--) { const i = r.vu(); s.g5.set(i, r.vu()); }
+              for (let n = r.vu(); n > 0; n--) {
+                const i = r.vu(), qb = r.u8(), ib = r.u8(), hunt = {}, c = s.creatures[i];
+                for (const k of Object.keys(HUNT)) { const v = r.u8(); if (v) hunt[k] = v; }
+                if (!c) continue;
+                c.L.quirks = Object.keys(QUIRKS).filter((k, j) => qb & (1 << j));
+                c.L.ill = Object.keys(ILLS).filter((k, j) => ib & (1 << j));
+                c.L.hunter = !!(qb & 128);
+                if (Object.keys(hunt).length) c.L.hunt = hunt;
+              }
+              const ns2 = r.u8();
+              for (let i = 0; i < ns2; i++) { const a = r.u8(), b = r.u8(), t = s.structures[i]; if (t) t.lv = { reach: a, strength: b }; }
+              if (r.i < r.b.length && s.game) { const bits = r.u8(); s.game.artifacts = Object.fromEntries(ARTIFACT_CODES.filter((k, i) => bits & (1 << i)).map((k) => [k, true])); }
             }
           }
         }
@@ -461,6 +498,8 @@ function linkToSave(s) {
   const wild = WILD_SPECIES.splice(0);
   WILD_SPECIES.push(...before);
 
+  // Gifts and curses come only from the link's own list (links from before have none).
+  s.creatures.forEach((c, i) => unpackG5(c.L.genome, (s.g5 && s.g5.get(i)) || 0));
   // Links since v2 don't carry population targets: the pond aims to keep what it has.
   const targets = s.targets || {};
   if (!s.targets) for (const c of s.creatures) targets[c.k] = (targets[c.k] || 0) + 1;

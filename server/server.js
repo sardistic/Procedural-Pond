@@ -32,7 +32,9 @@ const FINDS_KEEP = 300;
 const ID_RE = /^[a-z]{2,8}(?:-[a-z]{2,8}){3}$/;
 
 const SPECIES = new Set(['koi', 'tetra', 'eel', 'axolotl', 'turtle', 'crab', 'ray', 'frog', 'snake', 'snail', 'jelly', 'clown',
-  'puffer', 'octopus', 'duck', 'shrimp', 'dragonfly', 'wild', 'starfish']);
+  'puffer', 'octopus', 'duck', 'shrimp', 'dragonfly', 'wild', 'starfish',
+  'shark', 'sandshark', 'angler', 'gulper', 'vampire', 'isopod', 'catfish', 'cavefish', 'olm', 'kraken', 'leviathan', 'watcher',
+  'snailfish', 'frilled', 'boneeel', 'siphon', 'squid', 'deepone', 'sleeper']);
 const TRAIT_RARITY = {
   pale: 1, piebald: 1, giant: 2, dwarf: 2, melanistic: 2, xanthic: 2, marbled: 2, axanthic: 3, albino: 3, leucistic: 3,
   shiny: 4, ghost: 4, glow: 4, chimera: 5, touched: 4, changed: 5, eldritch: 7,
@@ -75,11 +77,13 @@ if (!cols.has('depth')) db.exec('ALTER TABLE ponds ADD COLUMN depth INTEGER NOT 
 if (!cols.has('views')) db.exec('ALTER TABLE ponds ADD COLUMN views INTEGER NOT NULL DEFAULT 0');
 db.exec('CREATE INDEX IF NOT EXISTS ponds_depth ON ponds (board, depth DESC)');
 const FATHOM_KNOTS = {
-  salt: [[0, 2], [2, 8], [5, 110], [11, 550], [22, 2200], [40, 6000]],
-  fresh: [[0, 1], [2, 4], [5, 60], [11, 300], [22, 900], [40, 1700]],
+  salt: [[0, 2], [2, 8], [5, 110], [11, 550], [22, 2200], [40, 6000], [70, 20000], [120, 80000], [200, 400000]],
+  fresh: [[0, 1], [2, 4], [5, 60], [11, 300], [22, 900], [40, 1700], [70, 6000], [120, 24000], [200, 120000]],
 };
+const FATHOM_TAIL = { salt: 2000, fresh: 600 };
 function fathomsOf(e, habitat) {
-  const K = FATHOM_KNOTS[habitat === 'fresh' ? 'fresh' : 'salt'];
+  const b = habitat === 'fresh' ? 'fresh' : 'salt', K = FATHOM_KNOTS[b], last = K[K.length - 1];
+  if (e > last[0]) return Math.round(last[1] + (e - last[0]) * FATHOM_TAIL[b]);
   let i = 0;
   while (i < K.length - 2 && e > K[i + 1][0]) i++;
   const [e0, f0] = K[i], [e1, f1] = K[i + 1];

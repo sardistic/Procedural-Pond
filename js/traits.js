@@ -21,13 +21,14 @@ const have = (world, cur) => (cur === 'essence' ? world.game.essence || 0 : cur 
 // ---- animals -------------------------------------------------------------------------------------
 const ANIMAL_TRAITS = ['fertile', 'longlived', 'hardy', 'clever', 'bright', 'calm', 'adaptable'];
 const animalLevel = (c, key) => (c.life.boosts && c.life.boosts[key]) || 0;
-const animalTraitCost = (c, key) => Math.round((3 + spawnCost(c.species === 'tadpole' ? 'frog' : c.species) * 0.12) * (animalLevel(c, key) + 1) ** 1.4);
+const ANIMAL_MAX = 10;
+const animalTraitCost = (c, key) => Math.round((3 + spawnCost(c.species === 'tadpole' ? 'frog' : c.species) * 0.12) * 1.75 ** animalLevel(c, key));
 function buyAnimalTrait(world, c, key) {
   const L = c.life, lv = animalLevel(c, key), E = ENHANCE[key];
-  if (lv >= 3 || !pay(world, 'essence', animalTraitCost(c, key))) return false;
+  if (lv >= ANIMAL_MAX || !pay(world, 'essence', animalTraitCost(c, key))) return false;
   L.boosts = { ...(L.boosts || {}), [key]: lv + 1 };
-  L.genome[E.gene] = clamp(L.genome[E.gene] + E.add * 0.5, 0, 1);
-  L.traits = L.genome.eld ? eldTraits(L) : traitsOf(L.genome);
+  L.genome[E.gene] = clamp(L.genome[E.gene] + E.add * (lv < 3 ? 0.5 : 0.2), 0, 1);
+  L.traits = eldTraits(L);
   refreshBuffs(c);
   return true;
 }
@@ -91,8 +92,8 @@ function plantTraitTick(world) {
 
 // ---- structures ----------------------------------------------------------------------------------
 const STRUCT_TRAITS = {
-  reach: { label: 'Reach', max: 3, cost: (s, lv) => Math.round(STRUCTURES[s.kind].pearls * 0.3 * (lv + 1)), note: 'its effect reaches a fifth further' },
-  strength: { label: 'Strength', max: 3, cost: (s, lv) => Math.round(STRUCTURES[s.kind].pearls * 0.4 * (lv + 1)), note: 'its effect is a quarter stronger' },
+  reach: { label: 'Reach', max: 10, cost: (s, lv) => Math.round(STRUCTURES[s.kind].pearls * 0.3 * 1.8 ** lv), note: 'its effect reaches a fifth further' },
+  strength: { label: 'Strength', max: 10, cost: (s, lv) => Math.round(STRUCTURES[s.kind].pearls * 0.4 * 1.8 ** lv), note: 'its effect is a quarter stronger' },
 };
 function buyStructTrait(world, s, key) {
   const lv = (s.lv && s.lv[key]) || 0;
@@ -110,6 +111,8 @@ function raiseIsland(world, s) {
   spend(world, c.pearls);
   spendEssence(world, c.essence);
   s.stack = (s.stack || 1) + 1;
+  for (let k = 0; k < 30; k++) addBubbles(world, s.x + rand(-1, 1) * s.R * 1.3, s.y + rand(-1, 1) * s.R * 1.3, 1, 2);
+  addRipple(world, s.x, s.y, 3);
   if (typeof structuresChanged === 'function') structuresChanged(true);
   logEvent(world, `You raised the island (level ${s.stack}): it stands higher, wider and greener${s.stack === 3 ? '. It can go one of two ways now: lanterns of life, or the whispering stone' : ''}`, null, { cat: 'pond', pri: 2 });
   return true;
