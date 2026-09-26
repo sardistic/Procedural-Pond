@@ -144,13 +144,14 @@ function applyIslands(world) {
   const shore = world.shore, { W, H } = world;
   for (const s of world.structures || []) {
     if (s.kind !== 'island' || s.anim) continue;
-    const R0 = islandRadius(world, s), R = R0 * 1.4, top = Math.min(1.5, 0.97 + 0.06 * ((s.stack || 1) - 1));
+    // Out over the deep an island rises as a cliff: a flat top and steep sides.
+    const R0 = islandRadius(world, s), R = R0 * 1.4, top = Math.min(1.5, 0.97 + 0.06 * ((s.stack || 1) - 1)), cliff = 2 + 8 * (s.deep || 0);
     for (let y = Math.max(0, Math.floor(s.y - R)); y <= Math.min(H - 1, Math.ceil(s.y + R)); y++) {
       for (let x = Math.max(0, Math.floor(s.x - R)); x <= Math.min(W - 1, Math.ceil(s.x + R)); x++) {
         const d = Math.hypot(x - s.x, y - s.y) / R0;
         if (d >= 1.4) continue;
         // Low and broad: the tide covers the rim at high water and bares a wide beach at low.
-        const e = top * (1 - (d / 1.4) ** 2) + (fbm(x * 0.08, y * 0.08, s.seed % 53) - 0.5) * 0.25;
+        const e = top * (1 - (d / 1.4) ** cliff) + (fbm(x * 0.08, y * 0.08, s.seed % 53) - 0.5) * 0.25;
         const p = x + y * W, v = Math.round(clamp(e, 0, 1) * 255);
         if (v > shore[p]) shore[p] = v;
       }
@@ -462,10 +463,10 @@ function scourSources(world) {
   const out = [], tier = (world.erosion && world.erosion.tier) || 0;
   const add = (x, y, born, w) => {
     if (born == null || (world.shore && shoreAt(world, x, y) > 0.08)) return;
-    const k = clamp((world.days - born) / 25, 0, 1) * w * (0.4 + 0.2 * tier);
-    if (k > 0.05) out.push({ x, y, k: Math.round(k * 10) / 10 });
+    const k = clamp((world.days - born) / 12, 0, 1) * w * (0.6 + 0.3 * tier);
+    if (k > 0.05) out.push({ x, y, k: Math.round(k * 10) / 10, sturdy: w });
   };
-  for (const s of world.structures || []) add(s.x, s.y, s.born, 1);
+  for (const s of world.structures || []) add(s.x, s.y, s.born, s.kind === 'island' ? 0 : 1);
   for (const r of world.rocks || []) if (r.oi == null) add(r.x, r.y, r.born ?? world.days - 30, 0.5);
   for (const p of world.plants || []) if (p.oi == null) add(p.x, p.y, p.born, 0.3);
   return out;
@@ -478,7 +479,7 @@ function applyScour(world, depth) {
   const { W, H } = world, N = world.shoreN || [0, 1], maxD = Math.max(0.35, (DEPTH_TIERS[(world.erosion && world.erosion.tier) || 0].depth || 0.35)) * 255;
   depth = depth || new Uint8Array(W * H);
   for (const s of src) {
-    const R = 16 + 22 * s.k;
+    const R = 20 + 30 * s.k, foot = 0.32 * (0.6 + 0.4 * s.sturdy); // what stands there is sturdier than the floor
     for (let y = Math.max(0, Math.floor(s.y - R * 2)); y <= Math.min(H - 1, Math.ceil(s.y + R * 2)); y++) {
       for (let x = Math.max(0, Math.floor(s.x - R * 2)); x <= Math.min(W - 1, Math.ceil(s.x + R * 2)); x++) {
         const dx = x - s.x, dy = y - s.y, toward = -(dx * N[0] + dy * N[1]); // + away from the beach
@@ -487,7 +488,10 @@ function applyScour(world, depth) {
         if (d >= 1) continue;
         const p = x + y * W;
         if (world.shore && world.shore[p] > 20) continue;
-        const v = Math.round(Math.min(maxD, s.k * 110 * (1 - d) ** 1.5 * (0.8 + 0.2 * fbm(x * 0.1, y * 0.1, 61))));
+        // A plinth of harder ground stays under it, with a moat scoured deep around.
+        if (d < foot) { depth[p] = Math.round(depth[p] * (0.25 + 0.75 * (d / foot) ** 3)); continue; }
+        const moat = 1 - Math.abs(d - (foot + 0.18)) / 0.5;
+        const v = Math.round(Math.min(maxD, s.k * 150 * Math.max((1 - d) ** 1.5, moat * 0.9) * (0.8 + 0.2 * fbm(x * 0.1, y * 0.1, 61))));
         if (v > depth[p]) depth[p] = v;
       }
     }

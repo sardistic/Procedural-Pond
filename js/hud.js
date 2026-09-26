@@ -388,7 +388,7 @@ function renderCensus() {
         const b = el('button', c.life.traits.length ? 'member rare' : 'member');
         b.type = 'button';
         b.title = 'Follow';
-        b.append(el('b', null, c.life.name), el('span', 'sub', `${d.label === SPECIES[kind]?.label ? '' : `${d.label} · `}${d.stage} · gen ${d.gen} · ${ageLabel(d.age)} · ${GRADES[gradeOf(c.life.genome)].toLowerCase()}`),
+        b.append(el('b', null, `${isSafe(c) ? '🔒 ' : ''}${c.life.paragon ? '♛ ' : ''}${c.life.name}`), el('span', 'sub', `${d.label === SPECIES[kind]?.label ? '' : `${d.label} · `}${d.stage} · gen ${d.gen} · ${ageLabel(d.age)} · ${GRADES[gradeOf(c.life.genome)].toLowerCase()}`),
           energyBar(d.energy), colored('span', 'mood', [d.traits.length && `✦ ${TIERS[d.tier]} ${d.traits.join(' ')}`, d.mood, comfortWord(d.comfort), d.fed && 'well fed'].filter(Boolean).join(' · ')));
         b.addEventListener('click', () => { if (alive(c)) { follow(c); showCreature(c); } });
         b.append(el('span', 'val', `◆${recycleValue(c)}`));
@@ -423,7 +423,7 @@ function renderCensus() {
 
 // ---- journal: one line of recent activity that opens into the full log ------------------------
 
-const CATS = { all: 'All', life: 'Life', rare: 'Rare', hunt: 'Hunts', come: 'Comings & goings', sky: 'Sky & tide' };
+const CATS = { all: 'All', story: 'Story', life: 'Life', rare: 'Rare', hunt: 'Hunts', come: 'Comings & goings', sky: 'Sky & tide' };
 const journalUi = { open: false, filter: 'all', list: null, lastSeq: 0, queue: [], current: null, until: 0, shownText: null };
 const TICKER_QUEUE = 4;                      // lines waiting at most; the least important are dropped
 const TICKER_DWELL = [3500, 4500, 6000, 8000]; // least time on screen, by priority (ms)
@@ -433,6 +433,38 @@ function setJournal(open) {
   byId('log-panel').hidden = !open;
   byId('log-line').setAttribute('aria-expanded', open);
   if (open) { world.journalDirty = true; renderJournal(); setCensus(false); }
+}
+
+// The big news gets a banner under the pond bar for a few seconds, and the narrator a strip below it.
+const bannerUi = { until: 0, narrUntil: 0 };
+// (Below the tab naming the pond up the beach, when there is one at the top of the screen.)
+function placeNews() {
+  const tab = byId('edge-west'), b = byId('banner'), n = byId('narrator');
+  let top = 62;
+  if (tab && !tab.hidden && tab.classList.contains('vertical') && +getComputedStyle(tab).opacity > 0.1) top = Math.max(top, Math.round(tab.getBoundingClientRect().bottom + 8));
+  b.style.top = `${top}px`;
+  n.style.top = `${b.hidden ? top : Math.round(b.getBoundingClientRect().bottom + 8)}px`;
+}
+function showBanner(text) {
+  const b = byId('banner');
+  if (!b || world.quietRestore) return;
+  b.replaceChildren(colorize(text));
+  b.hidden = false;
+  b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
+  clearTimeout(bannerUi.t);
+  bannerUi.t = setTimeout(() => { b.hidden = true; placeNews(); }, Math.max(5200, 1500 + text.length * 60));
+  placeNews();
+}
+function showNarration(text, stage) {
+  const n = byId('narrator');
+  if (!n) return;
+  n.textContent = text;
+  n.className = `narrator st${stage}`;
+  n.hidden = false;
+  void n.offsetWidth; n.classList.add('show');
+  clearTimeout(bannerUi.nt);
+  bannerUi.nt = setTimeout(() => { n.hidden = true; }, Math.max(7000, 2500 + text.length * 75));
+  placeNews();
 }
 
 // A message of our own (e.g. "Link copied") jumps straight onto the ticker.
@@ -457,6 +489,7 @@ function feedTicker() {
   const now = performance.now(), fresh = world.journal.filter((e) => e.seq > journalUi.lastSeq).reverse();
   for (const e of fresh) {
     journalUi.lastSeq = Math.max(journalUi.lastSeq, e.seq);
+    if ((e.pri ?? 1) >= 3 && e.cat !== 'story' && world.t - e.t < 5) showBanner(e.text); // the big news, big
     if (e === journalUi.current && now < journalUi.until) continue;
     if (journalUi.queue.includes(e)) continue;
     const busy = now < journalUi.until || journalUi.queue.length > 0;
@@ -822,7 +855,20 @@ function renderSpawnCard() {
     const gene = spawnUi.ancient != null ? genes[spawnUi.ancient] : null;
     if (buyAnimal(kind, [...spawnUi.enh], gene, spawnUi.grade || 0)) { spawnUi.ancient = null; renderSpawnCard(); }
   });
-  box.replaceChildren(...[head, facts, have, boosts, grades, ancient, buy].filter(Boolean));
+  const sups = supersFor(world, kind);
+  let supers = null;
+  if (sups.length) {
+    supers = el('div', 'sc-supers');
+    supers.append(el('span', 'sc-sub', `Super spawns earned by your lines (${sups.length}): a Paragon, free, and it always settles`));
+    for (const [S, i] of sups) {
+      const b = el('button', 'super');
+      b.type = 'button';
+      b.append(colored('b', null, `♛ Paragon ${S.traits.join(' ')} ${SPECIES[kind].label.toLowerCase()}`.replace(/\s+/g, ' ')));
+      b.addEventListener('click', () => { if (claimSuper(world, i)) renderSpawnCard(); });
+      supers.append(b);
+    }
+  }
+  box.replaceChildren(...[head, supers, facts, have, boosts, grades, ancient, buy].filter(Boolean));
   box.hidden = false;
   const bar = byId('animals').getBoundingClientRect(), a = spawnUi.anchor.getBoundingClientRect(), w = box.offsetWidth;
   box.style.left = `${Math.round(clamp(a.left + a.width / 2 - w / 2, 8, innerWidth - w - 8))}px`;
@@ -1048,12 +1094,17 @@ function renderCreature() {
     r.type = 'button';
     r.append(document.createTextNode('Recycle +'), el('i', 'essence'), document.createTextNode(String(recycleValue(c))));
     r.title = 'Return this animal to the pond for essence';
+    r.disabled = isSafe(c);
+    const keep = el('button', isSafe(c) ? 'keep on' : 'keep', isSafe(c) ? '🔒 Kept safe' : 'Keep safe');
+    keep.type = 'button';
+    keep.title = isSafe(c) ? 'Kept safe from recycling (the Net and recycle all skip it). Click to unmark' : 'Keep this animal safe from recycling';
+    keep.addEventListener('click', () => { toggleSafe(c); renderCreature(); });
     r.addEventListener('click', () => {
       if (d.tier >= 3 && !confirm(`Recycle ${d.name}, a ${TIERS[d.tier]} ${d.label}? It will be gone for good.`)) return;
       recycle(c);
       renderCreature();
     });
-    acts.append(f, r);
+    acts.append(f, r, keep);
     if (world.hatchery && BREED[c.species === 'tadpole' ? 'frog' : c.species] && c.species !== 'tadpole') {
       const h = el('button', 'to-hatch', 'To hatchery');
       h.type = 'button';
@@ -1430,6 +1481,31 @@ function visitPond(id) {
   location.assign(`/${id}`);
 }
 
+// The narrator's state of mind, the balance of light and dark, and the super spawns waiting (with claim buttons).
+function renderStoryBits() {
+  const box = byId('sp-story');
+  if (!box) return;
+  const S = world.story || { stage: 0 }, lm = lightMadness(world), sup = (world.game.supers || []);
+  const sig = JSON.stringify([S.stage, Math.round(lm * 10), sup.map((s) => s.k + s.traits.join())]);
+  if (sig === box.dataset.sig) return;
+  box.dataset.sig = sig;
+  const parts = [colored('p', 'note', `The narrator: ${STORY_STAGES[S.stage]}. Light and dark: ${lightWord(lm)} (madness ×${lm.toFixed(1)}).`)];
+  if (sup.length) {
+    const list = el('div', 'sc-supers');
+    list.append(el('span', 'sc-sub', 'Super spawns waiting'));
+    sup.forEach((s, i) => {
+      const b = el('button', 'super');
+      b.type = 'button';
+      b.append(colored('b', null, `♛ Paragon ${s.traits.join(' ')} ${(SINGULAR[s.k] || s.k).toLowerCase()}`.replace(/\s+/g, ' ')));
+      b.disabled = !!world.observe;
+      b.addEventListener('click', () => { if (claimSuper(world, i)) { box.dataset.sig = ''; renderStoryBits(); } });
+      list.append(b);
+    });
+    parts.push(list);
+  }
+  box.replaceChildren(...parts);
+}
+
 function renderScorePanel(force = false) {
   if (!scoreUi.open || !world.game) return;
   const G = world.game, plan = fireflyPlan(world);
@@ -1438,6 +1514,7 @@ function renderScorePanel(force = false) {
   byId('sp-zone').textContent = tierName(world, E.tier);
   const parts = Object.entries({ ...(E.parts || {}), points: E.pts || 0 }).filter(([, v]) => v > 0.05).sort((a, b) => b[1] - a[1]);
   byId('sp-parts').replaceChildren(colorize(parts.length ? `Deepened by ${parts.map(([k, v]) => `${DEPTH_PARTS[k] || k} ${v.toFixed(1)}`).join(', ')}` : 'The pond has only just begun to wear deeper.'));
+  renderStoryBits();
   byId('sp-points').textContent = fmt(G.points);
   byId('sp-pearls').textContent = fmt(G.pearls);
   byId('sp-essence').textContent = fmt(G.essence || 0);

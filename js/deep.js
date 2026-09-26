@@ -295,6 +295,7 @@ class Cavefish extends Fish {
     if (s.until <= world.t) {
       for (let i = 0; i < 12; i++) { s.tx = rand(10, world.W - 10); s.ty = rand(10, world.H - 10); if (this.keepIn(world, s.tx, s.ty)) break; }
       s.tz = rand(this.zMin, this.zMax); s.until = world.t + rand(3, 7);
+      if (typeof deepZ === 'function') s.tz = deepZ(world, { x: s.tx, y: s.ty, zMin: this.zMin, species: this.species }, s.tz);
     }
     this.tx = s.tx + this.ox; this.ty = s.ty + this.oy; this.tz = s.tz + rand(-3, 3);
     this.timer = rand(0.5, 1.5); this.cruiseNow = this.cruise * rand(0.8, 1.1);
@@ -651,5 +652,6 @@ function arriveDeep(world) {
   const pts = award(world, (DEEP[kind].mythic ? 150 : 20) + (first ? 30 : 0), DEEP[kind].mythic ? 'mythic sightings' : 'deep sightings', group[0]);
   const text = DEEP[kind].mythic ? `✦ ${MYTHIC_ARRIVAL[kind]} · +${pts}` : `✦ From the deep: ${withArticle(SINGULAR[kind].toLowerCase())}${group.length > 1 ? ` school of ${group.length}` : ''} came up out of the dark${first ? ', a first for this pond' : ''} · +${pts}`;
   logEvent(world, text, group[0], { cat: 'rare', pri: 3 });
+  if (typeof narrate === 'function') narrate(world, DEEP[kind].mythic ? 'mythic' : 'deep', { what: capFirst(withArticle(SINGULAR[kind].toLowerCase())), subject: group[0] }, first);
   for (const c of group) if (c.life && c.life.traits.length) scoreArrival(world, c);
 }

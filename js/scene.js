@@ -285,8 +285,18 @@ class Motes {
   draw(r, world) {
     r.castShadows = false;
     r.alpha = 0.55;
+    // From the midnight zone on, some of the snow out over the deep glows (cyan and blue in salt water, green and amber in fresh).
+    const tier = (world.erosion && world.erosion.tier) || 0, glow = tier >= 2 && world.depth, t = world.t;
+    if (glow && !this.glow) {
+      const cols = world.opts.habitat === 'fresh' ? ['#9aff5a', '#ffd05a', '#c8ff8a'] : world.opts.habitat === 'salt' ? ['#5af0ff', '#6a9aff', '#ff6ae0'] : ['#5af0ff', '#9aff5a', '#ff6ae0'];
+      this.glow = cols.map((c) => { const id = newId(hexToInt('#020608')); EMISSIVE[id] = 2; return [solid(c), id]; });
+    }
     for (let i = 0; i < this.x.length; i++) {
       if (world.shore && isDry(world, this.x[i], this.y[i])) continue;
+      if (glow && i % 4 === 0 && depthAt(world, this.x[i], this.y[i]) > 0.45 - 0.05 * tier) {
+        if (Math.sin(t * 1.7 + this.ph[i] * 5) > 0.1) { const [m, id] = this.glow[i % this.glow.length]; r.alpha = 1; r.dot(this.x[i], this.y[i], this.z[i], m, id); r.alpha = 0.55; }
+        continue;
+      }
       r.dot(this.x[i], this.y[i], this.z[i], this.mat, MOTE_ID);
     }
     r.alpha = 1;

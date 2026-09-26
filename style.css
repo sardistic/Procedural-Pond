@@ -391,6 +391,25 @@ output {
 .cat-come .dot, .dot.cat-come { background: #6fb7ef; }
 .cat-sky .dot, .dot.cat-sky { background: #b49cf0; }
 .cat-pond .dot, .dot.cat-pond { background: #dff6f0; }
+.cat-story .dot, .dot.cat-story { background: #c8a0ff; }
+.journal .cat-story span { font-style: italic; color: #d8c8f0; }
+
+/* The big news, and the narrator, under the pond bar. */
+.banner, .narrator { position: fixed; left: 50%; z-index: 6; transform: translateX(-50%); max-width: min(640px, calc(100vw - 32px)); text-align: center; pointer-events: none; }
+.banner { top: 62px; padding: 8px 14px; font-size: 11px; line-height: 1.6; color: var(--text); background: var(--panel); border: 2px solid var(--hot); box-shadow: 3px 3px 0 var(--ink); }
+.banner.show { animation: banner-in 0.5s ease-out; }
+@keyframes banner-in { from { opacity: 0; transform: translate(-50%, -8px); } }
+.narrator { top: 112px; padding: 6px 12px; font-size: 10px; line-height: 1.7; color: #d8ccef; background: rgba(12, 10, 24, 0.72); border-left: 3px solid #8a6ad0; transition: opacity 1s; opacity: 0; }
+.narrator.show { opacity: 1; }
+.narrator.st2 { color: #c8d8a0; border-color: #6a9a4a; }
+.narrator.st3 { color: #b0f0c0; border-color: #3aff9a; letter-spacing: 0.5px; }
+.narrator.st4 { color: #7aff9a; border-color: #ff3a9a; letter-spacing: 1px; animation: narr-shiver 0.18s steps(2) infinite; }
+@keyframes narr-shiver { 50% { transform: translate(calc(-50% + 1px), 1px); } }
+.sp-story { display: grid; gap: 6px; margin: 6px 0; }
+.sp-story .note { margin: 0; }
+.sc-supers { display: grid; gap: 4px; margin: 6px 0; }
+.sc-supers .super { justify-content: flex-start; padding: 5px 8px; font-size: 9px; color: #ffd24a; border-color: #ffd24a; background: linear-gradient(90deg, #2a2208, #14120a); }
+.cr-acts .keep.on { color: #ffd24a; border-color: #ffd24a; }
 
 .log-line {
   width: 100%;
@@ -405,7 +424,8 @@ output {
 
 .log-line time { flex: none; color: var(--muted); }
 .log-line time:empty { display: none; }
-.log-line .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-line { align-items: flex-start; }
+.log-line .txt { flex: 1; min-width: 0; overflow: hidden; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; white-space: normal; }
 .log-line.flash { animation: flash 1.4s ease-out; }
 .log-line.flash.pri3 { animation: flash-hot 2.2s ease-out; }
 .log-line .more { flex: none; font-size: 9px; color: var(--hot); }

@@ -51,6 +51,7 @@ function eldTraits(L) {
   for (const q of L.quirks || []) t.push(q);
   for (const i of L.ill || []) t.push(i);
   if (L.hunter) t.push('awakened');
+  if (L.paragon) t.push('paragon');
   return t;
 }
 
@@ -102,7 +103,7 @@ function buyPath(world, k) {
 function eldRate(world, c) {
   const L = c.life;
   let k = 1 / (L.lifespan * 2);
-  k *= 1 + 1.2 * (world.darkness || 0);
+  k *= 1.3 * (typeof lightMadness === 'function' ? lightMadness(world) : 1 + 0.9 * (world.darkness || 0)); // the dark feeds it; daylight holds it back
   k *= 1 + 2 * depthAt(world, c.x, c.y);
   for (const s of world.structures || []) {
     if ((s.kind === 'idol' || s.kind === 'whalefall') && Math.hypot(s.x - c.x, s.y - c.y) < STRUCTURES[s.kind].r) k *= s.kind === 'idol' ? 3 : 1.6;
@@ -230,7 +231,7 @@ function updateEldritch(world, dt) {
     L.corruption = Math.min(1, (L.corruption || 0) + eldRate(world, c) * step);
     const now = eldStage(L);
     // Corruption, the resource: the marked yield it as they live, more as they change.
-    gainCorruption(world, 0.003 * (1 + now * 2) * (L.ascended ? 3 : 1) * (L.quirks && L.quirks.includes('dreaming') ? 2 : 1) * thin * step, null, { quiet: true });
+    gainCorruption(world, 0.003 * (1 + now * 2) * (L.ascended ? 3 : 1) * (L.quirks && L.quirks.includes('dreaming') ? 2 : 1) * thin * step * (0.7 + 0.3 * lightMadness(world)), null, { quiet: true });
     if (now !== before) {
       L.traits = eldTraits(L);
       const rare = L.traits.find((t) => RARE_OUTLINE[t]);
@@ -238,6 +239,7 @@ function updateEldritch(world, dt) {
       logEvent(world, fill(ELD_STAGE_LINES[now], c), c, { cat: 'rare', pri: now === 2 ? 3 : 2 });
       scatterFrom(world, c, now === 2 ? 3.5 : 2.5);
       if (typeof maybeQuirk === 'function') maybeQuirk(world, c); // sometimes something stays with it
+      if (typeof narrate === 'function') narrate(world, 'mark', { name: L.name, subject: c });
       gainCorruption(world, now === 2 ? 15 : 5, c);
       if (now === 2) {
         const G = world.game, key = `eld:${c.species === 'wild' ? c.sp.id : c.species}`, first = !G.seen.includes(key);
@@ -267,7 +269,7 @@ function updateEldritch(world, dt) {
       if (now === 2) addHeat(world, c.x, c.y, 0.04);
     }
     // At night the transcendent dream, and the mark can pass to a neighbour.
-    if (now === 2 && world.darkness > 0.5 && Math.random() < 0.004 * (eldPath(world, 'dream') ? 2.5 : 1) * Math.max(0, 1 - share / 0.08)) {
+    if (now === 2 && world.darkness > 0.5 && Math.random() < 0.004 * lightMadness(world) * (eldPath(world, 'dream') ? 2.5 : 1) * Math.max(0, 1 - share / 0.08)) {
       const near = world.creatures.filter((o) => o !== c && o.life && !o.life.genome.eld && (o.x - c.x) ** 2 + (o.y - c.y) ** 2 < 3600);
       if (near.length) {
         const o = pick(near);
@@ -290,7 +292,8 @@ function updateEldritch(world, dt) {
       o.tx = clamp(o.x + dx / d * m.R, 8, world.W - 8); o.ty = clamp(o.y + dy / d * m.R, 8, world.H - 8); o.timer = Math.max(o.timer || 0, 2);
     }
   }
-  for (const o of world.creatures) if (o.maddened) o.maddened = Math.max(0, o.maddened - step);
+  const clear = 1.6 - 0.6 * lightMadness(world); // fits pass off faster in the light
+  for (const o of world.creatures) if (o.maddened) o.maddened = Math.max(0, o.maddened - step * clear);
 }
 
 // ---- how they're drawn --------------------------------------------------------------------------------

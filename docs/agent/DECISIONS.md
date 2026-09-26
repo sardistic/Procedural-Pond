@@ -474,3 +474,37 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
 - The branch level caps at `min(6, stack − 2)` (so level 5 still allows 3, as before) and costs ×1.3 per level. The dark island's reach grows more slowly past branch level 3.
 - Links: the old stack field is 3 bits (max 8), so a new trailer block after the artifacts carries every structure's full stack.
 - The west edge tab (beach across the screen) sat over the open menu. `placeEdgeTabs` moves any tab that overlaps `#hud` beside it, or below it for a vertical beach, and runs from `edgeHints`, `setHud` and a ResizeObserver on `#hud`.
+
+## Depth cues, light, the narrator, light vs madness, super spawns, keep safe (js/story.js, js/lineage.js, js/depths.js)
+- **Light pools.** A 4 px light map is rebuilt each frame over the visible rect plus 90 px (`buildLights`). Sources are creatures (per-species radius and optional beam along the heading), the glow gene, paragons, transcendents, glowing and deep plants, and neon structures. Compose samples it bilinearly after the tint, quantized to 5 dithered steps. It shows by `max(darkness, depth/280, 0.1)`, and lights under 10 px are spread to 10, since smaller ones showed the grid. Palettes: salt cyan/blue/magenta, fresh foxfire green/amber/violet. Render went from about 12 to 13 ms.
+- **Deep look.**
+  - `deepColor2` blends in with depth² per tier from 5 on (`TIER_DARK`).
+  - Creature pixels lose up to 78% of the depth darkening as z nears the surface, so rising and sinking show.
+  - Dry land (`shore > tide`) is never depth-darkened or trenched. Islands in deep water used to go dark.
+  - Glowing marine snow appears from tier 2 over the deep.
+- **Trenches.** From tier 5, `carveTrenches` in buildDepth marks up to 4 meandering chasms in `world.trench` (derived, not stored). Compose draws them black with sparse rim glints; their depth is 255.
+- **Vertical movement.**
+  - `deepZ` (called from `Fish.wander`, school wander and the cave school): over the deep (d >= 0.25) the target z rises at night (45-100% toward the surface) and sinks by day (0-30%). Big deep predators and mythics surge to the top 18% of the time.
+  - Fresh day fish still rest low at night; that's their activity rule.
+  - `updateVertical`: the kraken and squids lift off the floor now and then.
+- **Waves.** A shallow chop train (10 px wavelength) scaled by gust and surf fades out by depth 160. Spindrift streaks over depth 110 appear when swell exceeds 0.75.
+- **Scour and sturdiness.** Scour matures in 12 days (was 25), is stronger (150, was 110) and wider (20 + 30k). Each source keeps a plinth (the footprint shallows to 25%) with a moat. Islands no longer scour.
+- **Deep islands.** `islandDeepCost = 1 + 5*d^2` applies to both the build and the raise; `s.deep` is stored at build. The profile exponent is `2 + 8*deep` (a cliff), and the bake adds a basalt ring when deep > 0.15.
+- **Narrator (story.js).**
+  - `madnessNow` = 0.32*tier/8 + 0.3*corruption + 0.23*marked share + 0.15*darkAvg. `S.m` ratchets up quickly and ebbs very slowly, more slowly in the dark. Stage = floor(m*5.2), with 5 voices.
+  - Lines per kind: arrive, deep, mythic, tier, fossil, relic, unlock, mark, super, island, build, dusk, dawn, worse, better.
+  - Rate limit 25 s except for important kinds. Journal category `story`; the strip sits under the banner. Firsts are keyed in `story.said`.
+- **Light vs madness.** `lightMadness` = 0.4 + 1.3*(0.45*dark now + 0.55*darkAvg), range 0.4-1.7; `darkAvg` is an EMA over 1.5 days. It scales:
+  - `eldRate` (x1.3*lm, replacing 1 + 1.2*dark);
+  - dreams;
+  - quirk chance;
+  - madness infection;
+  - the dawn madness cure (x(2.2 - lm));
+  - how fast fits clear (x(1.6 - 0.6*lm));
+  - corruption yield (x(0.7 + 0.3*lm)).
+- **Super spawns (lineage.js).** Line milestones at 3/8/20/50 (from `scoreRare`, deferred a tick) and species points at 150*4^i (from `award`) push `{k, traits}` to `G.supers`. `claimSuper` spawns the species: the first is a paragon (meetGrade 5; the line's ancient traits and gifts re-applied after grading; one extra gift; curses cleared; trait `paragon`, rarity 4, gold outline, buffs); the rest are graded Superb. No wild species.
+- **Keep safe.** `life.safe`: `recycle` refuses; `recycleAll` skips and keeps the target count. There's a card button and a census lock.
+- **Links.** A new trailer after the stacks: flagged animals (safe bit 1, paragon bit 2); super spawns (kind code, trait indices into `Object.keys(TRAIT_RARITY)`, append-only); each structure's `deep * 100`.
+- **UI.**
+  - The ticker wraps up to 3 lines, and pri-3 news gets a banner. `placeNews` keeps the banner and narrator below a vertical west tab.
+  - The ticker keeps its 360 px width. Widening it squeezed the dock, and in a mixed pond the dock squeezed the ticker to 130 px, so wrapping is the fix, not width.

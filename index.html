@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=18">
+  <link rel="stylesheet" href="style.css?v=19">
 
   <script type="application/ld+json">
   {
@@ -199,6 +199,7 @@
       <header class="pop-head"><b>Score</b><button type="button" id="score-close" class="icon" aria-label="Close score">×</button></header>
       <div class="score-depth"><b id="sp-depth">0</b><span id="sp-zone"></span></div>
       <p class="note" id="sp-parts"></p>
+      <div id="sp-story" class="sp-story"></div>
       <div class="score-top">
         <div><b id="sp-points">0</b><span>points</span></div>
         <div><b id="sp-pearls">0</b><span>pearls</span></div>
@@ -234,6 +235,8 @@
           <li>All ponds share one long beach: the next player's pond lies right past the end of yours. Drag on past the end and let go more than halfway, and you walk into it (clicking the tab there asks first). You can look around but not touch anything, walk on to the one after, or back home the same way.</li>
           <li>Sinks for everything: the deepest tiers' structures (up to the Sleeper's cradle), trait trees ten levels deep, hunters (a predator's card: jaws, burst and senses for pearls, hunger, maw and tenacity for essence, contagion and devour for corruption), graded spawns (Good to Pristine), and deepening by hand.</li>
           <li>Breeding habitats (spawning gravel, amphibian pool, reef nursery, brood chamber) let their kinds breed and lay more; what stands around one shapes the young, for better (glowing plants, springs, corals) or worse (litter, carrion, the idol). Crowded species fight and sicken; the last few are spared.</li>
+          <li>Breed a rare line again and again, or score well with a species, and it earns a super spawn: a Paragon, free, the finest of its line. Mark any animal Keep safe on its card and nothing recycles it.</li>
+          <li>Darkness feeds madness and daylight resists it: keep the pond lit and the marked change slowly; keep it in the dark and they change fast (and yield more corruption). A narrator keeps notes on it all, and their voice goes as the pond does.</li>
           <li>Rare genes are rare: gifts (iridescent, starry, titan …) are rarer than anything before, and curses (ravenous, barren, frail …) pass on too, far oftener if you run the pond fast or shorten its days. Fossils come in grades; a relic holds an artifact to call storms, tides and surf from the sky tracker.</li>
           <li>Animals like certain plants and rocks nearby (hover one to see), calm water, and their own kind of water. Comfortable, well-fed animals age slower and rarely wander off; aggressive water drives them away and keeps newcomers out. Spirulina keeps them fed for longer; brine shrimp brings them into breeding condition.</li>
         </ul>
@@ -242,6 +245,8 @@
     </section>
   </div>
 
+  <div id="banner" class="banner" hidden aria-live="polite"></div>
+  <div id="narrator" class="narrator" hidden aria-live="polite"></div>
   <div id="inspect" class="inspect" hidden>
     <b class="nm"></b>
     <span class="sp"></span>
@@ -338,36 +343,39 @@
     </div>
   </div>
 
-  <script src="js/core.js?v=22"></script>
-  <script src="js/raster.js?v=22"></script>
-  <script src="js/creatures.js?v=22"></script>
-  <script src="js/critters.js?v=22"></script>
-  <script src="js/wildlife.js?v=22"></script>
-  <script src="js/wildfish.js?v=22"></script>
-  <script src="js/sound.js?v=22"></script>
-  <script src="js/life.js?v=22"></script>
-  <script src="js/plants.js?v=22"></script>
-  <script src="js/scene.js?v=22"></script>
-  <script src="js/structures.js?v=22"></script>
-  <script src="js/erosion.js?v=22"></script>
-  <script src="js/sky.js?v=22"></script>
-  <script src="js/ecology.js?v=22"></script>
-  <script src="js/game.js?v=22"></script>
-  <script src="js/deep.js?v=22"></script>
-  <script src="js/remains.js?v=22"></script>
-  <script src="js/eldritch.js?v=22"></script>
-  <script src="js/coast.js?v=22"></script>
-  <script src="js/gulls.js?v=22"></script>
-  <script src="js/traits.js?v=22"></script>
-  <script src="js/save.js?v=22"></script>
-  <script src="js/link.js?v=22"></script>
-  <script src="js/abyss.js?v=22"></script>
-  <script src="js/quirks.js?v=22"></script>
-  <script src="js/hunters.js?v=22"></script>
-  <script src="js/habitats.js?v=22"></script>
-  <script src="js/artifacts.js?v=22"></script>
-  <script src="js/net.js?v=22"></script>
-  <script src="js/hud.js?v=22"></script>
-  <script src="js/main.js?v=25"></script>
+  <script src="js/core.js?v=23"></script>
+  <script src="js/raster.js?v=23"></script>
+  <script src="js/creatures.js?v=23"></script>
+  <script src="js/critters.js?v=23"></script>
+  <script src="js/wildlife.js?v=23"></script>
+  <script src="js/wildfish.js?v=23"></script>
+  <script src="js/sound.js?v=23"></script>
+  <script src="js/life.js?v=23"></script>
+  <script src="js/plants.js?v=23"></script>
+  <script src="js/scene.js?v=23"></script>
+  <script src="js/structures.js?v=23"></script>
+  <script src="js/erosion.js?v=23"></script>
+  <script src="js/sky.js?v=23"></script>
+  <script src="js/ecology.js?v=23"></script>
+  <script src="js/game.js?v=23"></script>
+  <script src="js/deep.js?v=23"></script>
+  <script src="js/remains.js?v=23"></script>
+  <script src="js/eldritch.js?v=23"></script>
+  <script src="js/coast.js?v=23"></script>
+  <script src="js/gulls.js?v=23"></script>
+  <script src="js/traits.js?v=23"></script>
+  <script src="js/save.js?v=23"></script>
+  <script src="js/link.js?v=23"></script>
+  <script src="js/abyss.js?v=23"></script>
+  <script src="js/quirks.js?v=23"></script>
+  <script src="js/hunters.js?v=23"></script>
+  <script src="js/habitats.js?v=23"></script>
+  <script src="js/artifacts.js?v=23"></script>
+  <script src="js/story.js?v=23"></script>
+  <script src="js/lineage.js?v=23"></script>
+  <script src="js/depths.js?v=23"></script>
+  <script src="js/net.js?v=23"></script>
+  <script src="js/hud.js?v=23"></script>
+  <script src="js/main.js?v=26"></script>
 </body>
 </html>

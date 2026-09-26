@@ -309,6 +309,7 @@ class Fish extends Creature {
     this.timer = rand(3, 9);
     this.cruiseNow = this.cruise * (Math.random() < 0.2 ? 0.3 : rand(0.6, 1.1));
     this.tz = rand(this.zMin, this.zMax);
+    if (typeof deepZ === 'function') this.tz = deepZ(world, this, this.tz); // over the deep: up at night, down by day
     // Out of its active hours it rests: near cover, low down, drifting slowly.
     if (this.life && activity(world, this) < 0.55 && !this.alwaysSwims) {
       const s = likedSpot(world, this);
@@ -401,6 +402,7 @@ class Tetra extends Fish {
       const fav = Math.random() < 0.5 && typeof likedSpot === 'function' && likedSpot(world, this);
       if (fav && shoreAt(world, fav.x, fav.y) <= world.tide.level - SHORE_MARGIN - 0.06) { s.tx = fav.x + rand(-10, 10); s.ty = fav.y + rand(-10, 10); }
       s.tz = rand(this.zMin, this.zMax);
+      if (typeof deepZ === 'function') s.tz = deepZ(world, { x: s.tx, y: s.ty, zMin: this.zMin, species: this.species }, s.tz); // the school rises and sinks together
       s.until = world.t + rand(3, 7);
     }
     this.tx = s.tx + this.ox; this.ty = s.ty + this.oy;

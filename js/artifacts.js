@@ -69,6 +69,7 @@ function findArtifact(world) {
   if (!left.length) { gainEssence(world, 200, 'relics'); return null; }
   const k = pick(left);
   G.artifacts = { ...have, [k]: true };
+  if (typeof narrate === 'function') narrate(world, 'relic', { what: `The ${ARTIFACTS[k].label.toLowerCase()}` });
   logEvent(world, `✦ Inside the relic: the ${ARTIFACTS[k].label.toLowerCase()}. ${capFirst(ARTIFACTS[k].note)}${ARTIFACTS[k].controls ? ' (use it from the sky tracker)' : ''}`, null, { cat: 'rare', pri: 3 });
   return k;
 }

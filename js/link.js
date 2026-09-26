@@ -239,6 +239,19 @@ function packPond(world) {
   // And each structure's full stack (islands go to ten; the old field holds eight).
   w.u8(st.length);
   for (const s of st) w.u8(s.stack || 1);
+  // And animals kept safe or paragons, the super spawns waiting, and how deep each island stands.
+  const flagged = saved.map((c, i) => [i, (c.life.safe ? 1 : 0) | (c.life.paragon ? 2 : 0)]).filter(([, f]) => f);
+  w.vu(flagged.length);
+  for (const [i, f] of flagged) { w.vu(i); w.u8(f); }
+  const sup = ((world.game && world.game.supers) || []).filter((s) => KIND_CODES.includes(s.k)).slice(0, 40), TK = Object.keys(TRAIT_RARITY);
+  w.u8(sup.length);
+  for (const s of sup) {
+    const tr = s.traits.filter((t) => TK.includes(t)).slice(0, 5);
+    w.u8(KIND_CODES.indexOf(s.k)); w.u8(tr.length);
+    for (const t of tr) w.u8(TK.indexOf(t));
+  }
+  w.u8(st.length);
+  for (const s of st) w.u8(Math.round((s.deep || 0) * 100));
   return w.bytes();
 }
 
@@ -392,6 +405,13 @@ function unpackV2(r, v = 2) {
               for (let i = 0; i < ns2; i++) { const a = r.u8(), b = r.u8(), t = s.structures[i]; if (t) t.lv = { reach: a, strength: b }; }
               if (r.i < r.b.length && s.game) { const bits = r.u8(); s.game.artifacts = Object.fromEntries(ARTIFACT_CODES.filter((k, i) => bits & (1 << i)).map((k) => [k, true])); }
               if (r.i < r.b.length) { const n3 = r.u8(); for (let i = 0; i < n3; i++) { const v = r.u8(), t = s.structures[i]; if (t && v > 1) t.stack = v; } }
+              if (r.i < r.b.length) {
+                for (let n = r.vu(); n > 0; n--) { const i = r.vu(), f = r.u8(), c = s.creatures[i]; if (c) { if (f & 1) c.L.safe = true; if (f & 2) c.L.paragon = true; } }
+                const TK = Object.keys(TRAIT_RARITY), sup = [];
+                for (let n = r.u8(); n > 0; n--) { const k = KIND_CODES[r.u8()], tr = []; for (let m = r.u8(); m > 0; m--) tr.push(TK[r.u8()]); if (k) sup.push({ k, traits: tr.filter(Boolean) }); }
+                if (s.game) s.game.supers = sup;
+                for (let n = r.u8(), i = 0; i < n; i++) { const v = r.u8(), t = s.structures[i]; if (t && v) t.deep = v / 100; }
+              }
             }
           }
         }

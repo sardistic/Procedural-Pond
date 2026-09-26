@@ -179,8 +179,13 @@ class Raster {
     const shore = s.shore || null, bgDry = s.bgDry, tideL = (s.tide ?? 1) * 255;
     const surf = s.surf || 0, wave = s.wave || 0, surfReach = 30 + 70 * surf, foamW = 0.05 + 0.07 * surf;
     // The depths: deep water swallows the light (up to ~90%), except things that make their own.
-    const depthMap = s.depth || null, dc = s.deepColor || 0xff0e0402;
-    const dr = dc & 255, dg = (dc >> 8) & 255, db = (dc >>> 16) & 255;
+    const depthMap = s.depth || null, dc = s.deepColor || 0xff0e0402, dc2 = s.deepColor2 ?? dc;
+    const dr0 = dc & 255, dg0 = (dc >> 8) & 255, db0 = (dc >>> 16) & 255, dr1 = dc2 & 255, dg1 = (dc2 >> 8) & 255, db1 = (dc2 >>> 16) & 255;
+    // Trenches (black chasms with faint lights along their rims) and the light cast by glowing things.
+    const trench = s.trench || null, tg = s.trenchGlow || 0xffffb02a, tgr = tg & 255, tgg = (tg >> 8) & 255, tgb = (tg >>> 16) & 255;
+    const LM = s.lights || null, LD = LM ? LM.data : null, lw = LM ? LM.lw : 0, lh = LM ? LM.lh : 0, lvis = s.lightVis || 0;
+    // Chop: short, quick waves in the shallows when it blows; spindrift: streaks of foam blown along the deep in a storm.
+    const chop = s.chop || 0, spin = s.spindrift || 0, L3 = 10, w3x = (sw0x(s) * 1024) / L3, w3y = (sw0y(s) * 1024) / L3, w3t = t * 14 * 1024 / L3;
     // The eldritch: veins of void in marked skin, crawling slowly, with stars in them.
     const voidL = s.voidSkin || null, vox = Math.floor(t * 0.9), voy = Math.floor(t * 0.6), starT = Math.floor(t * 2) * 83492791;
     // Swell: two trains of waves rolling toward the beach, bigger over the deep, whitecaps on the biggest.
@@ -194,10 +199,10 @@ class Raster {
     for (let y = ry0; y <= ry1; y++) {
       for (let x = rx0, p = rx0 + y * W; x <= rx1; x++, p++) {
         const i = id[p];
-        let c, n, depth, fogScale = 1, waveS = 0, waveC = 0, refl = 0;
+        let c, n, depth, fogScale = 1, waveS = 0, waveC = 0, refl = 0, dry = false;
         if (shore) {
           const sp = shore[p];
-          if (sp > tideL) fogScale = 0; else if (sp) fogScale = Math.min(1, (tideL - sp) / 60);
+          if (sp > tideL) { fogScale = 0; dry = true; } else if (sp) fogScale = Math.min(1, (tideL - sp) / 60);
         }
         if (i === 0) {
           const zb = zBase[p];
@@ -246,6 +251,17 @@ class Raster {
                 const i1 = ((x * w1x + y * w1y - w1t) | 0) & 1023, i2 = ((x * w2x + y * w2y - w2t) | 0) & 1023, amp = swell * (0.55 + dd * 0.004) * patch;
                 waveS = (WAVE_TAB[(i1 + 24) & 1023] - WAVE_TAB[(i1 - 24) & 1023] + 0.5 * (WAVE_TAB[(i2 + 24) & 1023] - WAVE_TAB[(i2 - 24) & 1023])) * amp;
                 waveC = (WAVE_TAB[i1] + 0.5 * WAVE_TAB[i2]) * amp;
+                // The shallows chop: short steep ripples across the swell (none out over the deep).
+                if (chop > 0 && dd < 160) {
+                  const i3 = ((x * w3x + y * w3y - w3t) | 0) & 1023, ck = chop * (1 - dd / 160) * (0.6 + 0.8 * caustic[((x + o2x) & TM) | (((y >> 1) & TM) << 7)]);
+                  waveS += (WAVE_TAB[(i3 + 40) & 1023] - WAVE_TAB[(i3 - 40) & 1023]) * ck;
+                }
+                // Out over the deep in a storm, the wind tears streaks of spindrift along the swell.
+                if (spin > 0 && dd > 110) {
+                  const a = x * sw[1] - y * sw[0], b = (x * sw[0] + y * sw[1]) * 0.12 - t * 3;
+                  const v = caustic[((a | 0) & TM) | (((b | 0) & TM) << 7)];
+                  if (v < 0.035 * spin * (dd - 110) / 145 && ((x ^ y ^ starT) & 1)) waveC = 8;
+                }
                 // Whitecaps: foam breaking in thin, ragged runs right along the tops of the biggest crests.
                 if (swell > 0.45 && amp > 0.8 && patch > 0.95) {
                   const top = Math.max(WAVE_TAB[i1] - 1.18, (WAVE_TAB[i2] - 1.24) * 0.8) * 6 * Math.min(1, (amp - 0.8) * 1.5) * Math.min(1, (patch - 0.95) * 3);
@@ -314,10 +330,12 @@ class Raster {
             c = (0xff000000 | ((cb + (((fb - cb) * a) >> 8)) << 16) | ((cg + (((fgc - cg) * a) >> 8)) << 8) | (cr + (((fr - cr) * a) >> 8))) >>> 0;
           }
         }
-        if (depthMap) {
+        if (depthMap && !dry) {
           const dd = depthMap[p];
           if (dd && !(i && emissive[i] === 2)) {
             let a = (dd * 230) >> 8;
+            const m = (dd * dd) >> 8, dr = dr0 + (((dr1 - dr0) * m) >> 8), dg = dg0 + (((dg1 - dg0) * m) >> 8), db = db0 + (((db1 - db0) * m) >> 8);
+            if (i) a = (a * (256 - Math.min(200, (z[p] * 256 / SURFACE_Z * 0.78) | 0))) >> 8; // nearer the surface, less of the dark
             // Over the floor, the dark comes in dithered steps with a slow murk moving through it
             // (lighter and darker reaches), so the deep has a texture of its own, not a smooth smear.
             if (!i) {
@@ -327,6 +345,13 @@ class Raster {
             }
             const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
             c = (0xff000000 | ((cb + (((db - cb) * a) >> 8)) << 16) | ((cg + (((dg - cg) * a) >> 8)) << 8) | (cr + (((dr - cr) * a) >> 8))) >>> 0;
+          }
+          // A trench: the floor falls away into black, and things glint along its edges.
+          if (trench && !i && trench[p]) {
+            const v = trench[p];
+            if (v > 90) c = v > 170 || ((x ^ y) & 1) ? 0xff000000 : 0xff04040a;
+            else if (((Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1) ^ (starT >> 2)) >>> 26) === 0) c = (0xff000000 | (tgb << 16) | (tgg << 8) | tgr) >>> 0;
+            else { const f = 256 - v * 2; c = (0xff000000 | (((((c >>> 16) & 255) * f) >> 8) << 16) | (((((c >> 8) & 255) * f) >> 8) << 8) | (((c & 255) * f) >> 8)) >>> 0; }
           }
         }
         // The surface over it all (after the deep has darkened the floor below): the sky in calm
@@ -350,14 +375,39 @@ class Raster {
         if (tint) {
           const e = i ? emissive[i] : 0;
           if (e === 2) { out[p] = c; continue; }
-          const tr = e ? sr : mr, tg = e ? sg : mg, tb = e ? sb : mb;
-          c = (0xff000000 | ((((c >>> 16) & 255) * tb >> 8) << 16) | ((((c >>> 8) & 255) * tg >> 8) << 8) | ((c & 255) * tr >> 8)) >>> 0;
+          const tr = e ? sr : mr, tgn = e ? sg : mg, tb = e ? sb : mb;
+          c = (0xff000000 | ((((c >>> 16) & 255) * tb >> 8) << 16) | ((((c >>> 8) & 255) * tgn >> 8) << 8) | ((c & 255) * tr >> 8)) >>> 0;
+        }
+        // Light cast by glowing things: pools, in dithered steps, seen at night and in the deep.
+        if (LD) {
+          const fx = x / 4 - 0.5, fy = y / 4 - 0.5, gx = fx < 0 ? 0 : fx | 0, gy = fy < 0 ? 0 : fy | 0;
+          if (gx < lw && gy < lh) {
+            const gx1 = gx + 1 < lw ? gx + 1 : gx, gy1 = gy + 1 < lh ? gy + 1 : gy, ax = fx - gx, ay = fy - gy;
+            const i00 = (gx + gy * lw) * 3, i10 = (gx1 + gy * lw) * 3, i01 = (gx + gy1 * lw) * 3, i11 = (gx1 + gy1 * lw) * 3;
+            const w00 = (1 - ax) * (1 - ay), w10 = ax * (1 - ay), w01 = (1 - ax) * ay, w11 = ax * ay;
+            let lr = LD[i00] * w00 + LD[i10] * w10 + LD[i01] * w01 + LD[i11] * w11;
+            if (lr + LD[i00 + 1] + LD[i00 + 2] + LD[i11 + 1] > 0.004) {
+              let lg = LD[i00 + 1] * w00 + LD[i10 + 1] * w10 + LD[i01 + 1] * w01 + LD[i11 + 1] * w11;
+              let lb = LD[i00 + 2] * w00 + LD[i10 + 2] * w10 + LD[i01 + 2] * w01 + LD[i11 + 2] * w11;
+              const dd = depthMap ? depthMap[p] : 0, vis = Math.max(lvis, dd / 280, 0.1);
+              const mx = Math.max(lr, lg, lb) * vis, q = Math.min(5, (mx * 6 + 0.5 + BAYER4[(x & 3) | ((y & 3) << 2)]) | 0) / 5;
+              if (q > 0) {
+                const k = q / Math.max(mx, 0.001) * vis * 150;
+                const cr = Math.min(255, (c & 255) + ((lr * k) | 0)), cg = Math.min(255, ((c >> 8) & 255) + ((lg * k) | 0)), cb = Math.min(255, ((c >>> 16) & 255) + ((lb * k) | 0));
+                c = (0xff000000 | (cb << 16) | (cg << 8) | cr) >>> 0;
+              }
+            }
+          }
         }
         out[p] = c;
       }
     }
   }
 }
+
+// The chop's direction: across the swell, a little skewed.
+const sw0x = (s) => { const sw = s.swellDir || [0, 1]; return sw[0] * 0.6 - sw[1] * 0.8; };
+const sw0y = (s) => { const sw = s.swellDir || [0, 1]; return sw[1] * 0.6 + sw[0] * 0.8; };
 
 // Swell across the surface: one wavelength of a sharp-crested wave (see compose).
 const WAVE_TAB = new Float32Array(1024);

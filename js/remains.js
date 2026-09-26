@@ -203,4 +203,5 @@ function collectFossil(world, f) {
   G.fossilGenes = [...(G.fossilGenes || []), f.gene];
   deepenBy(world, 0.1);
   logEvent(world, `✦ You dug up ${FOSSIL_KINDS[f.kind]}: +${ess} essence, +${pts} points, and an ancient ${f.gene} gene to give a new spawn or a brood`, null, { cat: 'rare', pri: 3 });
+  if (typeof narrate === 'function' && f.kind !== 'relic') narrate(world, 'fossil', { what: capFirst(FOSSIL_KINDS[f.kind]) });
 }

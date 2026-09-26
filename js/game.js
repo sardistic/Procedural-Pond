@@ -143,6 +143,7 @@ function award(world, n, why, subject = null, opts = {}) {
     const r = world.lineage.get(subject.seed);
     if (r) r.pts += n;
   }
+  if (subject && subject.life && subject.species && typeof speciesPoints === 'function') speciesPoints(world, subject, n);
   if (subject && !opts.quiet && typeof floatAward === 'function') floatAward(subject.x, subject.y, `+${n}`);
   world.gameDirty = true;
   return n;
@@ -189,6 +190,7 @@ function scoreRare(world, c, tier, how) {
     const bred = G.lines[key] || 0;
     G.lines[key] = bred + 1;
     pts = TIER_VALUE[tier] * (1 + 0.25 * Math.min(bred, 8));
+    if (typeof lineMilestone === 'function') setTimeout(() => lineMilestone(world, c, key, bred + 1), 0);
   }
   const n = award(world, pts + (first ? FIRST_BONUS : 0), how === 'born' ? 'rare births' : 'rare arrivals', c);
   // Firsts deepen the pond; repeats only a little (less in a big pond, where there are more of them).
@@ -343,6 +345,8 @@ function swatchOf(c) {
 
 function noteBorn(world, c, how) {
   if (!c.life || c.seed == null || !world.lineage || world.lineage.has(c.seed)) return;
+  if (typeof narrateFirst === 'function' && c.species !== 'tadpole' && !(how === 'founder' && world.t < 30) && !DEEP[c.species])
+    narrateFirst(world, `sp:${c.species === 'wild' ? c.sp.id : c.species}`, 'arrive', { what: capFirst(c.species === 'wild' ? c.sp.name : SINGULAR[c.species] || c.species), subject: c });
   world.lineage.set(c.seed, {
     s: c.seed, k: c.species, w: c.species === 'wild' ? c.sp.id : null, n: c.life.name, g: c.life.gen, p: c.life.parents || null,
     t: c.life.traits.slice(), c: swatchOf(c), b: Math.round(world.days * 100) / 100, how, d: null, why: null, pts: 0,

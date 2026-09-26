@@ -70,11 +70,12 @@ function updateSky(world, dt) {
   if (world.opts.light === 'cycle') {
     const c = world.clock;
     const crossed = (mark) => (prevClock < mark && c >= mark) || (c < prevClock && (mark > prevClock || mark <= c));
-    if (crossed(0.27)) logEvent(world, `Dawn breaks over the pond: day ${Math.floor(world.days) + 1}`, null, { cat: 'sky' });
+    if (crossed(0.27)) { logEvent(world, `Dawn breaks over the pond: day ${Math.floor(world.days) + 1}`, null, { cat: 'sky' }); if (typeof narrate === 'function' && Math.random() < 0.35) narrate(world, 'dawn'); }
     else if (crossed(0.5)) logEvent(world, 'The sun is high: midday', null, { cat: 'sky', pri: 0 });
     else if (crossed(0.77)) {
       const flies = fitsHabitat(world, 'fresh') ? ', the fireflies come out' : '';
       logEvent(world, `Dusk settles${flies} and ${moonLine(m)}`, null, { cat: 'sky' });
+      if (typeof narrate === 'function' && Math.random() < 0.4) narrate(world, 'dusk');
     }
   }
   updateCoralSpawning(world, dt, m);

@@ -109,11 +109,13 @@ function buildDepth(world) {
   const [W0, H0] = baseSize(world), tiers = (world.erosion ? world.erosion.tier : 0);
   const maxD = DEPTH_TIERS[Math.min(tiers, DEPTH_TIERS.length - 1)].depth || 0.4;
   const seed = hashString(world.seed || 'pond') % 97;
+  const trenchy = tiers >= 5, INTO = trenchy ? new Float32Array(W * H) : null, ALONG = trenchy ? new Float32Array(W * H) : null;
   for (let y = 0, p = 0; y < H; y++) {
     for (let x = 0; x < W; x++, p++) {
       // Distance past the original edge of the pond, into the deep band.
       const into = axisX ? (shifts ? ex - x : x - (W0 - 1)) : (shifts ? ex - y : y - (H0 - 1));
       const along = axisX ? y : x;
+      if (trenchy) { INTO[p] = into; ALONG[p] = along; }
       // A ragged drop-off that wanders well either side of the old edge (no straight seam),
       // a slope down from it, then terraces whose risers slope into each other.
       const lip = 12 + (fbm(along * 0.011, seed, 31) - 0.5) * 80 + (fbm(along * 0.05, seed, 33) - 0.5) * 22;
@@ -125,6 +127,7 @@ function buildDepth(world) {
       depth[p] = Math.round(clamp((0.25 + 0.75 * clamp(shelf, 0, 1)) * slope, 0, 1) * maxD * 255);
     }
   }
+  if (typeof carveTrenches === 'function') carveTrenches(world, depth, INTO || new Float32Array(0), ALONG, ex);
   world.depth = typeof applyScour === 'function' ? applyScour(world, depth) : depth;
 }
 
@@ -166,6 +169,7 @@ function updateErosion(world, dt) {
     if (typeof refreshSpeciesButtons === 'function') setTimeout(refreshSpeciesButtons, 0); // new builds, foods and plants
     if (next.expand && typeof expandWorld === 'function') expandWorld(next.expand, `${tierName(world, E.tier)} opens beyond the drop-off`);
     else logEvent(world, `The pond has deepened: ${tierName(world, E.tier).toLowerCase()}`, null, { cat: 'rare', pri: 3 });
+    if (typeof narrateTier === 'function') narrateTier(world, E.tier);
   }
 }
 

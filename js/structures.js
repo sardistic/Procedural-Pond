@@ -238,6 +238,14 @@ const BAKE = {
         r.ellipsoid(x + tx, y + ty, rr, rr * 0.92, ang, z0, TERRACE_STEP, m, next(m));
       });
     }
+    // Out over the deep, its edge is a cliff: a ring of dark rock where the sea meets it.
+    if ((s.deep || 0) > 0.15) {
+      const G0 = typeof islandGrow === 'function' ? islandGrow(s.stack || 1) : 1, cid = next(SM.basalt), n = Math.round(18 + 14 * G0);
+      for (let k = 0; k < n; k++) {
+        const a = k / n * TAU + hash2(k, s.seed % 91, 5) * 0.2, d = R * G0 * (1.02 + 0.12 * hash2(k, 3, s.seed % 79)), sz = 2.2 + 2.6 * s.deep * hash2(k, 9, 1);
+        r.ellipsoid(x + Math.cos(a) * d, y + Math.sin(a) * d, sz, sz * 0.8, a, 0, sz * (1 + s.deep), SM.basalt, cid);
+      }
+    }
     const grassId = next(SM.grass);
     for (const [ox, oy, a] of s.tufts) r.ellipsoid(x + ox, y + oy, a, a * 0.8, ox, zAt(ox, oy), a * 0.9, SM.grass, grassId);
     const rockId = next(SM.stone);

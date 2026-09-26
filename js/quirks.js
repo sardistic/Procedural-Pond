@@ -133,7 +133,7 @@ function meetGrade(c, min) {
 // When one of the marked changes (see eldritch.js), sometimes a quirk stays with it.
 function maybeQuirk(world, c) {
   const L = c.life, have = L.quirks || [];
-  if (Math.random() > 0.3 * (1 + 0.3 * evilPressure(world))) return;
+  if (Math.random() > 0.3 * (1 + 0.3 * evilPressure(world)) * (typeof lightMadness === 'function' ? lightMadness(world) : 1)) return;
   const opts = Object.keys(QUIRKS).filter((k) => !have.includes(k));
   if (!opts.length) return;
   const k = pick(opts);
@@ -179,7 +179,7 @@ function updateQuirks(world, dt) {
     if (hasQ(L, 'madness') && Math.random() < 0.1 * step) c.maddened = 1.5;
     if (L.genome.brittle && L.comfort < 0.3 && Math.random() < 0.002 * step && !lastFew(world, c)) c.dying = { t: 0, why: 'of a weak heart' };
     // Being driven mad, again and again, can leave the madness behind.
-    if (c.maddened && !c.wasMad) { L.madCount = (L.madCount || 0) + 1; if (L.madCount >= 12 && Math.random() < 0.04) infect(world, c, 'madness', 'driven mad too often'); }
+    if (c.maddened && !c.wasMad) { L.madCount = (L.madCount || 0) + 1; if (L.madCount >= 12 && Math.random() < 0.04 * lightMadness(world)) infect(world, c, 'madness', 'driven mad too often'); }
     c.wasMad = !!c.maddened;
     // The rot: from foul water, and (for the sickly, more) out of nowhere.
     if (world.pollution > 0.3 && Math.random() < 0.0004 * world.pollution * (L.genome.sickly ? 3 : 1) * step) infect(world, c, 'rot', 'from the fouled water');
@@ -194,7 +194,7 @@ function updateQuirks(world, dt) {
         logEvent(world, `${who(o)} brushed against ${L.name} and woke touched`, o, { cat: 'rare', pri: 2 });
       }
       if (d2 < 64 && hasQ(L, 'rot') && o.species === c.species && Math.random() < 0.002 * (o.life.genome.sickly ? 3 : 1) * step) infect(world, o, 'rot', `from ${L.name}`);
-      if (night && d2 < 144 && hasQ(L, 'madness') && Math.random() < 0.0002 * step) infect(world, o, 'madness', `from ${L.name}`);
+      if (night && d2 < 144 && hasQ(L, 'madness') && Math.random() < 0.0002 * step * lightMadness(world)) infect(world, o, 'madness', `from ${L.name}`);
     }
   }
 }
@@ -205,7 +205,8 @@ function dawnQuirks(world) {
     const L = c.life;
     if (!L || !L.ill || !L.ill.length) continue;
     const r = L.buffs.resilience || 0;
-    const keep = L.ill.filter((k) => !(k === 'rot' ? Math.random() < 0.15 + 0.4 * r : Math.random() < 0.08 + 0.2 * r));
+    // (Daylight helps the mad come back to themselves; an endless dark keeps them.)
+    const keep = L.ill.filter((k) => !(k === 'rot' ? Math.random() < 0.15 + 0.4 * r : Math.random() < (0.08 + 0.2 * r) * (2.2 - lightMadness(world))));
     if (keep.length !== L.ill.length) { L.ill = keep; L.traits = eldTraits(L); refreshBuffs(c); }
   }
 }
@@ -215,6 +216,7 @@ const STAR_DOT = mat('#6ab0e0', '#9ad0ff', '#d0ecff', '#ffffff'), ROT_DOT = mat(
 function drawQuirks(r, c, t) {
   const L = c.life, b = c.body;
   if (!L || !b) return;
+  if (L.paragon && typeof drawParagon === 'function') drawParagon(r, c, t);
   const z = (c.zBody ?? c.z ?? 1) + 1;
   if (L.genome.starry) {
     if (c.starId == null) { c.starId = newId(hexToInt('#04101a')); EMISSIVE[c.starId] = 2; }

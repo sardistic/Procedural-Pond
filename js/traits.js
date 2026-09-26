@@ -105,7 +105,7 @@ function buyStructTrait(world, s, key) {
 // An island can be raised ten times over, each level a terrace higher and wider, and dearer
 // than the last; its branch (from level 3) can grow a step for each level above the second, to six.
 const ISLAND_MAX = 10, ISLAND_BRANCH_MAX = 6;
-const raiseCost = (s) => { const n = s.stack || 1; return { pearls: Math.round(STRUCTURES.island.pearls * 0.6 * n * 1.35 ** (n - 1)), essence: Math.round(10 * n * 1.25 ** (n - 1)) }; };
+const raiseCost = (s) => { const n = s.stack || 1, k = typeof islandDeepCost === 'function' ? islandDeepCost(s.deep || 0) : 1; return { pearls: Math.round(STRUCTURES.island.pearls * 0.6 * n * 1.35 ** (n - 1) * k), essence: Math.round(10 * n * 1.25 ** (n - 1) * k) }; };
 const islandBranchMax = (s) => Math.min(ISLAND_BRANCH_MAX, (s.stack || 1) - 2);
 function raiseIsland(world, s) {
   if ((s.stack || 1) >= ISLAND_MAX) { if (typeof showTicker === 'function') showTicker('The island can’t be raised any higher'); return false; }
@@ -117,6 +117,7 @@ function raiseIsland(world, s) {
   for (let k = 0; k < 30; k++) addBubbles(world, s.x + rand(-1, 1) * s.R * 1.3, s.y + rand(-1, 1) * s.R * 1.3, 1, 2);
   addRipple(world, s.x, s.y, 3);
   if (typeof structuresChanged === 'function') structuresChanged(true);
+  if (typeof narrate === 'function') narrate(world, 'island', { level: s.stack });
   logEvent(world, `You raised the island (level ${s.stack}): a new terrace, higher, wider and greener${s.stack === 3 ? '. It can go one of two ways now: lanterns of life, or the whispering stone' : s.stack > 3 && s.branch ? `, and room for the ${s.branch === 'life' ? 'lanterns' : 'stone'} to grow` : ''}`, null, { cat: 'pond', pri: 2 });
   return true;
 }

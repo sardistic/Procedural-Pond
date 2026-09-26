@@ -195,6 +195,7 @@ function buyAnimal(kind, enh = [], ancient = null, grade = 0) {
 // Recycle an animal (the Net, or the creature card): it leaves, and its essence comes back.
 function recycle(c, quiet = false) {
   if (!alive(c)) return 0;
+  if (typeof isSafe === 'function' && isSafe(c)) { if (!quiet) showTicker(`${c.life.name} is kept safe: unmark it on its card to recycle it`); return 0; }
   const back = recycleValue(c), tier = c.life ? tierOf(c.life.traits) : 0;
   world.creatures.splice(world.creatures.indexOf(c), 1);
   noteGone(world, c, 'recycled');
@@ -214,15 +215,16 @@ function recycle(c, quiet = false) {
 
 // Recycle every animal of a species (asking first, and naming the rare ones).
 function recycleAll(kind) {
-  const list = world.creatures.filter((c) => c.life && !c.leaving && !c.unsettled && (c.species === kind || (kind === 'frog' && c.species === 'tadpole')));
-  if (!list.length) return 0;
+  const all = world.creatures.filter((c) => c.life && !c.leaving && !c.unsettled && (c.species === kind || (kind === 'frog' && c.species === 'tadpole')));
+  const list = all.filter((c) => !(typeof isSafe === 'function' && isSafe(c))), kept = all.length - list.length;
+  if (!list.length) { if (kept) showTicker(`All ${kept} are kept safe`); return 0; }
   const worth = list.reduce((a, c) => a + recycleValue(c), 0), label = SPECIES[kind] ? SPECIES[kind].label : kind;
   const rares = list.filter((c) => tierOf(c.life.traits) >= 2).sort((a, b) => tierOf(b.life.traits) - tierOf(a.life.traits));
   const warn = rares.length ? ` That includes ${rares.length} rare: ${rares.slice(0, 4).map((c) => `${c.life.name} (${TIERS[tierOf(c.life.traits)]} ${c.life.traits.join(' ')})`).join(', ')}${rares.length > 4 ? '…' : ''}.` : '';
-  if (!confirm(`Recycle all ${list.length} ${label.toLowerCase()} for ${worth} essence?${warn}`)) return 0;
+  if (!confirm(`Recycle all ${list.length} ${label.toLowerCase()} for ${worth} essence?${warn}${kept ? ` (${kept} kept safe will stay.)` : ''}`)) return 0;
   let got = 0;
   for (const c of list) got += recycle(c, true);
-  world.targets[kind] = 0;
+  world.targets[kind] = kept;
   if (kind === 'frog') world.targets.tadpole = 0;
   logEvent(world, `Recycled all ${list.length} ${label.toLowerCase()}: +${got} essence`, null, { cat: 'pond', pri: 2 });
   floatAward(world.W / 2, world.H / 2, `+${got}◆`, 'essence');
@@ -388,6 +390,9 @@ function update(dt) {
   updateGulls(world, dt);
   updateQuirks(world, dt);
   updateBalance(world, dt);
+  updateVertical(world, dt);
+  updateDark(world, dt);
+  updateStory(world, dt);
   updateZones(world, dt);
   updateGame(world, dt);
   for (const c of world.creatures) {
@@ -511,6 +516,8 @@ function render(full = false) {
     depth: world.depth, deepColor: DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed,
     voidSkin: world.eldMarks && world.eldMarks.length || world.plants.some((p) => p.tr && p.tr.eld) ? VOID_SKIN : null,
     swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6], clouds: world.clouds, sky: skyReflection(light), skyK: 1 - world.weather.rain * 0.7,
+    lights: buildLights(world, rect), lightVis: light.darkness || 0, deepColor2: deepTint(world), trench: world.trench, trenchGlow: TRENCH_GLOW[branchOf(world)],
+    chop: clamp(0.18 + Math.max(0, world.weather.gust) * 0.9 + world.tide.surf * 0.35, 0, 1.2), spindrift: clamp((swell - 0.75) * 2.5, 0, 1),
   }, rect);
   drawGlints();
   if (world.bones) drawBones();
@@ -739,20 +746,24 @@ function build(kind, x, y) {
     const base = world.structures.find((s) => s.kind === 'island' && Math.hypot(s.x - x, s.y - y) < islandRadius(world, s) * 1.2);
     if (base) { raiseIsland(world, base); return; }
   }
-  const def = STRUCTURES[kind], why = canPlace(world, kind, x, y);
+  const def = STRUCTURES[kind], why = canPlace(world, kind, x, y), deep = kind === 'island' ? depthAt(world, x, y) : 0;
   if (why) { showTicker(`Can't build a ${def.label.toLowerCase()} here: ${why}`); return; }
-  if (world.game.pearls < def.pearls) { notEnough(def.pearls, 'pearls'); return; }
-  if ((world.game.essence || 0) < def.essence) { notEnough(def.essence, 'essence'); return; }
+  // An island out over the deep needs far more raised to reach the surface (and stands as a cliff).
+  const k = kind === 'island' ? islandDeepCost(deep) : 1, pearls = Math.round(def.pearls * k), essence = Math.round(def.essence * k);
+  if (world.game.pearls < pearls) { notEnough(pearls, 'pearls'); return; }
+  if ((world.game.essence || 0) < essence) { notEnough(essence, 'essence'); return; }
   if (def.corruption && (world.game.corruption || 0) < def.corruption) { notEnough(def.corruption, 'corruption'); return; }
   if (def.corruption) spendCorruption(world, def.corruption);
-  spend(world, def.pearls);
-  spendEssence(world, def.essence);
-  floatAward(x, y, `−${def.pearls}`, 'spend');
+  spend(world, pearls);
+  spendEssence(world, essence);
+  floatAward(x, y, `−${pearls}`, 'spend');
   const made = makeStructure(kind, world, x, y);
+  if (kind === 'island') made.deep = Math.round(deep * 100) / 100;
   startBuildAnim(made); // it arrives in its own way, then settles into the floor
   world.structures.push(made);
   if (kind === 'hatchery' && !world.hatchery) world.hatchery = newHatchery();
-  logEvent(world, `You built ${withArticle(def.label.toLowerCase())}: ${def.desc}`, null, { cat: 'pond', pri: 2 });
+  logEvent(world, `You built ${withArticle(def.label.toLowerCase())}${k > 1.05 ? ` out over the deep (×${k.toFixed(1)})` : ''}: ${def.desc}`, null, { cat: 'pond', pri: 2 });
+  if (def.tier >= 3 && typeof narrate === 'function') narrate(world, 'build', { what: capFirst(withArticle(def.label.toLowerCase())) });
   if (kind === 'hatchery') setHatchery(true);
 }
 
