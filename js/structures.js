@@ -25,6 +25,12 @@ const SM = {
   frond: mat('#163e12', '#26621c', '#3e8c2a', '#6cbc48'), coconut: mat('#2a1a0c', '#442a14', '#5e3c1c', '#7a5028'),
   grass: mat('#1e4a14', '#2e6e1e', '#4a962c', '#7cc44c'), soil: mat('#1e140c', '#2e2014', '#40301e', '#56422a'),
   sand: mat('#8a7a5a', '#b0a07a', '#d0c49c', '#ece2c0'), egg: mat('#8a7a50', '#b8a676', '#e0d4a4', '#fff8dc'),
+  kelp: mat('#3a2a08', '#5e4610', '#8a6a1c', '#b8943a'), kelpBlade: mat('#4a3a0c', '#76601a', '#a08a2c', '#ccb450'),
+  bark: mat('#1a120a', '#2a1e12', '#3e2c1a', '#544028'), moss2: mat('#1e2e14', '#2e461e', '#44622a', '#628a3c'),
+  bone: mat('#8a8274', '#b2aa98', '#d6cebc', '#f4eee0'), mat: mat('#8a4a1a', '#c0702a', '#e89a4a', '#ffc88a'),
+  wormTube: mat('#8a8a82', '#b4b4aa', '#d8d8ce', '#f6f6ee'), plume: mat('#8a0e1a', '#c01e2a', '#ee3a3a', '#ff8a7a'),
+  smoke: mat('#0a0a0c', '#141418', '#1e1e24', '#2a2a32'), deepCrystal: mat('#3a1a8a', '#5a3ac8', '#8a70f0', '#d8c8ff'),
+  idol: mat('#1a2018', '#2a3226', '#3e4838', '#566250'), idolEye: mat('#1a8a3a', '#2ac85a', '#6af08a', '#d0ffd8'),
   eggGlow: mat('#8a5a1a', '#c88a2a', '#f8c050', '#fff0b0'), sprout: mat('#1e4a14', '#2e6e1e', '#4a9a2c', '#7ccc4c'),
 };
 
@@ -72,13 +78,47 @@ const STRUCTURES = {
     desc: 'breed from a chosen pair: feed it by clicking, and its broods lean toward the trait you pick; upgrade it as you go',
     aura: { comfort: 0.05 },
   },
+  // The deep: each opens with its depth tier (and needs water that deep).
+  kelp: {
+    label: 'Kelp forest', pearls: 160, essence: 20, r: 74, size: 16, wet: true, habitat: 'salt', tier: 2,
+    desc: 'tall kelp swaying over everything: shelter that calms the water, and a nursery where fish breed more',
+    aura: { aggression: -0.2, fertility: 1.2, comfort: 0.08 }, water: 1, plankton: 0.5,
+  },
+  drowned: {
+    label: 'Drowned forest', pearls: 160, essence: 20, r: 74, size: 22, wet: true, habitat: 'fresh', tier: 2,
+    desc: 'sunken trees and their roots: shelter that calms the water, and a nursery where fish breed more',
+    aura: { aggression: -0.2, fertility: 1.2, comfort: 0.08 }, water: -1, plankton: 0.4,
+  },
+  smoker: {
+    label: 'Black smoker', pearls: 220, essence: 40, r: 66, size: 12, wet: true, habitat: 'salt', tier: 3, deepMin: 0.35,
+    desc: 'a mineral chimney on the deep floor, ringed with tube worms: warmth and food for deep life, and essence each dawn',
+    aura: { fertility: 1.3, comfort: 0.1 }, plankton: 1, dawnEssence: 4, water: 2,
+  },
+  grotto: {
+    label: 'Crystal grotto', pearls: 220, essence: 40, r: 66, size: 12, wet: true, habitat: 'fresh', tier: 3, deepMin: 0.35,
+    desc: 'crystals that glow in the dark: light for cave life, calm, and essence each dawn',
+    aura: { comfort: 0.18, aggression: -0.1 }, plankton: 0.6, dawnEssence: 4, water: -2,
+  },
+  whalefall: {
+    label: 'Whale fall', pearls: 300, essence: 60, r: 80, size: 30, wet: true, habitat: 'salt', tier: 4, deepMin: 0.55,
+    desc: 'a whale’s bones on the abyss floor: a feast for deep life that lasts, and essence each dawn',
+    aura: { comfort: 0.2, fertility: 1.25 }, plankton: 1.4, dawnEssence: 7,
+  },
+  idol: {
+    label: 'Drowned idol', pearls: 300, essence: 80, r: 90, size: 12, wet: true, habitat: 'fresh', tier: 4, deepMin: 0.55, unique: true,
+    desc: 'something old, carved by no one: it draws the mythic up out of the dark and pays essence each dawn, but nothing near it rests easy',
+    aura: { comfort: -0.12, aggression: 0.1 }, dawnEssence: 10, lure: 4,
+  },
 };
-const STRUCT_CODES = ['ship', 'island', 'vent', 'spring', 'shrine', 'aerator', 'seedbed', 'hatchery']; // append-only (links)
+const STRUCT_CODES = ['ship', 'island', 'vent', 'spring', 'shrine', 'aerator', 'seedbed', 'hatchery', 'kelp', 'drowned', 'smoker', 'grotto', 'whalefall', 'idol']; // append-only (links)
 // Species that especially like a structure nearby (see LIKES in game.js).
 const STRUCT_LIKES = {
   ship: ['eel', 'octopus', 'crab', 'puffer', 'wild', 'ray'], island: ['frog', 'turtle', 'crab', 'snail', 'duck', 'starfish'],
   vent: ['shrimp', 'crab', 'starfish'], spring: ['axolotl', 'tetra', 'frog', 'snail'], shrine: ['jelly', 'clown', 'koi'],
   aerator: ['koi', 'tetra', 'wild'], seedbed: ['snail', 'shrimp'], hatchery: [],
+  kelp: ['wild', 'clown', 'shark', 'puffer', 'ray'], drowned: ['koi', 'catfish', 'turtle', 'axolotl', 'eel'],
+  smoker: ['isopod', 'vampire', 'gulper', 'shrimp', 'crab'], grotto: ['cavefish', 'olm', 'isopod'],
+  whalefall: ['isopod', 'angler', 'gulper', 'kraken', 'crab'], idol: ['watcher', 'leviathan'],
 };
 
 function makeStructure(kind, world, x, y, seed = newSeed(), born = world.days) {
@@ -98,6 +138,8 @@ function canPlace(world, kind, x, y) {
   if (x < m || y < m || x > world.W - m || y > world.H - m) return 'too close to the edge';
   if (def.habitat && !fitsHabitat(world, def.habitat)) return `it needs ${def.habitat} water`;
   if (def.shore && !world.shore) return 'a pool has no floor to raise';
+  if (def.tier && ((world.erosion && world.erosion.tier) || 0) < def.tier) return `the pond isn't that deep yet (it needs ${tierName(world, def.tier).toLowerCase()})`;
+  if (def.deepMin && depthAt(world, x, y) < def.deepMin) return 'it needs deeper water';
   if (world.shore && shoreAt(world, x, y) > world.tide.level - 0.1) return 'too shallow here';
   for (const s of world.structures || []) {
     if (def.unique && s.kind === kind) return 'you already have one';
@@ -125,6 +167,14 @@ const BUILD = {
   aerator(s) { s.h = 6; },
   seedbed(s) { s.a = rand(8, 10); s.b = s.a * rand(0.65, 0.85); s.ang = rand(0, PI); s.sprouts = Array.from({ length: 14 }, () => [rand(-0.8, 0.8), rand(-0.8, 0.8), rand(2, 4)]); },
   hatchery(s) { s.R = 10; s.n = 10; },
+  kelp(s) { s.stalks = Array.from({ length: randi(8, 11) }, () => ({ ox: rand(-11, 11), oy: rand(-11, 11), h: rand(30, 42), ph: rand(0, TAU) })); },
+  drowned(s) {
+    s.trunks = Array.from({ length: 3 }, (_, k) => ({ a: rand(0, TAU), len: rand(28, 42), r: rand(2.6, 3.4), ox: rand(-6, 6), oy: rand(-6, 6) }));
+  },
+  smoker(s) { s.h = rand(16, 22); s.R = rand(7, 9); s.worms = Array.from({ length: 14 }, () => { const a = rand(0, TAU), d = rand(8, 14); return [Math.cos(a) * d, Math.sin(a) * d, rand(2, 4)]; }); },
+  grotto(s) { s.crystals = Array.from({ length: randi(9, 13) }, () => ({ ox: rand(-7, 7), oy: rand(-7, 7), a: rand(0, TAU), len: rand(5, 13), lean: rand(0.2, 0.6) })); },
+  whalefall(s) { s.ang = rand(-PI, PI); s.L = rand(60, 72); s.bend = rand(-0.4, 0.4); },
+  idol(s) { s.ang = rand(-PI, PI); s.h = rand(18, 22); },
 };
 
 // Solid parts, baked into the floor. `next(material)` hands out an outline id.
@@ -252,6 +302,81 @@ const BAKE = {
   },
 };
 
+Object.assign(BAKE, {
+  kelp(r, s, next) {
+    const id = next(SM.stone);
+    for (const st of s.stalks) r.ellipsoid(s.x + st.ox, s.y + st.oy, 1.8, 1.5, st.ph, 0, 1.4, SM.stone, id);
+  },
+  drowned(r, s, next) {
+    const id = next(SM.bark), bark = (u, v, px, py) => (vnoise(px * 0.3, py * 0.3, s.seed % 61) > 0.66 ? SM.moss2 : ((u * 12) % 1 < 0.2 ? SM.woodDark : SM.bark));
+    for (const t of s.trunks) {
+      const x0 = s.x + t.ox, y0 = s.y + t.oy, x1 = x0 + Math.cos(t.a) * t.len, y1 = y0 + Math.sin(t.a) * t.len;
+      r.tube(x0, y0, t.r, 0, x1, y1, t.r * 0.45, 0, 0.8, bark, id);
+      // Roots splayed at the base, a couple of branch stubs along the trunk.
+      for (let k = 0; k < 6; k++) {
+        const a = t.a + PI + (k - 2.5) * 0.45, L = rand(5, 9);
+        r.tube(x0, y0, 1.2, 0.5, x0 + Math.cos(a) * L, y0 + Math.sin(a) * L, 0.5, 0, 0.8, SM.bark, id);
+      }
+      for (const f of [0.45, 0.7]) {
+        const bx = lerp(x0, x1, f), by = lerp(y0, y1, f), a = t.a + (f > 0.5 ? 1 : -1) * 0.9;
+        r.tube(bx, by, 1, t.r * 0.6, bx + Math.cos(a) * 7, by + Math.sin(a) * 7, 0.5, t.r * 0.6 + 3, 0.8, SM.bark, id);
+      }
+    }
+  },
+  smoker(r, s, next) {
+    const { x, y, h, R } = s, id = next(SM.basalt), wid = next(SM.wormTube);
+    for (let k = 0; k < 8; k++) {
+      const f = k / 7, rad = lerp(R, 2.2, f) * (1 + Math.sin(k * 2.3) * 0.12);
+      r.ellipsoid(x + Math.sin(k * 1.9) * 0.8, y + Math.cos(k * 1.4) * 0.8, rad, rad * 0.9, k, f * h * 0.9, h / 7,
+        (lx, ly, px, py) => (k < 3 && vnoise(px * 0.4, py * 0.4, s.seed % 53) > 0.62 ? SM.pale : SM.basalt), id);
+    }
+    // Tube worms around the base, each with a red plume.
+    for (const [ox, oy, hh] of s.worms) {
+      r.tube(x + ox, y + oy, 0.6, 0, x + ox, y + oy, 0.5, hh, 0.9, SM.wormTube, wid);
+      r.ellipsoid(x + ox, y + oy, 1.1, 1.1, 0, hh, 0.8, SM.plume, wid);
+    }
+  },
+  grotto(r, s, next) {
+    const id = next(SM.basalt);
+    for (let k = 0; k < 6; k++) { const a = k * 1.05; r.ellipsoid(s.x + Math.cos(a) * 8, s.y + Math.sin(a) * 8, rand(3, 5), rand(2.5, 4), a, 0, 3, SM.basalt, id); }
+  },
+  whalefall(r, s, next) {
+    const id = next(SM.bone), mid = next(SM.mat), { x, y, ang, L, bend } = s;
+    const P = (u) => { const a = ang + bend * u; return [x + Math.cos(a) * u * L / 2, y + Math.sin(a) * u * L / 2]; };
+    // Bacterial mats on the silt where the whale lies.
+    r.ellipsoid(x, y, L * 0.5, 9, ang, 0, 0.5, (lx, ly, px, py) => (vnoise(px * 0.2, py * 0.2, s.seed % 41) > 0.52 ? SM.mat : null), mid);
+    for (let i = 0; i <= 22; i++) {
+      const u = -1 + 2 * i / 22, [vx, vy] = P(u), rad = 1.6 + (u > 0.5 ? 0 : 0.6);
+      r.ellipsoid(vx, vy, rad, rad * 0.8, ang, 0, rad, SM.bone, id);
+      // Ribs arch out from the front half of the spine.
+      if (u > -0.2 && u < 0.6 && i % 2 === 0) {
+        for (const side of [-1, 1]) {
+          const a = ang + bend * u + side * PI / 2, span = 9 * (1 - Math.abs(u - 0.2));
+          r.tube(vx, vy, 0.8, 2, vx + Math.cos(a) * span * 0.6, vy + Math.sin(a) * span * 0.6, 0.7, 6, 0.8, SM.bone, id);
+          r.tube(vx + Math.cos(a) * span * 0.6, vy + Math.sin(a) * span * 0.6, 0.7, 6, vx + Math.cos(a - side * 0.5) * span, vy + Math.sin(a - side * 0.5) * span, 0.5, 1, 0.8, SM.bone, id);
+        }
+      }
+    }
+    const [hx, hy] = P(1.12);
+    r.ellipsoid(hx, hy, 9, 5.5, ang, 0, 4, SM.bone, id);
+    for (const side of [-1, 1]) {
+      const a = ang + side * 0.12;
+      r.tube(hx, hy + side * 2, 1.2, 1, hx + Math.cos(a) * 16, hy + Math.sin(a) * 16 + side * 2, 0.8, 0.5, 0.8, SM.bone, id);
+    }
+  },
+  idol(r, s, next) {
+    const { x, y, h } = s, id = next(SM.idol);
+    for (let k = 0; k < 3; k++) r.ellipsoid(x, y, 7 - k * 1.6, 7 - k * 1.6, PI / 4, k * 1.4, 1.4, SM.stone, id);
+    for (let k = 0; k < 5; k++) r.ellipsoid(x, y, 2.6, 2, s.ang, 4 + k * (h - 8) / 5, (h - 8) / 5 + 0.6, (lx, ly) => (Math.abs(ly) < 0.15 ? SM.basalt : SM.idol), id);
+    // The head: a dome with tentacles hanging from it.
+    r.ellipsoid(x, y, 4.2, 3.6, s.ang, h - 3, 3.4, SM.idol, id);
+    for (let k = 0; k < 7; k++) {
+      const a = s.ang + PI * 0.3 + k * 0.4;
+      r.tube(x + Math.cos(a) * 2.5, y + Math.sin(a) * 2.5, 0.9, h - 2, x + Math.cos(a) * 6, y + Math.sin(a) * 6, 0.5, h - 9, 0.8, SM.idol, id);
+    }
+  },
+});
+
 // Live parts, drawn every frame.
 const DRAW = {
   vent(r, s, t) {
@@ -263,6 +388,48 @@ const DRAW = {
     EMISSIVE[s.id] = glow ? 2 : 1;
     r.ellipsoid(s.x, s.y, 2.2, 2.2, t * 0.3, s.h + 0.5 + bob, 2.6, SM.crystal, s.id);
     r.ellipsoid(s.x, s.y, 1.2, 1.2, t * 0.3, s.h + 3 + bob, 2, SM.crystal, s.id);
+  },
+  kelp(r, s, t, world) {
+    const cur = world.current;
+    for (const st of s.stalks) {
+      let px = s.x + st.ox, py = s.y + st.oy, pz = 0;
+      for (let k = 1; k <= 8; k++) {
+        const f = k / 8, sway = Math.sin(t * 0.8 + st.ph + k * 0.45) * 0.6 * f;
+        const nx = px + Math.cos(st.ph) * sway + cur.x * 2 * f, ny = py + Math.sin(st.ph) * sway + cur.y * 2 * f, nz = st.h * f;
+        r.tube(px, py, lerp(0.9, 0.6, f), pz, nx, ny, lerp(0.9, 0.6, f + 0.12), nz, 0.8, SM.kelp, s.id);
+        if (k % 2 === 0) { const a = st.ph + k * 1.7 + Math.sin(t + k) * 0.2; r.ellipsoid(nx + Math.cos(a) * 2, ny + Math.sin(a) * 2, 3.4, 1.1, a, nz - 1, 0.4, SM.kelpBlade, s.id); }
+        px = nx; py = ny; pz = nz;
+      }
+    }
+  },
+  smoker(r, s, t, world) {
+    const k = 1.3 + Math.sin(t * 2.1 + s.seed) * 0.3;
+    r.ellipsoid(s.x, s.y, k, k, 0, s.h + 0.4, 0.8, SM.ember, s.id);
+    // Black smoke billowing up and drifting with the current.
+    if (s.smokeId == null) { s.smokeId = newId(hexToInt('#050508')); FADE[s.smokeId] = 1; }
+    for (let i = 0; i < 6; i++) {
+      const ph = (t * 0.25 + i / 6) % 1, z = s.h + 1 + ph * 22, rad = 1.4 + ph * 3.5;
+      r.alpha = 1 - ph * 0.8;
+      r.ellipsoid(s.x + world.current.x * ph * 12 + Math.sin(i * 2.7 + t) * ph * 2, s.y + world.current.y * ph * 12, rad, rad, i, z, rad * 0.8, SM.smoke, s.smokeId);
+    }
+    r.alpha = 1;
+  },
+  grotto(r, s, t) {
+    EMISSIVE[s.id] = 2;
+    const pulse = 0.5 + Math.sin(t * 0.9 + s.seed) * 0.5, m = pulse > 0.5 ? SM.crystal : SM.deepCrystal;
+    for (const c of s.crystals) {
+      const tx = s.x + c.ox + Math.cos(c.a) * c.len * c.lean, ty = s.y + c.oy + Math.sin(c.a) * c.len * c.lean;
+      r.tube(s.x + c.ox, s.y + c.oy, 1.3, 0, tx, ty, 0.35, c.len, 0.9, m, s.id);
+    }
+  },
+  idol(r, s, t) {
+    const open = Math.sin(t * 0.4 + s.seed) > -0.3, x = s.x + Math.cos(s.ang) * 2.4, y = s.y + Math.sin(s.ang) * 2.4;
+    if (!open) return;
+    EMISSIVE[s.id] = 2;
+    for (const side of [-1, 1]) {
+      const a = s.ang + side * PI / 2;
+      r.dot(x + Math.cos(a) * 1.4, y + Math.sin(a) * 1.4, s.h + 0.6, SM.idolEye, s.id);
+    }
   },
   hatchery(r, s, t, world) {
     const H = world.hatchery, n = H ? Math.round(12 * Math.min(1, H.nutrients / hatchCost(H))) : 0, ready = H && H.nutrients >= hatchCost(H);
@@ -349,12 +516,13 @@ function updateStructures(world, dt) {
 
 // Each dawn: the ship's salvage, plants gathering around old things, and the stains spreading.
 function dawnStructures(world) {
-  let coins = 0;
-  for (const s of world.structures || []) coins += STRUCTURES[s.kind].dawnPearls || 0;
+  let coins = 0, ess = 0;
+  for (const s of world.structures || []) { coins += STRUCTURES[s.kind].dawnPearls || 0; ess += STRUCTURES[s.kind].dawnEssence || 0; }
   if (coins) {
     const got = award(world, coins, 'salvage', null, { flat: true });
     if (got) logEvent(world, `Coins turned up in the silt around the wreck: +${got} pearls`, null, { cat: 'pond', pri: 0 });
   }
+  if (ess) gainEssence(world, ess, 'the deep structures');
   sproutAround(world);
   applyStains(world);
 }
@@ -374,8 +542,8 @@ function sproutAround(world) {
       const a = rand(0, TAU), d = src.r + rand(2, 16), x = src.x + Math.cos(a) * d, y = src.y + Math.sin(a) * d;
       if (x < 8 || y < 8 || x > world.W - 8 || y > world.H - 8 || (world.shore && shoreAt(world, x, y) > world.tide.level - 0.25)) continue;
       if (world.plants.filter((p) => (p.x - x) ** 2 + (p.y - y) ** 2 < 400).length >= 3) continue;
-      const salt = saltAt(world, x, y) > 0;
-      const kind = salt ? pick(['coral', 'coral', 'anemone', 'weed']) : pick(['weed', 'weed', 'eelgrass', 'marimo']);
+      const salt = saltAt(world, x, y) > 0, deep = depthAt(world, x, y) > 0.35;
+      const kind = deep ? (salt ? 'blackcoral' : 'glowcap') : salt ? pick(['coral', 'coral', 'anemone', 'weed']) : pick(['weed', 'weed', 'eelgrass', 'marimo']);
       const p = makePlant(kind, world, x, y, kind === 'weed' ? { habitat: salt ? 'salt' : 'fresh' } : {});
       p.born = world.days;
       world.plants.push(p);

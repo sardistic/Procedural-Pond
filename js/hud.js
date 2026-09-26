@@ -150,7 +150,7 @@ function buildDock() {
     b.className = 'ani';
     b.dataset.spawn = kind;
     b.setAttribute('aria-label', `Spawn ${SPECIES[kind].label.toLowerCase()}`);
-    b.append(iconImg(speciesIcon(kind)), Object.assign(document.createElement('b'), { textContent: '0' }));
+    b.append(Object.assign(document.createElement('i'), { className: 'gem' }), iconImg(speciesIcon(kind)), Object.assign(document.createElement('b'), { textContent: '0' }));
     b.addEventListener('click', () => openSpawnCard(kind, b));
     b.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') showLineage(kind, b); });
     b.addEventListener('pointerleave', hideLineage);
@@ -160,20 +160,32 @@ function buildDock() {
   }
 }
 
+// The dock shows what each species is worth to you: a purple glow for its total
+// worth (relative to the most valuable), a border and gem in the colour of its
+// rarest member, and the most valuable species first (re-sorted every few
+// seconds, but never under the pointer).
+let dockSortAt = 0;
 function updateCounts() {
-  const n = {}, essence = world.game ? world.game.essence || 0 : 0;
-  let total = 0;
-  for (const c of world.creatures) {
-    n[c.species] = (n[c.species] || 0) + 1;
-    if (c.life) total++;
-  }
-  for (const b of document.querySelectorAll('#animals [data-spawn]')) {
-    const kind = b.dataset.spawn, k = n[kind] || 0, el = b.lastChild, price = spawnCost(kind);
+  const essence = world.game ? world.game.essence || 0 : 0, sum = speciesSummary(world);
+  let total = 0, maxV = 1;
+  for (const s of sum.values()) { total += s.n; maxV = Math.max(maxV, s.value); }
+  const box = byId('animals');
+  for (const b of box.querySelectorAll('[data-spawn]')) {
+    const kind = b.dataset.spawn, s = sum.get(kind), k = s ? s.n : 0, count = b.querySelector('b'), price = spawnCost(kind);
     b.classList.toggle('poor', essence < price);
-    if (el.textContent === String(k)) continue;
-    el.textContent = k;
-    b.classList.toggle('none', !k);
-    b.title = `${SPECIES[kind].label}: ${k} in the pond. Click to spawn more (${price} essence).`;
+    b.dataset.value = s ? s.value : 0;
+    b.style.setProperty('--val', s ? (s.value / maxV).toFixed(3) : '0');
+    b.style.setProperty('--tier', s && s.best ? TIER_COLOR[s.best] : 'transparent');
+    b.classList.toggle('rare', !!(s && s.best >= 2));
+    if (count.textContent !== String(k)) { count.textContent = k; b.classList.toggle('none', !k); }
+    b.title = s ? `${SPECIES[kind].label}: ${k} in the pond, worth ${s.value} essence${s.best ? ` · rarest ${TIERS[s.best]}` : ''} · ${s.looks.size} look${s.looks.size > 1 ? 's' : ''}, ${diversityWord(s.diversity)} (${Math.round(s.diversity * 100)}%). Click to spawn more (${price} essence).`
+      : `${SPECIES[kind].label}: none in the pond. Click to spawn (${price} essence).`;
+  }
+  const now = performance.now();
+  if (now > dockSortAt && !box.matches(':hover') && !spawnUi.kind) {
+    dockSortAt = now + 3000;
+    const btns = [...box.children], order = btns.slice().sort((a, b) => (+b.dataset.value || 0) - (+a.dataset.value || 0) || DOCK_KINDS.indexOf(a.dataset.spawn) - DOCK_KINDS.indexOf(b.dataset.spawn));
+    if (order.some((b, i) => b !== btns[i])) box.append(...order);
   }
   byId('census-count').textContent = total;
 }
@@ -337,11 +349,14 @@ function renderCensus() {
   byId('census-summary').textContent = `${total} animals · ${groups.size} species · ${rares} rare`;
   byId('census-stats').textContent = `born ${ECO.births} · arrived ${ECO.arrivals} · moved on ${ECO.departures} · eaten ${ECO.eaten}`;
 
-  const rows = [];
-  for (const kind of [...DOCK_KINDS, 'tadpole']) {
-    const list = groups.get(kind);
-    if (!list) continue;
-    list.sort((a, b) => b.life.age - a.life.age);
+  const rows = [], sum = speciesSummary(world);
+  const worth = (k) => (k === 'tadpole' ? 0 : (sum.get(k) || { value: 0 }).value);
+  const kinds = [...DOCK_KINDS, 'tadpole'].filter((k) => groups.get(k)).sort((a, b) => worth(b) - worth(a));
+  byId('census-summary').textContent += ` · worth ${[...sum.values()].reduce((a, s) => a + s.value, 0)} essence`;
+  for (const kind of kinds) {
+    const list = groups.get(kind), S = sum.get(kind === 'tadpole' ? 'frog' : kind);
+    // Most valuable first (rarer and bigger animals are worth more).
+    list.sort((a, b) => recycleValue(b) - recycleValue(a) || b.life.age - a.life.age);
     const stage = { young: 0, adult: 0, elder: 0 };
     let hungry = 0, rare = 0, gen = 0;
     for (const c of list) {
@@ -355,9 +370,11 @@ function renderCensus() {
     head.type = 'button';
     head.setAttribute('aria-expanded', open);
     const facts = [stage.young && `${stage.young} young`, stage.adult && `${stage.adult} adult`, stage.elder && `${stage.elder} elder`,
-      hungry && `${hungry} hungry`, rare && `✦ ${rare} rare`, gen && `gen ${gen}`].filter(Boolean).join(' · ');
+      hungry && `${hungry} hungry`, rare && `✦ ${rare} rare`, gen && `gen ${gen}`,
+      S && kind !== 'tadpole' && `worth ${S.value} essence`, S && kind !== 'tadpole' && `${diversityWord(S.diversity)} (${Math.round(S.diversity * 100)}%)`].filter(Boolean).join(' · ');
+    if (S && S.best >= 2 && kind !== 'tadpole') li.style.setProperty('--tier', TIER_COLOR[S.best]);
     head.append(el('span', 'ic'), el('b', 'nm', kind === 'tadpole' ? 'Tadpoles' : SPECIES[kind].label),
-      el('span', 'ct', list.length), el('span', 'facts', facts));
+      el('span', 'ct', list.length), colored('span', 'facts', facts));
     head.firstChild.append(iconImg(speciesIcon(kind), 28));
     head.addEventListener('click', () => {
       if (census.expanded.has(kind)) census.expanded.delete(kind); else census.expanded.add(kind);
@@ -374,10 +391,18 @@ function renderCensus() {
         b.append(el('b', null, c.life.name), el('span', 'sub', `${d.label === SPECIES[kind]?.label ? '' : `${d.label} · `}${d.stage} · gen ${d.gen} · ${ageLabel(d.age)}`),
           energyBar(d.energy), colored('span', 'mood', [d.traits.length && `✦ ${TIERS[d.tier]} ${d.traits.join(' ')}`, d.mood, comfortWord(d.comfort), d.fed && 'well fed'].filter(Boolean).join(' · ')));
         b.addEventListener('click', () => { if (alive(c)) { follow(c); showCreature(c); } });
+        b.append(el('span', 'val', `◆${recycleValue(c)}`));
         m.append(b);
         ul.append(m);
       }
       if (list.length > 60) ul.append(el('li', 'more', `and ${list.length - 60} more`));
+      if (kind !== 'tadpole') {
+        const all = el('button', 'recycle-all');
+        all.type = 'button';
+        all.append(document.createTextNode(`Recycle all ${list.length} for `), el('i', 'essence'), document.createTextNode(String(S ? S.value : 0)));
+        all.addEventListener('click', () => { recycleAll(kind); renderCensus(); });
+        ul.append(el('li', null), all);
+      }
       li.append(ul);
     }
     rows.push(li);
@@ -702,6 +727,16 @@ function renderSpawnCard() {
     el('li', null, `Lives ~${yearsLabel(s.years)}, about ${Math.round(lifeSeconds(s.years) / 60)} minutes here · ${Math.min(100, Math.round(100 / s.years))}% die a year`),
   );
   if (likes) facts.append(el('li', null, `Likes ${likes.map((k) => LIKE_LABEL[k]).join(', ')}`));
+  const S = speciesSummary(world).get(kind);
+  let have = null;
+  if (S) {
+    have = el('div', 'sc-have');
+    const all = el('button', 'recycle-all');
+    all.type = 'button';
+    all.append(document.createTextNode('Recycle all '), el('i', 'essence'), document.createTextNode(String(S.value)));
+    all.addEventListener('click', () => { recycleAll(kind); renderSpawnCard(); });
+    have.append(colored('span', null, `In the pond: ${S.n}, worth ${S.value} essence${S.best ? `, rarest ${TIERS[S.best]}` : ''}, ${diversityWord(S.diversity)}`), all);
+  }
   const boosts = el('div', 'sc-boosts');
   boosts.append(el('span', 'sc-sub', 'Gene boosts (hover for what each does)'));
   for (const [key, e] of Object.entries(ENHANCE)) {
@@ -724,7 +759,7 @@ function renderSpawnCard() {
   buy.append(document.createTextNode(`Spawn ${SPECIES[kind].label.toLowerCase()} for `), el('i', 'essence'), document.createTextNode(fmt(price)));
   buy.title = buy.disabled ? `You have ${fmt(G.essence || 0)} essence. Recycle animals with the Net for more.` : '';
   buy.addEventListener('click', () => { if (buyAnimal(kind, [...spawnUi.enh])) renderSpawnCard(); });
-  box.replaceChildren(head, facts, boosts, buy);
+  box.replaceChildren(...[head, facts, have, boosts, buy].filter(Boolean));
   box.hidden = false;
   const bar = byId('animals').getBoundingClientRect(), a = spawnUi.anchor.getBoundingClientRect(), w = box.offsetWidth;
   box.style.left = `${Math.round(clamp(a.left + a.width / 2 - w / 2, 8, innerWidth - w - 8))}px`;
@@ -1062,6 +1097,8 @@ function renderEvo() {
       const node = el('div', i <= E.tier ? 'evo-node reached' : 'evo-node');
       node.append(el('b', null, t[br]), el('span', 'note', i <= E.tier ? (i ? 'reached' : 'where every pond starts') : `erosion ${t.erosion}`));
       const kinds = Object.keys(DEEP).filter((k) => DEEP[k].tier === i && (DEEP[k].branch === br || DEEP[k].branch === 'both'));
+      const extras = DEEP_EXTRAS.filter((e) => e.tier === i && (e.branch === br || e.branch === 'both' || !e.branch));
+      if (extras.length) node.append(colored('span', 'evo-extra', extras.map((e) => `${e.kind === 'build' ? 'Build' : e.kind === 'food' ? 'Food' : 'Plant'}: ${e.label}`).join(' · ')));
       for (const k of kinds) {
         const d = DEEP[k], row = el('div', 'evo-sp'), ic = el('span', 'ic');
         ic.append(iconImg(speciesIcon(k), 24));
@@ -1246,6 +1283,8 @@ function initHud() {
   byId('score-close').addEventListener('click', () => setScore(false));
   byId('hatch-close').addEventListener('click', () => setHatchery(false));
   byId('slice').addEventListener('click', () => setEvo(!evoUi.open));
+  byId('open-depths').addEventListener('click', () => setEvo(!evoUi.open));
+  byId('open-hatchery').addEventListener('click', () => { if (world.hatchery && hatcheryStructure(world)) setHatchery(!hatchUi.open); else showTicker('Build a hatchery first (the Build section, 250 pearls and 40 essence)'); });
   byId('evo-close').addEventListener('click', () => setEvo(false));
   byId('evo-deepen').addEventListener('click', () => { if (deepenPond(world)) { showTicker('The surf bites deeper into the pond'); evoUi.sig = ''; renderEvo(); } });
   byId('hatch-feed').addEventListener('click', (e) => {

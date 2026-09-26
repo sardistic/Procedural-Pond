@@ -65,6 +65,29 @@ function applyEnhancements(c, enh) {
   refreshBuffs(c);
 }
 
+// What each species in the pond amounts to: how many, their total worth (what
+// recycling them all would return), the rarest tier among them, how many kinds
+// of rare look they show, and their genetic diversity (average share of
+// heterozygous loci, 0..1). Tadpoles count with frogs.
+function speciesSummary(world) {
+  const by = new Map();
+  for (const c of world.creatures) {
+    if (!c.life || c.leaving || c.unsettled) continue;
+    const kind = c.species === 'tadpole' ? 'frog' : c.species;
+    let s = by.get(kind);
+    if (!s) by.set(kind, s = { kind, n: 0, value: 0, best: 0, looks: new Set(), het: 0, list: [] });
+    s.n++;
+    s.value += recycleValue(c);
+    s.best = Math.max(s.best, tierOf(c.life.traits));
+    s.looks.add(c.life.traits.join('+'));
+    s.het += LOCI.filter((k) => c.life.genome[k] === 1).length / LOCI.length;
+    s.list.push(c);
+  }
+  for (const s of by.values()) s.diversity = s.het / s.n;
+  return by;
+}
+const diversityWord = (d) => (d > 0.25 ? 'very diverse' : d > 0.12 ? 'diverse' : d > 0.04 ? 'a little diverse' : 'uniform');
+
 function gainEssence(world, n, why, subject = null, opts = {}) {
   const G = world.game;
   n = Math.round(n);
@@ -95,11 +118,18 @@ function recycleValue(c) {
   return Math.max(1, Math.round(one * 0.4 * grown + TIER_ESSENCE[tierOf(c.life.traits)]));
 }
 
+// Bigger ponds hold more animals, so they'd out-earn small ones: points scale by the
+// square root of a reference area over the pond's original area (deepening doesn't count).
+function sizeFairness(world) {
+  const [W0, H0] = typeof baseSize === 'function' && world.expandPx ? baseSize(world) : [world.W, world.H];
+  return clamp(Math.sqrt(960 * 540 / Math.max(1, W0 * H0)), 0.6, 1.5);
+}
+
 // Credit points (and as many pearls). `subject` gets the points in its family
 // record, and unless quiet a "+N" floats up from it.
 function award(world, n, why, subject = null, opts = {}) {
   const G = world.game;
-  n = Math.round(n * (opts.flat ? 1 : difficulty(world).points));
+  n = Math.round(n * (opts.flat ? 1 : difficulty(world).points * sizeFairness(world)));
   if (!G || n <= 0) return 0;
   G.points += n;
   G.pearls += n;

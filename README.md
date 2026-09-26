@@ -13,8 +13,10 @@ leaderboard need the small API in `server/`; without it the pond runs as before 
 ## Using it
 
 The screen has six parts. The **menu** (top-left) holds the habitat, tools, scene options and buttons.
-The **animal dock** (bottom-centre) has a pixel icon per species; click one for its **spawn card** (buy it
-with essence, with optional gene boosts), and hover it for the species' **family tree**: every generation that has lived here, with lines to the parents,
+The **animal dock** (bottom-centre) has a pixel icon per species, the most valuable first: a purple glow shows
+what each species in the pond is worth (what recycling them would return), and a border and gem show its
+rarest member's tier; the tooltip adds how many kinds of look it shows and its genetic diversity. Click one for
+its **spawn card** (buy it with essence, with optional gene boosts, or recycle them all), and hover it for the species' **family tree**: every generation that has lived here, with lines to the parents,
 their colours and rarity, and the animals themselves (those here now first, by points). Its
 counter opens the **census**: every species with young, adult and elder counts, hunger, rares and the
 highest generation. Click a species to list its members, and click a member to follow it. The census
@@ -59,17 +61,19 @@ press **P**) for what you earned lately, the leaderboard, and rare finds from ev
   - *Hatchery:* an idle breeding game. Stock it with a pair from your pond (the creature card's *To hatchery*) and feed it by clicking, or with an auto-feeder that keeps going while you're away. Each brood leans toward the trait you pick (size, speed, fertility, longevity, vitality, intellect, light, tolerance, calm or rarity). Upgrades: bigger scoop, auto-feeder, bigger tank, incubator, UV lamp and selective filter.
 
   Over days, the ground around structures, rocks and placed plants discolours (algae in fresh water, coralline pink in salt), and plants take root around them.
+- **Census:** the dock's counter lists species by worth, with their genetic diversity; open one to see its animals (most valuable first) and to recycle them all.
 - **Creature card:** click an animal (or follow or tour) for everything about it: its genes and what they do, its genotype, inbreeding and hybrid vigour, its family tree from grandparents to young, its story from the journal, and buttons to follow or recycle it. Rarity tiers, traits, genes, waters and currencies have one colour each wherever they're mentioned.
 - **The depths:** over a long game, the surf wears the pond down (salt water fastest, fresh slowest). First tide pools are scoured into the beach, cut off at low tide. Then the far side falls away past a ragged drop-off, and the world grows that way, one darker band per tier: the twilight zone, the midnight zone and the abyss in salt water, or a deep lake, a sunless cave and a drowned cathedral in fresh. Deep water swallows the light (only things that glow stay bright). The side view above the minimap shows the pond cut from the beach to the deepest water, with each animal at its depth and the erosion toward the next tier; click it for the evolution tree, where each tier's species can be unlocked for essence (and the pond worn deeper faster).
   - *Salt:* sand sharks in the shallows and tide pools, reef sharks, then anglerfish with glowing lures, gulper eels, vampire squid and giant isopods, and in the abyss the Kraken and the Leviathan.
   - *Fresh:* giant catfish in the deep lake, blind cavefish, olms and giant isopods in the sunless cave, and the Watcher in the drowned cathedral.
+  - Each tier also opens structures to build, foods and plants. Twilight / deep lake: kelp forest or drowned forest (shelter and a nursery), krill or bloodworms. Midnight / sunless cave: black smoker or crystal grotto (warmth or light, essence each dawn), black coral or glowcaps (they grow only in deep water), marine snow. Abyss / drowned cathedral: a whale fall (a feast for deep life) or the drowned idol (it draws the mythic up, but nothing near it rests easy).
   - Deep life also turns up by itself, and each deep animal adds essence at dawn. Mythic animals are vast and rare; while one is in the pond, strange things are noted in the journal.
 - **Map layers:** the button on the minimap switches between the pond, *Tension* (how aggressive the water is) and, with both waters, *Water* (where it runs fresh or salt). The minimap shows the beach as the tide bares it.
 - **Keys:** **B** shows the bones (spine chains, joint radii, leg IK), **Space** pauses, **L** switches light modes, **F** follows, **T** tours, **M** toggles sound, **P** opens the score, **H** hides the panel. *Photo* saves a PNG.
 
 ## Points, pearls and the leaderboard
 
-- **Points** are your score and never go down; harder water pays more (fresh ×1, salt ×1.3, both ×1.6). Every point also pays a **pearl**, which you spend on plants and rocks (2 to 15) and special food. A new pond starts with 60 pearls.
+- **Points** are your score and never go down; harder water pays more (fresh ×1, salt ×1.3, both ×1.6), and points scale with the square root of a 960×540 reference over the pond's area (×0.6 to ×1.5), so small and large ponds compete fairly. Every point also pays a **pearl**, which you spend on plants and rocks (2 to 15) and special food. A new pond starts with 60 pearls.
 - **Essence** (◆) buys new animals. A spawn's price follows the species' size, rarity, how reliably it settles in (the ones that don't return half) and how long it lives. Gene boosts (fertile, long-lived, hardy, clever, bright, calm, adaptable, or a hidden rare carrier gene) cost extra. Essence comes back when you recycle an animal with the Net or from its card (more for grown and rarer ones), when animals live out their lives, and a little each dawn. A new pond starts with 30.
 - **Earning:** every birth is a point. Rare births score by tier: Uncommon 3, Rare 8, Epic 20, Legendary 50, Mythic 150. Breeding the same rare again pays 25% more each time, up to 3×, and the first of a kind in your pond adds 20. Rares that arrive on their own score half. A new wild species is 10, a generation record 5 per generation, coral spawning 20, and an animal that lives out its life 1. Each dawn pays a pearl per species in the pond plus up to 5 for how comfortable everyone is.
 - **Leaderboard:** the top twenty ponds by points, each with its best find; click one to visit (you get your own copy). *Rare finds in every pond* lists the latest Rare-or-better animals born or arriving anywhere. The server only takes scores that grow at a plausible rate.

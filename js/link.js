@@ -18,7 +18,7 @@ const LINK_V = 3; // 3 added the working genes and loci; 2 still decodes
 const KIND_CODES = ['koi', 'tetra', 'eel', 'axolotl', 'turtle', 'crab', 'ray', 'frog', 'snake', 'snail', 'jelly', 'clown',
   'puffer', 'octopus', 'duck', 'shrimp', 'dragonfly', 'wild', 'starfish', 'tadpole',
   'shark', 'sandshark', 'angler', 'gulper', 'vampire', 'isopod', 'catfish', 'cavefish', 'olm', 'kraken', 'leviathan', 'watcher'];
-const PLANT_CODES = ['weed', 'eelgrass', 'anemone', 'coral', 'urchin', 'marimo', 'duckweed', 'lily'];
+const PLANT_CODES = ['weed', 'eelgrass', 'anemone', 'coral', 'urchin', 'marimo', 'duckweed', 'lily', 'blackcoral', 'glowcap'];
 const HAB_CODES = ['fresh', 'mixed', 'salt'];
 const FLOOR_CODES = ['sand', 'coral', 'pebbles', 'river', 'leaves', 'tiles'];
 const WATER_CODES = ['teal', 'pond', 'clear', 'reef', 'deep', 'murky'];

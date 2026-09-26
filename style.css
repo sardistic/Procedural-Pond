@@ -463,6 +463,10 @@ output {
 }
 
 .ani img, .census img, .sky canvas { image-rendering: pixelated; }
+/* Worth glows up from the bottom; the rarest member's tier colours the border and the gem. */
+.ani { background: linear-gradient(to top, rgba(154, 90, 224, calc(var(--val, 0) * 0.6)), rgba(154, 90, 224, 0) 90%), #0f2c38; }
+.ani.rare { border-color: var(--tier); }
+.ani .gem { position: absolute; top: 3px; left: 3px; width: 5px; height: 5px; transform: rotate(45deg); background: var(--tier, transparent); box-shadow: none; }
 .ani.none img { opacity: 0.45; }
 
 .ani b {
@@ -535,6 +539,11 @@ output {
 .member .sub { grid-area: sub; font-size: 9px; color: var(--muted); }
 .member .mood { grid-area: mood; font-size: 9px; color: var(--muted); }
 .member .mini-bar { grid-area: bar; justify-self: stretch; }
+.member { grid-template-columns: 1fr 64px 34px; grid-template-areas: "nm bar val" "sub sub sub" "mood mood mood"; }
+.member .val { grid-area: val; justify-self: end; color: #c38bff; font-size: 9px; }
+.row { border-left: 3px solid var(--tier, transparent); }
+.recycle-all { margin-top: 4px; padding: 4px 8px; color: #f0d8ff; border-color: #9a5ae0; box-shadow: none; }
+.sc-have { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; margin-top: 8px; padding: 6px; border: 2px solid #1c4654; }
 
 .mini-bar { display: block; height: 5px; align-self: center; background: var(--ink); border: 1px solid var(--btn-edge); }
 .mini-bar i { display: block; height: 100%; background: #7ed07a; box-shadow: none; }
@@ -865,6 +874,7 @@ output {
 .evo-sp img { image-rendering: pixelated; }
 .evo-sp b { font-weight: 400; color: var(--text); }
 .evo-sp .ok { color: #7ed07a; }
+.evo-extra { font-size: 9px; color: var(--text); }
 .evo-sp button { padding: 3px 6px; box-shadow: none; color: #f0d8ff; border-color: #9a5ae0; }
 .evo-sp button:disabled { opacity: 0.45; cursor: not-allowed; }
 

@@ -281,3 +281,23 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
 - **Scores and extras:** deep sightings score 20 (150 for a mythic), +30 for a first. Dawn essence rises by 1 per deep animal. `updateDeep` writes eerie journal lines, and the Watcher lowers comfort within 90 px.
 - **Starfish varieties:** sunflower, brittle and cushion are drawn last from the seed, so earlier draws are unchanged.
 - **Link codes:** new `KIND_CODES` are appended, and cavefish carry a school index like tetras.
+
+## Worth, the dock order and recycling all
+- **Species summary:** `speciesSummary` gives, per species (tadpoles counted with frogs), the count, total worth (the sum of `recycleValue`), the best tier, the distinct trait sets, and diversity (average share of heterozygous loci).
+- **Dock:** it re-sorts by worth every 3 s, but not under the pointer or with the spawn card open. `--val` sets the purple glow, and `--tier` the border and gem (tier 2 and up).
+- **Lists:** census rows and their members sort by worth.
+- **Recycle all:** `recycleAll` confirms and names the rare animals, recycles quietly, zeroes the species' target, and logs one line.
+
+## The deep build-out
+- **Structures:** `STRUCTURES` gains `tier` (the depth tier needed) and `deepMin` (depth at the spot), both checked in `canPlace`, plus `dawnEssence` and `lure`. The six:
+  - kelp forest (salt, tier 2) and drowned forest (fresh, tier 2);
+  - black smoker (salt, tier 3, 4◆/dawn) and crystal grotto (fresh, tier 3, 4◆/dawn);
+  - whale fall (salt, tier 4, 7◆/dawn);
+  - drowned idol (fresh, tier 4, 10◆/dawn, unique). Its lure multiplies the mythic chance by `1 + lure`.
+- **Shape fix:** `BAKE` calls now run under `withSeed('bake/<seed>')`, so baked shapes that use `rand` are the same on every bake.
+- **Foods:** krill and bloodworms (tier 2) condition animals like brine shrimp. Marine snow (tier 3) is 9 flakes over a wide patch, sinking slowly.
+- **Plants:** black coral and glowcaps (tier 3) grow only where depth > 0.3, and dawn sprouts in deep water become them. Their `PLANT_CODES` are appended.
+- **Menus:** the Build and tool menus hide items until their tier and water fit, and refresh when a tier is reached. The evolution tree lists each tier's extras (`DEEP_EXTRAS`). The menu gains Depths and Hatchery buttons (the side view is hidden on phones).
+
+## Fair points for pond size
+`award` multiplies by `sizeFairness = clamp(√(960×540 / original area), 0.6, 1.5)`. Deepening doesn't count toward the area.

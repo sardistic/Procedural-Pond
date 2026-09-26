@@ -188,15 +188,15 @@ function buyAnimal(kind, enh = []) {
 }
 
 // Recycle an animal (the Net, or the creature card): it leaves, and its essence comes back.
-function recycle(c) {
+function recycle(c, quiet = false) {
   if (!alive(c)) return 0;
   const back = recycleValue(c), tier = c.life ? tierOf(c.life.traits) : 0;
   world.creatures.splice(world.creatures.indexOf(c), 1);
   noteGone(world, c, 'recycled');
   if (world.targets[c.species]) world.targets[c.species]--;
-  addRipple(world, c.x, c.y, 0.8);
-  if (back) gainEssence(world, back, 'recycling', c);
-  if (c.life) {
+  addRipple(world, c.x, c.y, 0.8, quiet);
+  if (back) gainEssence(world, back, 'recycling', c, { quiet });
+  if (c.life && !quiet) {
     logEvent(world, `Recycled ${who(c)}: +${back} essence${tier >= 2 ? ` (${TIERS[tier]})` : ''}`, null, {
       cat: 'pond', pri: tier >= 2 ? 2 : 0, key: 'recycle', data: back,
       merge: (e) => `Recycled ${e.n} animals: +${e.data.reduce((a, b) => a + b, 0)} essence`,
@@ -205,6 +205,24 @@ function recycle(c) {
   if (cam.follow === c) stopFollow();
   updateCounts();
   return back;
+}
+
+// Recycle every animal of a species (asking first, and naming the rare ones).
+function recycleAll(kind) {
+  const list = world.creatures.filter((c) => c.life && !c.leaving && !c.unsettled && (c.species === kind || (kind === 'frog' && c.species === 'tadpole')));
+  if (!list.length) return 0;
+  const worth = list.reduce((a, c) => a + recycleValue(c), 0), label = SPECIES[kind] ? SPECIES[kind].label : kind;
+  const rares = list.filter((c) => tierOf(c.life.traits) >= 2).sort((a, b) => tierOf(b.life.traits) - tierOf(a.life.traits));
+  const warn = rares.length ? ` That includes ${rares.length} rare: ${rares.slice(0, 4).map((c) => `${c.life.name} (${TIERS[tierOf(c.life.traits)]} ${c.life.traits.join(' ')})`).join(', ')}${rares.length > 4 ? '…' : ''}.` : '';
+  if (!confirm(`Recycle all ${list.length} ${label.toLowerCase()} for ${worth} essence?${warn}`)) return 0;
+  let got = 0;
+  for (const c of list) got += recycle(c, true);
+  world.targets[kind] = 0;
+  if (kind === 'frog') world.targets.tadpole = 0;
+  logEvent(world, `Recycled all ${list.length} ${label.toLowerCase()}: +${got} essence`, null, { cat: 'pond', pri: 2 });
+  floatAward(world.W / 2, world.H / 2, `+${got}◆`, 'essence');
+  updateCounts();
+  return got;
 }
 
 let poorAt = 0;
@@ -502,6 +520,11 @@ const TOOLS = {
   marimo: plantTool('marimo', 'Marimo'),
   duckweed: plantTool('duckweed', 'Duckweed'),
   lily: plantTool('lily', 'Lily pad', 'pads'),
+  krill: { label: 'Krill', food: 'krill', price: 6, habitat: 'salt', tier: 2, hint: 'krill: a rich meal that brings animals into breeding condition, deep ones too' },
+  bloodworm: { label: 'Bloodworms', food: 'bloodworm', price: 6, habitat: 'fresh', tier: 2, hint: 'bloodworms: a rich meal that brings animals into breeding condition, deep ones too' },
+  snow: { label: 'Marine snow', food: 'snow', price: 4, tier: 3, spread: 22, n: 9, hint: 'marine snow drifts down slowly over a wide patch: food that reaches the deep' },
+  blackcoral: { ...plantTool('blackcoral', 'Black coral'), habitat: 'salt', tier: 3, deepMin: 0.3 },
+  glowcap: { ...plantTool('glowcap', 'Glowcaps'), habitat: 'fresh', tier: 3, deepMin: 0.3 },
   rock: {
     label: 'Rock', price: PLANT_PRICE.rock, likedBy: 'rock',
     place: (x, y) => { const rk = makeRock(x, y, rand(5, 10)); rk.born = world.days; world.rocks.push(rk); bakeBackground(world); paintMinimapBackground(); },
@@ -578,13 +601,15 @@ function likedByText(kind) {
 function useTool(x, y) {
   const tool = TOOLS[world.tool], price = tool.price || 0;
   if (tool.build) { build(tool.build, x, y); return; }
-  if (tool.food && world.food.filter((f) => f.fed).length >= 90) return;
+  if (tool.food && world.food.filter((f) => f.fed).length >= 120) return;
   if (!tool.place && !tool.food) return;
+  if (tool.deepMin && depthAt(world, x, y) < tool.deepMin) { showTicker(`${tool.label} only grows in deep water`); return; }
   if (!spend(world, price)) { notEnough(price); return; }
   if (price) floatAward(x, y, `−${price}`, 'spend');
   if (tool.place) tool.place(x, y);
   else {
-    for (let i = tool.food === 'pellet' ? 4 : 3; i > 0; i--) world.food.push(new Food(x + rand(-3, 3), y + rand(-3, 3), 40, tool.food));
+    const spread = tool.spread || 3;
+    for (let i = tool.n || (tool.food === 'pellet' ? 4 : 3); i > 0; i--) world.food.push(new Food(x + rand(-spread, spread), y + rand(-spread, spread), 40, tool.food));
     addRipple(world, x, y, 1);
   }
 }
@@ -1001,10 +1026,12 @@ function refreshSpeciesButtons() {
     const k = b.dataset.spawn;
     b.hidden = !fitsHabitat(world, SPECIES_HABITAT[k]) || !deepAvailable(world, k) || !deepUnlocked(world, k);
   }
-  for (const b of $('builds').children) { const d = STRUCTURES[TOOLS[b.dataset.tool].build]; b.hidden = !!d.habitat && !fitsHabitat(world, d.habitat); }
+  // Builds, foods and plants of the deep show once the pond is that deep.
+  const tier = (world.erosion && world.erosion.tier) || 0;
+  for (const b of $('builds').children) { const d = STRUCTURES[TOOLS[b.dataset.tool].build]; b.hidden = (!!d.habitat && !fitsHabitat(world, d.habitat)) || (d.tier || 0) > tier; }
   for (const b of $('tools').children) {
-    const salt = ['anemone', 'coral', 'urchin'].includes(b.dataset.tool), fresh = ['marimo', 'duckweed', 'lily'].includes(b.dataset.tool);
-    b.hidden = (salt && !fitsHabitat(world, 'salt')) || (fresh && !fitsHabitat(world, 'fresh'));
+    const t = TOOLS[b.dataset.tool], salt = ['anemone', 'coral', 'urchin'].includes(b.dataset.tool), fresh = ['marimo', 'duckweed', 'lily'].includes(b.dataset.tool);
+    b.hidden = (salt && !fitsHabitat(world, 'salt')) || (fresh && !fitsHabitat(world, 'fresh')) || (!!t.habitat && !fitsHabitat(world, t.habitat)) || (t.tier || 0) > tier;
   }
   for (const b of document.querySelectorAll('[data-hab]')) {
     b.setAttribute('aria-pressed', b.dataset.hab === world.opts.habitat);

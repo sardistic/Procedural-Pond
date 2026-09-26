@@ -195,7 +195,7 @@ function makeDecor(r, outline) {
 
 // Food you drop (pellets, spirulina flakes, brine shrimp) sinks and waits on the
 // floor; plankton and coral spawn drift. See FOOD_FED in life.js for what each does.
-const FED_FOODS = new Set(['pellet', 'spirulina', 'brine']);
+const FED_FOODS = new Set(['pellet', 'spirulina', 'brine', 'krill', 'bloodworm', 'snow']);
 
 class Food {
   constructor(x, y, z = 40, kind = 'pellet') {
@@ -223,7 +223,7 @@ class Food {
       this.y = clamp(this.y + Math.cos(world.t * 7 + this.ph * 3) * 2.5 * dt, 1, world.H - 1);
     }
     if (this.z > 0.8) {
-      this.z = Math.max(0.8, this.z - (this.kind === 'spirulina' ? 3 : 5) * dt);
+      this.z = Math.max(0.8, this.z - (this.kind === 'snow' ? 1.2 : this.kind === 'spirulina' ? 3 : 5) * dt);
       this.x = clamp(this.x + (Math.sin(this.z * 0.7) * 1.5 + cur.x * 4) * dt, 1, world.W - 1);
       this.y = clamp(this.y + cur.y * 4 * dt, 1, world.H - 1);
     } else {
@@ -235,6 +235,9 @@ class Food {
   draw(r) {
     if (this.kind === 'spirulina') { r.ellipsoid(this.x, this.y, 1.1, 0.6, this.ph, this.z, 0.4, SPIRULINA_MAT, FOOD_ID); return; }
     if (this.kind === 'brine') { r.ellipsoid(this.x, this.y, 0.9, 0.5, this.ph + Math.sin(this.life * 12), this.z, 0.6, BRINE_MAT, FOOD_ID); return; }
+    if (this.kind === 'krill') { r.ellipsoid(this.x, this.y, 1.2, 0.5, this.ph, this.z, 0.6, KRILL_MAT, FOOD_ID); return; }
+    if (this.kind === 'bloodworm') { r.tube(this.x, this.y, 0.5, this.z, this.x + Math.cos(this.ph) * 2, this.y + Math.sin(this.ph) * 2, 0.4, this.z, 0.8, WORM_MAT, FOOD_ID); return; }
+    if (this.kind === 'snow') { r.dot(this.x, this.y, this.z, SNOW_MAT, FOOD_ID); return; }
     if (this.kind !== 'pellet') {
       r.alpha = Math.min(1, this.life / 5, (70 - this.life) / 2 + 0.3);
       r.dot(this.x, this.y, this.z, this.kind === 'spawn' ? SPAWN_MAT : PLANKTON_MAT, PLANKTON_ID);
@@ -248,6 +251,8 @@ class Food {
 const SPAWN_MAT = solid('#ffb8d8');
 const SPIRULINA_MAT = mat('#1e4a1a', '#2e7a2a', '#4aa83e', '#7ed066');
 const BRINE_MAT = mat('#8a3a1a', '#c8602a', '#f08a4a', '#ffc08a');
+const KRILL_MAT = mat('#9a3a3a', '#d05a50', '#f88a78', '#ffc4b4'), WORM_MAT = mat('#4a0a0a', '#7a1414', '#a82020', '#d84a3a');
+const SNOW_MAT = solid('#e8eef4');
 
 // ---- motes: suspended particles that make the water feel like water -----------------
 
@@ -455,7 +460,7 @@ function bakeBackground(world) {
   // Structures' solid parts (see structures.js), with outline ids from 5000 up.
   let sid = 5000;
   const nextS = (m) => { const i = Math.min(8190, sid++); outline[i] = outlineOf(m); return i; };
-  for (const s of world.structures || []) BAKE[s.kind](r, s, nextS);
+  for (const s of world.structures || []) withSeed(`bake/${s.seed}`, () => BAKE[s.kind](r, s, nextS)); // same shape every bake
   const bg = new Uint32Array(W * H), bgLight = new Uint32Array(W * H), bgDry = shore ? new Uint32Array(W * H) : null;
   const { id, z, col, sh } = r;
   for (let y = 0, p = 0; y < H; y++) {

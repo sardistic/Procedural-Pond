@@ -526,6 +526,58 @@ function updateDeep(world, dt) {
   }
 }
 
+// ---- deep plants ----------------------------------------------------------------------------------
+
+const BLACK_CORAL = mat('#0a0606', '#1a0e0c', '#2e1a16', '#4a2a22'), BLACK_TIP = mat('#5a0a0a', '#8a1a14', '#c02a1e', '#f0503a');
+class BlackCoral extends Coral {
+  constructor(x, y) {
+    super(x, y, 'staghorn');
+    this.m = BLACK_CORAL;
+    OUTLINE[this.id] = outlineOf(BLACK_CORAL);
+    this.skin = (u) => (u > 0.72 ? BLACK_TIP : BLACK_CORAL);
+  }
+}
+
+// Bioluminescent mushrooms that pulse in the dark.
+const GLOWCAP = mat('#1a5a4a', '#2a8a70', '#4ac4a0', '#a0f4dc'), GLOW_STALK = mat('#4a4a3e', '#6e6e5c', '#94947e', '#bcbca4');
+class Glowcap {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.caps = Array.from({ length: randi(5, 9) }, () => ({ ox: rand(-5, 5), oy: rand(-5, 5), h: rand(2, 5), r: rand(1.2, 2.4), ph: rand(0, TAU) }));
+    this.id = newId(outlineOf(GLOW_STALK));
+    this.capId = newId(hexToInt('#0a2a20'));
+    EMISSIVE[this.capId] = 2;
+  }
+
+  hit(x, y) { return Math.hypot(x - this.x, y - this.y) < 7; }
+  update() {}
+
+  draw(r, t) {
+    for (const c of this.caps) {
+      const x = this.x + c.ox, y = this.y + c.oy;
+      r.tube(x, y, 0.5, 0, x, y, 0.4, c.h, 0.9, GLOW_STALK, this.id);
+      if (Math.sin(t * 0.8 + c.ph) > -0.6) r.ellipsoid(x, y, c.r, c.r, 0, c.h, c.r * 0.6, GLOWCAP, this.capId);
+    }
+  }
+}
+Object.assign(GROW, { blackcoral: (w, x, y) => new BlackCoral(x, y), glowcap: (w, x, y) => new Glowcap(x, y) });
+Object.assign(PLANT_PRICE, { blackcoral: 20, glowcap: 20 });
+Object.assign(LIKE_LABEL, { blackcoral: 'black coral', glowcap: 'glowcaps' });
+for (const k of ['angler', 'gulper', 'vampire', 'isopod', 'shark']) LIKES[k] = [...(LIKES[k] || []), 'blackcoral'];
+for (const k of ['cavefish', 'olm', 'isopod', 'catfish']) LIKES[k] = [...(LIKES[k] || []), 'glowcap'];
+Object.assign(PLANT_WATER, { blackcoral: 0.8, glowcap: -0.8 });
+Object.assign(PLANT_COVER, { blackcoral: 0.04, glowcap: 0.03 });
+for (const k of ['kelp', 'drowned', 'smoker', 'grotto', 'whalefall', 'idol']) LIKE_LABEL[k] = STRUCTURES[k].label.toLowerCase();
+
+// What each depth tier opens up besides animals, for the evolution tree:
+// structures to build, food to drop, and plants that only grow that deep.
+const DEEP_EXTRAS = [
+  { kind: 'build', key: 'kelp' }, { kind: 'build', key: 'drowned' }, { kind: 'food', key: 'krill', label: 'Krill', branch: 'salt', tier: 2 },
+  { kind: 'food', key: 'bloodworm', label: 'Bloodworms', branch: 'fresh', tier: 2 }, { kind: 'build', key: 'smoker' }, { kind: 'build', key: 'grotto' },
+  { kind: 'plant', key: 'blackcoral', label: 'Black coral', branch: 'salt', tier: 3 }, { kind: 'plant', key: 'glowcap', label: 'Glowcaps', branch: 'fresh', tier: 3 },
+  { kind: 'food', key: 'snow', label: 'Marine snow', branch: 'both', tier: 3 }, { kind: 'build', key: 'whalefall' }, { kind: 'build', key: 'idol' },
+].map((e) => (e.kind === 'build' ? { ...e, label: STRUCTURES[e.key].label, branch: STRUCTURES[e.key].habitat, tier: STRUCTURES[e.key].tier } : e));
+
 // A spot in the pond deep enough for a species (the deepest of a few tries).
 function deepSpot(world, kind) {
   const need = DEEP[kind] ? DEEP[kind].deepMin : 0;
@@ -577,7 +629,8 @@ const MYTHIC_ARRIVAL = {
   watcher: 'In the drowned dark, an eye opens. The Watcher is here',
 };
 function arriveDeep(world) {
-  const pool = Object.keys(DEEP).filter((k) => deepAvailable(world, k) && (!DEEP[k].mythic || Math.random() < 0.06));
+  const lure = (world.structures || []).reduce((a, s) => a + (STRUCTURES[s.kind].lure || 0), 0);
+  const pool = Object.keys(DEEP).filter((k) => deepAvailable(world, k) && (!DEEP[k].mythic || Math.random() < 0.06 * (1 + lure)));
   if (!pool.length) return;
   const kind = pick(pool);
   if (world.creatures.filter((c) => c.species === kind).length >= (DEEP[kind].mythic ? 1 : 3)) return;

@@ -510,13 +510,14 @@ function eat(world, c, f) {
     // A good meal keeps an animal well fed for a while: it ages slower, stays put
     // and is readier to breed. Brine shrimp brings animals into breeding condition.
     L.fed = Math.max(L.fed || 0, FOOD_FED[f.kind] || (f instanceof Creature ? 60 : 0));
-    if (f.kind === 'brine') L.cooldown = Math.min(L.cooldown, 5);
+    if (CONDITIONING.has(f.kind)) L.cooldown = Math.min(L.cooldown, 5);
   }
   if ((f.z ?? 0) > 32) addRipple(world, f.x, f.y, 0.6);
 }
 
-const FOOD_GAIN = { plankton: 0.1, pellet: 0.3, spawn: 0.3, brine: 0.5, spirulina: 0.35 };
-const FOOD_FED = { pellet: 45, spawn: 45, brine: 90, spirulina: 240 };
+const FOOD_GAIN = { plankton: 0.1, pellet: 0.3, spawn: 0.3, brine: 0.5, spirulina: 0.35, krill: 0.5, bloodworm: 0.5, snow: 0.25 };
+const FOOD_FED = { pellet: 45, spawn: 45, brine: 90, spirulina: 240, krill: 120, bloodworm: 120, snow: 200 };
+const CONDITIONING = new Set(['brine', 'krill', 'bloodworm']); // foods that bring animals into breeding condition
 
 const isPredator = (c) => c.species === 'eel' || c.species === 'snake' || c.species === 'octopus' || (c.species === 'wild' && c.sp.predator) ||
   (typeof DEEP_PREDATORS !== 'undefined' && DEEP_PREDATORS.has(c.species));
