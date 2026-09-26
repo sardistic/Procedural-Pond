@@ -305,6 +305,27 @@ output {
 
 .note:empty { display: none; }
 
+.pond-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; max-height: 220px; overflow-y: auto; }
+.pond-item { display: flex; gap: 4px; }
+
+.pond-open {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  padding: 5px 8px;
+  text-align: left;
+  box-shadow: none;
+}
+
+.pond-open b { margin: 0; font-weight: 400; color: var(--text); }
+.pond-open span { font-size: 9px; color: var(--muted); }
+.pond-item.current .pond-open { border-color: var(--hot); cursor: default; }
+.pond-item.current .pond-open b { color: var(--hot); }
+.pond-item .icon { flex: none; align-self: stretch; height: auto; }
+#save-status { color: var(--muted); }
+
 /* ---- pop-up panels (journal, census, sky) ---- */
 
 .pop {

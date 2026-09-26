@@ -375,3 +375,22 @@ class Urchin {
     }
   }
 }
+
+// ---- reproducible construction (see makeCreature) --------------------------------------
+
+const GROW = {
+  weed: (w, x, y, a) => new Weed(x, y, a.habitat ?? null),
+  eelgrass: (w, x, y) => new Eelgrass(x, y),
+  anemone: (w, x, y) => new Anemone(x, y),
+  coral: (w, x, y, a) => new Coral(x, y, a.kind),
+  urchin: (w, x, y) => new Urchin(x, y),
+  marimo: (w, x, y) => new Marimo(x, y),
+  duckweed: (w, x, y) => new Duckweed(x, y),
+  lily: (w, x, y) => new LilyPad(w, x, y),
+};
+
+function makePlant(kind, world, x, y, args = {}, seed = newSeed()) {
+  const p = withSeed(seed, () => GROW[kind](world, x, y, args));
+  p.make = kind; p.seed = seed; p.args = args;
+  return p;
+}

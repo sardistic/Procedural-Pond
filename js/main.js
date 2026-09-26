@@ -77,7 +77,7 @@ for (const [k, table] of [['floor', FLOORS], ['water', WATERS], ['light', LIGHTS
   const v = FLOOR_ALIASES[params.get(k)] || params.get(k);
   if (table[v]) world.opts[k] = v;
 }
-world.seed = (params.get('pond') || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40) || newSeedName();
+const urlSeed = (params.get('pond') || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40);
 
 // Screen-sized worlds: half the window in each direction (2x pixels), within sane
 // bounds. A shared link carries the exact size so the recipient gets the same pond.
@@ -89,6 +89,16 @@ world.autoSize = (() => {
   return [clamp(+m[1], 360, 1400), clamp(+m[2], 300, 900)];
 })();
 const worldDims = () => (WORLD_SIZES[world.opts.world] || WORLD_SIZES.auto).size || world.autoSize;
+
+// Your own ponds come back. Opening the site plainly resumes the pond you last
+// had open; a link to a pond you have saved resumes that one. A link to a pond
+// you don't have starts it from its seed on day 1, and it then becomes yours.
+world.resume = urlSeed ? loadSave(urlSeed) : (() => { const last = listSaves()[0]; return last ? loadSave(last.seed) : null; })();
+world.seed = world.resume ? world.resume.seed : urlSeed || newSeedName();
+if (world.resume) {
+  Object.assign(world.opts, world.resume.opts);
+  world.autoSize = world.resume.size.slice();
+}
 
 function lighting() {
   const o = world.opts, m = world.moon || moonInfo(world.days, world.moon0);
@@ -163,17 +173,28 @@ function buildPond() {
   });
   Object.assign(ECO, { births: 0, arrivals: 0, departures: 0, eaten: 0, rares: 0 });
   WILD_SPECIES.length = 0;
-  withSeed(`${world.seed}/${world.opts.habitat}`, () => {
-    generateScenery(world);
-    populate();
-    world.moon0 = Math.random();
-    world.tide0 = Math.random();
-  });
+  const resume = world.resume;
+  world.resume = null;
+  if (resume) {
+    restorePond(world, resume);
+  } else {
+    withSeed(`${world.seed}/${world.opts.habitat}`, () => {
+      generateScenery(world);
+      populate();
+      world.moon0 = Math.random();
+      world.tide0 = Math.random();
+    });
+  }
   updateSky(world, 0);
   $('seed-name').textContent = world.seed;
-  const kind = { fresh: 'freshwater pond', salt: 'saltwater pond', mixed: 'pond' }[world.opts.habitat];
   const m = moonInfo(world.days, world.moon0);
-  logEvent(world, `You found a ${kind} called ${world.seed}. Tonight: ${m.name.toLowerCase()}.`, null, { cat: 'pond' });
+  if (resume) {
+    const animals = world.creatures.length, rares = world.creatures.filter((c) => c.life && c.life.traits.length).length;
+    logEvent(world, `Welcome back to ${world.seed}: day ${Math.floor(world.days) + 1}, ${animals} animals${rares ? `, ${rares} rare` : ''}`, null, { cat: 'pond' });
+  } else {
+    const kind = { fresh: 'freshwater pond', salt: 'saltwater pond', mixed: 'pond' }[world.opts.habitat];
+    logEvent(world, `You found a ${kind} called ${world.seed}. Tonight: ${m.name.toLowerCase()}.`, null, { cat: 'pond' });
+  }
   refreshSpeciesButtons();
 }
 
@@ -360,6 +381,10 @@ function frame(now) {
   updateCard(dt);
   Sound.update(world, world.paused ? 0 : dt);
   hudTick(dt);
+  saveTimer -= dt;
+  if (saveTimer <= 0) { saveTimer = 15; saveNow(); }
+  statusTimer -= dt;
+  if (statusTimer <= 0) { statusTimer = 1; updateSaveStatus(); }
   mapTimer -= dt;
   if (mapTimer <= 0) { mapTimer = 0.12; drawMinimap(); }
   requestAnimationFrame(frame);
@@ -370,14 +395,14 @@ function frame(now) {
 const TOOLS = {
   feed: { label: 'Feed', hint: 'click to feed · drag animals · scroll to zoom · drag water to pan' },
   net: { label: 'Net', hint: 'click an animal, plant or rock to remove it' },
-  weed: { label: 'Weed', place: (x, y) => world.plants.push(new Weed(x, y)) },
-  eelgrass: { label: 'Eelgrass', place: (x, y) => world.plants.push(new Eelgrass(x, y)) },
-  anemone: { label: 'Anemone', place: (x, y) => world.plants.push(new Anemone(x, y)) },
-  coral: { label: 'Coral', place: (x, y) => world.plants.push(new Coral(x, y)) },
-  urchin: { label: 'Urchin', place: (x, y) => world.plants.push(new Urchin(x, y)) },
-  marimo: { label: 'Marimo', place: (x, y) => world.plants.push(new Marimo(x, y)) },
-  duckweed: { label: 'Duckweed', place: (x, y) => world.plants.push(new Duckweed(x, y)) },
-  lily: { label: 'Lily pad', place: (x, y) => world.pads.push(new LilyPad(world, x, y)) },
+  weed: { label: 'Weed', place: (x, y) => world.plants.push(makePlant('weed', world, x, y)) },
+  eelgrass: { label: 'Eelgrass', place: (x, y) => world.plants.push(makePlant('eelgrass', world, x, y)) },
+  anemone: { label: 'Anemone', place: (x, y) => world.plants.push(makePlant('anemone', world, x, y)) },
+  coral: { label: 'Coral', place: (x, y) => world.plants.push(makePlant('coral', world, x, y)) },
+  urchin: { label: 'Urchin', place: (x, y) => world.plants.push(makePlant('urchin', world, x, y)) },
+  marimo: { label: 'Marimo', place: (x, y) => world.plants.push(makePlant('marimo', world, x, y)) },
+  duckweed: { label: 'Duckweed', place: (x, y) => world.plants.push(makePlant('duckweed', world, x, y)) },
+  lily: { label: 'Lily pad', place: (x, y) => world.pads.push(makePlant('lily', world, x, y)) },
   rock: { label: 'Rock', place: (x, y) => { world.rocks.push(makeRock(x, y, rand(5, 10))); bakeBackground(world); paintMinimapBackground(); } },
 };
 
@@ -734,6 +759,7 @@ $('opt-floor').addEventListener('change', (e) => { setOpt('floor', e.target.valu
 $('opt-water').addEventListener('change', (e) => { setOpt('water', e.target.value); rebake(); });
 $('opt-light').addEventListener('change', (e) => setOpt('light', e.target.value));
 $('opt-world').addEventListener('change', (e) => {
+  if (hasHistory() && !confirm(REGROW_WARNING)) { e.target.value = world.opts.world; return; }
   setOpt('world', e.target.value);
   if (e.target.value === 'auto') world.autoSize = screenWorld();
   layout(true);
@@ -741,7 +767,12 @@ $('opt-world').addEventListener('change', (e) => {
 });
 
 // Switching habitat picks fitting water and floor, then regrows the pond from the same seed.
+const hasHistory = () => world.days > 1.3 || ECO.births > 0;
+const REGROW_WARNING = 'This regrows the pond from day 1, and its current animals, rares and journal will be lost. ' +
+  'To keep them, start a New pond from "Your ponds" instead. Continue?';
+
 function setHabitat(h) {
+  if (h !== world.opts.habitat && hasHistory() && !confirm(REGROW_WARNING)) { refreshSpeciesButtons(); return; }
   setOpt('habitat', h);
   const d = HABITAT_DEFAULTS[h];
   setOpt('water', d.water); setOpt('floor', d.floor);
@@ -790,17 +821,20 @@ $('zoom-out').addEventListener('click', () => zoomStep(-1));
 zoomLabel.addEventListener('click', resetView);
 $('clear').addEventListener('click', () => { release(); world.creatures = []; world.eggs = []; world.targets = {}; updateCounts(); });
 $('reset').addEventListener('click', () => {
+  saveNow(); // the pond you're leaving stays in "Your ponds"
   world.seed = newSeedName();
   world.autoSize = screenWorld(); // a new pond fits the window as it is now
   world.current.base = rand(-PI, PI);
   layout(true);
   history.replaceState(null, '', new URL(shareUrl()).search);
+  saveNow();
+  renderPondList();
 });
 $('share').addEventListener('click', async () => {
   const url = shareUrl();
   try {
     if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ title: 'Procedural Pond', text: `Come see my pond, ${world.seed}`, url });
-    else { await navigator.clipboard.writeText(url); showTicker('Link copied: anyone who opens it gets this pond'); }
+    else { await navigator.clipboard.writeText(url); showTicker('Link copied: friends start this pond on day 1. Export shares it as it is now.'); }
   } catch {
     prompt('Copy this link to share your pond:', url);
   }
@@ -834,6 +868,114 @@ $('snapshot').addEventListener('click', () => {
   a.href = c.toDataURL('image/png');
   a.click();
 });
+
+// ---- saving: autosave, your ponds, export and import --------------------------------
+
+let saveTimer = 4, statusTimer = 0, lastSaved = 0, saveFailed = false; // first save soon after load
+
+function saveNow() {
+  if (world.noSave || !world.raster) return;
+  try {
+    storeSave(serializePond(world));
+    lastSaved = Date.now();
+    saveFailed = false;
+  } catch {
+    saveFailed = true;
+  }
+  updateSaveStatus();
+  if ($('ponds').open) renderPondList();
+}
+
+const ago = (ms) => {
+  const s = Math.round(ms / 1000);
+  return s < 10 ? 'just now' : s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
+};
+
+function updateSaveStatus() {
+  const el = $('save-status');
+  el.textContent = saveFailed ? "can't save here" : lastSaved ? `saved ${ago(Date.now() - lastSaved)}` : 'saving…';
+  el.title = saveFailed
+    ? 'This browser is not letting the pond save (private browsing, or storage is full). Export keeps a copy as a file.'
+    : 'Your pond saves itself in this browser. Export copies it to a file.';
+}
+
+// Switch to another saved pond (a page load, so everything starts clean).
+function openPond(seed) {
+  if (seed !== world.seed) saveNow();
+  world.noSave = true; // don't let the page-hide save overwrite what we're opening
+  location.assign(`${location.pathname}?pond=${encodeURIComponent(seed)}`);
+}
+
+function renderPondList() {
+  const list = listSaves().filter((s) => s.seed !== world.seed);
+  const here = {
+    seed: world.seed, habitat: world.opts.habitat, days: world.days, current: true,
+    animals: world.creatures.filter((c) => c.life).length, rares: world.creatures.filter((c) => c.life && c.life.traits.length).length,
+  };
+  $('pond-list').replaceChildren(...[here, ...list].map((s) => {
+    const li = document.createElement('li'), open = document.createElement('button'), name = document.createElement('b'), meta = document.createElement('span');
+    li.className = s.current ? 'pond-item current' : 'pond-item';
+    open.type = 'button';
+    open.className = 'pond-open';
+    name.textContent = s.seed;
+    meta.textContent = [HABITATS[s.habitat] || '', `day ${Math.floor(s.days) + 1}`, `${s.animals} animals`, s.rares && `✦ ${s.rares}`,
+      s.current ? 'open now' : ago(Date.now() - s.savedAt)].filter(Boolean).join(' · ');
+    open.append(name, meta);
+    open.title = s.current ? 'The pond you are watching' : `Open ${s.seed}`;
+    if (!s.current) open.addEventListener('click', () => openPond(s.seed));
+    li.append(open);
+    if (!s.current) {
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'icon';
+      del.textContent = '×';
+      del.setAttribute('aria-label', `Delete ${s.seed}`);
+      del.title = 'Delete this pond';
+      del.addEventListener('click', () => {
+        if (!confirm(`Delete the pond "${s.seed}"? Its animals and journal will be gone for good.`)) return;
+        deleteSave(s.seed);
+        renderPondList();
+      });
+      li.append(del);
+    }
+    return li;
+  }));
+}
+
+$('ponds').addEventListener('toggle', () => { if ($('ponds').open) renderPondList(); });
+
+$('export').addEventListener('click', () => {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(serializePond(world))], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pond-${world.seed}-day${Math.floor(world.days) + 1}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  showTicker('Pond saved to a file: import it on any device, or send it to a friend');
+});
+
+$('import').addEventListener('click', () => $('import-file').click());
+$('import-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  let d = null;
+  try { d = JSON.parse(await file.text()); } catch { /* not JSON */ }
+  if (!isSave(d)) { showTicker("That file isn't a pond save"); return; }
+  if (loadSave(d.seed) && !confirm(`You already have a pond called "${d.seed}". Replace it with the one in this file?`)) return;
+  try {
+    if (d.seed !== world.seed) saveNow();
+    storeSave({ ...d, savedAt: Date.now() });
+  } catch {
+    showTicker("This browser couldn't store that pond");
+    return;
+  }
+  world.noSave = true;
+  location.assign(`${location.pathname}?pond=${encodeURIComponent(d.seed)}`);
+});
+
+addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
+addEventListener('pagehide', saveNow);
 
 const PAN_KEYS = { arrowleft: [1, 0], arrowright: [-1, 0], arrowup: [0, 1], arrowdown: [0, -1], a: [1, 0], d: [-1, 0], w: [0, 1], s: [0, -1] };
 addEventListener('keydown', (e) => {

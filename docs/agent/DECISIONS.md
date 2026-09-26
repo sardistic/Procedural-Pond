@@ -116,3 +116,26 @@ point at `https://pond.nz/`. nginx serves pond.nz (and any other host, so the
 legacy `pond.sardistic.com` to `https://pond.nz$request_uri`, so seed links keep
 working. Keep the legacy hostname routed in the tunnel so old links still
 redirect.
+
+## Saved ponds
+Each browser keeps its ponds in localStorage: `procedural-pond.save.<seed>` holds
+the full save, and `procedural-pond.saves` is an index. At most 12 ponds are
+kept; the least recently played are dropped first, including when storage is
+full. Autosave runs a few seconds after load, then every 15s, on
+`visibilitychange` to hidden, and on `pagehide`.
+
+On load: a `?pond=` seed you have saved resumes; with no seed, the last pond
+played resumes; a seed you don't have starts fresh from the seed. Links
+therefore share a pond's origin, and Export or Import (a JSON file) shares its
+current state.
+
+Reproducibility: every animal and plant is constructed through
+`makeCreature` / `makePlant` (kind, args, seed) under `withSeed`, so its
+variety, pattern and proportions rebuild exactly. A save stores only the seed,
+the args (schools, wild species and duck leaders as indexes) and the mutable
+state. Anything that creates animals or plants must go through these
+factories, or it won't survive a save. Fireflies, gnats, plankton and effects
+are ambient and not saved.
+
+Changing habitat or world size regrows the pond from day 1, and asks first if
+the pond has history.

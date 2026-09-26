@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 
   <script type="application/ld+json">
   {
@@ -80,12 +80,24 @@
       <button type="button" id="collapse" class="icon" aria-label="Hide panel" title="Hide panel (H)">–</button>
     </header>
     <p class="hint" id="hint">click to feed · drag animals · scroll to zoom</p>
-    <p class="seed">pond <b id="seed-name"></b></p>
+    <p class="seed">pond <b id="seed-name"></b> · <span id="save-status">saving…</span></p>
     <div class="seg" role="group" aria-label="Habitat">
       <button type="button" data-hab="fresh" title="Freshwater: koi, frogs, ducks, lily pads">Fresh</button>
       <button type="button" data-hab="mixed" title="Everything together">Both</button>
       <button type="button" data-hab="salt" title="Saltwater: reef fish, corals, starfish, octopus">Salt</button>
     </div>
+
+    <details id="ponds">
+      <summary>Your ponds</summary>
+      <p class="note">Your pond saves itself in this browser and is here when you come back. A shared link gives friends the same pond from day 1; Export shares it as it is now.</p>
+      <ol class="pond-list" id="pond-list"></ol>
+      <div class="grid3">
+        <button type="button" id="reset" title="Start a brand new pond; this one stays saved">New</button>
+        <button type="button" id="export" title="Download this pond, animals and all, as a file">Export</button>
+        <button type="button" id="import" title="Open a pond file">Import</button>
+      </div>
+      <input type="file" id="import-file" accept=".json,application/json" hidden>
+    </details>
 
     <details>
       <summary>Tools &amp; plants</summary>
@@ -106,7 +118,6 @@
         <button type="button" data-toggle="life" title="Hunger, growth, breeding, predators and migration">Life</button>
         <button type="button" data-toggle="weather" title="Rain showers and wind gusts">Weather</button>
       </div>
-      <button type="button" id="reset" class="wide">New pond</button>
     </details>
 
     <details class="about">
@@ -121,7 +132,7 @@
         <li>A day/night cycle and a moon whose phases drive the tides and surf on the beach. Corals spawn under the full moon.</li>
         <li>Freshwater, saltwater or both: reef fish, corals and starfish, or koi, frogs and lily pads.</li>
         <li>Genetics with rare albino, melanistic, piebald and shiny animals that breed true.</li>
-        <li>Every pond has a seed: share the link and friends get the same pond.</li>
+        <li>Your pond saves itself and is waiting when you come back. Keep several ponds, export them as files, or share a link so friends can start the same pond.</li>
       </ul>
       <p>Made by <a href="https://sardistic.com/">sardistic</a>. <a href="https://github.com/sardistic/Procedural-Pond">Source on GitHub</a>.</p>
     </details>
@@ -219,18 +230,19 @@
     </div>
   </div>
 
-  <script src="js/core.js?v=5"></script>
-  <script src="js/raster.js?v=5"></script>
-  <script src="js/creatures.js?v=5"></script>
-  <script src="js/critters.js?v=5"></script>
-  <script src="js/wildlife.js?v=5"></script>
-  <script src="js/wildfish.js?v=5"></script>
-  <script src="js/sound.js?v=5"></script>
-  <script src="js/life.js?v=5"></script>
-  <script src="js/plants.js?v=5"></script>
-  <script src="js/scene.js?v=5"></script>
-  <script src="js/sky.js?v=5"></script>
-  <script src="js/hud.js?v=5"></script>
-  <script src="js/main.js?v=8"></script>
+  <script src="js/core.js?v=6"></script>
+  <script src="js/raster.js?v=6"></script>
+  <script src="js/creatures.js?v=6"></script>
+  <script src="js/critters.js?v=6"></script>
+  <script src="js/wildlife.js?v=6"></script>
+  <script src="js/wildfish.js?v=6"></script>
+  <script src="js/sound.js?v=6"></script>
+  <script src="js/life.js?v=6"></script>
+  <script src="js/plants.js?v=6"></script>
+  <script src="js/scene.js?v=6"></script>
+  <script src="js/sky.js?v=6"></script>
+  <script src="js/save.js?v=6"></script>
+  <script src="js/hud.js?v=6"></script>
+  <script src="js/main.js?v=9"></script>
 </body>
 </html>

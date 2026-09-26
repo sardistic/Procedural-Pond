@@ -37,7 +37,8 @@ the day, moon phase, tide and surf, plus the light mode, day length, current and
 
   Settings are saved in localStorage.
 - **Zoom:** scroll wheel or pinch, the +/− buttons, or the **+**, **−** and **0** keys. The zoom level is a whole number of screen pixels per pond pixel (the label shows 2×, 3× and so on), so the art stays crisp.
-- **Share:** every pond has a seed name such as `misty-reed-42`, shown under the title. *Share* copies a link (`?pond=misty-reed-42`, plus the floor and water if changed). Anyone who opens it gets the same layout and starting animals. *New pond* rolls a new seed.
+- **Your ponds:** every visitor gets their own pond, and it saves itself in the browser every few seconds (and when you leave). That covers the animals with their genes, names, ages and lineages, rares, eggs, discovered species, the journal, placed plants and rocks, and the day, moon and tide. Come back and it resumes where you left off. *Your ponds* in the menu lists your ponds (up to 12) to switch between or delete. *New* starts another pond while keeping this one, *Export* downloads the living pond as a file, and *Import* opens one, e.g. to carry on from another device or to send a friend your pond as it is now.
+- **Share:** every pond has a seed name such as `misty-reed-42`, shown under the title. *Share* copies a link (`?pond=misty-reed-42`, plus the habitat, floor, water and size). Anyone who opens it gets the same pond from day 1. If it's a pond you have saved, the link resumes yours instead. *New pond* rolls a new seed.
 - **Journal:** a running story of the pond: hatchings, arrivals, new species, who caught whom, dawn and dusk, rain. The newest entry pops up at the bottom-left. Click an entry to follow the animal it mentions.
 - **Follow and Tour:** double-click an animal (or hover it and press **F**) to ride along with it. *Tour* (**T**) lets the camera wander between whatever is interesting. Esc or dragging stops it.
 - **Sound:** *Sound* (**M**) turns on a generative soundscape: a water bed that swells with the current, rain hiss, plops panned to where ripples land, birdsong by day, frogs at night and the odd duck. It is synthesized live, with no audio files.
@@ -83,6 +84,7 @@ With **Life** on (Scene section), the pond runs itself:
   Rocks are z-tested against animals.
 - `js/main.js`: the loop, the day/night cycle, fireflies, options, tools, zoom and pan, input and the HUD.
 - `js/sound.js`: the Web Audio soundscape, including a surf wash that swells as each wave arrives.
+- `js/save.js`: serializing and restoring whole ponds, and the localStorage save slots. Animals and plants are built by `makeCreature` and `makePlant` under their own seeds, so a save stores each one's seed plus its changing state (genes, name, age and so on) rather than its shapes and colours.
 - `js/sky.js`: days, the moon, tides, surf and coral spawning, plus the sky events in the journal.
 - `js/hud.js`: the animal dock and census, the journal UI, and the sky tracker. Icons are rendered at runtime by the pond's own renderer.
 - Starfish live in `js/wildlife.js`; corals and urchins live in `js/plants.js`.

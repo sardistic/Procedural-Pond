@@ -480,14 +480,23 @@ class Jelly extends Creature {
   }
 }
 
+Object.assign(CREATE, {
+  crab: (w, x, y) => new Crab(w, x, y),
+  ray: (w, x, y) => new Ray(w, x, y),
+  frog: (w, x, y) => new Frog(w, x, y),
+  snake: (w, x, y) => new Snake(w, x, y),
+  snail: (w, x, y) => new Snail(w, x, y),
+  jelly: (w, x, y) => new Jelly(w, x, y),
+});
+
 Object.assign(SPECIES, {
-  crab: { label: 'Crab', color: '#c8462a', spawn: (w, x, y) => [new Crab(w, x, y)] },
-  ray: { label: 'Stingray', color: '#3a8cf0', spawn: (w, x, y) => [new Ray(w, x, y)] },
-  frog: { label: 'Frog', color: '#4a8a2c', spawn: (w, x, y) => [new Frog(w, x, y)] },
-  snake: { label: 'Snake', color: '#6e5a34', spawn: (w, x, y) => [new Snake(w, x, y)] },
+  crab: { label: 'Crab', color: '#c8462a', spawn: (w, x, y) => [makeCreature('crab', w, x, y)] },
+  ray: { label: 'Stingray', color: '#3a8cf0', spawn: (w, x, y) => [makeCreature('ray', w, x, y)] },
+  frog: { label: 'Frog', color: '#4a8a2c', spawn: (w, x, y) => [makeCreature('frog', w, x, y)] },
+  snake: { label: 'Snake', color: '#6e5a34', spawn: (w, x, y) => [makeCreature('snake', w, x, y)] },
   snail: {
     label: 'Snails', color: '#e2b036',
-    spawn: (w, x, y) => Array.from({ length: 3 }, () => new Snail(w, x + rand(-12, 12), y + rand(-12, 12))),
+    spawn: (w, x, y) => Array.from({ length: 3 }, () => makeCreature('snail', w, x + rand(-12, 12), y + rand(-12, 12))),
   },
-  jelly: { label: 'Jellies', color: '#bccaee', spawn: (w, x, y) => [new Jelly(w, x, y)] },
+  jelly: { label: 'Jellies', color: '#bccaee', spawn: (w, x, y) => [makeCreature('jelly', w, x, y)] },
 });

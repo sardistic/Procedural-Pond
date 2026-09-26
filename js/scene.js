@@ -359,21 +359,22 @@ function generateScenery(world) {
   };
   const add = (n, make) => { for (let k = 0; k < n; k++) plants.push(make()); };
   const k = both ? 0.6 : 1; // "both" shares the space between the two worlds
-  add(Math.round(area / 12000 * k) + 2, () => new Weed(...nearRock(5), salt && !fresh ? 'salt' : fresh && !salt ? 'fresh' : null));
-  add(Math.round(area / 20000) + 1, () => new Eelgrass(...wetPoint(world, 10, 0.3)));
+  const weedHabitat = salt && !fresh ? 'salt' : fresh && !salt ? 'fresh' : null;
+  add(Math.round(area / 12000 * k) + 2, () => makePlant('weed', world, ...nearRock(5), { habitat: weedHabitat }));
+  add(Math.round(area / 20000) + 1, () => makePlant('eelgrass', world, ...wetPoint(world, 10, 0.3)));
   if (salt) {
-    add(Math.round(area / 30000 * (both ? 1 : 1.6)) + 1, () => new Anemone(...nearRock(7)));
-    add(Math.round(area / 9000 * k), () => new Coral(...nearRock(9)));
-    add(Math.round(area / 40000 * k) + 1, () => new Urchin(...nearRock(6)));
+    add(Math.round(area / 30000 * (both ? 1 : 1.6)) + 1, () => makePlant('anemone', world, ...nearRock(7)));
+    add(Math.round(area / 9000 * k), () => makePlant('coral', world, ...nearRock(9)));
+    add(Math.round(area / 40000 * k) + 1, () => makePlant('urchin', world, ...nearRock(6)));
   }
   if (fresh) {
-    add(Math.round(area / 25000 * k) + 1, () => new Marimo(...wetPoint(world, 10)));
-    add(Math.round(area / 60000 * k) + 1, () => new Duckweed(...wetPoint(world, 15)));
+    add(Math.round(area / 25000 * k) + 1, () => makePlant('marimo', world, ...wetPoint(world, 10)));
+    add(Math.round(area / 60000 * k) + 1, () => makePlant('duckweed', world, ...wetPoint(world, 15)));
   }
   world.rocks = rocks;
   world.pebbles = pebbles;
   world.plants = plants;
-  world.pads = fresh ? Array.from({ length: clamp(Math.round(area / 40000 * k), 2, 14) }, () => new LilyPad(world, ...wetPoint(world, 14))) : [];
+  world.pads = fresh ? Array.from({ length: clamp(Math.round(area / 40000 * k), 2, 14) }, () => makePlant('lily', world, ...wetPoint(world, 14))) : [];
   world.motes = new Motes(world);
 }
 

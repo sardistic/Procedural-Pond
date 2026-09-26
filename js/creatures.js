@@ -79,6 +79,19 @@ function newId(outline) {
 }
 const outlineOf = (m) => mixColor(m[0], 0xff000000, 0.55);
 
+// ---- reproducible construction ----------------------------------------------------
+// Every animal is built under its own seed, so a saved pond can rebuild it
+// exactly (same variety, pattern and proportions) from its kind, args and seed.
+// Args hold the non-random inputs: a school, a wild species, a duckling's leader.
+const CREATE = {}; // kind -> (world, x, y, args) => creature; each file registers its own
+const newSeed = () => (Math.random() * 4294967296) >>> 0;
+
+function makeCreature(kind, world, x, y, args = {}, seed = newSeed()) {
+  const c = withSeed(seed, () => CREATE[kind](world, x, y, args));
+  c.make = kind; c.seed = seed; c.args = args;
+  return c;
+}
+
 // ---- base ------------------------------------------------------------------
 
 class Creature {
@@ -609,16 +622,24 @@ class Turtle extends Walker {
   }
 }
 
+Object.assign(CREATE, {
+  koi: (w, x, y, a) => new Koi(w, x, y, a.variety),
+  tetra: (w, x, y, a) => new Tetra(w, x, y, a.school),
+  eel: (w, x, y) => new Eel(w, x, y),
+  axolotl: (w, x, y) => new Axolotl(w, x, y),
+  turtle: (w, x, y) => new Turtle(w, x, y),
+});
+
 const SPECIES = {
-  koi: { label: 'Koi', color: '#e5602f', spawn: (w, x, y) => [new Koi(w, x, y)] },
+  koi: { label: 'Koi', color: '#e5602f', spawn: (w, x, y) => [makeCreature('koi', w, x, y)] },
   tetra: {
     label: 'Tetras', color: '#2fb8f0',
     spawn: (w, x, y) => {
       const school = { tx: x, ty: y, tz: 22, until: 0, kind: Math.random() < 0.3 ? 'lemon' : 'neon' };
-      return Array.from({ length: randi(9, 14) }, () => new Tetra(w, x + rand(-8, 8), y + rand(-8, 8), school));
+      return Array.from({ length: randi(9, 14) }, () => makeCreature('tetra', w, x + rand(-8, 8), y + rand(-8, 8), { school }));
     },
   },
-  eel: { label: 'Eel', color: '#617a22', spawn: (w, x, y) => [new Eel(w, x, y)] },
-  axolotl: { label: 'Axolotl', color: '#f4a9bb', spawn: (w, x, y) => [new Axolotl(w, x, y)] },
-  turtle: { label: 'Turtle', color: '#6a5a28', spawn: (w, x, y) => [new Turtle(w, x, y)] },
+  eel: { label: 'Eel', color: '#617a22', spawn: (w, x, y) => [makeCreature('eel', w, x, y)] },
+  axolotl: { label: 'Axolotl', color: '#f4a9bb', spawn: (w, x, y) => [makeCreature('axolotl', w, x, y)] },
+  turtle: { label: 'Turtle', color: '#6a5a28', spawn: (w, x, y) => [makeCreature('turtle', w, x, y)] },
 };

@@ -187,13 +187,15 @@ class WildFish extends Fish {
   }
 }
 
+CREATE.wild = (w, x, y, a) => new WildFish(w, x, y, a.sp, a.school || null);
+
 SPECIES.wild = {
   label: 'Wild fish', color: '#9a6ade',
   // Half the time a brand-new species is discovered; schooling species arrive as a group.
   spawn: (w, x, y) => {
     const sp = wildSpeciesFor(w);
-    if (!sp.schooling) return [new WildFish(w, x, y, sp)];
+    if (!sp.schooling) return [makeCreature('wild', w, x, y, { sp })];
     const school = { tx: x, ty: y, tz: (sp.zMin + sp.zMax) / 2, until: 0, wild: sp };
-    return Array.from({ length: randi(5, 9) }, () => new WildFish(w, x + rand(-8, 8), y + rand(-8, 8), sp, school));
+    return Array.from({ length: randi(5, 9) }, () => makeCreature('wild', w, x + rand(-8, 8), y + rand(-8, 8), { sp, school }));
   },
 };

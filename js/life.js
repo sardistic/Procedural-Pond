@@ -397,14 +397,12 @@ const breedKey = (c) => (c.species === 'wild' ? `wild:${c.sp.id}` : c.species ==
 function makeBaby(world, p, m, x, y) {
   let c;
   switch (p.species) {
-    case 'koi': c = new Koi(world, x, y, Math.random() < 0.85 ? (Math.random() < 0.5 ? p.variety : m.variety) : undefined); break;
-    case 'tetra': c = new Tetra(world, x, y, p.school); break;
-    case 'wild': c = new WildFish(world, x, y, p.sp, p.school); break;
-    case 'clown': c = new Clownfish(world, x, y); break;
-    case 'shrimp': c = new Shrimp(world, x, y); break;
-    case 'snail': c = new Snail(world, x, y); break;
-    case 'axolotl': c = new Axolotl(world, x, y); break;
-    case 'frog': c = new Tadpole(world, x, y); break;
+    // Koi usually inherit a parent's pattern; now and then a new one appears.
+    case 'koi': c = makeCreature('koi', world, x, y, Math.random() < 0.85 ? { variety: Math.random() < 0.5 ? p.variety : m.variety } : {}); break;
+    case 'tetra': c = makeCreature('tetra', world, x, y, { school: p.school }); break;
+    case 'wild': c = makeCreature('wild', world, x, y, { sp: p.sp, school: p.school }); break;
+    case 'clown': case 'shrimp': case 'snail': case 'axolotl': c = makeCreature(p.species, world, x, y); break;
+    case 'frog': c = makeCreature('tadpole', world, x, y); break;
     default: return null;
   }
   return initLife(c, {
@@ -436,9 +434,11 @@ class Tadpole extends Fish {
   }
 }
 
+CREATE.tadpole = (w, x, y) => new Tadpole(w, x, y);
+
 // A froglet climbs out of the tadpole once it is big enough.
 function metamorphose(world, t) {
-  const f = new Frog(world, t.x, t.y);
+  const f = makeCreature('frog', world, t.x, t.y);
   f.pad = null; f.targetPad = null; f.state = 'swim';
   f.x = t.x; f.y = t.y; f.heading = t.heading;
   f.body.place(f.x, f.y, f.heading);
@@ -751,7 +751,7 @@ function arrive(world, kind, discover = false) {
   if (discover) {
     const sp = genWildSpecies(wildHabitat(world));
     const school = sp.schooling ? { tx: x, ty: y, tz: (sp.zMin + sp.zMax) / 2, until: 0, wild: sp } : null;
-    group = Array.from({ length: sp.schooling ? randi(5, 8) : randi(1, 2) }, () => new WildFish(world, x + rand(-4, 4), y + rand(-4, 4), sp, school));
+    group = Array.from({ length: sp.schooling ? randi(5, 8) : randi(1, 2) }, () => makeCreature('wild', world, x + rand(-4, 4), y + rand(-4, 4), { sp, school }));
     world.targets.wild = (world.targets.wild || 0) + group.length;
   } else {
     group = SPECIES[kind].spawn(world, x, y);

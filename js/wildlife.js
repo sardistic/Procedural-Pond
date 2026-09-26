@@ -621,28 +621,28 @@ Object.assign(SPECIES, {
       const hosts = w.plants.filter((p) => p instanceof Anemone);
       const h = hosts.length ? pick(hosts) : null;
       const [cx, cy] = h ? [h.x, h.y] : [x, y];
-      return [0, 1].map(() => new Clownfish(w, cx + rand(-3, 3), cy + rand(-3, 3)));
+      return [0, 1].map(() => makeCreature('clown', w, cx + rand(-3, 3), cy + rand(-3, 3)));
     },
   },
-  puffer: { label: 'Pufferfish', color: '#e2c230', spawn: (w, x, y) => [new Puffer(w, x, y)] },
-  octopus: { label: 'Octopus', color: '#a8482a', spawn: (w, x, y) => [new Octopus(w, x, y)] },
+  puffer: { label: 'Pufferfish', color: '#e2c230', spawn: (w, x, y) => [makeCreature('puffer', w, x, y)] },
+  octopus: { label: 'Octopus', color: '#a8482a', spawn: (w, x, y) => [makeCreature('octopus', w, x, y)] },
   duck: {
     label: 'Ducks', color: '#1e7a3e',
     spawn: (w, x, y) => {
-      const hen = new Duck(w, x, y, 'hen'), fam = [hen];
+      const hen = makeCreature('duck', w, x, y, { kind: 'hen' }), fam = [hen];
       for (let i = randi(3, 5), lead = hen; i > 0; i--) {
-        lead = new Duck(w, x - fam.length * 7, y, 'baby', lead);
+        lead = makeCreature('duck', w, x - fam.length * 7, y, { kind: 'baby', leader: lead });
         fam.push(lead);
       }
-      if (Math.random() < 0.6) fam.push(new Duck(w, x + rand(-15, 15), y + rand(-15, 15), 'drake'));
+      if (Math.random() < 0.6) fam.push(makeCreature('duck', w, x + rand(-15, 15), y + rand(-15, 15), { kind: 'drake' }));
       return fam;
     },
   },
   shrimp: {
     label: 'Shrimp', color: '#e03a26',
-    spawn: (w, x, y) => Array.from({ length: 4 }, () => new Shrimp(w, x + rand(-8, 8), y + rand(-8, 8))),
+    spawn: (w, x, y) => Array.from({ length: 4 }, () => makeCreature('shrimp', w, x + rand(-8, 8), y + rand(-8, 8))),
   },
-  dragonfly: { label: 'Dragonfly', color: '#2a88e0', spawn: (w, x, y) => [new Dragonfly(w, x, y)] },
+  dragonfly: { label: 'Dragonfly', color: '#2a88e0', spawn: (w, x, y) => [makeCreature('dragonfly', w, x, y)] },
 });
 
 // ---- starfish: glides slowly on the floor, arms curling --------------------------
@@ -715,4 +715,14 @@ class Starfish extends Creature {
   }
 }
 
-SPECIES.starfish = { label: 'Starfish', color: '#e8743a', spawn: (w, x, y) => [new Starfish(w, x, y)] };
+Object.assign(CREATE, {
+  clown: (w, x, y) => new Clownfish(w, x, y),
+  puffer: (w, x, y) => new Puffer(w, x, y),
+  octopus: (w, x, y) => new Octopus(w, x, y),
+  duck: (w, x, y, a) => new Duck(w, x, y, a.kind || 'hen', a.leader || null),
+  shrimp: (w, x, y) => new Shrimp(w, x, y),
+  dragonfly: (w, x, y) => new Dragonfly(w, x, y),
+  starfish: (w, x, y) => new Starfish(w, x, y),
+});
+
+SPECIES.starfish = { label: 'Starfish', color: '#e8743a', spawn: (w, x, y) => [makeCreature('starfish', w, x, y)] };
