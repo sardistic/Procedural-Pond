@@ -88,7 +88,11 @@ world.autoSize = (() => {
   world.opts.world = 'auto';
   return [clamp(+m[1], 360, 1400), clamp(+m[2], 300, 900)];
 })();
-const worldDims = () => (WORLD_SIZES[world.opts.world] || WORLD_SIZES.auto).size || world.autoSize;
+// The pond's size: the chosen (or screen) size, plus the deep bands erosion has opened.
+function worldDims() {
+  const [W0, H0] = (WORLD_SIZES[world.opts.world] || WORLD_SIZES.auto).size || world.autoSize, ex = world.expandPx || 0;
+  return deepAxisX(world.shoreSide) ? [W0 + ex, H0] : [W0, H0 + ex];
+}
 
 
 function lighting() {
@@ -127,6 +131,9 @@ function layout(regen) {
     regen = true;
   }
   world.maxPop = Math.round(W * H / 2400);
+  // The minimap keeps the pond's shape.
+  mini.height = clamp(Math.round(mini.width * H / W), 54, 200);
+  mini.style.height = `${mini.height}px`;
   if (regen) buildPond();
   bakeBackground(world);
   paintMinimapBackground();
@@ -234,6 +241,8 @@ function buildPond() {
     world.game = newGame();
     world.lineage = new Map();
     world.link = null;
+    world.erosion = newErosion();
+    world.expandPx = 0;
     withSeed(`${world.seed}/${world.opts.habitat}`, () => {
       generateScenery(world);
       populate();
@@ -245,7 +254,10 @@ function buildPond() {
   initZones(world);
   $('seed-name').textContent = world.seed;
   const m = moonInfo(world.days, world.moon0);
-  if (resume) {
+  if (resume && world.silentRestore) {
+    logEvent(world, `✦ The pond has deepened: ${world.silentRestore}`, null, { cat: 'rare', pri: 3 });
+    world.silentRestore = null;
+  } else if (resume) {
     const animals = world.creatures.length, rares = world.creatures.filter((c) => c.life && c.life.traits.length).length;
     const summary = `day ${Math.floor(world.days) + 1}, ${animals} animals${rares ? `, ${rares} rare` : ''}`;
     if (world.linkAdopt) {
@@ -298,6 +310,8 @@ function update(dt) {
   world.darkness = world.light.darkness;
   updateFireflies(dt);
   updateLife(world, dt);
+  updateErosion(world, dt);
+  updateDeep(world, dt);
   updateZones(world, dt);
   updateGame(world, dt);
   for (const c of world.creatures) c.update(dt, world);
@@ -401,6 +415,7 @@ function render(full = false) {
     caustics: o.caustics && light.caustics, causticT: water.caustic, shadows: o.shadows, outlines: o.outlines,
     fog: { color: world.waterColor, amount: water.fog }, wob,
     shore: world.shore, bgDry: world.bgDry, tide: world.tide.level, surf: world.tide.surf, wave: world.tide.wave,
+    depth: world.depth, deepColor: DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed,
   }, rect);
   drawGlints();
   if (world.bones) drawBones();
@@ -495,6 +510,27 @@ const TOOLS = {
 // Structures (the Build section): bought with pearls, some also with essence.
 for (const [kind, def] of Object.entries(STRUCTURES)) {
   TOOLS[`build-${kind}`] = { label: def.label, build: kind, price: def.pearls, essence: def.essence, likedBy: kind, hint: `click to build: ${def.desc}` };
+}
+
+// Deepening: the world grows toward the deep side by a fraction of its original
+// size. The pond is saved, shifted if it grows left or up, and rebuilt bigger;
+// the view keeps looking at the same place.
+function expandWorld(frac, why) {
+  const axisX = deepAxisX(world.shoreSide), [W0, H0] = baseSize(world);
+  const add = Math.round((axisX ? W0 : H0) * frac), [sx, sy] = deepShifts(world.shoreSide) ? (axisX ? [add, 0] : [0, add]) : [0, 0];
+  const cx = (innerWidth / 2 - view.tx) / view.k + sx, cy = (innerHeight / 2 - view.ty) / view.k + sy;
+  const d = serializePond(world);
+  shiftSave(d, sx, sy);
+  world.expandPx = (world.expandPx || 0) + add;
+  d.expandPx = world.expandPx;
+  d.size = axisX ? [world.W + add, world.H] : [world.W, world.H + add];
+  world.resume = d;
+  world.silentRestore = why;
+  const follow = cam.follow;
+  layout();
+  centerOn(cx, cy);
+  if (follow) stopFollow();
+  saveNow();
 }
 
 // Rebuild what depends on the floor after structures change (islands reshape the beach).
@@ -960,7 +996,11 @@ for (const [name, t] of Object.entries(TOOLS)) {
 
 // Only offer animals and plants that live in this habitat.
 function refreshSpeciesButtons() {
-  for (const b of document.querySelectorAll('[data-spawn]')) b.hidden = !fitsHabitat(world, SPECIES_HABITAT[b.dataset.spawn]);
+  // Deep species show once their zone exists and they're unlocked on the evolution tree.
+  for (const b of document.querySelectorAll('[data-spawn]')) {
+    const k = b.dataset.spawn;
+    b.hidden = !fitsHabitat(world, SPECIES_HABITAT[k]) || !deepAvailable(world, k) || !deepUnlocked(world, k);
+  }
   for (const b of $('builds').children) { const d = STRUCTURES[TOOLS[b.dataset.tool].build]; b.hidden = !!d.habitat && !fitsHabitat(world, d.habitat); }
   for (const b of $('tools').children) {
     const salt = ['anemone', 'coral', 'urchin'].includes(b.dataset.tool), fresh = ['marimo', 'duckweed', 'lily'].includes(b.dataset.tool);
@@ -1002,6 +1042,7 @@ $('opt-world').addEventListener('change', (e) => {
 // Regrowing a pond (new habitat or world size) keeps its name and its link.
 function regrow() {
   const link = world.link;
+  world.expandPx = 0;
   layout(true);
   world.link = link;
   updateLink();
@@ -1070,6 +1111,7 @@ $('reset').addEventListener('click', () => {
   world.seed = newSeedName();
   world.autoSize = screenWorld(); // a new pond fits the window as it is now
   world.current.base = rand(-PI, PI);
+  world.expandPx = 0;
   layout(true);
   saveNow();
   renderPondList();
@@ -1342,7 +1384,10 @@ async function boot() {
   world.seed = resume ? resume.seed : urlSeed || newSeedName();
   if (resume) {
     Object.assign(world.opts, resume.opts);
-    world.autoSize = resume.size.slice();
+    // The size before deepening; the deep bands are added back by worldDims.
+    world.shoreSide = resume.shoreSide;
+    world.expandPx = resume.expandPx || 0;
+    world.autoSize = (resume.base || resume.size).slice();
   }
   syncControls();
   layout(true);

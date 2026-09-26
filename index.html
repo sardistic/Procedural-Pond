@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=12">
+  <link rel="stylesheet" href="style.css?v=13">
 
   <script type="application/ld+json">
   {
@@ -137,6 +137,7 @@
         <li>Freshwater, saltwater or both: reef fish, corals and starfish, or koi, frogs and lily pads.</li>
         <li>Genetics that inherit like real genes (recessive, dominant, incompletely dominant, hybrid vigour, inbreeding), with rare albino, leucistic, melanistic, xanthic, axanthic, piebald, marbled, shiny, glowing, ghostly, chimeric, giant and dwarf animals, from Uncommon up to Mythic. Genes set fertility, longevity, vitality, intellect, light and temper.</li>
         <li>Fresh water is easy and calm, salt water hard, and both together difficult: fresh and salt life fight over the water, and aggressive water drives animals away.</li>
+        <li>A long game: the surf erodes tide pools into the beach, then opens the deep beyond a drop-off, tier by tier, down to the abyss (salt) or a drowned cathedral (fresh), with sharks, anglerfish, cavefish, olms and mythic creatures.</li>
         <li>Points for every birth and rare find, pearls to spend on animals, plants and food, a shared leaderboard, and fireflies that show your score at night.</li>
         <li>Your pond saves itself and is waiting when you come back, and the address bar always holds its short four-word link.</li>
       </ul>
@@ -248,6 +249,13 @@
     <ol class="hatch-ups" id="hatch-ups"></ol>
   </section>
   <section id="creature" class="pop creature" hidden aria-label="About this animal"></section>
+  <section id="evo" class="pop evo" hidden aria-label="The depths">
+    <header class="pop-head"><b>The depths</b><button type="button" id="evo-close" class="icon" aria-label="Close">×</button></header>
+    <p class="note" id="evo-status"></p>
+    <div class="tidebar evo-bar"><i id="evo-fill"></i></div>
+    <button type="button" id="evo-deepen" class="wide"></button>
+    <div class="evo-tree" id="evo-tree"></div>
+  </section>
   <div id="follow" class="follow" hidden>
     <span></span>
     <button type="button" id="follow-stop" title="Stop following (Esc)">Stop</button>
@@ -292,30 +300,33 @@
         <button type="button" id="zoom-out" class="icon" aria-label="Zoom out" title="Zoom out (-)">−</button>
       </div>
       <div class="mini-wrap">
+        <canvas id="slice" class="slice" width="192" height="44" aria-label="The pond from the side: the beach, the floor and the depths; click for the evolution tree"></canvas>
         <canvas id="minimap" class="minimap" width="192" height="108" aria-label="Map of the whole pond; click to jump"></canvas>
         <button type="button" id="map-layer" class="map-layer" title="Map layer: click to switch">Map</button>
       </div>
     </div>
   </div>
 
-  <script src="js/core.js?v=13"></script>
-  <script src="js/raster.js?v=13"></script>
-  <script src="js/creatures.js?v=13"></script>
-  <script src="js/critters.js?v=13"></script>
-  <script src="js/wildlife.js?v=13"></script>
-  <script src="js/wildfish.js?v=13"></script>
-  <script src="js/sound.js?v=13"></script>
-  <script src="js/life.js?v=13"></script>
-  <script src="js/plants.js?v=13"></script>
-  <script src="js/scene.js?v=13"></script>
-  <script src="js/structures.js?v=13"></script>
-  <script src="js/sky.js?v=13"></script>
-  <script src="js/ecology.js?v=13"></script>
-  <script src="js/game.js?v=13"></script>
-  <script src="js/save.js?v=13"></script>
-  <script src="js/link.js?v=13"></script>
-  <script src="js/net.js?v=13"></script>
-  <script src="js/hud.js?v=13"></script>
-  <script src="js/main.js?v=17"></script>
+  <script src="js/core.js?v=14"></script>
+  <script src="js/raster.js?v=14"></script>
+  <script src="js/creatures.js?v=14"></script>
+  <script src="js/critters.js?v=14"></script>
+  <script src="js/wildlife.js?v=14"></script>
+  <script src="js/wildfish.js?v=14"></script>
+  <script src="js/sound.js?v=14"></script>
+  <script src="js/life.js?v=14"></script>
+  <script src="js/plants.js?v=14"></script>
+  <script src="js/scene.js?v=14"></script>
+  <script src="js/structures.js?v=14"></script>
+  <script src="js/erosion.js?v=14"></script>
+  <script src="js/sky.js?v=14"></script>
+  <script src="js/ecology.js?v=14"></script>
+  <script src="js/game.js?v=14"></script>
+  <script src="js/deep.js?v=14"></script>
+  <script src="js/save.js?v=14"></script>
+  <script src="js/link.js?v=14"></script>
+  <script src="js/net.js?v=14"></script>
+  <script src="js/hud.js?v=14"></script>
+  <script src="js/main.js?v=18"></script>
 </body>
 </html>

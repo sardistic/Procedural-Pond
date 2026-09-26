@@ -263,8 +263,8 @@ class Octopus extends Creature {
       } else if (this.timer <= 0) {
         this.mode = 'walk'; this.newTarget(world, true); this.timer = rand(4, 9);
       }
-      const gl = Math.hypot(gx, gy) || 1, [ax, ay] = this.avoid(world, 0);
-      this.turnToward(Math.atan2(gy / gl + ay * 2, gx / gl + ax * 2), this.turnRate, dt);
+      const gl = Math.hypot(gx, gy) || 1, [ax, ay] = this.avoid(world, 0), [dx, dy] = deepPush(world, this);
+      this.turnToward(Math.atan2(gy / gl + ay * 2 + dy, gx / gl + ax * 2 + dx), this.turnRate, dt);
       this.speed += (want - this.speed) * Math.min(1, dt * 2);
     }
     this.x = clamp(this.x + Math.cos(this.heading) * this.speed * dt, 3, world.W - 3);
@@ -669,8 +669,16 @@ class Starfish extends Creature {
     this.cruise = 0.9; this.maxSpeed = 2.2; this.turnRate = 0.5; this.sight = 30;
     this.body = new Chain(x, y, this.heading, [1], [2, 1.5], PI);
     this.id = newId(outlineOf(this.m));
+    // Varieties: most are common stars; some are sunflower stars (many arms, big),
+    // brittle stars (thin whip arms that wriggle) or cushion stars (a fat pentagon).
+    const roll = Math.random();
+    this.variety = roll < 0.07 ? 'sunflower' : roll < 0.19 ? 'brittle' : roll < 0.24 ? 'cushion' : 'common';
+    if (this.variety === 'sunflower') { this.arms = randi(12, 16); this.len = rand(7, 9.5); this.m = pick(STAR_MATS.slice(0, 4).concat([mat('#6a2a6a', '#9a44a0', '#c86ad0', '#f0a8f4')])); this.cruise = 2.2; this.maxSpeed = 4; }
+    else if (this.variety === 'brittle') { this.arms = 5; this.len = rand(7, 10); this.m = pick([mat('#2a1a14', '#4a3024', '#6e4a36', '#94684c'), mat('#3a2a3a', '#5a4458', '#7e647a', '#a88aa2')]); this.cruise = 2.5; this.maxSpeed = 5; }
+    else if (this.variety === 'cushion') { this.arms = 5; this.len = rand(3, 4); this.m = pick(STAR_MATS); }
     const bump = [this.m[1], this.m[2], this.m[3], this.m[3]];
-    this.skin = bakeShader((u, v) => (Math.sin(u * 42) * Math.sin(v * 5 + 1) > 0.55 ? bump : this.m), 32, 8);
+    this.skin = this.variety === 'brittle' ? bakeShader((u) => ((u * 14) % 1 < 0.35 ? bump : this.m), 32, 4)
+      : bakeShader((u, v) => (Math.sin(u * 42) * Math.sin(v * 5 + 1) > 0.55 ? bump : this.m), 32, 8);
     this.mode = 'pause';
   }
 
@@ -704,15 +712,18 @@ class Starfish extends Creature {
   }
 
   draw(r, t) {
-    const { x, y, z, id } = this, n = this.arms, seg = this.len / 3;
-    r.ellipsoid(x, y, 1.9, 1.9, 0, z, 1.4, this.m, id);
+    const { x, y, z, id } = this, n = this.arms, v = this.variety || 'common';
+    const segs = v === 'brittle' ? 5 : v === 'sunflower' ? 4 : 3, seg = this.len / segs;
+    const r0 = v === 'brittle' ? 0.7 : v === 'cushion' ? 2.2 : v === 'sunflower' ? 1.3 : 1.5, r1 = v === 'brittle' ? 0.3 : v === 'cushion' ? 1.2 : 0.45;
+    const body = v === 'cushion' ? 3.6 : v === 'sunflower' ? 3.4 : v === 'brittle' ? 1.6 : 1.9;
+    r.ellipsoid(x, y, body, body, 0, z, v === 'cushion' ? 2.6 : 1.4, this.m, id);
     for (let k = 0; k < n; k++) {
-      let px = x, py = y, rad = 1.5, a = this.rot + k * TAU / n;
-      const curl = Math.sin(t * 0.5 + k * 1.7 + this.phase) * 0.16;
-      for (let s = 0; s < 3; s++) {
-        a += curl;
-        const nx = px + Math.cos(a) * seg, ny = py + Math.sin(a) * seg, nr = lerp(1.5, 0.45, (s + 1) / 3);
-        r.tube(px, py, rad, z + 0.5 - s * 0.15, nx, ny, nr, z + 0.3 - s * 0.1, 0.9, this.skin, id, s / 3, (s + 1) / 3);
+      let px = x, py = y, rad = r0, a = this.rot + k * TAU / n;
+      const wave = v === 'brittle' ? 0.55 : 0.16, speed = v === 'brittle' ? 2.2 : 0.5;
+      for (let s = 0; s < segs; s++) {
+        a += Math.sin(t * speed + k * 1.7 + this.phase + s * (v === 'brittle' ? 1.1 : 0)) * wave * (v === 'brittle' ? 0.6 : 1);
+        const nx = px + Math.cos(a) * seg, ny = py + Math.sin(a) * seg, nr = lerp(r0, r1, (s + 1) / segs);
+        r.tube(px, py, rad, z + 0.5 - s * 0.12, nx, ny, nr, z + 0.3 - s * 0.08, v === 'cushion' ? 1 : 0.9, this.skin, id, s / segs, (s + 1) / segs);
         px = nx; py = ny; rad = nr;
       }
     }

@@ -318,7 +318,9 @@ function dawnIncome(world) {
   }
   if (!n) return;
   const got = award(world, species.size + Math.round(5 * comfort / n), 'daily pearls');
-  const ess = gainEssence(world, 2 + Math.floor(species.size / 4), 'dawn');
+  // Deep life enriches the pond: a little more essence for every deep-water animal.
+  const deep = typeof DEEP === 'undefined' ? 0 : world.creatures.filter((c) => DEEP[c.species] && !c.leaving).length;
+  const ess = gainEssence(world, 2 + Math.floor(species.size / 4) + deep, 'dawn');
   logEvent(world, `A new day: +${got} pearls and +${ess} essence for ${species.size} species, ${comfortWord(comfort / n)}`, null, { cat: 'pond', pri: 1 });
 }
 

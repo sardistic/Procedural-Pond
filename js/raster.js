@@ -164,6 +164,9 @@ class Raster {
     const wx = wob ? wob.x : null, wy = wob ? wob.y : null;
     const shore = s.shore || null, bgDry = s.bgDry, tideL = (s.tide ?? 1) * 255;
     const surf = s.surf || 0, wave = s.wave || 0, surfReach = 30 + 70 * surf, foamW = 0.05 + 0.07 * surf;
+    // The depths: deep water swallows the light (up to ~90%), except things that make their own.
+    const depthMap = s.depth || null, dc = s.deepColor || 0xff0e0402;
+    const dr = dc & 255, dg = (dc >> 8) & 255, db = (dc >>> 16) & 255;
     const [rx0, ry0, rx1, ry1] = rect;
     for (let y = ry0; y <= ry1; y++) {
       for (let x = rx0, p = rx0 + y * W; x <= rx1; x++, p++) {
@@ -245,6 +248,13 @@ class Raster {
           if (a) {
             const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
             c = (0xff000000 | ((cb + (((fb - cb) * a) >> 8)) << 16) | ((cg + (((fgc - cg) * a) >> 8)) << 8) | (cr + (((fr - cr) * a) >> 8))) >>> 0;
+          }
+        }
+        if (depthMap) {
+          const dd = depthMap[p];
+          if (dd && !(i && emissive[i] === 2)) {
+            const a = (dd * 230) >> 8, cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
+            c = (0xff000000 | ((cb + (((db - cb) * a) >> 8)) << 16) | ((cg + (((dg - cg) * a) >> 8)) << 8) | (cr + (((dr - cr) * a) >> 8))) >>> 0;
           }
         }
         if (tint) {

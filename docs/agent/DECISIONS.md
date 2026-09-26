@@ -264,3 +264,20 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
 ## Stains and growth
 - **Stains:** `bakeBackground` keeps unstained copies (`bgBase`, `bgLightBase`, `bgDryBase`). `applyStains`, run after each bake and at dawn, paints algae (fresh), coralline (salt) or lichen (dry) around structures, rocks and placed plants. The radius grows `~1.6 px/day` and the depth `0.035/day` (up to 0.5), noise-modulated and dithered into 1/8 steps. Generated rocks count as 8 days old.
 - **Growth:** at dawn, `sproutAround` grows plants near sources older than 1 day (chance 0.3 × k: seed bed 3, other structures 1, rocks 0.35), in water deep enough, with at most 3 plants within 20 px, up to `area/2200` plants. The kind fits the local water.
+
+## Erosion and the depths (erosion.js)
+- **Rate:** `world.erosion.e` grows by `dt/dayLength × rate`. Fresh: `0.16 + 0.2 × surf`. Otherwise: `0.1 + 0.4 × surf × max(0.3, tide range)`.
+- **Tiers:** erosion 0, 2 (tide pools), 5, 11 and 22. Tiers 2–4 each grow the world by 22% of the original size toward the side opposite the beach. `deepenPond` spends `12 + 10 × tier` essence for +1 erosion.
+- **Tide pools:** a bowl carved into mid-beach elevation (0.35–0.62), `shore × d^4`. One arrives per 3 erosion after the first tier, 4 at most. `applyErosion` applies them at the end of `applyShoreEdits`, so every `makeShore` keeps them.
+- **Growing the world:** `expandWorld` serializes the pond, shifts it (`shiftSave`) when growing left or up, adds to `expandPx`, and relayouts to rebuild at the new size. `worldDims` = the base size plus `expandPx` on the deep axis. Saves hold `base`, `expandPx` and `erosion`.
+- **Keeping the original pond fixed:** the floor pattern, decor and shore noise are laid out in original-pond coordinates (`originOf`), so growing never moves the beach or the floor.
+- **Links:** they carry erosion, the tier, `expandPx` and the tide pools. `linkToSave` regrows scenery on the original size (it probes the seeded shore side first), then shifts it.
+- **Depth map:** `world.depth` (Uint8) is terraced shelves past a ragged lip, up to the current tier's depth. `compose` mixes pixels toward `DEEP_COLOR` by up to ~90% of the depth, skipping EMISSIVE-2 ids so lights stay bright. The deep floor bakes as `DEEP_SILT` with boulders and pale stalks.
+- **Side view (`drawSlice`):** the pond cut along the deep axis, averaged over three lines, with animals at their depth and the erosion progress along the bottom.
+
+## Deep species (deep.js)
+- **The `DEEP` table:** branch, tier, essence to unlock, and `deepMin`. `deepPush` steers deep species toward water deep enough for them, and `keepIn` filters their targets.
+- **Dock and arrivals:** the dock shows a deep species once its tier is reached and it's unlocked (`G.unlocked`). Natural deep arrivals happen at 2% per migration tick from tier 1, and mythics come only 6% of those times, one at a time.
+- **Scores and extras:** deep sightings score 20 (150 for a mythic), +30 for a first. Dawn essence rises by 1 per deep animal. `updateDeep` writes eerie journal lines, and the Watcher lowers comfort within 90 px.
+- **Starfish varieties:** sunflower, brittle and cushion are drawn last from the seed, so earlier draws are unchanged.
+- **Link codes:** new `KIND_CODES` are appended, and cavefish carry a school index like tetras.

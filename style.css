@@ -843,10 +843,30 @@ output {
 .hatch-ups .note { grid-area: n; margin: 0; font-size: 9px; }
 .cr-acts .to-hatch { grid-column: 1 / -1; color: #f8c050; border-color: #8a5a1a; }
 
-/* ---- minimap layer switch ---- */
+/* ---- minimap layer switch, and the side view above it ---- */
 
-.mini-wrap { position: relative; }
-.map-layer { position: absolute; top: 4px; right: 4px; padding: 2px 5px; font-size: 8px; box-shadow: none; opacity: 0.85; }
+.mini-wrap { position: relative; display: grid; gap: 4px; }
+.map-layer { position: absolute; bottom: 4px; right: 4px; padding: 2px 5px; font-size: 8px; box-shadow: none; opacity: 0.85; }
+.slice { width: 192px; height: 44px; image-rendering: pixelated; border: 2px solid var(--edge); box-shadow: 3px 3px 0 var(--ink); background: var(--ink); cursor: pointer; }
+
+/* ---- the depths ---- */
+
+.evo { position: fixed; top: 64px; left: 50%; bottom: auto; transform: translateX(-50%); width: min(620px, calc(100vw - 24px)); max-height: calc(100vh - 240px); font-size: 10px; color: var(--muted); }
+.evo-bar { height: 8px; margin: 8px 0; }
+.evo-bar i { background: linear-gradient(90deg, #9a5ae0, #ff8bc3); }
+.evo-tree { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin-top: 10px; }
+.evo-col h3 { margin: 0 0 6px; font-size: 11px; font-weight: 400; color: var(--hot); }
+.evo-node { display: grid; gap: 3px; padding: 6px 8px; margin-bottom: 6px; border: 2px solid #1c4654; opacity: 0.6; }
+.evo-node.reached { opacity: 1; border-color: var(--btn-edge); }
+.evo-node > b { font-weight: 400; color: var(--text); }
+.evo-node .note { margin: 0; }
+.evo-sp { display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 6px; }
+.evo-sp .ic { display: grid; place-items: center; }
+.evo-sp img { image-rendering: pixelated; }
+.evo-sp b { font-weight: 400; color: var(--text); }
+.evo-sp .ok { color: #7ed07a; }
+.evo-sp button { padding: 3px 6px; box-shadow: none; color: #f0d8ff; border-color: #9a5ae0; }
+.evo-sp button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ---- sky tracker ---- */
 
@@ -911,7 +931,7 @@ output {
   .log { order: 1; flex: 1 1 100%; }
   .dock { order: 2; flex: 1 1 0; }
   .corner { order: 3; align-self: flex-end; }
-  .minimap { display: none; }
+  .minimap, .slice { display: none; }
   .animals { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
   .dock-bar { width: 100%; }
   .ani { flex: none; width: 42px; height: 42px; }

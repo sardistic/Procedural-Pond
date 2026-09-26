@@ -295,14 +295,17 @@ const AMPHIBIOUS = new Set(['crab', 'turtle', 'snail', 'starfish', 'frog', 'fire
 const SHORE_MARGIN = 0.2; // how much beach elevation of water swimmers keep below the tide
 
 function makeShore(world) {
-  const { W, H } = world, side = world.shoreSide, band = Math.min(W, H) * 0.22;
+  const { W, H } = world, side = world.shoreSide;
+  // Measured on the pond as it started, so deepening (which grows the far side) leaves the beach alone.
+  const [W0, H0] = world.expandPx ? baseSize(world) : [W, H], [ox, oy] = world.expandPx ? originOf(world) : [0, 0];
+  const band = Math.min(W0, H0) * 0.22;
   const shore = new Uint8Array(W * H);
   for (let y = 0, p = 0; y < H; y++) {
     for (let x = 0; x < W; x++, p++) {
       const d = side === 0 ? x : side === 1 ? W - 1 - x : side === 2 ? y : H - 1 - y;
       const along = side < 2 ? y : x;
       const local = band * (0.65 + 0.7 * fbm(along * 0.006, side * 7.3, 51));
-      const e = 1 - d / local + (fbm(x * 0.03, y * 0.03, 52) - 0.5) * 0.1;
+      const e = 1 - d / local + (fbm((x - ox) * 0.03, (y - oy) * 0.03, 52) - 0.5) * 0.1;
       shore[p] = e <= 0 ? 0 : Math.min(255, Math.round(e * 255));
     }
   }
@@ -397,6 +400,21 @@ function generateScenery(world) {
   world.motes = new Motes(world);
 }
 
+// The deep band: boulders tumbled along the drop-off, and pale stalks on the deep floor.
+const DEEP_SILT = hexToInt('#2a2e34');
+const DEEP_ROCKS = [mat('#101216', '#1c2026', '#2c3038', '#40464e'), mat('#16120e', '#241e18', '#362c24', '#4a3e32')];
+const DEEP_STALK = mat('#6a6a7a', '#9a9aaa', '#c8c8d4', '#eeeef4');
+function deepDecor(world, d) {
+  const { W, H } = world, depth = world.depth;
+  for (let i = 0; i < W * H / 700; i++) {
+    const x = rand(0, W), y = rand(0, H), v = depth[(y | 0) * W + (x | 0)];
+    if (!v) continue;
+    if (v < 110 && Math.random() < 0.7) d.stone(x, y, rand(3, 7), pick(DEEP_ROCKS));
+    else if (Math.random() < 0.25) d.pebble(x, y, rand(1.5, 3), pick(DEEP_ROCKS));
+    else if (v > 150 && Math.random() < 0.3) d.rubble(x, y, rand(3, 6), DEEP_STALK);
+  }
+}
+
 // Rasterize rocks and floor decor once, bake them into the floor image, and keep
 // their heights so animals are z-tested against them every frame. The floor is
 // baked in true colour; water colour comes from depth fog at render time.
@@ -425,7 +443,15 @@ function bakeBackground(world) {
       r.ellipsoid(pb.x, pb.y, pb.s, pb.s * 0.8, pb.x, 0, pb.s * 0.8, pb.m, id);
     }
   }
-  if (floor.decor) withSeed(`${world.seed}/floor/${key}`, () => floor.decor(makeDecor(r, outline), W, H));
+  // The floor pattern and decor are laid on the pond as it started (offset by the origin);
+  // the deep band gets its own dark silt and boulders.
+  const [ox, oy] = world.expandPx ? originOf(world) : [0, 0], [W0, H0] = world.expandPx ? baseSize(world) : [W, H];
+  if (floor.decor) {
+    const dec = makeDecor(r, outline), shifted = {};
+    for (const k of Object.keys(dec)) shifted[k] = (x, y, ...rest) => dec[k](x + ox, y + oy, ...rest);
+    withSeed(`${world.seed}/floor/${key}`, () => floor.decor(shifted, W0, H0));
+  }
+  if (world.depth) withSeed(`${world.seed}/deep/${world.expandPx}`, () => deepDecor(world, makeDecor(r, outline)));
   // Structures' solid parts (see structures.js), with outline ids from 5000 up.
   let sid = 5000;
   const nextS = (m) => { const i = Math.min(8190, sid++); outline[i] = outlineOf(m); return i; };
@@ -452,7 +478,8 @@ function bakeBackground(world) {
         if (best) {
           c = outline[best];
         } else {
-          c = floor.color(x, y);
+          c = floor.color(x - ox, y - oy);
+          if (world.depth && world.depth[p]) c = mixColor(c, DEEP_SILT, Math.min(1, world.depth[p] / 160));
           if (sh[p] > 1.2) c = shadeColor(c);
         }
       }

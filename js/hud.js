@@ -28,7 +28,7 @@ function iconWorld() {
 function poseIcon(c, w, cx, cy) {
   const b = c.body;
   c.heading = -PI / 4; c.x = cx; c.y = cy;
-  if (c.species === 'eel' || c.species === 'snake') {
+  if (c.species === 'eel' || c.species === 'snake' || c.species === 'gulper' || c.species === 'leviathan') {
     const len = b.links.reduce((a, l) => a + l, 0), R = len / 5.5;
     let a = -PI;
     b.place(cx + Math.cos(a) * R, cy + Math.sin(a) * R, a + PI / 2);
@@ -131,7 +131,8 @@ const iconFor = (c) => (c.species === 'wild' ? wildIcon(c.sp) : speciesIcon(c.sp
 
 // An <img> for an icon at a whole-number scale that fits `box` CSS pixels (so pixels stay crisp).
 function iconImg(icon, box = ICON_CSS) {
-  const img = document.createElement('img'), k = clamp(Math.floor(box / Math.max(icon.nw, icon.nh)), 1, 6);
+  // Whole-number scales keep pixels crisp; only icons bigger than the box shrink (the mythic ones).
+  const big = Math.max(icon.nw, icon.nh), img = document.createElement('img'), k = big > box ? box / big : clamp(Math.floor(box / big), 1, 6);
   img.src = icon.src; img.alt = '';
   img.width = icon.nw * k; img.height = icon.nh * k;
   return img;
@@ -977,6 +978,121 @@ function renderHatchery() {
   }));
 }
 
+
+// ---- the depths: a side view of the pond, and the evolution tree ------------------------------------
+// The slice (above the minimap) is the pond cut from the beach to the far side:
+// the beach and the tide, the floor, and the deep shelves erosion has opened,
+// with a dot for each animal at its depth. Clicking it opens the tree: each
+// depth tier on the fresh and salt branches, and the species it lets you spawn.
+
+const evoUi = { open: false, timer: 0, sig: '' };
+const SLICE_SKY = hexToInt('#7ec8e0'), SLICE_SAND = hexToInt('#c8b484'), SLICE_ROCK = hexToInt('#2a2e34'), SLICE_WATER = hexToInt('#1b6a7c');
+
+function drawSlice() {
+  const cv = byId('slice'), g = cv.getContext('2d'), S = cv.width, T = cv.height, img = g.createImageData(S, T), px = new Uint32Array(img.data.buffer);
+  const side = world.shoreSide ?? 3, axisX = side < 2, len = axisX ? world.W : world.H, cross = axisX ? world.H : world.W;
+  const toWorld = (i) => {
+    const a = (i + 0.5) / S * len, pos = side === 0 || side === 2 ? a : len - 1 - a;
+    return pos;
+  };
+  const tide = world.shore ? world.tide.level : 0.5, surf = 6 + (1 - tide) * 10, floorY = 24, abyssY = T - 3;
+  const water = world.waterColor || SLICE_WATER, dark = DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed;
+  const ground = new Float32Array(S);
+  for (let i = 0; i < S; i++) {
+    const pos = toWorld(i);
+    let e = 0, d = 0;
+    for (const f of [0.3, 0.5, 0.7]) {
+      const x = axisX ? pos : cross * f, y = axisX ? cross * f : pos;
+      e += shoreAt(world, x, y) / 3; d += depthAt(world, x, y) / 3;
+    }
+    ground[i] = e > 0 ? 6 + (1 - e) * (floorY - 6) : floorY + d * (abyssY - floorY);
+    for (let j = 0; j < T; j++) {
+      let c;
+      if (j >= ground[i]) c = d > 0.05 ? SLICE_ROCK : SLICE_SAND;
+      else if (j < surf) c = mixColor(SLICE_SKY, 0xff101820, world.darkness * 0.8);
+      else c = mixColor(water, dark, clamp((j - surf) / (abyssY - surf), 0, 1) * 0.95);
+      px[i + j * S] = c;
+    }
+  }
+  // The water's surface, and the erosion toward the next tier along the bottom.
+  for (let i = 0; i < S; i++) if (ground[i] > surf) px[i + Math.floor(surf) * S] = 0xffe8f4f8;
+  const E = world.erosion, next = E && DEPTH_TIERS[E.tier + 1];
+  if (next) {
+    const prev = DEPTH_TIERS[E.tier].erosion, k = clamp((E.e - prev) / (next.erosion - prev), 0, 1);
+    for (let i = 0; i < Math.round(S * k); i++) px[i + (T - 1) * S] = 0xffff8bc3;
+  }
+  g.putImageData(img, 0, 0);
+  // Animals at their depth.
+  for (const c of world.creatures) {
+    if (!c.life) continue;
+    const a = axisX ? c.x : c.y, pos = side === 0 || side === 2 ? a : len - 1 - a, i = clamp(Math.floor(pos / len * S), 0, S - 1);
+    const y = lerp(ground[i] - 1, surf + 1, clamp((c.z || 0) / 46, 0, 1));
+    g.fillStyle = DEEP[c.species] ? (DEEP[c.species].mythic ? '#ff6fae' : '#9ae0ff') : c.life.traits.length ? '#ffd166' : '#dff6f0';
+    g.fillRect(i, Math.round(y), 1, 1);
+  }
+  const tier = E ? E.tier : 0;
+  cv.title = `${tierName(world, tier)}${next ? ` · next: ${tierName(world, E.tier + 1).toLowerCase()} (erosion ${E.e.toFixed(1)} of ${next.erosion})` : ' · the deepest the pond can go'}. Click for the depths and what lives there.`;
+}
+
+function setEvo(open) {
+  evoUi.open = open;
+  byId('evo').hidden = !open;
+  if (open) { setScore(false); setHatchery(false); evoUi.sig = ''; renderEvo(); }
+}
+
+function renderEvo() {
+  if (!evoUi.open) return;
+  const E = world.erosion || newErosion(), G = world.game, next = DEPTH_TIERS[E.tier + 1];
+  const sig = JSON.stringify([E.tier, Math.floor(E.e * 10), G.unlocked || [], Math.floor((G.essence || 0) / 5)]);
+  if (sig === evoUi.sig) return;
+  evoUi.sig = sig;
+  byId('evo-status').replaceChildren(colorize(next ? `Now: ${tierName(world, E.tier)}. Erosion ${E.e.toFixed(1)} of ${next.erosion} to reach ${tierName(world, E.tier + 1).toLowerCase()}. Surf and big tides wear the pond; salt water erodes fastest.`
+    : `Now: ${tierName(world, E.tier)}, the deepest the pond can go.`));
+  const prev = DEPTH_TIERS[E.tier].erosion;
+  byId('evo-fill').style.width = next ? `${Math.round(clamp((E.e - prev) / (next.erosion - prev), 0, 1) * 100)}%` : '100%';
+  const dig = byId('evo-deepen');
+  dig.hidden = !next;
+  dig.replaceChildren(document.createTextNode('Wear the pond deeper: '), el('i', 'essence'), document.createTextNode(String(deepenCost(world))));
+  dig.disabled = (G.essence || 0) < deepenCost(world);
+  const branches = world.opts.habitat === 'mixed' ? ['salt', 'fresh'] : [branchOf(world)];
+  byId('evo-tree').replaceChildren(...branches.map((br) => {
+    const col = el('div', 'evo-col');
+    col.append(colored('h3', null, br === 'salt' ? 'Salt: down into the abyss' : 'Fresh: down into the drowned cathedral'));
+    DEPTH_TIERS.forEach((t, i) => {
+      const node = el('div', i <= E.tier ? 'evo-node reached' : 'evo-node');
+      node.append(el('b', null, t[br]), el('span', 'note', i <= E.tier ? (i ? 'reached' : 'where every pond starts') : `erosion ${t.erosion}`));
+      const kinds = Object.keys(DEEP).filter((k) => DEEP[k].tier === i && (DEEP[k].branch === br || DEEP[k].branch === 'both'));
+      for (const k of kinds) {
+        const d = DEEP[k], row = el('div', 'evo-sp'), ic = el('span', 'ic');
+        ic.append(iconImg(speciesIcon(k), 24));
+        const nm = el('b', null, SINGULAR[k]);
+        if (d.mythic) nm.style.color = TIER_COLOR[5];
+        row.append(ic, nm);
+        if (deepUnlocked(world, k)) row.append(el('span', 'ok', '✓ in the dock'));
+        else if (i > E.tier) row.append(el('span', 'note', 'deeper water first'));
+        else {
+          const b = el('button');
+          b.type = 'button';
+          b.disabled = (G.essence || 0) < d.unlock;
+          b.append(document.createTextNode('Unlock '), el('i', 'essence'), document.createTextNode(String(d.unlock)));
+          b.addEventListener('click', () => {
+            if (!spendEssence(world, d.unlock)) return;
+            G.unlocked = [...(G.unlocked || []), k];
+            refreshSpeciesButtons();
+            logEvent(world, `You can now spawn ${plural(SINGULAR[k], 2).toLowerCase()} from the dock`, null, { cat: 'pond', pri: 2 });
+            evoUi.sig = '';
+            renderEvo();
+          });
+          row.append(b);
+        }
+        node.append(row);
+      }
+      col.append(node);
+    });
+    return col;
+  }));
+}
+
 // ---- score: points, pearls, the leaderboard and rare finds everywhere -----------------------------
 
 const scoreUi = { open: false, timer: 0, shown: '', boardAt: -1 };
@@ -1129,6 +1245,9 @@ function initHud() {
   });
   byId('score-close').addEventListener('click', () => setScore(false));
   byId('hatch-close').addEventListener('click', () => setHatchery(false));
+  byId('slice').addEventListener('click', () => setEvo(!evoUi.open));
+  byId('evo-close').addEventListener('click', () => setEvo(false));
+  byId('evo-deepen').addEventListener('click', () => { if (deepenPond(world)) { showTicker('The surf bites deeper into the pond'); evoUi.sig = ''; renderEvo(); } });
   byId('hatch-feed').addEventListener('click', (e) => {
     const H = world.hatchery;
     if (!H) return;
@@ -1151,7 +1270,7 @@ function initHud() {
     if (e.target.closest && e.target.closest('select, input')) return;
     if (e.key === 'j' || e.key === 'J') setJournal(!journalUi.open);
     else if (e.key === 'c' || e.key === 'C') setCensus(!census.open);
-    else if (e.key === 'Escape') { setJournal(false); setCensus(false); setSky(false); setScore(false); closeSpawnCard(); hideCreature(); setHatchery(false); }
+    else if (e.key === 'Escape') { setJournal(false); setCensus(false); setSky(false); setScore(false); closeSpawnCard(); hideCreature(); setHatchery(false); setEvo(false); }
   });
 }
 
@@ -1174,4 +1293,6 @@ function hudTick(dt) {
   if (creatureUi.c && creatureUi.timer <= 0) { creatureUi.timer = 0.5; renderCreature(); }
   hatchUi.timer -= dt;
   if (hatchUi.open && hatchUi.timer <= 0) { hatchUi.timer = 0.2; renderHatchery(); }
+  evoUi.timer -= dt;
+  if (evoUi.timer <= 0) { evoUi.timer = 0.5; drawSlice(); renderEvo(); }
 }

@@ -518,8 +518,9 @@ function eat(world, c, f) {
 const FOOD_GAIN = { plankton: 0.1, pellet: 0.3, spawn: 0.3, brine: 0.5, spirulina: 0.35 };
 const FOOD_FED = { pellet: 45, spawn: 45, brine: 90, spirulina: 240 };
 
-const isPredator = (c) => c.species === 'eel' || c.species === 'snake' || c.species === 'octopus' || (c.species === 'wild' && c.sp.predator);
-const isPrey = (c) => c.species === 'tetra' || c.species === 'shrimp' || c.species === 'tadpole' ||
+const isPredator = (c) => c.species === 'eel' || c.species === 'snake' || c.species === 'octopus' || (c.species === 'wild' && c.sp.predator) ||
+  (typeof DEEP_PREDATORS !== 'undefined' && DEEP_PREDATORS.has(c.species));
+const isPrey = (c) => c.species === 'tetra' || c.species === 'shrimp' || c.species === 'tadpole' || c.species === 'cavefish' ||
   (c.species === 'wild' && c.sp.small) || (c.life && c.life.scale < 0.55);
 
 // ---- effects: ripples and bubbles --------------------------------------------
@@ -671,7 +672,8 @@ function makeBaby(world, p, m, x, y) {
     case 'koi': c = makeCreature('koi', world, x, y, Math.random() < 0.85 ? { variety: Math.random() < 0.5 ? p.variety : m.variety } : {}); break;
     case 'tetra': c = makeCreature('tetra', world, x, y, { school: p.school }); break;
     case 'wild': c = makeCreature('wild', world, x, y, { sp: p.sp, school: p.school }); break;
-    case 'clown': case 'shrimp': case 'snail': case 'axolotl': c = makeCreature(p.species, world, x, y); break;
+    case 'clown': case 'shrimp': case 'snail': case 'axolotl': case 'catfish': case 'shark': case 'sandshark': c = makeCreature(p.species, world, x, y); break;
+    case 'cavefish': c = makeCreature('cavefish', world, x, y, { school: p.school }); break;
     case 'frog': c = makeCreature('tadpole', world, x, y); break;
     default: return null;
   }
@@ -1046,6 +1048,8 @@ function migrate(world) {
       c.leaveWhy = a > 0.7 ? 'fled the danger' : mm > 0.5 ? 'in the wrong water' : 'restless';
     }
   }
+  // Deep water draws its own visitors, once erosion has opened it.
+  if (world.erosion && world.erosion.tier >= 1 && Math.random() < 0.02 && typeof arriveDeep === 'function') arriveDeep(world);
   const activeWild = new Set(world.creatures.filter((c) => c.species === 'wild').map((c) => c.sp)).size;
   if (activeWild < 4 && Math.random() < 0.025) arrive(world, 'wild', true);
 }

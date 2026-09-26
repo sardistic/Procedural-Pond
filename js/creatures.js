@@ -136,7 +136,8 @@ class Creature {
     // waterline, looking ahead as well as where they are, so a falling tide
     // turns them back before they're left in the shallows.
     if (world.shore && !AMPHIBIOUS.has(this.species)) {
-      const lim = world.tide.level - SHORE_MARGIN, ah = this.heading;
+      // (Never below the open water's own level, or every fish would flee the beach at a spring low tide.)
+      const lim = Math.max(0.02, world.tide.level - (this.shoreMargin ?? SHORE_MARGIN)), ah = this.heading;
       const e = Math.max(shoreAt(world, this.x, this.y), shoreAt(world, this.x + Math.cos(ah) * 12, this.y + Math.sin(ah) * 12));
       if (e > lim) {
         // Push down the slope toward open water, whichever way it runs here (islands too).
@@ -259,7 +260,8 @@ class Fish extends Creature {
     if (!this.grabbed) {
       const [ax, ay] = this.avoid(world, this.z);
       const [sx, sy] = this.social(world);
-      gx += ax * 2 + sx; gy += ay * 2 + sy;
+      const [dx, dy] = deepPush(world, this);
+      gx += ax * 2 + sx + dx; gy += ay * 2 + sy + dy;
     }
     const sp = this.speed / this.maxSpeed;
     this.turnToward(Math.atan2(gy, gx), this.turnRate * (this.grabbed ? 3 : 0.6 + sp), dt);
@@ -489,8 +491,8 @@ class Walker extends Creature {
     const gl = Math.hypot(gx, gy) || 1;
     gx /= gl; gy /= gl;
     if (!this.grabbed) {
-      const [ax, ay] = this.avoid(world, 0);
-      gx += ax * 2.5; gy += ay * 2.5;
+      const [ax, ay] = this.avoid(world, 0), [dx, dy] = deepPush(world, this);
+      gx += ax * 2.5 + dx; gy += ay * 2.5 + dy;
     }
     const sp = this.speed / this.maxSpeed;
     this.turnToward(Math.atan2(gy, gx), this.turnRate * (this.grabbed ? 3 : 0.2 + sp), dt);

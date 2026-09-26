@@ -16,7 +16,8 @@
 const LINK_V = 3; // 3 added the working genes and loci; 2 still decodes
 // Append-only code tables: an index written into a link must keep its meaning.
 const KIND_CODES = ['koi', 'tetra', 'eel', 'axolotl', 'turtle', 'crab', 'ray', 'frog', 'snake', 'snail', 'jelly', 'clown',
-  'puffer', 'octopus', 'duck', 'shrimp', 'dragonfly', 'wild', 'starfish', 'tadpole'];
+  'puffer', 'octopus', 'duck', 'shrimp', 'dragonfly', 'wild', 'starfish', 'tadpole',
+  'shark', 'sandshark', 'angler', 'gulper', 'vampire', 'isopod', 'catfish', 'cavefish', 'olm', 'kraken', 'leviathan', 'watcher'];
 const PLANT_CODES = ['weed', 'eelgrass', 'anemone', 'coral', 'urchin', 'marimo', 'duckweed', 'lily'];
 const HAB_CODES = ['fresh', 'mixed', 'salt'];
 const FLOOR_CODES = ['sand', 'coral', 'pebbles', 'river', 'leaves', 'tiles'];
@@ -145,7 +146,7 @@ function packPond(world) {
     w.u8(Math.round(clamp(L.energy, 0, 1) * 15) | ((L.scale >= 0.999 ? 15 : Math.min(14, Math.round(L.scale * 15))) << 4));
     const a = c.args || {};
     if (c.make === 'koi') w.u8(a.variety == null ? 0 : a.variety + 1);
-    else if (c.make === 'tetra') w.u8(a.school ? schoolIdx.get(a.school) + 1 : 0);
+    else if (c.make === 'tetra' || c.make === 'cavefish') w.u8(a.school ? schoolIdx.get(a.school) + 1 : 0);
     else if (c.make === 'wild') { w.vu(a.sp ? a.sp.id : 0); w.u8(a.school ? schoolIdx.get(a.school) + 1 : 0); }
     else if (c.make === 'duck') w.vu(Math.max(0, DUCK_CODES.indexOf(a.kind)) | ((index.has(c.leader) ? index.get(c.leader) + 1 : 0) << 2));
     if (hasParents) { w.vu(i - par[0]); w.vu(i - par[1]); } else w.vu(L.gen);
@@ -173,6 +174,11 @@ function packPond(world) {
   const st = (world.structures || []).filter((s) => STRUCT_CODES.includes(s.kind));
   w.vu(st.length);
   for (const s of st) { w.u8(STRUCT_CODES.indexOf(s.kind)); w.u16(Math.round(s.x)); w.u16(Math.round(s.y)); w.vu(s.seed); w.vu(Math.round(Math.max(0, s.born) * 10)); }
+  // Erosion: how far along, the depth tier, the deep bands, and the tide pools.
+  const E = world.erosion || newErosion();
+  w.vu(Math.round(E.e * 100)); w.u8(E.tier); w.vu(world.expandPx || 0);
+  w.u8(E.lagoons.length);
+  for (const L of E.lagoons) { w.u16(Math.round(L.x)); w.u16(Math.round(L.y)); w.u8(Math.round(L.r)); w.vu(L.seed); }
   return w.bytes();
 }
 
@@ -226,7 +232,7 @@ function unpackV2(r, v = 2) {
     const L = { age, energy: (es & 15) / 15, scale: (es >> 4) === 15 ? 1 : (es >> 4) / 15 };
     const a = {};
     if (k === 'koi') { const v = r.u8(); if (v) a.variety = v - 1; }
-    else if (k === 'tetra') { const j = r.u8(); a.school = j ? j - 1 : null; }
+    else if (k === 'tetra' || k === 'cavefish') { const j = r.u8(); a.school = j ? j - 1 : null; }
     else if (k === 'wild') { a.sp = r.vu(); const j = r.u8(); a.school = j ? j - 1 : null; }
     else if (k === 'duck') { const v = r.vu(); a.kind = DUCK_CODES[v & 3] || 'hen'; a.leader = v >> 2 ? (v >> 2) - 1 : null; }
     let pi = -1, mi = -1;
@@ -273,6 +279,11 @@ function unpackV2(r, v = 2) {
       for (let n = r.vu(); n > 0; n--) {
         const k = STRUCT_CODES[r.u8()], x = r.u16(), y = r.u16(), seed = r.vu(), born = r.vu() / 10;
         if (k) s.structures.push({ k, x, y, s: seed, born });
+      }
+      if (r.i < r.b.length) {
+        s.erosion = { e: r.vu() / 100, tier: r.u8(), lagoons: [] };
+        s.expandPx = r.vu();
+        for (let n = r.u8(); n > 0; n--) s.erosion.lagoons.push({ x: r.u16(), y: r.u16(), r: r.u8(), seed: r.vu() });
       }
     }
   }
@@ -347,7 +358,19 @@ function unpackV1(r) {
 // from the seed and the wild species from theirs.
 function linkToSave(s) {
   const tmp = { W: s.W, H: s.H, seed: s.seed, opts: { habitat: s.habitat }, tide: { level: 0.5 }, rocks: [], plants: [], pads: [], creatures: [] };
+  const ex = s.expandPx || 0;
+  if (ex) {
+    // Regrow the scenery on the pond as it started; the shore side decides which way it grew.
+    const probe = { ...tmp };
+    withSeed(`${s.seed}/${s.habitat}`, () => { probe.shoreSide = randi(0, 3); });
+    if (deepAxisX(probe.shoreSide)) tmp.W -= ex; else tmp.H -= ex;
+  }
   withSeed(`${s.seed}/${s.habitat}`, () => generateScenery(tmp));
+  const [gx, gy] = ex && deepShifts(tmp.shoreSide) ? (deepAxisX(tmp.shoreSide) ? [ex, 0] : [0, ex]) : [0, 0];
+  if (gx || gy) {
+    for (const o of [...tmp.rocks, ...tmp.plants, ...tmp.pads]) { o.x += gx; o.y += gy; }
+    for (const p of tmp.pebbles) { p.x += gx; p.y += gy; }
+  }
   const keep = (list, key) => list.filter((o) => !s.removed[key].includes(o.oi));
   const plants = [...keep(tmp.plants, 'plants'), ...keep(tmp.pads, 'pads')];
 
@@ -367,6 +390,7 @@ function linkToSave(s) {
     t: s.t, days: s.days, moon0: s.moon0, tide0: s.tide0, weather: s.weather, currentBase: s.currentBase,
     records: s.records, spawnNight: s.spawnNight, targets, eco: s.eco, journalSeq: s.journal.length, wild, game: s.game || null,
     structures: s.structures || [], hatchery: (s.structures || []).some((t) => t.k === 'hatchery') ? {} : null,
+    erosion: s.erosion || null, expandPx: ex, base: [tmp.W, tmp.H],
     rocks: [
       ...keep(tmp.rocks, 'rocks').map((r) => ({ x: r.x, y: r.y, a: r.a, b: r.b, ang: r.ang, h: r.h, m: ROCK_MATS.indexOf(r.m), seed: r.seed, oi: r.oi })),
       ...s.addedRocks,

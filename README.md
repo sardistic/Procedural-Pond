@@ -60,6 +60,10 @@ press **P**) for what you earned lately, the leaderboard, and rare finds from ev
 
   Over days, the ground around structures, rocks and placed plants discolours (algae in fresh water, coralline pink in salt), and plants take root around them.
 - **Creature card:** click an animal (or follow or tour) for everything about it: its genes and what they do, its genotype, inbreeding and hybrid vigour, its family tree from grandparents to young, its story from the journal, and buttons to follow or recycle it. Rarity tiers, traits, genes, waters and currencies have one colour each wherever they're mentioned.
+- **The depths:** over a long game, the surf wears the pond down (salt water fastest, fresh slowest). First tide pools are scoured into the beach, cut off at low tide. Then the far side falls away past a ragged drop-off, and the world grows that way, one darker band per tier: the twilight zone, the midnight zone and the abyss in salt water, or a deep lake, a sunless cave and a drowned cathedral in fresh. Deep water swallows the light (only things that glow stay bright). The side view above the minimap shows the pond cut from the beach to the deepest water, with each animal at its depth and the erosion toward the next tier; click it for the evolution tree, where each tier's species can be unlocked for essence (and the pond worn deeper faster).
+  - *Salt:* sand sharks in the shallows and tide pools, reef sharks, then anglerfish with glowing lures, gulper eels, vampire squid and giant isopods, and in the abyss the Kraken and the Leviathan.
+  - *Fresh:* giant catfish in the deep lake, blind cavefish, olms and giant isopods in the sunless cave, and the Watcher in the drowned cathedral.
+  - Deep life also turns up by itself, and each deep animal adds essence at dawn. Mythic animals are vast and rare; while one is in the pond, strange things are noted in the journal.
 - **Map layers:** the button on the minimap switches between the pond, *Tension* (how aggressive the water is) and, with both waters, *Water* (where it runs fresh or salt). The minimap shows the beach as the tide bares it.
 - **Keys:** **B** shows the bones (spine chains, joint radii, leg IK), **Space** pauses, **L** switches light modes, **F** follows, **T** tours, **M** toggles sound, **P** opens the score, **H** hides the panel. *Photo* saves a PNG.
 
@@ -130,6 +134,8 @@ With **Life** on (Scene section), the pond runs itself:
 - `js/game.js`: points, pearls and essence, rarity scoring, spawn prices and gene boosts, recycling, comfort, the family-tree records, the dawn income, and how many fireflies the score earns.
 - `js/ecology.js`: difficulty per habitat, and the aggression and fresh/salt grids.
 - `js/structures.js`: structures (shapes, auras, placing), islands raising the beach, the hatchery's idle breeding, and the slow stains and plant growth around old things.
+- `js/erosion.js`: erosion, tide pools, the depth map, and the depth tiers that grow the world.
+- `js/deep.js`: sharks, deep-water species and the mythic ones, the evolution tree's species, and deep arrivals.
 - `js/net.js`: the client for the pond API: short links, syncing, the leaderboard.
 - `js/hud.js`: the animal dock with its family trees, the census, the journal UI, the sky tracker, and the score panel. Icons are rendered at runtime by the pond's own renderer.
 - `server/`: the pond API, plain Node 24 with its built-in SQLite and no packages. `POST /api/ponds` stores a pond under a new four-word id (from `words.js`) and returns a secret key; `PUT /api/ponds/:id` with that key updates it; `GET /api/ponds/:id` returns it; `GET /api/board` gives the top twenty, the high-score line and recent rare finds. Scores are capped by how fast they can plausibly grow, and finds are rebuilt from known species and trait names.

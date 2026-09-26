@@ -102,6 +102,7 @@ function serializePond(world) {
     targets: world.targets, eco: { ...ECO }, journalSeq: world.journalSeq,
     game: world.game, lineage: world.lineage ? [...world.lineage.values()] : [], link: world.link || null,
     structures: (world.structures || []).map((s) => ({ k: s.kind, x: r2(s.x), y: r2(s.y), s: s.seed, born: r2(s.born) })),
+    erosion: world.erosion || null, expandPx: world.expandPx || 0, base: world.expandPx ? baseSize(world) : [world.W, world.H],
     hatchery: world.hatchery ? { ...world.hatchery, stock: packStock(world.hatchery) } : null,
     wild: WILD_SPECIES,
     rocks: world.rocks.map((r) => ({ x: r2(r.x), y: r2(r.y), a: r2(r.a), b: r2(r.b), ang: r2(r.ang), h: r2(r.h), m: ROCK_MATS.indexOf(r.m), seed: r.seed, oi: r.oi, born: r.born })),
@@ -146,6 +147,17 @@ function placeRestored(c, r) {
   if (r.z) { c.z = r.z; if ('tz' in c) c.tz = r.z; }
 }
 
+// Move everything in a save by (dx, dy), for a world that grows left or up.
+function shiftSave(d, dx, dy) {
+  if (!dx && !dy) return d;
+  const mv = (o) => { if (o) { o.x += dx; o.y += dy; } };
+  d.creatures.forEach(mv); d.plants.forEach(mv); d.rocks.forEach(mv); (d.structures || []).forEach(mv); (d.eggs || []).forEach(mv);
+  d.pebbles = (d.pebbles || []).map(([x, y, s, m]) => [x + dx, y + dy, s, m]);
+  for (const s of d.schools || []) { s.tx += dx; s.ty += dy; }
+  if (d.erosion) (d.erosion.lagoons || []).forEach(mv);
+  return d;
+}
+
 // Rebuild a world from a save. The world's size must already match d.size.
 function restorePond(world, d) {
   Object.assign(world, {
@@ -162,6 +174,8 @@ function restorePond(world, d) {
   WILD_SPECIES.push(...(d.wild || []));
   const spById = new Map(WILD_SPECIES.map((s) => [s.id, s]));
 
+  world.expandPx = d.expandPx || 0;
+  world.erosion = { ...newErosion(), ...(d.erosion || {}), next: 0 };
   // Structures first: islands shape the beach that makeShore builds.
   world.structures = (d.structures || []).filter((s) => STRUCTURES[s.k]).map((s) => makeStructure(s.k, world, s.x, s.y, s.s, s.born ?? world.days));
   world.hatchery = null;
