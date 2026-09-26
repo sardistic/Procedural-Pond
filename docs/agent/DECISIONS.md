@@ -508,3 +508,15 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
 - **UI.**
   - The ticker wraps up to 3 lines, and pri-3 news gets a banner. `placeNews` keeps the banner and narrator below a vertical west tab.
   - The ticker keeps its 360 px width. Widening it squeezed the dock, and in a mixed pond the dock squeezed the ticker to 130 px, so wrapping is the fix, not width.
+
+## The deep, second pass (the user: "squiggly lines", "glowing too much in one spot", "waves still look like shit at depths")
+- Reproduced on the user's own pond (a tier-8 fresh pond, 1160×1920, about 700 animals, including a horde of about 570 koi, many transcendent). The save was read from the DB read-only, POSTed to the local mock, and opened there, so no view was counted.
+- **Trenches** zigzagged because value-noise meanders were ±35% of the deep band with sharp V corners. Now there's 1 canyon (2 from tier 7), meandering by two sines (±5% and ±1.2% of the band), 9–14 px wide. Encoding: 0..127 how far in, +128 on the lit side. Drawn as a black floor (v > 0.62), walls in two dithered steps, a lit lip with sparse glints, and a shadowed far lip.
+- **Light** was a flat colour fog, strongest where hundreds of transcendent koi each cast violet. Changes:
+  - The creature lights get one per 12 px patch.
+  - The transcendent light is smaller and fainter (radius 9–15, 0.35).
+  - Radii and strengths are cut for plants and structures.
+  - Compose now brightens the floor (`c·L·1.6`) plus a small tint (`L·46`), with soft saturation `L/(1+L)` and 4 dithered steps.
+  - Visibility is `max(darkness, depth·0.45, 0.06)`, so it's faint by day even over the deep.
+- **Deep waves.** Crest strokes were tried and dropped: straight ones looked like ruled paper, and phase-warped ones scattered into noise. Now wave marks: level arcs on a staggered 18×11 grid, drifting with the swell, each with its own life cycle (swell, break, gone), density and strength by swell and depth (depth > 50). Ripple glints thin out over the deep (×(1 − 0.65·depth)); murk is halved; the tier tint goes halfway.
+- **Culling.** Plants, pads, structures and creatures well outside the visible rect aren't drawn (margins 30–220 px). On the user's pond at 2× in a 1400×900 window: about 72 → 68 ms in the horde view (it's mostly the ~500 koi on screen), and off-screen plants are free now. Compose is about 28 ms for 280k px (bare 9 ms).

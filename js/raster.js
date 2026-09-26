@@ -195,11 +195,13 @@ class Raster {
     const c2 = Math.cos(0.7), s2 = Math.sin(0.7), w2x = (sw[0] * c2 - sw[1] * s2) * 1024 / L2, w2y = (sw[0] * s2 + sw[1] * c2) * 1024 / L2, w2t = t * (5 + 5 * swell) * 1024 / L2;
     const clouds = s.clouds || null, sky = s.sky || 0xffe0d8c8, calm = clamp(1 - swell * 1.5, 0, 1) * (s.skyK ?? 1);
     const skr = sky & 255, skg = (sky >> 8) & 255, skb = (sky >>> 16) & 255, cdx = t * 2.2, cdy = t * 0.7, mdx = t * 0.35;
+    // (Wave marks: always drawn level, the way top-down water is; they drift with the swell.)
+    const wd = t * (3 + 5 * swell), wdu = -sw[0] * wd, wdv = -sw[1] * wd;
     const [rx0, ry0, rx1, ry1] = rect;
     for (let y = ry0; y <= ry1; y++) {
       for (let x = rx0, p = rx0 + y * W; x <= rx1; x++, p++) {
         const i = id[p];
-        let c, n, depth, fogScale = 1, waveS = 0, waveC = 0, refl = 0, dry = false;
+        let c, n, depth, fogScale = 1, waveS = 0, waveC = 0, refl = 0, dry = false, stroke = 0;
         if (shore) {
           const sp = shore[p];
           if (sp > tideL) { fogScale = 0; dry = true; } else if (sp) fogScale = Math.min(1, (tideL - sp) / 60);
@@ -251,6 +253,27 @@ class Raster {
                 const i1 = ((x * w1x + y * w1y - w1t) | 0) & 1023, i2 = ((x * w2x + y * w2y - w2t) | 0) & 1023, amp = swell * (0.55 + dd * 0.004) * patch;
                 waveS = (WAVE_TAB[(i1 + 24) & 1023] - WAVE_TAB[(i1 - 24) & 1023] + 0.5 * (WAVE_TAB[(i2 + 24) & 1023] - WAVE_TAB[(i2 - 24) & 1023])) * amp;
                 waveC = (WAVE_TAB[i1] + 0.5 * WAVE_TAB[i2]) * amp;
+                // Out over the deep the swell shows as wave marks: little arcs on a staggered grid,
+                // drifting with the swell, each swelling up, breaking and fading on its own time,
+                // more of them and bolder in rough water and over the deep.
+                if (dd > 50) {
+                  const k = Math.min(1, (dd - 50) / 110) * Math.min(1, amp * 1.2 + 0.3);
+                  const U = x + wdu, V = y + wdv, row = Math.floor(V / 11), U2 = U + (row & 1) * 9, col = Math.floor(U2 / 18);
+                  const h = Math.imul(Math.imul(row, 0x85ebca6b) ^ Math.imul(col, 0xc2b2ae35), 0x9e3779b1) >>> 0;
+                  if ((h & 255) < 70 + 150 * Math.min(1, swell) * k) {
+                    const w = 5 + ((h >>> 8) % 5), gu = (h >>> 12) % (18 - w), gv = (h >>> 18) % 7;
+                    const lu = Math.floor(U2 - col * 18) - gu, lv = Math.floor(V - row * 11) - gv;
+                    if (lu >= 0 && lu < w && lv >= 0 && lv < 3) {
+                      const life = Math.sin(t * (0.6 + ((h >>> 24) & 7) * 0.08) + (h >>> 21)); // swelling, breaking, gone
+                      const edge = lu === 0 || lu === w - 1, mid = lu >= 2 && lu <= w - 3;
+                      if (life > -0.25) {
+                        if (lv === 0 && !edge && (life > 0.25 || mid)) stroke = k;
+                        else if (lv === 1 && edge && life > 0.25) stroke = k * 0.6;
+                        else if (lv === 1 && !edge && life > 0.25) stroke = -k;
+                      }
+                    }
+                  }
+                }
                 // The shallows chop: short steep ripples across the swell (none out over the deep).
                 if (chop > 0 && dd < 160) {
                   const i3 = ((x * w3x + y * w3y - w3t) | 0) & 1023, ck = chop * (1 - dd / 160) * (0.6 + 0.8 * caustic[((x + o2x) & TM) | (((y >> 1) & TM) << 7)]);
@@ -276,7 +299,7 @@ class Raster {
               // bright parts of the clouds, so the sky shows as a field of glints (and the dark
               // deep reads as a surface, not a haze).
               if (clouds && calm > 0.02) {
-                const cv = clouds[(((x * 0.3 + cdx) | 0) & 127) | ((((y * 0.45 + cdy) | 0) & 127) << 7)], dens = (cv - 0.38) * 1.6;
+                const cv = clouds[(((x * 0.3 + cdx) | 0) & 127) | ((((y * 0.45 + cdy) | 0) & 127) << 7)], dens = (cv - 0.38) * 1.6 * (1 - 0.65 * (depthMap ? depthMap[p] : 0) / 255);
                 if (dens > 0) {
                   // Each 8 px stretch of each 4 px band may hold one dash, on a line of its own within the band.
                   const row = y >> 2, sx = x + ((Math.imul(row, 0x9e3779b1) >>> 27) << 1) + ((t * 1.5) | 0), seg = sx >> 3;
@@ -340,7 +363,7 @@ class Raster {
             // (lighter and darker reaches), so the deep has a texture of its own, not a smooth smear.
             if (!i) {
               const murk = clouds ? clouds[(((x * 0.5 + mdx) | 0) & 127) | ((((y * 0.5 + 64) | 0) & 127) << 7)] - 0.5 : 0;
-              a += murk * 70 * (dd / 255);
+              a += murk * 34 * (dd / 255);
               a = Math.max(0, Math.min(240, ((a + 6 + BAYER4[(x & 3) | ((y & 3) << 2)] * 12) / 12 | 0) * 12));
             }
             const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
@@ -348,15 +371,25 @@ class Raster {
           }
           // A trench: the floor falls away into black, and things glint along its edges.
           if (trench && !i && trench[p]) {
-            const v = trench[p];
-            if (v > 90) c = v > 170 || ((x ^ y) & 1) ? 0xff000000 : 0xff04040a;
-            else if (((Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1) ^ (starT >> 2)) >>> 26) === 0) c = (0xff000000 | (tgb << 16) | (tgg << 8) | tgr) >>> 0;
-            else { const f = 256 - v * 2; c = (0xff000000 | (((((c >>> 16) & 255) * f) >> 8) << 16) | (((((c >> 8) & 255) * f) >> 8) << 8) | (((c & 255) * f) >> 8)) >>> 0; }
+            const tv = trench[p], v = (tv & 127) / 127, lit = tv >= 128, bq = BAYER4[(x & 3) | ((y & 3) << 2)];
+            let f = 256;
+            if (v > 0.62) c = v < 0.72 && ((x ^ y) & 1) ? 0xff06070c : 0xff010103; // the floor of it, far down
+            else if (v > 0.3) f = v + bq * 0.1 > 0.47 ? 60 : 120; // the walls, stepping down into the dark
+            else if (lit) {
+              // The lip on the side the light falls on catches it; now and then something glints there.
+              if (v > 0.12 && ((Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1) ^ (starT >> 3)) >>> 27) === 0) c = (0xff000000 | (tgb << 16) | (tgg << 8) | tgr) >>> 0;
+              else { const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255, a = v > 0.15 ? 70 : 40; c = (0xff000000 | ((cb + (((190 - cb) * a) >> 8)) << 16) | ((cg + (((200 - cg) * a) >> 8)) << 8) | (cr + (((190 - cr) * a) >> 8))) >>> 0; }
+            } else f = 185; // the far lip, in shadow
+            if (f < 256) c = (0xff000000 | (((((c >>> 16) & 255) * f) >> 8) << 16) | (((((c >> 8) & 255) * f) >> 8) << 8) | (((c & 255) * f) >> 8)) >>> 0;
           }
         }
         // The surface over it all (after the deep has darkened the floor below): the sky in calm
         // water, the lit and shadowed faces of waves, foam on the biggest.
-        if (waveC === 9) { c = (Math.imul(Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1) ^ starT, 0x9e3779b1) >>> 30) ? 0xfff0f4f6 : 0xffd6e4ea; }
+        if (stroke && waveC < 8) {
+          const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
+          if (stroke > 0) { const a = (stroke * 150) | 0; c = (0xff000000 | ((cb + (((0xf0 - cb) * a) >> 8)) << 16) | ((cg + (((0xe8 - cg) * a) >> 8)) << 8) | (cr + (((0xdc - cr) * a) >> 8))) >>> 0; }
+          else { const f = 256 - ((-stroke * 70) | 0); c = (0xff000000 | (((cb * f) >> 8) << 16) | (((cg * f) >> 8) << 8) | ((cr * f) >> 8)) >>> 0; }
+        } else if (waveC === 9) { c = (Math.imul(Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1) ^ starT, 0x9e3779b1) >>> 30) ? 0xfff0f4f6 : 0xffd6e4ea; }
         else if (waveC === 8) { const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255; c = (0xff000000 | ((cb + ((0xf2 - cb) >> 1)) << 16) | ((cg + ((0xf0 - cg) >> 1)) << 8) | (cr + ((0xe8 - cr) >> 1))) >>> 0; }
         else if (waveS || refl) {
           let cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
@@ -389,11 +422,13 @@ class Raster {
             if (lr + LD[i00 + 1] + LD[i00 + 2] + LD[i11 + 1] > 0.004) {
               let lg = LD[i00 + 1] * w00 + LD[i10 + 1] * w10 + LD[i01 + 1] * w01 + LD[i11 + 1] * w11;
               let lb = LD[i00 + 2] * w00 + LD[i10 + 2] * w10 + LD[i01 + 2] * w01 + LD[i11 + 2] * w11;
-              const dd = depthMap ? depthMap[p] : 0, vis = Math.max(lvis, dd / 280, 0.1);
-              const mx = Math.max(lr, lg, lb) * vis, q = Math.min(5, (mx * 6 + 0.5 + BAYER4[(x & 3) | ((y & 3) << 2)]) | 0) / 5;
+              const dd = depthMap ? depthMap[p] : 0, vis = Math.max(lvis, dd / 255 * 0.45, 0.06);
+              const m0 = Math.max(lr, lg, lb), mt = m0 / (1 + m0); // overlapping lights saturate softly
+              const q = Math.min(4, (mt * vis * 5 + 0.5 + BAYER4[(x & 3) | ((y & 3) << 2)]) | 0) / 4;
               if (q > 0) {
-                const k = q / Math.max(mx, 0.001) * vis * 150;
-                const cr = Math.min(255, (c & 255) + ((lr * k) | 0)), cg = Math.min(255, ((c >> 8) & 255) + ((lg * k) | 0)), cb = Math.min(255, ((c >>> 16) & 255) + ((lb * k) | 0));
+                const s = q / Math.max(m0, 0.001), cr0 = c & 255, cg0 = (c >> 8) & 255, cb0 = (c >>> 16) & 255;
+                // Lit: the floor brightened in the light's colour, plus a little of the colour itself.
+                const cr = Math.min(255, cr0 + ((cr0 * lr * s * 1.6 + lr * s * 46) | 0)), cg = Math.min(255, cg0 + ((cg0 * lg * s * 1.6 + lg * s * 46) | 0)), cb = Math.min(255, cb0 + ((cb0 * lb * s * 1.6 + lb * s * 46) | 0));
                 c = (0xff000000 | (cb << 16) | (cg << 8) | cr) >>> 0;
               }
             }

@@ -34,11 +34,11 @@ const LIGHT_SPECIES = {
   deepone: { r: 10, c: 3 }, sleeper: { r: 34, c: 2 }, leviathan: { r: 26, c: 1 }, kraken: { r: 22, c: 2 }, watcher: { r: 26, c: 0 },
   cavefish: { r: 6, c: 3 }, olm: { r: 6, c: 4 }, isopod: { r: 5, c: 1 }, catfish: { r: 5, c: 1 },
 };
-const LIGHT_PLANTS = { glowcap: { r: 12, c: 0 }, starweed: { r: 14, c: 4 }, sealily: { r: 9, c: 2 }, weepmoss: { r: 7, c: 3 }, tubeworms: { r: 6, col: '#ff4a3a' }, paleroots: { r: 6, c: 4 }, blackcoral: { r: 7, c: 1 } };
+const LIGHT_PLANTS = { glowcap: { r: 9, c: 0, k: 0.6 }, starweed: { r: 11, c: 4, k: 0.7 }, sealily: { r: 8, c: 2, k: 0.5 }, weepmoss: { r: 6, c: 3, k: 0.4 }, tubeworms: { r: 6, col: '#ff4a3a', k: 0.4 }, paleroots: { r: 6, c: 4, k: 0.4 }, blackcoral: { r: 6, c: 1, k: 0.4 } };
 const LIGHT_STRUCTS = {
-  shrine: { r: 44, col: '#9af0ff' }, grotto: { r: 38, col: '#b08aff' }, smoker: { r: 30, col: '#ff7a2a' }, lantern: { r: 56, c: 0 }, gate: { r: 64, col: '#4af08a' },
-  cradle: { r: 84, col: '#ff3a9a' }, spire: { r: 30, col: '#ff4a5a', k: 0.6 }, rootcathedral: { r: 46, c: 0 }, brinepool: { r: 36, col: '#3a8aff' },
-  ossuary: { r: 26, col: '#d8ffd0', k: 0.6 }, idol: { r: 34, col: '#3aff9a' }, broodchamber: { r: 22, col: '#ff9a4a', k: 0.7 }, reefnursery: { r: 16, c: 2, k: 0.5 },
+  shrine: { r: 34, col: '#9af0ff', k: 0.8 }, grotto: { r: 28, col: '#b08aff', k: 0.7 }, smoker: { r: 22, col: '#ff7a2a', k: 0.7 }, lantern: { r: 40, c: 0 }, gate: { r: 46, col: '#4af08a', k: 0.8 },
+  cradle: { r: 60, col: '#ff3a9a', k: 0.8 }, spire: { r: 22, col: '#ff4a5a', k: 0.5 }, rootcathedral: { r: 32, c: 0, k: 0.6 }, brinepool: { r: 26, col: '#3a8aff', k: 0.7 },
+  ossuary: { r: 20, col: '#d8ffd0', k: 0.4 }, idol: { r: 26, col: '#3aff9a', k: 0.7 }, broodchamber: { r: 16, col: '#ff9a4a', k: 0.5 }, reefnursery: { r: 12, c: 2, k: 0.4 },
 };
 const colOf = (world, d, i) => (d.col ? (typeof d.col === 'string' ? (d.col = hexToInt(d.col)) : d.col) : neon(world, d.c + i));
 
@@ -81,33 +81,38 @@ function buildLights(world, rect) {
   for (let gy = gy0; gy <= gy1; gy++) D.fill(0, (gx0 + gy * M.lw) * 3, (gx1 + 1 + gy * M.lw) * 3);
   M.any = false;
   const big = [rect[0] - 90, rect[1] - 90, rect[2] + 90, rect[3] + 90];
+  // A crowd glows as a few lamps, not hundreds: one creature light per 12 px patch.
+  const taken = new Set();
   for (const c of world.creatures) {
-    if (c.gone || (c.alpha ?? 1) < 0.2) continue;
+    if (c.gone || (c.alpha ?? 1) < 0.2 || c.x < big[0] || c.x > big[2] || c.y < big[1] || c.y > big[3]) continue;
+    const cell = ((c.x / 12) | 0) + ((c.y / 12) | 0) * 4096;
+    if (taken.has(cell)) continue;
     const L = c.life, def = LIGHT_SPECIES[c.species], hx = c.body ? c.body.x[0] : c.x, hy = c.body ? c.body.y[0] : c.y;
     // Higher up, a light spreads wider over the floor and fainter.
     const lift = 1 + clamp((c.z || 0) / SURFACE_Z, 0, 1) * 0.6;
-    if (def && !(def.night && night < 0.4)) splat(M, hx, hy, def.r * lift, colOf(world, def, c.seed & 3), 1 / lift, c.heading, def.beam, big);
+    if (def && !(def.night && night < 0.4)) { splat(M, hx, hy, def.r * lift, colOf(world, def, c.seed & 3), 1 / lift, c.heading, def.beam, big); taken.add(cell); }
     if (!L) continue;
     const g = L.genome;
+    if (g.glow || L.paragon || (g.eld && eldStage(L) === 2)) taken.add(cell);
     if (g.glow) splat(M, c.x, c.y, (9 + 5 * (g.size || 1)) * lift, neon(world, (c.seed >> 3) & 7), 0.9 / lift, 0, 0, big);
     if (L.paragon) splat(M, hx, hy, 12 * lift, 0xff4ad2ff, 0.9, 0, 0, big);
     if (g.starry) splat(M, c.x, c.y, 6, 0xffffe0b0, 0.6, 0, 0, big);
     if (g.iridescent) splat(M, c.x, c.y, 8, hslToInt((t * 60 + c.seed) % 360, 0.9, 0.6), 0.6, 0, 0, big);
-    if (g.eld && eldStage(L) === 2) splat(M, c.x, c.y, 14 + 3 * Math.min(4, L.absorbed || 0), 0xffff4a9a, 0.8, 0, 0, big);
+    if (g.eld && eldStage(L) === 2) splat(M, c.x, c.y, 9 + 2 * Math.min(3, L.absorbed || 0), 0xffff4a9a, 0.35, 0, 0, big);
   }
   for (const p of world.plants) {
     const def = LIGHT_PLANTS[p.make], gl = p.tr && p.tr.glow;
     if (!def && !gl) continue;
     const g = Math.max(0.2, p.growth ?? 1), pulse = 0.8 + 0.2 * Math.sin(t * 1.3 + p.x * 0.1);
-    if (def) splat(M, p.x, p.y, def.r * (0.6 + 0.4 * g), colOf(world, def, (p.x | 0) & 3), pulse * (def.k || 0.9), 0, 0, big);
-    if (gl) splat(M, p.x, p.y, 10 + 4 * gl, neon(world, (p.y | 0) & 7), pulse * 0.8, 0, 0, big);
+    if (def) splat(M, p.x, p.y, def.r * (0.6 + 0.4 * g), colOf(world, def, (p.x | 0) & 3), pulse * (def.k || 0.6), 0, 0, big);
+    if (gl) splat(M, p.x, p.y, 8 + 3 * gl, neon(world, (p.y | 0) & 7), pulse * 0.6, 0, 0, big);
   }
   for (const s of world.structures) {
     const def = LIGHT_STRUCTS[s.kind];
     if (s.anim) continue;
     if (def) splat(M, s.x, s.y, def.r * (1 + 0.15 * ((s.lv && s.lv.reach) || 0)), colOf(world, def, s.seed & 3), (def.k || 1) * (0.85 + 0.15 * Math.sin(t * 0.9 + s.x)), 0, 0, big);
-    if (s.kind === 'island' && s.branch === 'life') splat(M, s.x, s.y, islandRadius(world, s) * 1.1, 0xff70d8ff, 0.35 + 0.1 * (s.blv || 1), 0, 0, big);
-    if (s.kind === 'island' && s.branch === 'dark') splat(M, s.x, s.y, islandRadius(world, s) * 1.3, 0xff8aff3a, 0.3 + 0.12 * (s.blv || 1), 0, 0, big);
+    if (s.kind === 'island' && s.branch === 'life') splat(M, s.x, s.y, islandRadius(world, s) * 0.9, 0xff70d8ff, 0.2 + 0.05 * (s.blv || 1), 0, 0, big);
+    if (s.kind === 'island' && s.branch === 'dark') splat(M, s.x, s.y, islandRadius(world, s) * 1.1, 0xff8aff3a, 0.2 + 0.06 * (s.blv || 1), 0, 0, big);
   }
   for (const f of world.fossils || []) if (f.kind === 'relic') splat(M, f.x, f.y, 14, 0xff8ad03a, 0.8, 0, 0, big);
   return M.any ? M : null;
@@ -121,29 +126,35 @@ const TIER_DARK = {
 function deepTint(world) {
   const tier = (world.erosion && world.erosion.tier) || 0, base = DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed;
   if (tier < 5) return base;
-  return TIER_DARK[branchOf(world)][Math.min(3, tier - 5)] || base;
+  return mixColor(base, TIER_DARK[branchOf(world)][Math.min(3, tier - 5)] || base, 0.5);
 }
 const TRENCH_GLOW = { salt: hexToInt('#2ab0ff'), fresh: hexToInt('#8aff4a') };
 
-// Trenches: from the hadal trench (tier 5) on, long chasms across the deep, one more each tier.
+// Trenches: from the hadal trench (tier 5) on, a long canyon across the deep (a second from the
+// drowned city): a black floor far down, walls that step down into it, and a lip either side, the
+// one facing the light lit. Stored per pixel: 0..127 how far in, +128 on the lit side.
 function carveTrenches(world, depth, into, along, ex) {
   const tier = (world.erosion && world.erosion.tier) || 0;
   if (tier < 5 || !ex) { world.trench = null; return; }
   const { W, H } = world, T = world.trench && world.trench.length === W * H ? world.trench : (world.trench = new Uint8Array(W * H));
   T.fill(0);
-  const n = Math.min(4, tier - 4), seed = hashString(world.seed || 'pond') % 89;
+  const seed = hashString(world.seed || 'pond') % 89, n = tier >= 7 ? 2 : 1;
+  const tr = Array.from({ length: n }, (_, k) => ({
+    c: ex * (n === 1 ? 0.55 : 0.42 + 0.3 * k) + ex * 0.06 * (hash2(k, seed, 7) - 0.5),
+    a1: ex * 0.05, f1: 0.0035 + 0.002 * hash2(k, seed, 9), p1: hash2(k, seed, 11) * TAU,
+    a2: ex * 0.012, f2: 0.012, p2: hash2(k, seed, 13) * TAU, w: 9 + 5 * hash2(k, seed, 17),
+  }));
   for (let p = 0; p < W * H; p++) {
     const a = into[p];
     if (a < ex * 0.2) continue;
     const u = along[p];
-    let best = 0;
-    for (let k = 0; k < n; k++) {
-      const c = ex * (0.35 + 0.5 * hash2(k, seed, 7)) + (fbm(u * 0.012, k * 3.1, seed) - 0.5) * ex * 0.35;
-      const w = 2.5 + 5 * fbm(u * 0.03, k * 1.7, seed + 5);
-      const v = 1 - Math.abs(a - c) / w;
-      if (v > best) best = v;
+    let best = 0, lit = false;
+    for (const t of tr) {
+      const cc = t.c + t.a1 * Math.sin(u * t.f1 + t.p1) + t.a2 * Math.sin(u * t.f2 + t.p2), w = t.w * (0.8 + 0.2 * Math.sin(u * 0.02 + t.p2));
+      const v = 1 - Math.abs(a - cc) / w;
+      if (v > best) { best = v; lit = a < cc; }
     }
-    if (best > 0) { T[p] = Math.round(best * 255); depth[p] = 255; }
+    if (best > 0) { T[p] = Math.round(best * 127) + (lit ? 128 : 0); if (best > 0.3) depth[p] = 255; }
   }
 }
 

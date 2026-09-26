@@ -473,16 +473,19 @@ function render(full = false) {
   // Rasterize a margin above/left of the view: shadows of things just off-screen still land on it.
   r.setClip(rect[0] - 30, rect[1] - 30, rect[2] + 3, rect[3] + 3);
   r.begin();
-  for (const p of world.plants) drawGrown(r, p, t);
-  for (const s of world.structures) { if (s.anim) drawBuildAnim(r, s, t); else if (DRAW[s.kind]) DRAW[s.kind](r, s, t, world); }
+  // (Only what could show: things well off screen aren't drawn at all. Big ponds have thousands.)
+  const [vx0, vy0, vx1, vy1] = rect, near = (x, y, m) => x > vx0 - m && x < vx1 + m && y > vy0 - m && y < vy1 + m;
+  for (const p of world.plants) if (near(p.x, p.y, 50)) drawGrown(r, p, t);
+  for (const s of world.structures) { if (!near(s.x, s.y, 60 + (s.R || STRUCTURES[s.kind].size || 20) * 3)) continue; if (s.anim) drawBuildAnim(r, s, t); else if (DRAW[s.kind]) DRAW[s.kind](r, s, t, world); }
   drawRiver(r, world, t);
   for (const l of world.litter) l.draw(r, t, world);
   for (const rm of world.remains) rm.draw(r, t);
   for (const f of world.fossils) f.draw(r, t);
-  for (const p of world.pads) drawGrown(r, p, t);
+  for (const p of world.pads) if (near(p.x, p.y, 30)) drawGrown(r, p, t);
   for (const f of world.food) f.draw(r, t, world);
   let anyThick = false;
   for (const c of world.creatures) {
+    if (!near(c.x, c.y, DEEP[c.species] && DEEP[c.species].mythic ? 220 : 110)) continue;
     const a = c.alpha ?? 1;
     r.alpha = a;
     FADE[c.id] = a < 1 ? 1 : 0;
