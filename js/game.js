@@ -196,13 +196,17 @@ const LIKES = {
 };
 const LIKE_LABEL = {
   lily: 'lily pads', weed: 'weeds', eelgrass: 'eelgrass', anemone: 'anemones', coral: 'coral', urchin: 'urchins',
-  marimo: 'marimo', duckweed: 'duckweed', rock: 'rocks',
+  marimo: 'marimo', duckweed: 'duckweed', rock: 'rocks', ship: 'the wreck', island: 'islands', vent: 'vents',
+  spring: 'springs', shrine: 'the shrine', aerator: 'the aerator', seedbed: 'the seed bed', hatchery: 'the hatchery',
 };
 const COMFORT_R = 56;
 
+// What an animal likes nearby: plants and rocks, plus structures its species favours.
 function likesOf(c) {
-  if (c.species === 'wild') return c.sp.habitat === 'salt' ? ['coral', 'anemone', 'weed'] : ['weed', 'eelgrass', 'lily'];
-  return LIKES[c.species] || null;
+  const kind = c.species === 'tadpole' ? 'frog' : c.species;
+  const base = c.species === 'wild' ? (c.sp.habitat === 'salt' ? ['coral', 'anemone', 'weed'] : ['weed', 'eelgrass', 'lily']) : LIKES[c.species] || null;
+  if (!base) return null; // drifters don't mind
+  return [...base, ...Object.keys(STRUCT_LIKES).filter((k) => STRUCT_LIKES[k].includes(kind))];
 }
 
 // Comfort: liked plants and rocks nearby, less in hostile water or the wrong water
@@ -211,6 +215,7 @@ function updateComfort(world) {
   const spots = { rock: world.rocks };
   for (const p of world.plants) (spots[p.make] || (spots[p.make] = [])).push(p);
   for (const p of world.pads) if (!p.dead) (spots.lily || (spots.lily = [])).push(p);
+  for (const s of world.structures || []) (spots[s.kind] || (spots[s.kind] = [])).push(s);
   const lights = world.darkness > 0.5 ? world.creatures.filter((c) => geneBuffs(c).light > 0.3) : [];
   const R2 = COMFORT_R * COMFORT_R;
   for (const c of world.creatures) {
@@ -224,7 +229,8 @@ function updateComfort(world) {
         if (n >= 3) break;
       }
     }
-    let target = n / 3 - aggressionAt(world, c.x, c.y) * 0.3 - mismatch(world, c) * (1 - L.buffs.tolerance) * 0.6;
+    L.aura = auraAt(world, c.x, c.y);
+    let target = n / 3 + L.aura.comfort - aggressionAt(world, c.x, c.y) * 0.3 - mismatch(world, c) * (1 - L.buffs.tolerance) * 0.6;
     for (const l of lights) if (l !== c && (l.x - c.x) ** 2 + (l.y - c.y) ** 2 < 1600) { target += 0.15; break; }
     L.comfort += (clamp(target, 0, 1) - L.comfort) * 0.2;
   }
@@ -232,7 +238,7 @@ function updateComfort(world) {
 
 // How fast an animal ages (1 = as the clock runs), and its chance of wandering
 // off at each migration check (every 6 s).
-const ageRate = (L) => (1 / ((L.vigor || 1) * (L.buffs ? L.buffs.longevity : 1))) * (1.1 - 0.4 * (L.comfort ?? 0.5)) * (L.fed > 0 ? 0.85 : 1);
+const ageRate = (L) => (1 / ((L.vigor || 1) * (L.buffs ? L.buffs.longevity : 1))) * (1.1 - 0.4 * (L.comfort ?? 0.5)) * (L.fed > 0 ? 0.85 : 1) * (L.aura ? L.aura.aging : 1);
 // Restlessness (wanderlust when ill at ease), fear (local aggression, eased by
 // resilience) and being in the wrong water (eased by tolerance), halved when well fed.
 function leaveChance(L, aggr = 0, mm = 0) {
@@ -297,7 +303,7 @@ function updateGame(world, dt) {
   if (gameTick <= 0) { gameTick = 2; updateComfort(world); }
   const dawn = Math.floor(world.days - 0.27);
   if (G.dawn == null || dawn < G.dawn) G.dawn = dawn;
-  else if (dawn > G.dawn) { G.dawn = dawn; dawnIncome(world); }
+  else if (dawn > G.dawn) { G.dawn = dawn; dawnIncome(world); dawnStructures(world); }
 }
 
 // Each dawn pays a pearl per species in the pond, plus up to 5 for how comfortable everyone is.

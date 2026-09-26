@@ -227,7 +227,9 @@ function floatOffBeach(o, world, dt) {
   const e = shoreAt(world, o.x, o.y), lim = world.tide.level - 0.1;
   if (e > lim) {
     const k = Math.min(3, (e - lim) * 40) * dt * 6;
-    o.x -= world.shoreN[0] * k; o.y -= world.shoreN[1] * k;
+    const gx = shoreAt(world, o.x + 4, o.y) - shoreAt(world, o.x - 4, o.y), gy = shoreAt(world, o.x, o.y + 4) - shoreAt(world, o.x, o.y - 4), gl = Math.hypot(gx, gy);
+    const [nx, ny] = gl > 0.004 ? [gx / gl, gy / gl] : world.shoreN;
+    o.x -= nx * k; o.y -= ny * k;
   }
 }
 

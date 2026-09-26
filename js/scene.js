@@ -308,6 +308,7 @@ function makeShore(world) {
   }
   world.shore = shore;
   world.shoreN = SHORE_SIDES[side];
+  if (typeof applyShoreEdits === 'function') applyShoreEdits(world); // islands (and later, erosion)
 }
 
 function shoreAt(world, x, y) {
@@ -411,7 +412,7 @@ function bakeBackground(world) {
   r.clip = [0, 0, W - 1, H - 1];
   r.zBase.fill(0);
   r.begin();
-  const outline = new Uint32Array(4096);
+  const outline = new Uint32Array(8192);
   let nid = 1;
   for (const rock of world.rocks) {
     outline[nid] = rock.outline;
@@ -425,6 +426,10 @@ function bakeBackground(world) {
     }
   }
   if (floor.decor) withSeed(`${world.seed}/floor/${key}`, () => floor.decor(makeDecor(r, outline), W, H));
+  // Structures' solid parts (see structures.js), with outline ids from 5000 up.
+  let sid = 5000;
+  const nextS = (m) => { const i = Math.min(8190, sid++); outline[i] = outlineOf(m); return i; };
+  for (const s of world.structures || []) BAKE[s.kind](r, s, nextS);
   const bg = new Uint32Array(W * H), bgLight = new Uint32Array(W * H), bgDry = shore ? new Uint32Array(W * H) : null;
   const { id, z, col, sh } = r;
   for (let y = 0, p = 0; y < H; y++) {
@@ -467,4 +472,7 @@ function bakeBackground(world) {
   world.bgDry = bgDry;
   world.waterColor = hexToInt(water.color);
   if (world.motes) world.motes.mat = solid(water.mote);
+  // Keep an unstained copy; stains around old things are painted over it (applyStains).
+  world.bgBase = bg.slice(); world.bgLightBase = bgLight.slice(); world.bgDryBase = bgDry ? bgDry.slice() : null;
+  if (typeof applyStains === 'function') applyStains(world);
 }

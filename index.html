@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=11">
+  <link rel="stylesheet" href="style.css?v=12">
 
   <script type="application/ld+json">
   {
@@ -100,6 +100,12 @@
     <details>
       <summary>Tools &amp; plants</summary>
       <div class="grid3" id="tools"></div>
+    </details>
+
+    <details>
+      <summary>Build</summary>
+      <p class="note">Big structures, each with an area of effect. Pick one, then click the pond to place it. Feed-click a structure to read about it; the Net takes one down for half its pearls.</p>
+      <div class="grid2" id="builds"></div>
     </details>
 
     <details>
@@ -207,7 +213,7 @@
           <li>Every birth: 1 point. Rare births score by tier: Uncommon 3, Rare 8, Epic 20, Legendary 50, Mythic 150.</li>
           <li>Breed the same rare again and each one is worth 25% more, up to 3×. The first of a kind in your pond adds 20.</li>
           <li>Rare animals arriving on their own: half their tier. A new wild species: 10. A generation record: 5 per generation. Coral spawning: 20. An animal that lives out its life: 1.</li>
-          <li>Each dawn: a pearl per species in the pond, plus up to 5 for how comfortable they are.</li>
+          <li>Each dawn: a pearl per species in the pond, plus up to 5 for how comfortable they are, and coins salvaged from a sunken ship.</li>
           <li>Points are your score, and harder water pays more of them: fresh ×1, salt ×1.3, both ×1.6. Every point also pays a pearl, for plants, food and structures.</li>
           <li>Essence buys new animals (the dock) and gene boosts for them. It comes back when you recycle an animal with the Net (more for rarer ones), when an animal lives out its life, and a little each dawn.</li>
           <li>Animals like certain plants and rocks nearby (hover one to see), calm water, and their own kind of water. Comfortable, well-fed animals age slower and rarely wander off; aggressive water drives them away and keeps newcomers out. Spirulina keeps them fed for longer; brine shrimp brings them into breeding condition.</li>
@@ -228,6 +234,19 @@
   </div>
   <div id="lineage" class="lineage" hidden aria-live="off"></div>
   <section id="spawn-card" class="spawn-card" hidden aria-label="Spawn an animal"></section>
+  <section id="hatchery" class="pop hatch" hidden aria-label="Hatchery">
+    <header class="pop-head"><b>Hatchery <span id="hatch-broods"></span></b><button type="button" id="hatch-close" class="icon" aria-label="Close hatchery">×</button></header>
+    <div class="hatch-feed">
+      <button type="button" id="hatch-feed" class="hatch-btn" title="Feed the brood"><span class="egg" aria-hidden="true"></span><b>Feed</b><span id="hatch-click"></span></button>
+      <div class="hatch-prog"><div class="tidebar"><i id="hatch-fill"></i></div><p class="note" id="hatch-status"></p></div>
+    </div>
+    <h3>Breeding pair</h3>
+    <ol class="hatch-stock" id="hatch-stock"></ol>
+    <h3>Breed for</h3>
+    <div class="chips" id="hatch-focus"></div>
+    <h3>Upgrades</h3>
+    <ol class="hatch-ups" id="hatch-ups"></ol>
+  </section>
   <section id="creature" class="pop creature" hidden aria-label="About this animal"></section>
   <div id="follow" class="follow" hidden>
     <span></span>
@@ -279,23 +298,24 @@
     </div>
   </div>
 
-  <script src="js/core.js?v=12"></script>
-  <script src="js/raster.js?v=12"></script>
-  <script src="js/creatures.js?v=12"></script>
-  <script src="js/critters.js?v=12"></script>
-  <script src="js/wildlife.js?v=12"></script>
-  <script src="js/wildfish.js?v=12"></script>
-  <script src="js/sound.js?v=12"></script>
-  <script src="js/life.js?v=12"></script>
-  <script src="js/plants.js?v=12"></script>
-  <script src="js/scene.js?v=12"></script>
-  <script src="js/sky.js?v=12"></script>
-  <script src="js/ecology.js?v=12"></script>
-  <script src="js/game.js?v=12"></script>
-  <script src="js/save.js?v=12"></script>
-  <script src="js/link.js?v=12"></script>
-  <script src="js/net.js?v=12"></script>
-  <script src="js/hud.js?v=12"></script>
-  <script src="js/main.js?v=16"></script>
+  <script src="js/core.js?v=13"></script>
+  <script src="js/raster.js?v=13"></script>
+  <script src="js/creatures.js?v=13"></script>
+  <script src="js/critters.js?v=13"></script>
+  <script src="js/wildlife.js?v=13"></script>
+  <script src="js/wildfish.js?v=13"></script>
+  <script src="js/sound.js?v=13"></script>
+  <script src="js/life.js?v=13"></script>
+  <script src="js/plants.js?v=13"></script>
+  <script src="js/scene.js?v=13"></script>
+  <script src="js/structures.js?v=13"></script>
+  <script src="js/sky.js?v=13"></script>
+  <script src="js/ecology.js?v=13"></script>
+  <script src="js/game.js?v=13"></script>
+  <script src="js/save.js?v=13"></script>
+  <script src="js/link.js?v=13"></script>
+  <script src="js/net.js?v=13"></script>
+  <script src="js/hud.js?v=13"></script>
+  <script src="js/main.js?v=17"></script>
 </body>
 </html>

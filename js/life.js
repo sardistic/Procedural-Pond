@@ -996,7 +996,7 @@ function breed(world) {
     } else if (rule.eggs === 'surface') z = 41;
     const eggs = new Eggs(world, c, mate, x, y, z, rule.eggs);
     // Fertile parents lay more; tense water fewer.
-    const fert = (geneBuffs(c).fertility + geneBuffs(mate).fertility) / 2 * (1 - 0.4 * Math.min(1, aggressionAt(world, x, y)));
+    const fert = (geneBuffs(c).fertility + geneBuffs(mate).fertility) / 2 * (1 - 0.4 * Math.min(1, aggressionAt(world, x, y))) * auraAt(world, x, y).fertility;
     const n = clamp(Math.round(eggs.cells.length * fert), 1, 12);
     while (eggs.cells.length > n) eggs.cells.pop();
     while (eggs.cells.length < n) eggs.cells.push({ ox: rand(-2.2, 2.2), oy: rand(-2.2, 2.2), p: rand(0, TAU) });

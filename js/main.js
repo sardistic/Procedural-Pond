@@ -53,7 +53,7 @@ const world = {
   raster: null, bg: null, bgLight: null, waterColor: 0, motes: null, wob: null, glints: [],
   caustic: makeCausticTile(),
   creatures: [], plants: [], pads: [], food: [], rocks: [], pebbles: [],
-  effects: [], eggs: [], swarms: [], targets: {}, journal: [], journalDirty: false, seed: '', maxPop: 200,
+  effects: [], eggs: [], swarms: [], targets: {}, journal: [], journalDirty: false, seed: '', maxPop: 200, structures: [], hatchery: null,
   weather: { rain: 0, target: 0, next: rand(60, 140), gust: 0 },
   current: { s: 0, angle: 0, base: rand(-PI, PI), x: 0, y: 0 },
   pointer: { x: -999, y: -999, inside: false },
@@ -217,7 +217,7 @@ function buildPond() {
   release();
   stopFollow();
   Object.assign(world, {
-    creatures: [], food: [], eggs: [], effects: [], swarms: [], targets: {}, journal: [], glints: [],
+    creatures: [], food: [], eggs: [], effects: [], swarms: [], targets: {}, journal: [], glints: [], structures: [], hatchery: null,
     days: 0.4, clock: 0.4, spawning: 0, spawnNight: -1, records: null, moon: null,
     tide: { level: 0.5, range: 0, rising: true, flow: 0, surf: 0, wave: 0 },
   });
@@ -307,6 +307,7 @@ function update(dt) {
   }
   for (const p of world.plants) p.update(dt, world);
   for (const p of world.pads) p.update(dt, world);
+  updateStructures(world, dt);
   for (const f of world.food) f.update(dt, world);
   world.food = world.food.filter((f) => !f.eaten);
   world.motes.update(dt, world);
@@ -371,6 +372,7 @@ function render(full = false) {
   r.setClip(rect[0] - 30, rect[1] - 30, rect[2] + 3, rect[3] + 3);
   r.begin();
   for (const p of world.plants) p.draw(r, t, world);
+  for (const s of world.structures) if (DRAW[s.kind]) DRAW[s.kind](r, s, t, world);
   for (const p of world.pads) p.draw(r, t, world);
   for (const f of world.food) f.draw(r, t, world);
   let anyThick = false;
@@ -487,9 +489,49 @@ const TOOLS = {
   lily: plantTool('lily', 'Lily pad', 'pads'),
   rock: {
     label: 'Rock', price: PLANT_PRICE.rock, likedBy: 'rock',
-    place: (x, y) => { world.rocks.push(makeRock(x, y, rand(5, 10))); bakeBackground(world); paintMinimapBackground(); },
+    place: (x, y) => { const rk = makeRock(x, y, rand(5, 10)); rk.born = world.days; world.rocks.push(rk); bakeBackground(world); paintMinimapBackground(); },
   },
 };
+// Structures (the Build section): bought with pearls, some also with essence.
+for (const [kind, def] of Object.entries(STRUCTURES)) {
+  TOOLS[`build-${kind}`] = { label: def.label, build: kind, price: def.pearls, essence: def.essence, likedBy: kind, hint: `click to build: ${def.desc}` };
+}
+
+// Rebuild what depends on the floor after structures change (islands reshape the beach).
+function structuresChanged(reshape) {
+  if (reshape && world.shore) makeShore(world);
+  bakeBackground(world);
+  paintMinimapBackground();
+}
+
+function build(kind, x, y) {
+  const def = STRUCTURES[kind], why = canPlace(world, kind, x, y);
+  if (why) { showTicker(`Can't build a ${def.label.toLowerCase()} here: ${why}`); return; }
+  if (world.game.pearls < def.pearls) { notEnough(def.pearls, 'pearls'); return; }
+  if ((world.game.essence || 0) < def.essence) { notEnough(def.essence, 'essence'); return; }
+  spend(world, def.pearls);
+  spendEssence(world, def.essence);
+  floatAward(x, y, `−${def.pearls}`, 'spend');
+  world.structures.push(makeStructure(kind, world, x, y));
+  if (kind === 'hatchery' && !world.hatchery) world.hatchery = newHatchery();
+  structuresChanged(!!def.shore);
+  logEvent(world, `You built ${withArticle(def.label.toLowerCase())}: ${def.desc}`, null, { cat: 'pond', pri: 2 });
+  if (kind === 'hatchery') setHatchery(true);
+}
+
+function demolish(s) {
+  const def = STRUCTURES[s.kind];
+  if (!confirm(`Take down the ${def.label.toLowerCase()}? Half its pearls come back.`)) return;
+  if (s.kind === 'hatchery' && world.hatchery) {
+    while (world.hatchery.stock.length) releaseStock(world, 0);
+    setHatchery(false);
+  }
+  world.structures.splice(world.structures.indexOf(s), 1);
+  world.game.pearls += Math.round(def.pearls / 2);
+  world.gameDirty = true;
+  structuresChanged(!!def.shore);
+  showTicker(`Took down the ${def.label.toLowerCase()}: +${Math.round(def.pearls / 2)} pearls`);
+}
 
 // Which animals are happier near a plant or rock, for the tool's hint.
 function likedByText(kind) {
@@ -499,6 +541,7 @@ function likedByText(kind) {
 
 function useTool(x, y) {
   const tool = TOOLS[world.tool], price = tool.price || 0;
+  if (tool.build) { build(tool.build, x, y); return; }
   if (tool.food && world.food.filter((f) => f.fed).length >= 90) return;
   if (!tool.place && !tool.food) return;
   if (!spend(world, price)) { notEnough(price); return; }
@@ -519,6 +562,8 @@ function creatureAt(x, y) {
 function removeAt(x, y) {
   const c = creatureAt(x, y);
   if (c) { recycle(c); return; }
+  const st = structureAt(world, x, y);
+  if (st) { demolish(st); return; }
   for (const [list, key] of [[world.pads, 'pads'], [world.plants, 'plants']]) {
     const i = list.findLastIndex((p) => p.hit(x, y));
     if (i < 0) continue;
@@ -659,7 +704,13 @@ let tap = null;
 function pointerEnd(e) {
   touches.delete(e.pointerId);
   if (touches.size < 2) pinch = null;
-  if (press && !press.panning && e.type === 'pointerup') useTool(press.x, press.y);
+  if (press && !press.panning && e.type === 'pointerup') {
+    // Feeding over a structure tells you about it instead (and opens the hatchery).
+    const st = world.tool === 'feed' && structureAt(world, press.x, press.y);
+    if (st && st.kind === 'hatchery') setHatchery(true);
+    else if (st) showTicker(`${STRUCTURES[st.kind].label}: ${STRUCTURES[st.kind].desc}`);
+    else useTool(press.x, press.y);
+  }
   // A quick click on an animal (not a drag) opens its card.
   if (tap && e.type === 'pointerup' && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 6 && performance.now() - tap.t < 350 && tap.c.life) showCreature(tap.c);
   tap = null;
@@ -891,7 +942,7 @@ function updateCard(dt) {
 function setTool(name) {
   world.tool = name;
   const t = TOOLS[name];
-  for (const b of $('tools').children) b.setAttribute('aria-pressed', b.dataset.tool === name);
+  for (const b of [...$('tools').children, ...$('builds').children]) b.setAttribute('aria-pressed', b.dataset.tool === name);
   $('hint').textContent = t.hint || [`click to place ${t.label.toLowerCase()} (${t.price} pearls)`, t.likedBy && likedByText(t.likedBy)].filter(Boolean).join(' · ');
 }
 for (const [name, t] of Object.entries(TOOLS)) {
@@ -899,15 +950,18 @@ for (const [name, t] of Object.entries(TOOLS)) {
   b.dataset.tool = name;
   if (t.price != null) {
     b.append(Object.assign(document.createElement('b'), { className: t.price ? 'price' : 'price free', textContent: t.price ? t.price : 'free' }));
-    b.title = t.price ? `${t.label}: ${t.price} pearls` : `${t.label}: free`;
+    b.title = t.price ? `${t.label}: ${t.price} pearls${t.essence ? ` and ${t.essence} essence` : ''}` : `${t.label}: free`;
   }
+  if (t.essence) b.append(Object.assign(document.createElement('b'), { className: 'price ess', textContent: t.essence }));
+  if (t.build) b.title += ` · ${STRUCTURES[t.build].desc}`;
   b.addEventListener('click', () => setTool(name));
-  $('tools').append(b);
+  $(t.build ? 'builds' : 'tools').append(b);
 }
 
 // Only offer animals and plants that live in this habitat.
 function refreshSpeciesButtons() {
   for (const b of document.querySelectorAll('[data-spawn]')) b.hidden = !fitsHabitat(world, SPECIES_HABITAT[b.dataset.spawn]);
+  for (const b of $('builds').children) { const d = STRUCTURES[TOOLS[b.dataset.tool].build]; b.hidden = !!d.habitat && !fitsHabitat(world, d.habitat); }
   for (const b of $('tools').children) {
     const salt = ['anemone', 'coral', 'urchin'].includes(b.dataset.tool), fresh = ['marimo', 'duckweed', 'lily'].includes(b.dataset.tool);
     b.hidden = (salt && !fitsHabitat(world, 'salt')) || (fresh && !fitsHabitat(world, 'fresh'));

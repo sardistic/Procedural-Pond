@@ -139,8 +139,11 @@ class Creature {
       const lim = world.tide.level - SHORE_MARGIN, ah = this.heading;
       const e = Math.max(shoreAt(world, this.x, this.y), shoreAt(world, this.x + Math.cos(ah) * 12, this.y + Math.sin(ah) * 12));
       if (e > lim) {
-        const f = Math.min(4, 0.6 + (e - lim) * 16);
-        fx -= world.shoreN[0] * f; fy -= world.shoreN[1] * f;
+        // Push down the slope toward open water, whichever way it runs here (islands too).
+        const f = Math.min(4, 0.6 + (e - lim) * 16), x = this.x, y = this.y;
+        const gx = shoreAt(world, x + 4, y) - shoreAt(world, x - 4, y), gy = shoreAt(world, x, y + 4) - shoreAt(world, x, y - 4), gl = Math.hypot(gx, gy);
+        const [nx, ny] = gl > 0.004 ? [gx / gl, gy / gl] : world.shoreN;
+        fx -= nx * f; fy -= ny * f;
       }
     }
     for (const r of world.rocks) {

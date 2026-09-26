@@ -170,6 +170,9 @@ function packPond(world) {
   // Added later, at the end so older links simply stop before it: the score.
   const G = world.game;
   if (G) { w.vu(G.points); w.vu(G.pearls); w.u8(G.board ? 1 : 0); w.vu(G.essence || 0); }
+  const st = (world.structures || []).filter((s) => STRUCT_CODES.includes(s.kind));
+  w.vu(st.length);
+  for (const s of st) { w.u8(STRUCT_CODES.indexOf(s.kind)); w.u16(Math.round(s.x)); w.u16(Math.round(s.y)); w.vu(s.seed); w.vu(Math.round(Math.max(0, s.born) * 10)); }
   return w.bytes();
 }
 
@@ -265,6 +268,13 @@ function unpackV2(r, v = 2) {
   if (r.i < r.b.length) {
     s.game = { points: r.vu(), pearls: r.vu(), board: !!r.u8() };
     if (r.i < r.b.length) s.game.essence = r.vu();
+    s.structures = [];
+    if (r.i < r.b.length) {
+      for (let n = r.vu(); n > 0; n--) {
+        const k = STRUCT_CODES[r.u8()], x = r.u16(), y = r.u16(), seed = r.vu(), born = r.vu() / 10;
+        if (k) s.structures.push({ k, x, y, s: seed, born });
+      }
+    }
   }
   return s;
 }
@@ -356,6 +366,7 @@ function linkToSave(s) {
     size: [s.W, s.H], shoreSide: tmp.shoreSide,
     t: s.t, days: s.days, moon0: s.moon0, tide0: s.tide0, weather: s.weather, currentBase: s.currentBase,
     records: s.records, spawnNight: s.spawnNight, targets, eco: s.eco, journalSeq: s.journal.length, wild, game: s.game || null,
+    structures: s.structures || [], hatchery: (s.structures || []).some((t) => t.k === 'hatchery') ? {} : null,
     rocks: [
       ...keep(tmp.rocks, 'rocks').map((r) => ({ x: r.x, y: r.y, a: r.a, b: r.b, ang: r.ang, h: r.h, m: ROCK_MATS.indexOf(r.m), seed: r.seed, oi: r.oi })),
       ...s.addedRocks,

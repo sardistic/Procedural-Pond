@@ -101,10 +101,12 @@ function serializePond(world) {
     currentBase: world.current.base, records: world.records, spawnNight: world.spawnNight,
     targets: world.targets, eco: { ...ECO }, journalSeq: world.journalSeq,
     game: world.game, lineage: world.lineage ? [...world.lineage.values()] : [], link: world.link || null,
+    structures: (world.structures || []).map((s) => ({ k: s.kind, x: r2(s.x), y: r2(s.y), s: s.seed, born: r2(s.born) })),
+    hatchery: world.hatchery ? { ...world.hatchery, stock: packStock(world.hatchery) } : null,
     wild: WILD_SPECIES,
-    rocks: world.rocks.map((r) => ({ x: r2(r.x), y: r2(r.y), a: r2(r.a), b: r2(r.b), ang: r2(r.ang), h: r2(r.h), m: ROCK_MATS.indexOf(r.m), seed: r.seed, oi: r.oi })),
+    rocks: world.rocks.map((r) => ({ x: r2(r.x), y: r2(r.y), a: r2(r.a), b: r2(r.b), ang: r2(r.ang), h: r2(r.h), m: ROCK_MATS.indexOf(r.m), seed: r.seed, oi: r.oi, born: r.born })),
     pebbles: world.pebbles.map((p) => [r2(p.x), r2(p.y), r2(p.s), PEBBLE_MATS.indexOf(p.m)]),
-    plants: [...world.plants, ...world.pads].filter((p) => p.make).map((p) => ({ k: p.make, s: p.seed, x: r2(p.x), y: r2(p.y), a: args(p.args), oi: p.oi })),
+    plants: [...world.plants, ...world.pads].filter((p) => p.make).map((p) => ({ k: p.make, s: p.seed, x: r2(p.x), y: r2(p.y), a: args(p.args), oi: p.oi, born: p.born })),
     creatures: saved.map((c) => ({
       k: c.make, s: c.seed, sn: c.sn, x: r2(c.x), y: r2(c.y), h: r2(c.heading), z: r2(c.z || 0), a: args(c.args),
       st: c.state === 'sit' ? 'sit' : undefined,
@@ -127,7 +129,7 @@ function serializePond(world) {
 
 function restoreRock(r) {
   const rock = makeRock(r.x, r.y, r.a, ROCK_MATS[r.m] || ROCK_MATS[0]);
-  Object.assign(rock, { b: r.b, ang: r.ang, h: r.h, seed: r.seed, oi: r.oi });
+  Object.assign(rock, { b: r.b, ang: r.ang, h: r.h, seed: r.seed, oi: r.oi, born: r.born });
   return rock;
 }
 
@@ -160,6 +162,15 @@ function restorePond(world, d) {
   WILD_SPECIES.push(...(d.wild || []));
   const spById = new Map(WILD_SPECIES.map((s) => [s.id, s]));
 
+  // Structures first: islands shape the beach that makeShore builds.
+  world.structures = (d.structures || []).filter((s) => STRUCTURES[s.k]).map((s) => makeStructure(s.k, world, s.x, s.y, s.s, s.born ?? world.days));
+  world.hatchery = null;
+  if (d.hatchery) {
+    const h = newHatchery();
+    world.hatchery = { ...h, ...d.hatchery, levels: { ...h.levels, ...(d.hatchery.levels || {}) }, stock: unpackStock(d.hatchery.stock) };
+    // The auto-feeder kept working while you were away (up to 8 hours).
+    if (d.savedAt) feedHatchery(world, hatchAuto(world.hatchery) * Math.min(8 * 3600, Math.max(0, (Date.now() - d.savedAt) / 1000)));
+  }
   makeShore(world);
   world.rocks = d.rocks.map(restoreRock);
   world.pebbles = (d.pebbles || []).map(([x, y, s, m]) => ({ x, y, s, m: PEBBLE_MATS[m] || PEBBLE_MATS[0] }));
@@ -169,6 +180,7 @@ function restorePond(world, d) {
     if (!GROW[p.k]) continue;
     const plant = makePlant(p.k, world, p.x, p.y, p.a || {}, p.s);
     plant.oi = p.oi;
+    if (p.born != null) plant.born = p.born;
     (p.k === 'lily' ? world.pads : world.plants).push(plant);
   }
   world.motes = new Motes(world);

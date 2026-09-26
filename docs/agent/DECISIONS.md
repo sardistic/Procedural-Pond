@@ -246,3 +246,21 @@ The other rules:
 
 ## Beach margin
 Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, sampled here and 12 px ahead, with a force up to 4. Targets and school points need `tide − margin − 0.06`, or the lowest elevation tried. In a 20-minute mixed sim, swimmers were near the waterline 0.04% of the time.
+
+## Structures (structures.js)
+- **Drawing:** each structure has `BUILD` (its shape, under its seed), `BAKE` (solid parts drawn into the floor bake, outline ids 5000+, so animals are z-tested against them) and an optional `DRAW` for live parts (vent glow, shrine crystal, hatchery eggs; EMISSIVE on `s.id`).
+- **Placement:** `canPlace` needs water deeper than tide − 0.1, clearance from the edges and from other structures, the right habitat, and one hatchery at most.
+- **Auras:** `auraAt` returns comfort (added), fertility and ageing (multiplied), and light (added at night), fading linearly to the radius. `structureZones` adds aggression and fresh/salt pull to the ecology grid. Species favour structures through `STRUCT_LIKES`.
+- **Islands:** `applyShoreEdits`, run at the end of `makeShore`, raises beach elevation in a noisy dome. `restorePond` builds structures before the shore. Swimmers and floating plants now push down the local slope of the beach rather than along the beach side, so islands work too.
+- **Save and links:** saves hold `structures` and `hatchery` (stock packed with wild species by id). Links append a structure list (append-only `STRUCT_CODES`) after the score; a link doesn't carry the hatchery stock.
+- **Refunds:** the Net takes a structure down for half its pearls.
+
+## Hatchery
+`world.hatchery` holds `{ nutrients, focus, stock[≤2], broods, levels }`.
+- **Food and upgrades:** a brood costs `40 × 0.85^incubator` food. A click feeds `1 + 0.75 × paddle`, and the auto-feeder adds `0.25 × level` a second. Food caps at 3 broods, and the auto-feeder runs offline for up to 8 hours on restore. Upgrade cost is `base × grow^level`.
+- **A brood:** `2 + tank` young, from the stocked pair's `childGenomeFor`. Then the chosen trait is pushed `(0.25 + 0.12 × filter) × (hi − v) × rand(0.5, 1)` toward its extreme; for rarity, or with the lamp, one extra rare allele or mutation roll.
+- **Stock:** animals leave the pond while stocked (lineage `why: 'to the hatchery'`) and come back on release. Schooling fish get a new school.
+
+## Stains and growth
+- **Stains:** `bakeBackground` keeps unstained copies (`bgBase`, `bgLightBase`, `bgDryBase`). `applyStains`, run after each bake and at dawn, paints algae (fresh), coralline (salt) or lichen (dry) around structures, rocks and placed plants. The radius grows `~1.6 px/day` and the depth `0.035/day` (up to 0.5), noise-modulated and dithered into 1/8 steps. Generated rocks count as 8 days old.
+- **Growth:** at dawn, `sproutAround` grows plants near sources older than 1 day (chance 0.3 × k: seed bed 3, other structures 1, rocks 0.35), in water deep enough, with at most 3 plants within 20 px, up to `area/2200` plants. The kind fits the local water.

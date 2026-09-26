@@ -890,9 +890,91 @@ function renderCreature() {
       renderCreature();
     });
     acts.append(f, r);
+    if (world.hatchery && BREED[c.species === 'tadpole' ? 'frog' : c.species] && c.species !== 'tadpole') {
+      const h = el('button', 'to-hatch', 'To hatchery');
+      h.type = 'button';
+      h.title = 'Move it into the hatchery as one of the breeding pair';
+      h.addEventListener('click', () => {
+        const why = stockHatchery(world, c);
+        if (why) { showTicker(why); return; }
+        hideCreature();
+        setHatchery(true);
+      });
+      acts.append(h);
+    }
   }
   parts.push(acts);
   box.replaceChildren(...parts);
+}
+
+
+// ---- hatchery panel: the idle breeding game ---------------------------------------------------
+// The feed button and progress bar stay put (so fast clicking never lands on a
+// replaced button); the pair, focus and upgrade lists rebuild when they change.
+
+const hatchUi = { open: false, timer: 0, sig: '' };
+
+function setHatchery(open) {
+  hatchUi.open = open && !!world.hatchery;
+  byId('hatchery').hidden = !hatchUi.open;
+  if (hatchUi.open) { setScore(false); hatchUi.sig = ''; renderHatchery(); }
+}
+
+function renderHatchery() {
+  const H = world.hatchery;
+  if (!hatchUi.open || !H) return;
+  const cost = hatchCost(H), pair = hatchPair(H), n = 2 + H.levels.tank, auto = hatchAuto(H);
+  byId('hatch-broods').textContent = H.broods ? `· ${H.broods} brood${H.broods > 1 ? 's' : ''}` : '';
+  byId('hatch-click').textContent = `+${hatchClick(H).toFixed(2).replace(/\.?0+$/, '')}`;
+  byId('hatch-fill').style.width = `${Math.round(Math.min(1, H.nutrients / cost) * 100)}%`;
+  const ready = Math.floor(H.nutrients / cost);
+  byId('hatch-status').textContent = !pair
+    ? (H.stock.length < 2 ? 'Stock a breeding pair: open an animal\u2019s card and choose \u201cTo hatchery\u201d.' : 'These two can\u2019t breed: they must be the same kind.')
+    : `${Math.floor(H.nutrients)} of ${cost} food · ${n} young a brood${ready > 1 ? ` · ${ready} broods ready` : ''}${auto ? ` · auto-feeding ${auto.toFixed(2)}/s` : ''}`;
+  const sig = JSON.stringify([H.stock.map((r) => r.s), H.focus, H.levels, Math.floor(world.game.pearls / 5), Math.floor((world.game.essence || 0) / 2)]);
+  if (sig === hatchUi.sig) return;
+  hatchUi.sig = sig;
+  // The pair.
+  const stock = [0, 1].map((i) => {
+    const rec = H.stock[i], li = el('li', rec ? 'slot' : 'slot empty');
+    if (!rec) { li.append(el('span', 'note', 'Empty')); return li; }
+    const tier = tierOf(rec.traits || []), nm = el('b', null, rec.name);
+    if (tier) nm.style.color = TIER_COLOR[tier];
+    const label = rec.species === 'wild' && rec.args.sp ? rec.args.sp.name : SINGULAR[rec.species] || rec.species;
+    const rel = el('button', null, 'Release');
+    rel.type = 'button';
+    rel.title = 'Put it back in the pond';
+    rel.addEventListener('click', () => { releaseStock(world, i); hatchUi.sig = ''; renderHatchery(); });
+    li.append(nm, colored('span', 'note', `${label} · gen ${rec.gen}${rec.traits.length ? ` · ${rec.traits.join(' ')}` : ''}`), rel);
+    return li;
+  });
+  byId('hatch-stock').replaceChildren(...stock);
+  // What to breed for.
+  byId('hatch-focus').replaceChildren(...Object.entries(HATCH_FOCUS).map(([key, f]) => {
+    const b = el('button', 'chip', f.label);
+    b.type = 'button';
+    b.setAttribute('aria-pressed', H.focus === key);
+    const info = GENE_INFO[key] || (key === 'calm' ? GENE_INFO.aggression : key === 'rarity' ? GENE_INFO.luck : key === 'size' ? { color: '#ffb86b' } : null);
+    if (info) b.style.color = info.color;
+    b.addEventListener('click', () => { H.focus = key; renderHatchery(); });
+    return b;
+  }));
+  // Upgrades.
+  byId('hatch-ups').replaceChildren(...Object.entries(HATCH_UPGRADES).map(([key, u]) => {
+    const lvl = H.levels[key], max = lvl >= u.max, price = upgradeCost(key, lvl);
+    const have = u.cur === 'essence' ? world.game.essence || 0 : world.game.pearls;
+    const li = el('li'), b = el('button');
+    b.type = 'button';
+    b.disabled = max || have < price;
+    b.append(max ? document.createTextNode('max') : el('i', u.cur === 'essence' ? 'essence' : 'pearl'), document.createTextNode(max ? '' : ` ${fmt(price)}`));
+    b.addEventListener('click', () => {
+      if (u.cur === 'essence' ? !spendEssence(world, price) : !spend(world, price)) return;
+      H.levels[key]++;
+      renderHatchery();
+    });
+    li.append(el('b', null, u.label), el('span', 'lv', `lv ${lvl}`), b, el('span', 'note', u.note));
+    return li;
+  }));
 }
 
 // ---- score: points, pearls, the leaderboard and rare finds everywhere -----------------------------
@@ -1046,6 +1128,19 @@ function initHud() {
     if (spawnUi.kind && !e.target.closest('#spawn-card, #animals')) closeSpawnCard();
   });
   byId('score-close').addEventListener('click', () => setScore(false));
+  byId('hatch-close').addEventListener('click', () => setHatchery(false));
+  byId('hatch-feed').addEventListener('click', (e) => {
+    const H = world.hatchery;
+    if (!H) return;
+    feedHatchery(world, hatchClick(H));
+    const r = e.currentTarget.getBoundingClientRect(), f = el('span', 'float-pts', `+${hatchClick(H).toFixed(2).replace(/\.?0+$/, '')}`);
+    f.style.left = `${Math.round(r.left + r.width / 2 + rand(-12, 12))}px`;
+    f.style.top = `${Math.round(r.top)}px`;
+    document.body.append(f);
+    f.addEventListener('animationend', () => f.remove());
+    restartAnim(e.currentTarget, 'squish');
+    renderHatchery();
+  });
   byId('sp-join').addEventListener('change', (e) => {
     world.game.board = e.target.checked;
     world.gameDirty = true;
@@ -1056,7 +1151,7 @@ function initHud() {
     if (e.target.closest && e.target.closest('select, input')) return;
     if (e.key === 'j' || e.key === 'J') setJournal(!journalUi.open);
     else if (e.key === 'c' || e.key === 'C') setCensus(!census.open);
-    else if (e.key === 'Escape') { setJournal(false); setCensus(false); setSky(false); setScore(false); closeSpawnCard(); hideCreature(); }
+    else if (e.key === 'Escape') { setJournal(false); setCensus(false); setSky(false); setScore(false); closeSpawnCard(); hideCreature(); setHatchery(false); }
   });
 }
 
@@ -1077,4 +1172,6 @@ function hudTick(dt) {
   if (spawnUi.kind && spawnUi.timer <= 0) { spawnUi.timer = 1; renderSpawnCard(); }
   creatureUi.timer -= dt;
   if (creatureUi.c && creatureUi.timer <= 0) { creatureUi.timer = 0.5; renderCreature(); }
+  hatchUi.timer -= dt;
+  if (hatchUi.open && hatchUi.timer <= 0) { hatchUi.timer = 0.2; renderHatchery(); }
 }
