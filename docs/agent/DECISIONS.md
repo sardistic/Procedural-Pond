@@ -207,3 +207,9 @@ Xanthic and axanthic (recessive), glow and ghost (mutations, 15% / 40% inheritan
 
 ## Frogs on the beach
 A frog swimming onto dry sand drops to ground height (z 2.4) and hops. Before, it stayed at swimming height (40), so its shadow landed about 17 px away.
+
+## The address bar is the share link
+Every pond gets a short link 8 s after it opens (2 s for an adopted copy), not on Share or at 50 points. Crawlers are skipped by user agent. The address bar shows `/<id>` once the link exists. Before that, or with no reachable server, it shows only `/?pond=<seed>&…`. Share copies the address bar after an upload, and only without a server does it build the long `#s=` link, for the clipboard alone. `file://` keeps the fragment in the address bar. Opening your own `/<id>` loads the local save directly (the save index records `link`), with no fetch. Regrowing (habitat or world size) keeps the link. The leaderboard lists ponds from 50 points, and ranks are null below that. Ponds under 50 points expire after 45 idle days, the rest after 180.
+
+## Pond bar
+The top-centre bar shows the pond's seed name, points, pearls and leaderboard place, and opens the score panel. The follow chip moved to `top: 64px`. On phones the bar is placed with `left`/`right` rather than a transform, because a transformed ancestor would become the containing block of the fixed score panel.

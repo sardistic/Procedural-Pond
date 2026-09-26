@@ -15,7 +15,7 @@ const Net = {
   rank: null,   // this pond's place on the leaderboard
 };
 const SHORT_ID = /^[a-z]{2,8}(?:-[a-z]{2,8}){3}$/;
-const BOARD_MIN = 50; // points before a pond joins the leaderboard on its own
+const BOARD_MIN = 50; // points before a pond is listed on the leaderboard
 
 class ApiError extends Error {
   constructor(message, status) { super(message); this.status = status; }

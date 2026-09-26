@@ -751,7 +751,7 @@ const HOME = location.protocol === 'file:' ? location.pathname : '/';
 
 function shareUrl() {
   const u = new URL(location.href);
-  u.search = ''; u.hash = '';
+  u.pathname = HOME; u.search = ''; u.hash = '';
   u.searchParams.set('pond', world.seed);
   for (const k of ['habitat', 'floor', 'water', 'world']) if (world.opts[k] !== DEFAULT_OPTS[k]) u.searchParams.set(k, world.opts[k]);
   if (world.opts.world === 'auto') u.searchParams.set('size', `${world.W}x${world.H}`);
@@ -799,7 +799,7 @@ for (const [name, t] of Object.entries(TOOLS)) {
   const b = button(t.label);
   b.dataset.tool = name;
   if (t.price != null) {
-    b.append(Object.assign(document.createElement('b'), { className: 'price', textContent: t.price ? t.price : 'free' }));
+    b.append(Object.assign(document.createElement('b'), { className: t.price ? 'price' : 'price free', textContent: t.price ? t.price : 'free' }));
     b.title = t.price ? `${t.label}: ${t.price} pearls` : `${t.label}: free`;
   }
   b.addEventListener('click', () => setTool(name));
@@ -838,9 +838,17 @@ $('opt-world').addEventListener('change', (e) => {
   if (hasHistory() && !confirm(REGROW_WARNING)) { e.target.value = world.opts.world; return; }
   setOpt('world', e.target.value);
   if (e.target.value === 'auto') world.autoSize = screenWorld();
-  layout(true);
-  history.replaceState(null, '', HOME + new URL(shareUrl()).search);
+  regrow();
 });
+
+// Regrowing a pond (new habitat or world size) keeps its name and its link.
+function regrow() {
+  const link = world.link;
+  layout(true);
+  world.link = link;
+  updateLink();
+  syncTimer = Math.min(syncTimer, 6);
+}
 
 // Switching habitat picks fitting water and floor, then regrows the pond from the same seed.
 const hasHistory = () => world.days > 1.3 || ECO.births > 0;
@@ -853,8 +861,7 @@ function setHabitat(h) {
   const d = HABITAT_DEFAULTS[h];
   setOpt('water', d.water); setOpt('floor', d.floor);
   $('opt-water').value = d.water; $('opt-floor').value = d.floor;
-  history.replaceState(null, '', HOME + new URL(shareUrl()).search);
-  layout(true);
+  regrow();
 }
 for (const b of document.querySelectorAll('[data-hab]')) b.addEventListener('click', () => setHabitat(b.dataset.hab));
 
@@ -906,20 +913,21 @@ $('reset').addEventListener('click', () => {
   world.autoSize = screenWorld(); // a new pond fits the window as it is now
   world.current.base = rand(-PI, PI);
   layout(true);
-  history.replaceState(null, '', HOME + new URL(shareUrl()).search);
   saveNow();
   renderPondList();
+  syncTimer = 6; // its own link in a few seconds
 });
-// Share the pond. With the server: a short four-word link to the pond, kept up
-// to date as it grows. Without it: the long link that carries the pond itself.
+// Share the pond: the link in the address bar, after bringing the server's copy
+// up to date. Only without a server (opened from a file, or it's unreachable)
+// does it fall back to a long link that carries the pond itself.
 async function sharePond() {
   let url = null;
   if (Net.base) {
     try { await pushPond(world); saveNow(); refreshBoard(); url = shortUrl(world.link.id); } catch { /* fall back to the long link */ }
   }
-  if (!url) { await updateLink(true); url = location.href; }
-  const note = world.link ? `Link copied: ${url.replace(/^https?:\/\//, '')} opens your pond, and it keeps up as your pond grows`
-    : 'Link copied: it opens this pond just as it is right now';
+  if (!url) url = `${shareUrl()}#s=${await encodePond(world)}`;
+  const note = world.link ? `Link copied: ${url.replace(/^https?:\/\//, '')}, the same as your address bar. It opens your pond as it grows`
+    : 'Link copied: the pond server is out of reach, so this long link carries the pond itself';
   try {
     if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ title: 'Procedural Pond', text: `Come see my pond, ${world.seed}`, url });
     else { await navigator.clipboard.writeText(url); showTicker(note); }
@@ -962,20 +970,22 @@ $('snapshot').addEventListener('click', () => {
 // ---- saving: autosave, your ponds, and the pond link ----------------------------------
 
 let saveTimer = 4, statusTimer = 0, lastSaved = 0, saveFailed = false; // first save soon after load
-let syncTimer = 30, boardTimer = 3, syncing = false;
+let syncTimer = 8, boardTimer = 3, syncing = false;
+// Search engines and previews render the page too; they don't get ponds of their own.
+const IS_BOT = /bot|crawl|spider|slurp|lighthouse|pagespeed|preview|facebookexternalhit/i.test(navigator.userAgent);
 
-// Keep the server's copy behind the short link up to date. A pond without a link
-// gets one once it has earned enough points to join the leaderboard.
+// Every pond gets its own short link a few seconds after it opens, and the
+// server's copy behind it is kept up to date from then on.
 async function syncPond(force = false) {
   if (syncing || world.noSave || !world.raster || !world.game || !Net.base) return false;
-  if (!world.link && !force && !(world.game.board && world.game.points >= BOARD_MIN)) return false;
+  if (!world.link && IS_BOT && !force) return false;
   syncing = true;
   try {
     const had = !!world.link, finds = world.game.finds.length;
     await pushPond(world);
     saveNow();
     if (!had || finds) refreshBoard();
-    if (!had) logEvent(world, `Your pond joined the leaderboard: ${world.link.id}`, null, { cat: 'pond', pri: 2 });
+    if (!had) logEvent(world, `This pond's link is ${location.host}/${world.link.id}: the address bar always opens it, as it grows`, null, { cat: 'pond', pri: 1 });
     return true;
   } catch {
     return false;
@@ -1016,10 +1026,10 @@ function updateSaveStatus() {
 }
 
 // Switch to another saved pond (a page load, so everything starts clean).
-function openPond(seed) {
-  if (seed !== world.seed) saveNow();
+function openPond(s) {
+  if (s.seed !== world.seed) saveNow();
   world.noSave = true; // don't let the page-hide save overwrite what we're opening
-  location.assign(`${HOME}?pond=${encodeURIComponent(seed)}`);
+  location.assign(s.link && HOME === '/' ? `/${s.link}` : `${HOME}?pond=${encodeURIComponent(s.seed)}`);
 }
 
 function renderPondList() {
@@ -1040,7 +1050,7 @@ function renderPondList() {
     open.append(name, meta);
     open.title = s.current ? 'The pond you are watching' : `Open ${s.seed}`;
     if (s.current && s.link) open.title = `The pond you are watching · ${location.host || 'pond.nz'}/${s.link}`;
-    if (!s.current) open.addEventListener('click', () => openPond(s.seed));
+    if (!s.current) open.addEventListener('click', () => openPond(s));
     li.append(open);
     if (!s.current) {
       const del = document.createElement('button');
@@ -1062,15 +1072,18 @@ function renderPondList() {
 
 $('ponds').addEventListener('toggle', () => { if ($('ponds').open) renderPondList(); });
 
-// The address bar always holds a link to the pond. With a short link that's
-// all it needs (/amber-heron-moss-lantern). Otherwise: the seed and settings in
-// the query (enough to regrow it on day 1 if the rest is lost), and the whole
-// living pond in the #fragment, which never reaches the server.
+// The address bar always holds this pond's link, the same one Share copies: the
+// short link (/amber-heron-moss-lantern) once the pond has one, and for the few
+// seconds before that just its name and settings (?pond=misty-reed-42). Opened
+// from a file there is no server, so there the whole pond rides in the #fragment.
 let linkBusy = false;
-async function updateLink(force = false) {
-  if ((linkBusy && !force) || world.noSave || !world.raster) return;
-  if (world.link && world.link.id && HOME === '/') {
-    if (location.pathname !== `/${world.link.id}` || location.search || location.hash) history.replaceState(null, '', `/${world.link.id}`);
+async function updateLink() {
+  if (linkBusy || world.noSave || !world.raster) return;
+  if (HOME === '/') {
+    const want = world.link ? `/${world.link.id}` : `/${new URL(shareUrl()).search}`;
+    if (location.pathname + location.search !== want || (location.hash && location.hash !== '#bones')) {
+      history.replaceState(null, '', want + (location.hash === '#bones' ? '#bones' : ''));
+    }
     return;
   }
   linkBusy = true;
@@ -1133,12 +1146,16 @@ async function boot() {
   initHud();
   const code = (/(?:^#|&)s=([A-Za-z0-9._-]+)/.exec(location.hash) || [])[1];
   const pathId = HOME === '/' && SHORT_ID.test(location.pathname.slice(1)) ? location.pathname.slice(1) : null;
-  let linked = code ? await decodePond(code) : null, shortId = null;
+  let linked = code ? await decodePond(code) : null, shortId = null, resume = null, adopt = false;
   if (!linked && pathId) {
-    const got = await fetchPond(pathId);
-    if (got) { linked = got.save; shortId = pathId; }
+    // Your own pond's link opens your save straight away; anyone else's comes from the server.
+    const own = listSaves().find((s) => s.link === pathId), mine = own && loadSave(own.seed);
+    if (mine && mine.link && mine.link.id === pathId) resume = mine;
+    else {
+      const got = await fetchPond(pathId);
+      if (got) { linked = got.save; shortId = pathId; }
+    }
   }
-  let resume = null, adopt = false;
   if (linked) {
     const mine = loadSave(linked.seed);
     if (mine && ((shortId && mine.link && mine.link.id === shortId) || mine.inst === linked.inst)) {
@@ -1154,6 +1171,8 @@ async function boot() {
       resume = linked;
       adopt = true; // someone else's pond becomes your own copy
     }
+  } else if (resume) {
+    // your own short link, found above
   } else if (urlSeed) {
     resume = loadSave(urlSeed);
   } else {
@@ -1171,12 +1190,13 @@ async function boot() {
   layout(true);
   world.linkAdopt = false;
   if (code && !linked) showTicker("That pond link couldn't be read, so this is its pond from day 1");
-  if (pathId && !linked) showTicker(`No pond called ${pathId} was found (links unused for half a year are cleared), so here is yours`);
+  if (pathId && !linked && !(world.link && world.link.id === pathId)) {
+    showTicker(`No pond called ${pathId} was found (links left unused for a long while are cleared), so here is yours`);
+  }
   if (innerWidth < 600) setHud(false); // on phones the pond comes first; ☰ opens the panel
-  const keepHash = /(?:^#|&)s=/.test(location.hash) ? '' : location.hash;
-  if (world.link && HOME === '/') history.replaceState(null, '', `/${world.link.id}${keepHash}`);
-  else history.replaceState(null, '', `${HOME}${new URL(shareUrl()).search}${keepHash}`);
   if (location.hash === '#bones') setBones(true);
+  if (HOME === '/') updateLink(); else history.replaceState(null, '', `${HOME}${new URL(shareUrl()).search}`);
+  syncTimer = world.link ? 30 : adopt ? 2 : 8; // a pond without a link gets one in a few seconds
   requestAnimationFrame(frame);
 }
 

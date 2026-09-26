@@ -640,13 +640,17 @@ function restartAnim(e, cls) {
 }
 const flashPearls = () => restartAnim(byId('score-btn'), 'poor');
 
+// The pond bar at the top: this pond's name, points, pearls and leaderboard place.
 function updateScoreHud() {
   const G = world.game;
   if (!G) return;
-  const key = `${G.points}|${G.pearls}`;
+  const rank = world.link && G.board && G.points >= BOARD_MIN && Net.rank ? `#${Net.rank}` : '';
+  const key = `${G.points}|${G.pearls}|${world.seed}|${rank}`;
   if (key === scoreUi.shown) return;
   const was = scoreUi.shown ? +scoreUi.shown.split('|')[0] : null;
   scoreUi.shown = key;
+  byId('bar-name').textContent = world.seed;
+  byId('bar-rank').textContent = rank;
   byId('score-points').textContent = fmt(G.points);
   byId('score-pearls').textContent = fmt(G.pearls);
   if (was != null && G.points > was) restartAnim(byId('score-btn'), 'bump');
@@ -681,7 +685,7 @@ function renderScorePanel(force = false) {
   byId('sp-pearls').textContent = fmt(G.pearls);
   byId('sp-rank').textContent = world.link && G.board && Net.rank ? `#${Net.rank}` : '–';
   byId('sp-rank-note').textContent = !Net.base ? 'offline' : !G.board ? 'not listed'
-    : world.link ? `rank${Net.board && Net.board.ponds ? ` of ${fmt(Net.board.ponds)}` : ''}` : `listed at ${BOARD_MIN} pts`;
+    : G.points < BOARD_MIN || !Net.rank ? `listed at ${BOARD_MIN} pts` : `rank${Net.board && Net.board.ponds ? ` of ${fmt(Net.board.ponds)}` : ''}`;
   byId('sp-flies').textContent = `Tonight: ${plan.yellow} of ${plan.full} fireflies${plan.blue ? ` and ${plan.blue} blue` : ''}. ` +
     `A full swarm is the high-score range, ${fmt(plan.high)}+ points${plan.blue ? '.' : '; blue fireflies come once you reach it.'}`;
   byId('sp-best').textContent = G.best ? `Best find: ${TIERS[G.best.tier]} ${findLabel(G.best)}${G.best.name ? `, ${G.best.name}` : ''}` : '';
@@ -757,7 +761,7 @@ function initHud() {
     world.game.board = e.target.checked;
     world.gameDirty = true;
     showTicker(e.target.checked ? 'Your pond will show on the leaderboard' : 'Your pond is off the leaderboard');
-    syncPond(e.target.checked && world.game.points >= BOARD_MIN);
+    syncPond();
   });
   addEventListener('keydown', (e) => {
     if (e.target.closest && e.target.closest('select, input')) return;

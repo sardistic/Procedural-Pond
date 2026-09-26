@@ -23,6 +23,8 @@ const POINT_RATE = 15;               // most points a pond can gain per real sec
 const POINT_BURST = 2000;
 const CREATES_PER_DAY = 40;          // new short links per address per day
 const KEEP_DAYS = 180;               // ponds neither opened nor updated for this long are removed
+const SMALL_KEEP_DAYS = 45;          // ... or this long, for ponds too small for the leaderboard
+const BOARD_MIN = 50;                // points before a pond is listed
 const FINDS_KEEP = 300;
 const ID_RE = /^[a-z]{2,8}(?:-[a-z]{2,8}){3}$/;
 
@@ -66,13 +68,13 @@ const q = {
   insert: db.prepare('INSERT INTO ponds (id, key_hash, created, updated, opened, points, board, meta, save) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
   update: db.prepare('UPDATE ponds SET updated = ?, points = ?, board = ?, meta = ?, save = ? WHERE id = ?'),
   opened: db.prepare('UPDATE ponds SET opened = ? WHERE id = ?'),
-  rank: db.prepare('SELECT COUNT(*) AS n FROM ponds WHERE board = 1 AND points > ?'),
-  top: db.prepare('SELECT id, points, meta, updated FROM ponds WHERE board = 1 AND points > 0 ORDER BY points DESC, created ASC LIMIT 20'),
-  count: db.prepare('SELECT COUNT(*) AS n FROM ponds WHERE board = 1'),
+  rank: db.prepare(`SELECT COUNT(*) AS n FROM ponds WHERE board = 1 AND points >= ${BOARD_MIN} AND points > ?`),
+  top: db.prepare(`SELECT id, points, meta, updated FROM ponds WHERE board = 1 AND points >= ${BOARD_MIN} ORDER BY points DESC, created ASC LIMIT 20`),
+  count: db.prepare(`SELECT COUNT(*) AS n FROM ponds WHERE board = 1 AND points >= ${BOARD_MIN}`),
   addFind: db.prepare('INSERT INTO finds (at, pond, tier, species, traits, how) VALUES (?, ?, ?, ?, ?, ?)'),
   finds: db.prepare('SELECT at, pond, tier, species, traits, how FROM finds ORDER BY n DESC LIMIT 20'),
   trimFinds: db.prepare('DELETE FROM finds WHERE n <= (SELECT MAX(n) FROM finds) - ?'),
-  prune: db.prepare('DELETE FROM ponds WHERE updated < ? AND opened < ?'),
+  prune: db.prepare(`DELETE FROM ponds WHERE (updated < ? AND opened < ?) OR (points < ${BOARD_MIN} AND updated < ? AND opened < ?)`),
 };
 
 // ---- input -----------------------------------------------------------------------------
@@ -155,8 +157,9 @@ function allowCreate(ip) {
 
 // ---- handlers ----------------------------------------------------------------------------
 
+// Place on the leaderboard, or null for ponds that aren't listed (opted out, or too small yet).
 function rankOf(row) {
-  return row.board ? q.rank.get(row.points).n + 1 : null;
+  return row.board && row.points >= BOARD_MIN ? q.rank.get(row.points).n + 1 : null;
 }
 
 function addFinds(id, finds, now) {
@@ -177,7 +180,7 @@ async function createPond(req) {
     q.insert.run(id, hashKey(key), now, now, now, points, meta.board ? 1 : 0, JSON.stringify(publicMeta({ ...meta, points })), save);
     addFinds(id, meta.finds, now);
     boardCache = null;
-    return [201, { id, key, points, rank: meta.board ? q.rank.get(points).n + 1 : null, high: board().high }];
+    return [201, { id, key, points, rank: rankOf({ board: meta.board, points }), high: board().high }];
   }
   throw new HttpError(503, 'no free link, try again');
 }
@@ -251,8 +254,9 @@ server.requestTimeout = 20000;
 server.headersTimeout = 10000;
 
 function prune() {
-  const cut = Date.now() - KEEP_DAYS * 864e5, n = q.prune.run(cut, cut).changes;
-  if (n) console.log(new Date().toISOString(), `removed ${n} ponds unused for ${KEEP_DAYS} days`);
+  const cut = Date.now() - KEEP_DAYS * 864e5, small = Date.now() - SMALL_KEEP_DAYS * 864e5;
+  const n = q.prune.run(cut, cut, small, small).changes;
+  if (n) console.log(new Date().toISOString(), `removed ${n} unused ponds`);
   creates.clear();
 }
 prune();

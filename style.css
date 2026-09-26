@@ -253,7 +253,7 @@ output {
 
 .follow {
   position: fixed;
-  top: 16px;
+  top: 64px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -585,28 +585,34 @@ output {
 
 /* ---- tool prices, poor dock buttons ---- */
 
-#tools button { justify-content: space-between; padding: 6px 6px; }
-#tools .price { font-size: 9px; color: #cfe8f0; }
-#tools .price::before { content: ''; display: inline-block; width: 5px; height: 5px; margin-right: 3px; background: #e8f4f8; border-radius: 50%; box-shadow: 1px 1px 0 #5a7a86; vertical-align: 1px; }
+/* Tool buttons: the name, and its price in pearls underneath. */
+#tools button { flex-direction: column; gap: 3px; padding: 5px 2px; line-height: 1.15; text-align: center; }
+#tools .price { display: flex; align-items: center; gap: 3px; margin: 0; font-size: 9px; color: #cfe8f0; white-space: nowrap; }
+#tools .price::before { content: ''; width: 5px; height: 5px; background: #e8f4f8; border-radius: 50%; box-shadow: 1px 1px 0 #5a7a86; }
+#tools .price.free { color: var(--muted); }
+#tools .price.free::before { display: none; }
 .ani.poor img { filter: grayscale(0.7); opacity: 0.6; }
 
-/* ---- score chip and panel (under the sky button) ---- */
+/* ---- the pond bar (top centre): its name, points, pearls and rank; opens the score ---- */
 
-.score { position: fixed; top: 72px; right: 16px; }
+.score { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 2; }
 
 .score-btn {
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 3px;
-  min-width: 48px;
-  padding: 5px 7px;
+  gap: 12px;
+  max-width: calc(100vw - 580px);
+  min-height: 34px;
+  padding: 6px 12px;
   font-size: 11px;
+  white-space: nowrap;
   background: var(--panel);
   border-color: var(--edge);
 }
 
-.score-btn span { display: flex; align-items: center; gap: 5px; }
+.score-btn span { flex: none; display: flex; align-items: center; gap: 5px; }
 .score-btn b { margin: 0; font-weight: 400; }
+.score-btn .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--text); }
+.score-btn .rk { color: var(--muted); }
+.score-btn .rk:empty { display: none; }
 .score-btn .pts i { width: auto; height: auto; background: none; box-shadow: none; font-style: normal; color: var(--hot); }
 .score-btn .pts b { color: var(--hot); }
 .score-btn .prl b { color: #cfe8f0; }
@@ -623,7 +629,7 @@ output {
   15%, 45% { transform: translateX(-3px); background: #5a1e22; border-color: #ef6f6c; }
 }
 
-.score-panel { top: 0; bottom: auto; right: calc(100% + 8px); width: min(340px, calc(100vw - 100px)); }
+.score-panel { top: calc(100% + 8px); bottom: auto; left: 50%; transform: translateX(-50%); width: min(360px, calc(100vw - 24px)); }
 .score-panel h3 { margin: 12px 0 6px; font-size: 11px; font-weight: 400; color: var(--hot); }
 .score-top { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
 .score-top div { display: grid; gap: 2px; padding: 6px; border: 2px solid var(--btn-edge); background: #0f2c38; }
@@ -785,7 +791,11 @@ output {
   .census { left: 0; transform: none; width: calc(100vw - 24px); }
   .follow { top: auto; bottom: 150px; }
   .sky { top: 12px; right: 12px; }
-  .score { top: 68px; right: 12px; }
-  .score-panel { position: fixed; top: 120px; right: 12px; width: calc(100vw - 24px); max-height: calc(100vh - 290px); }
+  #hud { z-index: 3; }
+  /* No transform here: it would trap the fixed score panel inside the bar. */
+  .score { top: 12px; left: 64px; right: 72px; transform: none; display: flex; justify-content: center; pointer-events: none; }
+  .score-btn { max-width: 100%; gap: 8px; padding: 6px 8px; pointer-events: auto; }
+  .score-btn .caret, .score-btn .rk { display: none; }
+  .score-panel { position: fixed; top: 60px; left: 12px; right: 12px; transform: none; width: auto; max-height: calc(100vh - 230px); pointer-events: auto; }
   .lineage { display: none; }
 }

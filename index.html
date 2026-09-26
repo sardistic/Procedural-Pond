@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 
   <script type="application/ld+json">
   {
@@ -89,7 +89,7 @@
 
     <details id="ponds">
       <summary>Your ponds</summary>
-      <p class="note">Your pond saves itself in this browser and is here when you come back. Share it and you get a short link of four words that keeps up as your pond grows; friends who open it get their own copy.</p>
+      <p class="note">Your pond saves itself in this browser and is here when you come back. The address bar holds its short link: bookmark it or share it, and it opens this pond as it grows. Friends who open it get their own copy.</p>
       <ol class="pond-list" id="pond-list"></ol>
       <div class="grid2">
         <button type="button" id="reset" title="Start a brand new pond; this one stays saved">New pond</button>
@@ -131,7 +131,7 @@
         <li>Freshwater, saltwater or both: reef fish, corals and starfish, or koi, frogs and lily pads.</li>
         <li>Genetics with rare albino, melanistic, xanthic, axanthic, piebald, shiny, glowing, ghostly, giant and dwarf animals, from Uncommon up to Mythic.</li>
         <li>Points for every birth and rare find, pearls to spend on animals, plants and food, a shared leaderboard, and fireflies that show your score at night.</li>
-        <li>Your pond saves itself and is waiting when you come back. Share it with a short four-word link.</li>
+        <li>Your pond saves itself and is waiting when you come back, and the address bar always holds its short four-word link.</li>
       </ul>
       <p>Made by <a href="https://sardistic.com/">sardistic</a>. <a href="https://github.com/sardistic/Procedural-Pond">Source on GitHub</a>.</p>
     </details>
@@ -175,9 +175,12 @@
   </div>
 
   <div id="score" class="score">
-    <button type="button" id="score-btn" class="score-btn" aria-expanded="false" aria-controls="score-panel" title="Points, pearls and the leaderboard (P)">
+    <button type="button" id="score-btn" class="score-btn" aria-expanded="false" aria-controls="score-panel" title="This pond: points, pearls and the leaderboard (P)">
+      <b id="bar-name" class="nm"></b>
       <span class="pts" title="Points"><i aria-hidden="true">★</i><b id="score-points">0</b></span>
       <span class="prl" title="Pearls to spend"><i class="pearl" aria-hidden="true"></i><b id="score-pearls">0</b></span>
+      <span class="rk" id="bar-rank" title="Place on the leaderboard"></span>
+      <span class="caret" aria-hidden="true">▾</span>
     </button>
     <section id="score-panel" class="pop score-panel" hidden aria-label="Score and leaderboard">
       <header class="pop-head"><b>Score</b><button type="button" id="score-close" class="icon" aria-label="Close score">×</button></header>
@@ -280,8 +283,8 @@
   <script src="js/game.js?v=9"></script>
   <script src="js/save.js?v=9"></script>
   <script src="js/link.js?v=9"></script>
-  <script src="js/net.js?v=9"></script>
-  <script src="js/hud.js?v=9"></script>
-  <script src="js/main.js?v=12"></script>
+  <script src="js/net.js?v=10"></script>
+  <script src="js/hud.js?v=11"></script>
+  <script src="js/main.js?v=14"></script>
 </body>
 </html>
