@@ -3,7 +3,7 @@
 // tide and weather; the scenery (rocks, pebbles, plants, where the beach is);
 // every animal (its build seed plus genes, name, age, energy and generation);
 // eggs, schools, discovered wild species, population targets and the journal.
-// Saves live in localStorage, one per pond seed, and can be exported as a file.
+// Saves live in localStorage, one per pond seed; link.js packs the same pond into a URL.
 // Ambient things (plankton, ripples, fireflies, gnats) simply regrow.
 
 const SAVE_VERSION = 1;
@@ -12,6 +12,9 @@ const SAVE_INDEX = 'procedural-pond.saves';
 const MAX_SAVES = 12;
 
 const r2 = (v) => Math.round(v * 100) / 100;
+// Identifies this browser's copy of a pond, so a link to an older state of your
+// own pond doesn't roll it back, while someone else's copy of the same seed asks first.
+const newInst = () => Math.random().toString(36).slice(2, 10);
 
 function readIndex() {
   try { return JSON.parse(localStorage.getItem(SAVE_INDEX) || '[]'); } catch { return []; }
@@ -88,7 +91,7 @@ function serializePond(world) {
     life: { name: c.life.name, gen: c.life.gen, genome: c.life.genome },
   });
   return {
-    v: SAVE_VERSION, seed: world.seed, savedAt: Date.now(),
+    v: SAVE_VERSION, seed: world.seed, savedAt: Date.now(), inst: world.inst, removed: world.removed,
     opts: { habitat: world.opts.habitat, floor: world.opts.floor, water: world.opts.water, world: world.opts.world },
     size: [world.W, world.H], shoreSide: world.shoreSide,
     t: r2(world.t), days: world.days, moon0: world.moon0, tide0: world.tide0,
@@ -96,9 +99,9 @@ function serializePond(world) {
     currentBase: world.current.base, records: world.records, spawnNight: world.spawnNight,
     targets: world.targets, eco: { ...ECO }, journalSeq: world.journalSeq,
     wild: WILD_SPECIES,
-    rocks: world.rocks.map((r) => ({ x: r2(r.x), y: r2(r.y), a: r2(r.a), b: r2(r.b), ang: r2(r.ang), h: r2(r.h), m: ROCK_MATS.indexOf(r.m), seed: r.seed })),
+    rocks: world.rocks.map((r) => ({ x: r2(r.x), y: r2(r.y), a: r2(r.a), b: r2(r.b), ang: r2(r.ang), h: r2(r.h), m: ROCK_MATS.indexOf(r.m), seed: r.seed, oi: r.oi })),
     pebbles: world.pebbles.map((p) => [r2(p.x), r2(p.y), r2(p.s), PEBBLE_MATS.indexOf(p.m)]),
-    plants: [...world.plants, ...world.pads].filter((p) => p.make).map((p) => ({ k: p.make, s: p.seed, x: r2(p.x), y: r2(p.y), a: args(p.args) })),
+    plants: [...world.plants, ...world.pads].filter((p) => p.make).map((p) => ({ k: p.make, s: p.seed, x: r2(p.x), y: r2(p.y), a: args(p.args), oi: p.oi })),
     creatures: saved.map((c) => ({
       k: c.make, s: c.seed, x: r2(c.x), y: r2(c.y), h: r2(c.heading), z: r2(c.z || 0), a: args(c.args),
       st: c.state === 'sit' ? 'sit' : undefined,
@@ -121,7 +124,7 @@ function serializePond(world) {
 
 function restoreRock(r) {
   const rock = makeRock(r.x, r.y, r.a, ROCK_MATS[r.m] || ROCK_MATS[0]);
-  Object.assign(rock, { b: r.b, ang: r.ang, h: r.h, seed: r.seed });
+  Object.assign(rock, { b: r.b, ang: r.ang, h: r.h, seed: r.seed, oi: r.oi });
   return rock;
 }
 
@@ -143,6 +146,7 @@ function restorePond(world, d) {
   Object.assign(world, {
     t: d.t || 0, days: d.days, moon0: d.moon0, tide0: d.tide0, shoreSide: d.shoreSide,
     records: d.records || null, spawnNight: d.spawnNight ?? -1, targets: d.targets || {}, journalSeq: d.journalSeq || 0,
+    inst: d.inst || newInst(), removed: d.removed || { plants: [], pads: [], rocks: [] },
   });
   world.clock = ((world.days % 1) + 1) % 1;
   Object.assign(world.weather, d.weather || {});
@@ -159,6 +163,7 @@ function restorePond(world, d) {
   for (const p of d.plants) {
     if (!GROW[p.k]) continue;
     const plant = makePlant(p.k, world, p.x, p.y, p.a || {}, p.s);
+    plant.oi = p.oi;
     (p.k === 'lily' ? world.pads : world.plants).push(plant);
   }
   world.motes = new Motes(world);

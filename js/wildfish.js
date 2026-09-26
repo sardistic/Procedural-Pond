@@ -49,7 +49,13 @@ function personName() {
   return s[0].toUpperCase() + s.slice(1);
 }
 
-function genWildSpecies(habitat = Math.random() < 0.5 ? 'fresh' : 'salt') {
+function genWildSpecies(habitat = Math.random() < 0.5 ? 'fresh' : 'salt', seed = newSeed()) {
+  const sp = withSeed(`species/${seed}`, () => buildWildSpecies(habitat));
+  sp.seed = seed;
+  return sp;
+}
+
+function buildWildSpecies(habitat) {
   const reef = habitat === 'salt';
   const small = Math.random() < 0.55;
   const nb = randi(7, 12);

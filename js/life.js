@@ -208,13 +208,19 @@ function applyScale(c, s) {
   c.appliedScale = s;
 }
 
+const nameFor = (seed) => withSeed(`name/${seed}`, personName);
+function lifespanFor(species, seed) {
+  const [a, b] = LIFESPAN[species] || [450, 800];
+  return withSeed(`life/${seed}`, () => rand(a, b));
+}
+
 function initLife(c, { genome = makeGenome(), gen = 0, scale = 1, age, alpha = 1 } = {}) {
   c.alpha = alpha;
   if (NO_LIFE.has(c.species)) return c;
   const [a, b] = LIFESPAN[c.species] || [450, 800];
-  const lifespan = rand(a, b);
+  const lifespan = c.seed != null ? lifespanFor(c.species, c.seed) : rand(a, b);
   c.life = {
-    genome, gen, lifespan, scale, name: personName(),
+    genome, gen, lifespan, scale, name: c.seed != null ? nameFor(c.seed) : personName(),
     age: age ?? rand(0.05, 0.5) * lifespan,
     energy: rand(0.6, 0.9), cooldown: rand(40, 100),
   };

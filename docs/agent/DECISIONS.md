@@ -139,3 +139,30 @@ are ambient and not saved.
 
 Changing habitat or world size regrows the pond from day 1, and asks first if
 the pond has history.
+
+## Pond links replace export/import
+The address bar keeps `?pond=<seed>&habitat…&size=WxH#s=p1z.<data>`.
+`link.js` packs the living pond (format v1, append-only code tables) into
+bytes. The bytes hold the settings, time, moon0/tide0, weather, counters and
+targets, `inst`, wild species as (habitat, seed), schools, the scenery diff
+against the seed (removed generated indexes `oi`, added plants and rocks), and
+the animals. Each animal is kind, 21-bit seed, x/y quantized to 1/255 of the
+world, flags, args, age, energy, gen, scale if growing, 7 genes quantized to
+1/255 of `GENE_LIMITS`, trait bits, shinyHue if shiny, and genome.seed if
+piebald. The last 10 journal lines are included too. The bytes are deflated
+(CompressionStream deflate-raw, raw fallback) and written as base64url.
+`linkToSave` regrows the scenery with `generateScenery` under
+`withSeed(seed/habitat)`, which is the same stream `buildPond` uses. It then
+applies the diff and regenerates wild species with `genWildSpecies(hab, seed)`
+(the generator is now seeded, `species/<seed>`). The result is a normal save
+for `restorePond`.
+
+Names and lifespans are derived from the animal seed (`nameFor`,
+`lifespanFor`), so links only store them for legacy animals whose values
+differ. A typical pond of about 100 animals makes a link of about 3,000
+characters.
+
+`inst` identifies a browser's copy of a pond. When a link's inst matches your
+save, the newer copy wins silently. A different inst for a seed you already
+have prompts before replacing it. An adopted link gets a new inst.
+Eggs, plankton and effects are not in links.

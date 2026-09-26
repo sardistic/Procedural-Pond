@@ -90,15 +90,6 @@ world.autoSize = (() => {
 })();
 const worldDims = () => (WORLD_SIZES[world.opts.world] || WORLD_SIZES.auto).size || world.autoSize;
 
-// Your own ponds come back. Opening the site plainly resumes the pond you last
-// had open; a link to a pond you have saved resumes that one. A link to a pond
-// you don't have starts it from its seed on day 1, and it then becomes yours.
-world.resume = urlSeed ? loadSave(urlSeed) : (() => { const last = listSaves()[0]; return last ? loadSave(last.seed) : null; })();
-world.seed = world.resume ? world.resume.seed : urlSeed || newSeedName();
-if (world.resume) {
-  Object.assign(world.opts, world.resume.opts);
-  world.autoSize = world.resume.size.slice();
-}
 
 function lighting() {
   const o = world.opts, m = world.moon || moonInfo(world.days, world.moon0);
@@ -178,6 +169,7 @@ function buildPond() {
   if (resume) {
     restorePond(world, resume);
   } else {
+    world.inst = newInst();
     withSeed(`${world.seed}/${world.opts.habitat}`, () => {
       generateScenery(world);
       populate();
@@ -190,7 +182,13 @@ function buildPond() {
   const m = moonInfo(world.days, world.moon0);
   if (resume) {
     const animals = world.creatures.length, rares = world.creatures.filter((c) => c.life && c.life.traits.length).length;
-    logEvent(world, `Welcome back to ${world.seed}: day ${Math.floor(world.days) + 1}, ${animals} animals${rares ? `, ${rares} rare` : ''}`, null, { cat: 'pond' });
+    const summary = `day ${Math.floor(world.days) + 1}, ${animals} animals${rares ? `, ${rares} rare` : ''}`;
+    if (world.linkAdopt) {
+      world.inst = newInst(); // someone else's pond becomes your own copy
+      logEvent(world, `You opened ${world.seed} from a link: ${summary}`, null, { cat: 'pond' });
+    } else {
+      logEvent(world, `Welcome back to ${world.seed}: ${summary}`, null, { cat: 'pond' });
+    }
   } else {
     const kind = { fresh: 'freshwater pond', salt: 'saltwater pond', mixed: 'pond' }[world.opts.habitat];
     logEvent(world, `You found a ${kind} called ${world.seed}. Tonight: ${m.name.toLowerCase()}.`, null, { cat: 'pond' });
@@ -430,12 +428,21 @@ function removeAt(x, y) {
     updateCounts();
     return;
   }
-  for (const list of [world.pads, world.plants]) {
+  for (const [list, key] of [[world.pads, 'pads'], [world.plants, 'plants']]) {
     const i = list.findLastIndex((p) => p.hit(x, y));
-    if (i >= 0) { list[i].dead = true; list.splice(i, 1); return; }
+    if (i < 0) continue;
+    if (list[i].oi != null) world.removed[key].push(list[i].oi);
+    list[i].dead = true;
+    list.splice(i, 1);
+    return;
   }
   const ri = world.rocks.findIndex((r) => Math.hypot(r.x - x, r.y - y) < Math.max(r.a, r.b));
-  if (ri >= 0) { world.rocks.splice(ri, 1); bakeBackground(world); paintMinimapBackground(); }
+  if (ri >= 0) {
+    if (world.rocks[ri].oi != null) world.removed.rocks.push(world.rocks[ri].oi);
+    world.rocks.splice(ri, 1);
+    bakeBackground(world);
+    paintMinimapBackground();
+  }
 }
 
 // ---- view: zoom & pan -------------------------------------------------------------
@@ -830,15 +837,19 @@ $('reset').addEventListener('click', () => {
   saveNow();
   renderPondList();
 });
-$('share').addEventListener('click', async () => {
-  const url = shareUrl();
+// Share the pond exactly as it is now: the link carries its whole state.
+async function sharePond() {
+  await updateLink(true);
+  const url = location.href;
   try {
     if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ title: 'Procedural Pond', text: `Come see my pond, ${world.seed}`, url });
-    else { await navigator.clipboard.writeText(url); showTicker('Link copied: friends start this pond on day 1. Export shares it as it is now.'); }
+    else { await navigator.clipboard.writeText(url); showTicker('Link copied: it opens this pond just as it is right now'); }
   } catch {
-    prompt('Copy this link to share your pond:', url);
+    prompt('Copy this link to share your pond as it is now:', url);
   }
-});
+}
+$('share').addEventListener('click', sharePond);
+$('copy-link').addEventListener('click', sharePond);
 $('tour').addEventListener('click', () => {
   if (cam.tour) { stopFollow(); return; }
   cam.tour = true; cam.next = 0;
@@ -869,7 +880,7 @@ $('snapshot').addEventListener('click', () => {
   a.click();
 });
 
-// ---- saving: autosave, your ponds, export and import --------------------------------
+// ---- saving: autosave, your ponds, and the pond link ----------------------------------
 
 let saveTimer = 4, statusTimer = 0, lastSaved = 0, saveFailed = false; // first save soon after load
 
@@ -882,6 +893,7 @@ function saveNow() {
   } catch {
     saveFailed = true;
   }
+  updateLink();
   updateSaveStatus();
   if ($('ponds').open) renderPondList();
 }
@@ -944,35 +956,22 @@ function renderPondList() {
 
 $('ponds').addEventListener('toggle', () => { if ($('ponds').open) renderPondList(); });
 
-$('export').addEventListener('click', () => {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(serializePond(world))], { type: 'application/json' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `pond-${world.seed}-day${Math.floor(world.days) + 1}.json`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-  showTicker('Pond saved to a file: import it on any device, or send it to a friend');
-});
-
-$('import').addEventListener('click', () => $('import-file').click());
-$('import-file').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  e.target.value = '';
-  if (!file) return;
-  let d = null;
-  try { d = JSON.parse(await file.text()); } catch { /* not JSON */ }
-  if (!isSave(d)) { showTicker("That file isn't a pond save"); return; }
-  if (loadSave(d.seed) && !confirm(`You already have a pond called "${d.seed}". Replace it with the one in this file?`)) return;
+// The address bar always holds a link to the pond as it is now: the seed and
+// settings in the query (enough to regrow it on day 1 if the rest is lost), and
+// the whole living pond in the #fragment, which never reaches the server.
+let linkBusy = false;
+async function updateLink(force = false) {
+  if ((linkBusy && !force) || world.noSave || !world.raster) return;
+  linkBusy = true;
   try {
-    if (d.seed !== world.seed) saveNow();
-    storeSave({ ...d, savedAt: Date.now() });
+    const code = await encodePond(world);
+    history.replaceState(null, '', `${location.pathname}${new URL(shareUrl()).search}#s=${code}`);
   } catch {
-    showTicker("This browser couldn't store that pond");
-    return;
+    /* keep the previous link */
+  } finally {
+    linkBusy = false;
   }
-  world.noSave = true;
-  location.assign(`${location.pathname}?pond=${encodeURIComponent(d.seed)}`);
-});
+}
 
 addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
 addEventListener('pagehide', saveNow);
@@ -1003,10 +1002,58 @@ addEventListener('keydown', (e) => {
 
 addEventListener('resize', () => applyView());
 
-setTool('feed');
-initHud();
-layout(true);
-if (innerWidth < 600) setHud(false); // on phones the pond comes first; ☰ opens the panel
-if (!params.get('pond') || (world.opts.world === 'auto' && !params.get('size'))) history.replaceState(null, '', `${new URL(shareUrl()).search}${location.hash}`);
-if (location.hash.includes('bones')) setBones(true);
-requestAnimationFrame(frame);
+function syncControls() {
+  $('opt-floor').value = FLOOR_ALIASES[world.opts.floor] || world.opts.floor;
+  $('opt-water').value = world.opts.water;
+  $('opt-world').value = world.opts.world;
+  $('opt-light').value = world.opts.light;
+}
+
+// Which pond opens:
+//  - a pond link (#s=...): that pond as it was when the link was made. If it's
+//    an older copy of your own pond, your newer save wins; if you already have a
+//    different pond with that name, you're asked first.
+//  - ?pond=<name> you have saved: yours. One you don't have starts on day 1.
+//  - no link: the pond you last had open, or a brand-new one.
+async function boot() {
+  setTool('feed');
+  initHud();
+  const code = (/(?:^#|&)s=([A-Za-z0-9._-]+)/.exec(location.hash) || [])[1];
+  const linked = code ? await decodePond(code) : null;
+  let resume = null, adopt = false;
+  if (linked) {
+    const mine = loadSave(linked.seed);
+    if (mine && mine.inst === linked.inst) {
+      resume = mine.savedAt >= linked.savedAt ? mine : linked;
+    } else if (mine && !confirm(`This link opens the pond "${linked.seed}" on day ${Math.floor(linked.days) + 1}. ` +
+        `You already have a different pond by that name here (day ${Math.floor(mine.days) + 1}). Open the link's version? Yours will be replaced.`)) {
+      resume = mine;
+    } else {
+      resume = linked;
+      adopt = true; // someone else's pond becomes your own copy
+    }
+  } else if (urlSeed) {
+    resume = loadSave(urlSeed);
+  } else {
+    const last = listSaves()[0];
+    resume = last ? loadSave(last.seed) : null;
+  }
+  world.resume = resume;
+  world.linkAdopt = adopt;
+  world.seed = resume ? resume.seed : urlSeed || newSeedName();
+  if (resume) {
+    Object.assign(world.opts, resume.opts);
+    world.autoSize = resume.size.slice();
+  }
+  syncControls();
+  layout(true);
+  world.linkAdopt = false;
+  if (code && !linked) showTicker("That pond link couldn't be read, so this is its pond from day 1");
+  if (innerWidth < 600) setHud(false); // on phones the pond comes first; ☰ opens the panel
+  const keepHash = /(?:^#|&)s=/.test(location.hash) ? '' : location.hash;
+  history.replaceState(null, '', `${new URL(shareUrl()).search}${keepHash}`);
+  if (location.hash === '#bones') setBones(true);
+  requestAnimationFrame(frame);
+}
+
+boot();

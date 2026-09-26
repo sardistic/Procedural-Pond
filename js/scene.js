@@ -371,10 +371,14 @@ function generateScenery(world) {
     add(Math.round(area / 25000 * k) + 1, () => makePlant('marimo', world, ...wetPoint(world, 10)));
     add(Math.round(area / 60000 * k) + 1, () => makePlant('duckweed', world, ...wetPoint(world, 15)));
   }
+  rocks.forEach((r, i) => { r.oi = i; });
+  plants.forEach((p, i) => { p.oi = i; });
   world.rocks = rocks;
   world.pebbles = pebbles;
   world.plants = plants;
+  world.removed = { plants: [], pads: [], rocks: [] }; // generated scenery the player took out
   world.pads = fresh ? Array.from({ length: clamp(Math.round(area / 40000 * k), 2, 14) }, () => makePlant('lily', world, ...wetPoint(world, 14))) : [];
+  world.pads.forEach((p, i) => { p.oi = i; });
   world.motes = new Motes(world);
 }
 

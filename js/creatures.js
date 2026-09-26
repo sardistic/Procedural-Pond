@@ -84,7 +84,7 @@ const outlineOf = (m) => mixColor(m[0], 0xff000000, 0.55);
 // exactly (same variety, pattern and proportions) from its kind, args and seed.
 // Args hold the non-random inputs: a school, a wild species, a duckling's leader.
 const CREATE = {}; // kind -> (world, x, y, args) => creature; each file registers its own
-const newSeed = () => (Math.random() * 4294967296) >>> 0;
+const newSeed = () => (Math.random() * 2097152) >>> 0; // 21 bits: 3 bytes in a pond link
 
 function makeCreature(kind, world, x, y, args = {}, seed = newSeed()) {
   const c = withSeed(seed, () => CREATE[kind](world, x, y, args));
