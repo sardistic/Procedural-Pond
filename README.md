@@ -119,7 +119,7 @@ With **Life** on (Scene section), the pond runs itself:
 ## Hosting
 
 The `Dockerfile` builds a small nginx image that serves the site files. Configuration is in
-`deploy/nginx.conf`: caching, gzip, security headers, a Content-Security-Policy, and 301 redirects from `www.pond.nz` and `pond.sardistic.com` to the canonical `pond.nz`. It serves four-word paths as `index.html` and proxies `/api/` (rate-limited) to a service named `api`, built from `server/Dockerfile` with a volume at `/data` for its SQLite file. The name is resolved per request, so the site keeps serving if the API is down.
+`deploy/nginx.conf`: caching, gzip, security headers, a Content-Security-Policy, and 301 redirects from `www.pond.nz` and `pond.sardistic.com` to the canonical `pond.nz`. It serves four-word paths as `index.html` and proxies `/api/` (rate-limited) to the network alias `pond-api`, a service built from `server/Dockerfile` with a volume at `/data` for its SQLite file. The name is resolved per request, so the site keeps serving if the API is down.
 
 ```sh
 docker build -t procedural-pond .
