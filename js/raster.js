@@ -181,11 +181,17 @@ class Raster {
     // The depths: deep water swallows the light (up to ~90%), except things that make their own.
     const depthMap = s.depth || null, dc = s.deepColor || 0xff0e0402;
     const dr = dc & 255, dg = (dc >> 8) & 255, db = (dc >>> 16) & 255;
+    // The eldritch: veins of void in marked skin, crawling slowly, with stars in them.
+    const voidL = s.voidSkin || null, vox = Math.floor(t * 0.9), voy = Math.floor(t * 0.6), starT = Math.floor(t * 2) * 83492791;
+    // Swell: two trains of waves rolling toward the beach, bigger over the deep, whitecaps on the biggest.
+    const swell = s.swell || 0, sw = s.swellDir || [0, 1];
+    const w1x = sw[0] * 1024 / 46, w1y = sw[1] * 1024 / 46, w1t = t * 9 * 1024 / 46;
+    const c2 = Math.cos(0.7), s2 = Math.sin(0.7), w2x = (sw[0] * c2 - sw[1] * s2) * 1024 / 29, w2y = (sw[0] * s2 + sw[1] * c2) * 1024 / 29, w2t = t * 6 * 1024 / 29;
     const [rx0, ry0, rx1, ry1] = rect;
     for (let y = ry0; y <= ry1; y++) {
       for (let x = rx0, p = rx0 + y * W; x <= rx1; x++, p++) {
         const i = id[p];
-        let c, n, depth, fogScale = 1;
+        let c, n, depth, fogScale = 1, waveE = 0;
         if (shore) {
           const sp = shore[p];
           if (sp > tideL) fogScale = 0; else if (sp) fogScale = Math.min(1, (tideL - sp) / 60);
@@ -229,6 +235,14 @@ class Raster {
                   caustic[((y + o2y) & TM) | (((x + o2x) & TM) << 7)] < causticT ? bgLight[q] : bg[q];
               if (doShadows && sh[p] > zb + 1.5) c = shadeColor(c);
               depth = zBase[q];
+              if (swell > 0) {
+                const dd = depthMap ? depthMap[p] : 0;
+                // Crests broken up along their length (a slow patchy noise), bigger over the deep.
+                const patch = 0.45 + caustic[(((x >> 2) + o1x) & TM) | ((((y >> 2) + o2y) & TM) << 7)] * 0.9;
+                waveE = (WAVE_TAB[((x * w1x + y * w1y - w1t) | 0) & 1023] + 0.55 * WAVE_TAB[((x * w2x + y * w2y - w2t) | 0) & 1023]) * swell * (0.8 + dd * 0.0045) * patch;
+                // Whitecaps: ragged patches of foam on the biggest crests out over the deep.
+                if (waveE > 2 && dd > 50 && caustic[(x & TM) | ((y & TM) << 7)] > 0.45 && ((Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ starT) & 3) !== 0) waveE = 9;
+              }
               if (se) {
                 // Foam at the water's edge, and waves that roll in toward it.
                 const d = tideL - se;
@@ -253,8 +267,15 @@ class Raster {
                (y > 0 && id[n = p - W] && id[n] !== i && z[n] > zp && !fade[id[n]]) ||
                (y < H - 1 && id[n = p + W] && id[n] !== i && z[n] > zp && !fade[id[n]]))) {
             c = outline[id[n]];
-          } else if (doShadows && sh[p] > z[p] + 4) {
-            c = shadeColor(c);
+          } else {
+            if (doShadows && sh[p] > z[p] + 4) c = shadeColor(c);
+            const lv = voidL ? voidL[i] : 0;
+            if (lv) {
+              const v = caustic[((x + vox) & TM) | (((y + voy) & TM) << 7)], th = VOID_T[lv];
+              if (v < th) c = ((Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ starT) & 31) === 0 ? VOID_STAR : VOID_BLACK;
+              else if (v < th + 0.03) c = VOID_RIM;
+              else if (lv > 2) { const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255, a = lv * 14; c = (0xff000000 | ((cb + (((90 - cb) * a) >> 8)) << 16) | ((cg + (((30 - cg) * a) >> 8)) << 8) | (cr + (((70 - cr) * a) >> 8))) >>> 0; }
+            }
           }
         }
         if (fogA && fogScale > 0) {
@@ -271,6 +292,12 @@ class Raster {
             c = (0xff000000 | ((cb + (((db - cb) * a) >> 8)) << 16) | ((cg + (((dg - cg) * a) >> 8)) << 8) | (cr + (((dr - cr) * a) >> 8))) >>> 0;
           }
         }
+        // Wave crests catch the light (after the deep has darkened the floor below them).
+        if (waveE === 9) { c = (x + y) & 1 ? 0xfff0f4f6 : 0xffd6e4ea; }
+        else if (waveE > 0.6) {
+          const a = Math.min(72, ((waveE - 0.6) * 60) | 0);
+          if (a > 36 || ((x ^ y) & 1)) { const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255; c = (0xff000000 | ((cb + (((0xe0 - cb) * a) >> 8)) << 16) | ((cg + (((0xec - cg) * a) >> 8)) << 8) | (cr + (((0xf4 - cr) * a) >> 8))) >>> 0; }
+        } else if (waveE < -0.3) { const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255; c = (0xff000000 | ((cb * 225 >> 8) << 16) | ((cg * 225 >> 8) << 8) | (cr * 225 >> 8)) >>> 0; }
         if (tint) {
           const e = i ? emissive[i] : 0;
           if (e === 2) { out[p] = c; continue; }
@@ -282,6 +309,12 @@ class Raster {
     }
   }
 }
+
+// Swell across the surface: one wavelength of a sharp-crested wave (see compose).
+const WAVE_TAB = new Float32Array(1024);
+for (let i = 0; i < 1024; i++) { const s = 0.5 + 0.5 * Math.sin(i / 1024 * Math.PI * 2); WAVE_TAB[i] = s * s * s * 1.8 - 0.45; }
+const WAVE_LIGHT = 0xfff4ece0, VOID_BLACK = 0xff14040a, VOID_RIM = 0xffc84a8a, VOID_STAR = 0xfffff0e8;
+const VOID_T = [0, 0.05, 0.08, 0.12, 0.17, 0.22, 0.28, 0.35]; // how much of a marked animal's skin opens onto the void, by level
 
 // Tileable Worley-noise web (F2 - F1), sampled twice with drifting offsets for caustics.
 function makeCausticTile(count = 14) {

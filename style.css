@@ -626,6 +626,8 @@ output {
 .score-btn .pts b { color: var(--hot); }
 .score-btn .prl b { color: #cfe8f0; }
 .score-btn .ess b, .score-top .ess { color: #c38bff; }
+.score-btn .cor b { color: #5af0a8; }
+.corrupt { display: inline-block; flex: none; width: 7px; height: 7px; margin: 0 3px 0 1px; transform: rotate(45deg); background: linear-gradient(135deg, #c0ffd8, #1a0e22 70%); box-shadow: 0 0 0 1px #3aff9a inset, 1px 1px 0 var(--ink); vertical-align: 0; }
 .essence { display: inline-block; flex: none; width: 7px; height: 7px; margin: 0 3px 0 1px; transform: rotate(45deg); background: linear-gradient(135deg, #f0d8ff, #9a5ae0); box-shadow: 1px 1px 0 var(--ink); vertical-align: 0; }
 .pearl, .score-btn .pearl { width: 7px; height: 7px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffffff, #cfe2ea 55%, #7d9aa6); box-shadow: 1px 1px 0 var(--ink); }
 .score-btn.bump { animation: bump 0.6s ease-out; }
@@ -796,6 +798,50 @@ output {
 .cr-head b { font-size: 13px; font-weight: 400; }
 .cr-sub { margin: 4px 0 0; line-height: 1.4; color: var(--text); }
 .cr-gone { margin: 6px 0 0; color: #ef6f6c; }
+.object { top: 128px; right: 16px; }
+.trait-tree { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px; }
+.trait-tree .trait { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "nm pr" "pp pr"; align-items: center; gap: 1px 6px; padding: 4px 6px; text-align: left; box-shadow: none; font-size: 9px; }
+.trait-tree .trait b { grid-area: nm; justify-self: start; text-align: left; font-weight: 400; font-size: 10px; }
+.trait-tree .trait .pips { grid-area: pp; letter-spacing: 1px; color: var(--hot); }
+.trait-tree .trait .pr { grid-area: pr; display: flex; align-items: center; color: var(--text); }
+.trait-tree .trait:disabled { opacity: 0.5; cursor: not-allowed; }
+.eld-paths { display: grid; gap: 4px; margin-top: 8px; }
+.eld-paths h4 { margin: 4px 0 0; color: #5af0a8; }
+.eld-paths .path { display: grid; grid-template-columns: 1fr auto; gap: 2px 6px; padding: 5px 6px; text-align: left; box-shadow: none; border-color: #3a1e4a; background: linear-gradient(135deg, #140a1e, #0a1a14); }
+.eld-paths .path b { font-weight: 400; color: #c0ffd8; }
+.eld-paths .path .pr { display: flex; align-items: center; color: #5af0a8; }
+.eld-paths .path .note { grid-column: 1 / -1; margin: 0; }
+.eld-paths .path.owned { border-color: #3aff9a; }
+.eld-paths .path:disabled:not(.owned) { opacity: 0.55; cursor: not-allowed; }
+
+/* ---- the shared beach: someone else's pond, and the ends of yours ---- */
+.observe-bar {
+  position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 6;
+  display: flex; align-items: center; gap: 10px; padding: 6px 10px;
+  font-size: 10px; color: var(--text); background: var(--panel); border: 2px solid #3a8a5a; box-shadow: 3px 3px 0 var(--ink);
+}
+.observe-bar b { font-weight: 400; color: var(--hot); }
+.observe-bar button { padding: 4px 8px; box-shadow: none; }
+.edge {
+  position: fixed; top: 50%; z-index: 5; display: grid; gap: 2px; max-width: 150px; padding: 8px 10px;
+  font-size: 9px; color: var(--muted); background: var(--panel); border: 2px solid var(--edge); box-shadow: 3px 3px 0 var(--ink);
+  transform: translateY(-50%); opacity: 0; pointer-events: none; transition: opacity 0.3s;
+}
+.edge b { font-weight: 400; font-size: 10px; color: var(--text); overflow-wrap: anywhere; }
+.edge i { display: block; height: 4px; margin-top: 3px; background: linear-gradient(90deg, var(--hot) calc(var(--pull, 0) * 100%), var(--ink) 0); }
+.edge-west { left: 8px; }
+.edge-east { right: 8px; }
+.edge.vertical { top: auto; left: 50%; right: auto; transform: translateX(-50%); }
+.edge-west.vertical { top: 64px; }
+body.observing .edge-west.vertical { top: 104px; }
+.edge-east.vertical { bottom: 150px; }
+.edge.near { opacity: 0.75; }
+.edge.pulling { opacity: 1; }
+.edge.ready { border-color: var(--hot); }
+body.leaving canvas { transition: opacity 0.3s; opacity: 0.2; }
+/* In someone else's pond there's nothing to buy, build or change. */
+body.observing .seg, body.observing #ponds, body.observing #tools, body.observing #builds, body.observing #reset,
+body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, body.observing #hud details:has(#tools), body.observing #hud details:has(#builds) { display: none; }
 .creature .bar { height: 5px; margin-top: 6px; background: var(--ink); border: 1px solid var(--btn-edge); }
 .creature .bar i { display: block; height: 100%; background: #7ed07a; }
 .creature h4 { margin: 10px 0 4px; font-size: 10px; font-weight: 400; color: var(--hot); }

@@ -102,7 +102,9 @@ function serializePond(world) {
     currentBase: world.current.base, records: world.records, spawnNight: world.spawnNight,
     targets: world.targets, eco: { ...ECO }, journalSeq: world.journalSeq,
     game: world.game, lineage: world.lineage ? [...world.lineage.values()] : [], link: world.link || null,
-    structures: (world.structures || []).map((s) => ({ k: s.kind, x: r2(s.x), y: r2(s.y), s: s.seed, born: r2(s.born) })),
+    structures: (world.structures || []).map((s) => ({ k: s.kind, x: r2(s.x), y: r2(s.y), s: s.seed, born: r2(s.born), lv: s.lv, stack: s.stack, branch: s.branch, blv: s.blv })),
+    litter: (world.litter || []).map((l) => ({ k: l.k, x: r2(l.x), y: r2(l.y), b: r2(l.born), hp: l.hp, s: l.seed })),
+    blight: world.blight || null,
     fossils: (world.fossils || []).map((f) => ({ x: r2(f.x), y: r2(f.y), k: f.kind, g: f.gene, born: r2(f.born) })),
     erosion: world.erosion || null, expandPx: world.expandPx || 0, base: world.expandPx ? baseSize(world) : [world.W, world.H],
     hatchery: world.hatchery ? { ...world.hatchery, stock: packStock(world.hatchery) } : null,
@@ -112,6 +114,7 @@ function serializePond(world) {
     plants: [...world.plants, ...world.pads].filter((p) => p.make).map((p) => ({
       k: p.make, s: p.seed, x: r2(p.x), y: r2(p.y), a: args(p.args), oi: p.oi, born: p.born,
       g: p.growth != null ? r2(p.growth) : undefined, age: p.age != null ? r2(p.age) : undefined, span: p.span != null ? r2(p.span) : undefined,
+      tr: p.tr || undefined,
     })),
     succession: world.succession || null,
     creatures: saved.map((c) => ({
@@ -120,6 +123,7 @@ function serializePond(world) {
       L: {
         name: c.life.name, age: r2(c.life.age), energy: r2(c.life.energy), cooldown: r2(c.life.cooldown), fed: r2(c.life.fed || 0), comfort: r2(c.life.comfort ?? 0.5),
         corruption: c.life.genome.eld ? r2(c.life.corruption || 0) : undefined, bound: c.life.bound || undefined,
+        absorbed: c.life.absorbed || undefined, ascended: c.life.ascended || undefined, boosts: c.life.boosts || undefined,
         lifespan: r2(c.life.lifespan), gen: c.life.gen, scale: c.life.scale, old: !!c.life.old, inbred: r2(c.life.inbred || 0),
         genome: c.life.genome, traits: c.life.traits, parents: c.life.parents,
       },
@@ -158,7 +162,7 @@ function placeRestored(c, r) {
 function shiftSave(d, dx, dy) {
   if (!dx && !dy) return d;
   const mv = (o) => { if (o) { o.x += dx; o.y += dy; } };
-  d.creatures.forEach(mv); d.plants.forEach(mv); d.rocks.forEach(mv); (d.structures || []).forEach(mv); (d.eggs || []).forEach(mv); (d.fossils || []).forEach(mv);
+  d.creatures.forEach(mv); d.plants.forEach(mv); d.rocks.forEach(mv); (d.structures || []).forEach(mv); (d.eggs || []).forEach(mv); (d.fossils || []).forEach(mv); (d.litter || []).forEach(mv);
   d.pebbles = (d.pebbles || []).map(([x, y, s, m]) => [x + dx, y + dy, s, m]);
   for (const s of d.schools || []) { s.tx += dx; s.ty += dy; }
   if (d.erosion) (d.erosion.lagoons || []).forEach(mv);
@@ -167,6 +171,7 @@ function shiftSave(d, dx, dy) {
 
 // Rebuild a world from a save. The world's size must already match d.size.
 function restorePond(world, d) {
+  if (d.seed) world.seed = d.seed; // the river (and anything else seeded from the pond) follows its name
   Object.assign(world, {
     t: d.t || 0, days: d.days, moon0: d.moon0, tide0: d.tide0, shoreSide: d.shoreSide,
     records: d.records || null, spawnNight: d.spawnNight ?? -1, targets: d.targets || {}, journalSeq: d.journalSeq || 0,
@@ -185,7 +190,11 @@ function restorePond(world, d) {
   world.succession = d.succession || null;
   world.erosion = { ...newErosion(), ...(d.erosion || {}), next: 0 };
   // Structures first: islands shape the beach that makeShore builds.
-  world.structures = (d.structures || []).filter((s) => STRUCTURES[s.k]).map((s) => makeStructure(s.k, world, s.x, s.y, s.s, s.born ?? world.days));
+  world.structures = (d.structures || []).filter((s) => STRUCTURES[s.k]).map((s) => Object.assign(makeStructure(s.k, world, s.x, s.y, s.s, s.born ?? world.days),
+    s.lv ? { lv: s.lv } : {}, s.stack ? { stack: s.stack } : {}, s.branch ? { branch: s.branch, blv: s.blv || 1 } : {}));
+  world.litter = (d.litter || []).filter((l) => LITTER[l.k]).map((l) => new Litter(l.k, l.x, l.y, l.b ?? world.days, l.hp, l.s));
+  world.blight = d.blight || null;
+  Object.assign(world, { riverW: 0, islandKey: null, scourKey: null }); // the river is re-cut at its width for the pond's age
   world.fossils = (d.fossils || []).map((f) => new Fossil(f.x, f.y, f.k, f.g, f.born));
   world.remains = [];
   world.hatchery = null;
@@ -206,6 +215,7 @@ function restorePond(world, d) {
     plant.oi = p.oi;
     if (p.born != null) plant.born = p.born;
     if (p.g != null) Object.assign(plant, { growth: p.g, age: p.age, span: p.span });
+    if (p.tr) { plant.tr = p.tr; if (p.tr.eld) VOID_SKIN[plant.id] = 4; }
     (p.k === 'lily' ? world.pads : world.plants).push(plant);
   }
   world.motes = new Motes(world);
@@ -227,8 +237,9 @@ function restorePond(world, d) {
     Object.assign(c.life, {
       name: r.L.name, energy: r.L.energy, cooldown: r.L.cooldown, lifespan: r.L.lifespan, old: r.L.old, parents: r.L.parents || null,
       fed: r.L.fed || 0, comfort: r.L.comfort ?? 0.5, corruption: r.L.corruption || 0, bound: !!r.L.bound,
+      absorbed: r.L.absorbed || 0, ascended: !!r.L.ascended, boosts: r.L.boosts || null,
     });
-    if (c.life.genome.eld) c.life.traits = eldTraits(c.life);
+    if (c.life.genome.eld || c.life.ascended) c.life.traits = eldTraits(c.life);
     c.sn = r.sn ?? null;
     return c;
   });

@@ -99,7 +99,8 @@ function applyErosion(world) {
 
 function buildDepth(world) {
   const ex = world.expandPx || 0, { W, H } = world, side = world.shoreSide;
-  if (!ex) { world.depth = null; return; }
+  // Scour around what's been placed (coast.js) digs pockets of depth even before the pond opens up.
+  if (!ex) { world.depth = typeof applyScour === 'function' ? applyScour(world, null) : null; return; }
   const depth = new Uint8Array(W * H), axisX = deepAxisX(side), shifts = deepShifts(side);
   const [W0, H0] = baseSize(world), tiers = (world.erosion ? world.erosion.tier : 0);
   const maxD = DEPTH_TIERS[Math.min(tiers, DEPTH_TIERS.length - 1)].depth || 0.4;
@@ -117,7 +118,7 @@ function buildDepth(world) {
       depth[p] = Math.round(clamp(0.25 + 0.75 * clamp(shelf, 0, 1), 0, 1) * maxD * 255);
     }
   }
-  world.depth = depth;
+  world.depth = typeof applyScour === 'function' ? applyScour(world, depth) : depth;
 }
 
 // ---- the tick -----------------------------------------------------------------------------------

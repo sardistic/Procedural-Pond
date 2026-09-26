@@ -65,6 +65,7 @@ const EYE_SHINE = solid('#f4f8ff');
 const OUTLINE = new Uint32Array(65536);
 const EMISSIVE = new Uint8Array(65536); // 1 = stays brighter at night, 2 = its own light source
 const THICK = new Uint8Array(65536);    // rare animals get a two-pixel outline
+const VOID_SKIN = new Uint8Array(65536); // the eldritch: how wide the veins of void run (0 none, up to 7)
 const FOOD_ID = 1;
 OUTLINE[FOOD_ID] = hexToInt('#1c1008');
 
@@ -75,6 +76,7 @@ function newId(outline) {
   OUTLINE[id] = outline;
   EMISSIVE[id] = 0;
   THICK[id] = 0;
+  VOID_SKIN[id] = 0;
   return id;
 }
 const outlineOf = (m) => mixColor(m[0], 0xff000000, 0.55);
@@ -98,6 +100,18 @@ function makeCreature(kind, world, x, y, args = {}, seed) {
   const c = withSeed(seed, () => CREATE[kind](world, x, y, args));
   c.make = kind; c.seed = seed; c.args = args; c.sn = sn;
   return c;
+}
+
+// Something frightening at (x, y): run from it for a while. Fish steer away from
+// it (their dread); everything else picks somewhere well away to be.
+function startle(world, o, x, y, secs) {
+  const dx = o.x - x, dy = o.y - y, d = Math.hypot(dx, dy) || 1, run = rand(60, 130);
+  o.dread = { x, y, t: secs };
+  o.tx = clamp(o.x + dx / d * run, 8, world.W - 8); o.ty = clamp(o.y + dy / d * run, 8, world.H - 8);
+  o.timer = Math.max(o.timer || 0, secs);
+  if (o.species === 'gull') { if (o.mode === 'walk' || o.mode === 'land') o.mode = 'rise'; return; }
+  if ('mode' in o) o.mode = o.species === 'dragonfly' ? 'dart' : 'walk';
+  if (o.species === 'frog' && o.state === 'sit') { o.state = 'swim'; o.pad = null; }
 }
 
 // ---- base ------------------------------------------------------------------
@@ -260,10 +274,10 @@ class Fish extends Creature {
           want = this.maxSpeed;
         }
       }
-      const th = this.threat;
+      const th = this.threat || this.dread;
       if (th) {
-        const dx = this.x - th.x, dy = this.y - th.y, d = Math.hypot(dx, dy) || 1, gl = Math.hypot(gx, gy) || 1;
-        gx = gx / gl + dx / d * 4; gy = gy / gl + dy / d * 4;
+        const dx = this.x - th.x, dy = this.y - th.y, d = Math.hypot(dx, dy) || 1, gl = Math.hypot(gx, gy) || 1, k = this.threat ? 4 : 5;
+        gx = gx / gl + dx / d * k; gy = gy / gl + dy / d * k;
         want = this.maxSpeed;
       }
     }
@@ -273,7 +287,8 @@ class Fish extends Creature {
       const [ax, ay] = this.avoid(world, this.z);
       const [sx, sy] = this.social(world);
       const [dx, dy] = deepPush(world, this);
-      gx += ax * 2 + sx + dx; gy += ay * 2 + sy + dy;
+      const [ex, ey] = typeof eldPush === 'function' ? eldPush(world, this) : [0, 0]; // everyone keeps clear of the marked
+      gx += ax * 2 + sx + dx + ex; gy += ay * 2 + sy + dy + ey;
     }
     const sp = this.speed / this.maxSpeed;
     this.turnToward(Math.atan2(gy, gx), this.turnRate * (this.grabbed ? 3 : 0.6 + sp), dt);

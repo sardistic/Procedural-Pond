@@ -253,6 +253,31 @@ const BAKE = {
       const a = k * 2.1 + 0.5;
       r.ellipsoid(px + Math.cos(a) * 1.3, py + Math.sin(a) * 1.3, 1, 1, 0, pz - 1.5, 1, SM.coconut, frondId);
     }
+    // Raised islands (traits.js) grow lusher: more grass, a second and third palm, flowers.
+    // (Drawn after the rest, so the island's first shape never changes.)
+    const lush = (s.stack || 1) - 1, dark = s.branch === 'dark';
+    const gid = next(dark ? SM.smoke : SM.grass);
+    for (let i = 0; i < lush * 12; i++) {
+      const a = rand(0, TAU), d = Math.sqrt(Math.random()) * R * (0.55 + 0.1 * lush), sz = rand(0.8, 1.6);
+      r.ellipsoid(x + Math.cos(a) * d, y + Math.sin(a) * d, sz, sz * 0.8, a, 0, sz, dark ? SM.smoke : SM.grass, gid);
+    }
+    for (let k = 1; k <= Math.min(2, lush); k++) {
+      const a = s.lean + k * 2.2, bx = x + Math.cos(a) * R * 0.35, by = y + Math.sin(a) * R * 0.35, h = s.h * (0.7 + 0.1 * k);
+      r.tube(bx, by, 1.5, 0, bx + Math.cos(a) * 3, by + Math.sin(a) * 3, 1, h, 0.9, ring, trunkId);
+      for (let f = 0; f < 6; f++) {
+        const fa = f / 6 * TAU + k, tx = bx + Math.cos(a) * 3, ty = by + Math.sin(a) * 3;
+        r.ellipsoid(tx + Math.cos(fa) * 3.5, ty + Math.sin(fa) * 3.5, 2.6, 1, fa, h, 0.5, dark ? SM.moss2 : SM.frond, frondId);
+      }
+    }
+    if (lush >= 2 && !dark) {
+      const fl = next(SM.plume);
+      for (let i = 0; i < lush * 6; i++) { const a = rand(0, TAU), d = rand(0.2, 0.7) * R; r.ellipsoid(x + Math.cos(a) * d, y + Math.sin(a) * d, 0.9, 0.9, 0, 1.5, 0.8, pick([SM.plume, SM.eggGlow, SM.crystal]), fl); }
+    }
+    // The whispering stone: a black standing stone, taller at each level.
+    if (dark) {
+      const sid = next(SM.idol), h = 14 + 4 * (s.blv || 1);
+      r.tube(x - 0.8, y - 0.5, 2.4, 0, x + 0.8, y - 0.5, 1.2, h, 1, SM.idol, sid);
+    }
   },
   vent(r, s, next) {
     const { x, y, h, R } = s, id = next(SM.basalt);
@@ -445,29 +470,35 @@ const DRAW = {
 
 // The combined aura at a point: comfort (added), fertility and aging (multiplied),
 // light (at night). Each structure's effect fades toward the edge of its radius.
+// Upgrades (see traits.js) widen a structure's reach and strengthen its effect;
+// raised islands reach further, and an island of life comforts and lights the night.
+const auraR = (world, s) => STRUCTURES[s.kind].r * (1 + 0.2 * ((s.lv && s.lv.reach) || 0)) * (s.kind === 'island' ? 1 + 0.16 * ((s.stack || 1) - 1) : 1);
+const auraK = (s) => 1 + 0.25 * ((s.lv && s.lv.strength) || 0);
+
 function auraAt(world, x, y) {
   let comfort = 0, fertility = 1, aging = 1, light = 0;
   for (const s of world.structures || []) {
-    const def = STRUCTURES[s.kind], d = Math.hypot(s.x - x, s.y - y);
-    if (d >= def.r) continue;
-    const w = 1 - d / def.r, a = def.aura;
+    const def = STRUCTURES[s.kind], R = auraR(world, s), d = Math.hypot(s.x - x, s.y - y);
+    if (d >= R) continue;
+    const w = (1 - d / R) * auraK(s), a = def.aura;
     comfort += (a.comfort || 0) * w;
     if (a.fertility) fertility *= 1 + (a.fertility - 1) * w;
     if (a.aging) aging *= 1 + (a.aging - 1) * w;
     if (a.light && world.darkness > 0.4) light += a.light * w;
+    if (s.branch === 'life') { comfort += 0.08 * (s.blv || 1) * w; fertility *= 1 + 0.05 * (s.blv || 1) * w; if (world.darkness > 0.4) light += 0.1 * (s.blv || 1) * w; }
   }
   return { comfort: comfort + light, fertility, aging };
 }
 
 // Called by the ecology grid: a structure's effect on the temper and the water around it.
 function structureZones(world, s, put, tA, infl) {
-  const def = STRUCTURES[s.kind], z = world.zones, R = def.r, mixed = world.opts.habitat === 'mixed';
+  const def = STRUCTURES[s.kind], z = world.zones, R = auraR(world, s), K = auraK(s), mixed = world.opts.habitat === 'mixed';
   for (let j = Math.max(0, Math.floor((s.y - R) / ZONE)); j <= Math.min(z.rows - 1, Math.floor((s.y + R) / ZONE)); j++) {
     for (let i = Math.max(0, Math.floor((s.x - R) / ZONE)); i <= Math.min(z.cols - 1, Math.floor((s.x + R) / ZONE)); i++) {
       const d = Math.hypot((i + 0.5) * ZONE - s.x, (j + 0.5) * ZONE - s.y);
       if (d >= R) continue;
-      const w = 1 - d / R, k = j * z.cols + i;
-      tA[k] += (def.aura.aggression || 0) * w;
+      const w = (1 - d / R) * K, k = j * z.cols + i;
+      tA[k] += ((def.aura.aggression || 0) + (s.branch === 'dark' ? 0.08 * (s.blv || 1) : 0)) * w;
       if (mixed && def.water) infl[k] += def.water * w;
     }
   }
@@ -477,19 +508,8 @@ function structureZones(world, s, put, tA, infl) {
 function applyShoreEdits(world) {
   const shore = world.shore, { W, H } = world;
   if (!shore) return;
-  for (const s of world.structures || []) {
-    if (s.kind !== 'island') continue;
-    const R = s.R * 1.35;
-    for (let y = Math.max(0, Math.floor(s.y - R)); y <= Math.min(H - 1, Math.ceil(s.y + R)); y++) {
-      for (let x = Math.max(0, Math.floor(s.x - R)); x <= Math.min(W - 1, Math.ceil(s.x + R)); x++) {
-        const d = Math.hypot(x - s.x, y - s.y) / s.R;
-        if (d >= 1.35) continue;
-        const e = 1.2 * (1 - (d / 1.35) ** 2) + (fbm(x * 0.08, y * 0.08, s.seed % 53) - 0.5) * 0.3;
-        const p = x + y * W, v = Math.round(clamp(e, 0, 1) * 255);
-        if (v > shore[p]) shore[p] = v;
-      }
-    }
-  }
+  if (typeof applyRiver === 'function') applyRiver(world); // the river cuts the beach (coast.js)
+  if (typeof applyIslands === 'function') applyIslands(world);
   if (typeof applyErosion === 'function') applyErosion(world);
 }
 
@@ -527,6 +547,7 @@ function dawnStructures(world) {
   seedPlants(world);
   applyStains(world);
   dawnFinds(world);
+  if (typeof dawnCoast === 'function') dawnCoast(world);
 }
 
 // Plants take root around structures, rocks and plants that have been there a while.
@@ -536,6 +557,7 @@ function sproutAround(world) {
   const sources = [
     ...(world.structures || []).map((s) => ({ x: s.x, y: s.y, age: world.days - s.born, k: STRUCTURES[s.kind].sprout || 1, r: STRUCTURES[s.kind].size + 8 })),
     ...world.rocks.map((r) => ({ x: r.x, y: r.y, age: world.days - (r.born ?? -8), k: 0.35, r: Math.max(r.a, r.b) + 4 })),
+    ...(world.river ? [{ x: world.river.mouth[0], y: world.river.mouth[1], age: 9, k: 0.9, r: world.river.w + 4 }] : []), // the river brings seeds down
   ];
   let grown = 0;
   for (const src of sources) {
@@ -587,7 +609,9 @@ function updatePlantLife(world, dt) {
       if (p.growth == null) { p.growth = 1; p.age = rand(0, 30); p.span = rand(...(PLANT_LIFE[p.make] || [0, 40, 80]).slice(1)); } // older saves: grown plants, mid-life
       const [rate] = PLANT_LIFE[p.make] || [0.4];
       p.age += step;
-      if (p.age < p.span) p.growth = Math.min(1, p.growth + rate * step);
+      // Litter nearby stunts it (hardy plants mind less).
+      const foul = world.litter && world.litter.length ? Math.min(0.8, pollutionAt(world, p.x, p.y) * 1.5 * (1 - 0.3 * ((p.tr && p.tr.hardy) || 0))) : 0;
+      if (p.age < p.span) p.growth = Math.min(1, p.growth + rate * step * (1 - foul));
       else p.growth -= 0.4 * step; // dying back
       if (p.growth < 0.12) {
         if (p.oi != null) (list === world.pads ? world.removed.pads : world.removed.plants).push(p.oi);
@@ -609,7 +633,7 @@ function seedPlants(world) {
   let seeded = 0;
   for (const p of [...world.plants, ...world.pads]) {
     if (world.plants.length + world.pads.length >= cap || seeded >= 10) break;
-    if ((p.growth ?? 1) < 0.9 || Math.random() > (SEEDS[p.make] || 0.05)) continue;
+    if ((p.growth ?? 1) < 0.9 || Math.random() > (SEEDS[p.make] || 0.05) * (1 + 0.8 * ((p.tr && p.tr.seed) || 0))) continue;
     const a = rand(0, TAU), d = rand(12, 30), x = p.x + Math.cos(a) * d, y = p.y + Math.sin(a) * d;
     if (x < 8 || y < 8 || x > world.W - 8 || y > world.H - 8 || (world.shore && shoreAt(world, x, y) > world.tide.level - 0.2)) continue;
     if ((p.make === 'blackcoral' || p.make === 'glowcap') && depthAt(world, x, y) < 0.3) continue;

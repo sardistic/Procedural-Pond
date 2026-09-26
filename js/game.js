@@ -249,7 +249,9 @@ function updateComfort(world) {
   for (const p of world.pads) if (!p.dead) (spots.lily || (spots.lily = [])).push(p);
   for (const s of world.structures || []) (spots[s.kind] || (spots[s.kind] = [])).push(s);
   spots.remains = world.remains || [];
+  spots.river = world.river ? [world.river.spot] : [];
   world.likeSpots = spots;
+  const litter = world.litter && world.litter.length, blight = world.blight;
   const lights = world.darkness > 0.5 ? world.creatures.filter((c) => geneBuffs(c).light > 0.3) : [];
   const R2 = COMFORT_R * COMFORT_R;
   for (const c of world.creatures) {
@@ -266,6 +268,8 @@ function updateComfort(world) {
     L.aura = auraAt(world, c.x, c.y);
     let target = n / 3 + L.aura.comfort - aggressionAt(world, c.x, c.y) * 0.3 - mismatch(world, c) * (1 - L.buffs.tolerance) * 0.6;
     for (const l of lights) if (l !== c && (l.x - c.x) ** 2 + (l.y - c.y) ** 2 < 1600) { target += 0.15; break; }
+    if (litter) target -= 0.8 * pollutionAt(world, c.x, c.y); // litter spoils the water
+    if (blight) target -= blightComfort(world, c);
     L.comfort += (clamp(target, 0, 1) - L.comfort) * 0.2;
   }
 }

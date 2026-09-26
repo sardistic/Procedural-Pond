@@ -84,7 +84,7 @@ function childGenome3(a, b, m = 1) {
 function makeGenome4() { return { eld: Math.random() < 1 / 1500 }; }
 function childGenome4(a, b, m = 1) {
   const n = (a.eld ? 1 : 0) + (b.eld ? 1 : 0);
-  return { eld: Math.random() < (n === 2 ? 0.45 : n === 1 ? 0.2 : m / 1500) };
+  return { eld: Math.random() < (n === 2 ? 0.35 : n === 1 ? 0.15 : m / 1500) };
 }
 
 // Hypermutable parents (two mutator copies) and shiny ones ("luck") raise the odds of new mutations.
@@ -142,7 +142,7 @@ const LOCI = [...RECESSIVE, ...RECESSIVE2, 'leu', 'mar', 'mut'];
 // Rarity tiers: each trait adds its rarity, and the sum sets the tier.
 const TRAIT_RARITY = {
   pale: 1, piebald: 1, giant: 2, dwarf: 2, melanistic: 2, xanthic: 2, marbled: 2, axanthic: 3, albino: 3, leucistic: 3,
-  shiny: 4, ghost: 4, glow: 4, chimera: 5, touched: 4, changed: 5, eldritch: 7,
+  shiny: 4, ghost: 4, glow: 4, chimera: 5, touched: 4, changed: 5, eldritch: 7, ascended: 9,
 };
 const TIERS = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic'];
 const TIER_COLOR = ['#8fbcb8', '#7ee0c3', '#6fb7ef', '#c38bff', '#ffb347', '#ff6fae'];
@@ -155,7 +155,7 @@ const RARE_OUTLINE = {
   shiny: hexToInt('#ffd166'), glow: hexToInt('#7dffb0'), ghost: hexToInt('#eaf6ff'), albino: hexToInt('#ff9eb5'),
   axanthic: hexToInt('#8ecbff'), xanthic: hexToInt('#ffe45c'), melanistic: hexToInt('#a78bfa'), piebald: hexToInt('#7ee0c3'),
   giant: hexToInt('#ffb86b'), dwarf: hexToInt('#c3a6ff'), leucistic: hexToInt('#f4f0e8'), marbled: hexToInt('#d8a0ff'),
-  chimera: hexToInt('#ff6fae'), touched: hexToInt('#8a5ae0'), changed: hexToInt('#6a3ac8'), eldritch: hexToInt('#3aff9a'),
+  chimera: hexToInt('#ff6fae'), touched: hexToInt('#8a5ae0'), changed: hexToInt('#6a3ac8'), eldritch: hexToInt('#3aff9a'), ascended: hexToInt('#ff4ad8'),
 };
 const RED_EYE = solid('#d8203a');
 const PIEBALD_WHITE = mat('#9aa0a6', '#d0d4d6', '#f0f0ec', '#ffffff');
@@ -569,7 +569,8 @@ class Bubble {
     this.x += (Math.sin(this.z * 0.5 + this.ph) * 1.5 + world.current.x * 2) * dt;
     this.y += world.current.y * 2 * dt;
     if (this.z < 44) return true;
-    addRipple(world, this.x, this.y, 0.3);
+    addRipple(world, this.x, this.y, 0.3, true);
+    if (typeof Sound !== 'undefined') Sound.bubble(this.x, this.y); // soft, and rationed
     return false;
   }
 
@@ -600,7 +601,7 @@ class Sparkle {
 function addRipple(world, x, y, size = 1, silent = false) {
   if (world.shore && isDry(world, x, y)) return;
   if (world.effects.length < 220) world.effects.push(new Ripple(x, y, size));
-  if (!silent && typeof Sound !== 'undefined') Sound.plop(x / world.W, size);
+  if (!silent && typeof Sound !== 'undefined') Sound.plop(x, y, size);
 }
 
 function addBubbles(world, x, y, z, n) {
@@ -691,6 +692,8 @@ function makeBaby(world, p, m, x, y) {
   }
   const g = childGenomeFor(c.seed, p.life.genome, m.life.genome);
   if (!g.eld && typeof eldBirthChance === 'function' && Math.random() < eldBirthChance(world, x, y)) g.eld = true;
+  // The Deep Dream: the mark passes more readily to young.
+  if (!g.eld && (p.life.genome.eld || m.life.genome.eld) && typeof eldPath === 'function' && eldPath(world, 'dream') && Math.random() < 0.12) g.eld = true;
   return initLife(c, {
     genome: g, parents: [p.seed, m.seed],
     gen: Math.max(p.life.gen, m.life.gen) + 1, scale: 0.35, age: 0, alpha: 0, inbred: inbreedingOf(world, p.seed, m.seed),
@@ -835,6 +838,7 @@ function updateLife(world, dt) {
 
   for (const c of world.creatures) {
     if (c.alpha === undefined) c.alpha = 1;
+    if (c.absorbing) { absorbStep(world, c, dt); continue; }
     if (c.dying) { dieStep(world, c, dt); continue; }
     if (c.unsettled) { // a bought spawn that didn't take: it shows faintly, then is gone
       c.unsettled -= dt;
@@ -971,7 +975,9 @@ function assignHunts(world) {
       if (Math.abs(q.z - p.z) > 14 || q === p) continue;
       const Q = geneBuffs(q);
       // Ghostly prey is hard to see; glowing prey stands out at night.
-      const seen = R * (1 - Q.stealth * 0.7) * (night && Q.light > 0 ? 1.5 : 1);
+      // (The Veil of Stars: hunters look straight through the marked.)
+      const veil = q.life && q.life.genome.eld && typeof eldPath === 'function' && eldPath(world, 'veil') ? 0.35 : 0;
+      const seen = R * (1 - Math.min(1, Q.stealth + veil) * 0.7) * (night && Q.light > 0 ? 1.5 : 1);
       const d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
       if (d < seen * seen && d < bd) { bd = d; best = q; }
     }
@@ -1064,7 +1070,8 @@ function migrate(world) {
   }
   if (typeof succession === 'function') succession();
   // Deep water draws its own visitors, once erosion has opened it.
-  if (world.erosion && world.erosion.tier >= 1 && Math.random() < 0.02 && typeof arriveDeep === 'function') arriveDeep(world);
+  // (What's been built in the deep draws its life up more often.)
+  if (world.erosion && world.erosion.tier >= 1 && Math.random() < 0.02 * (1 + 0.4 * (world.deepPlaced || 0)) && typeof arriveDeep === 'function') arriveDeep(world);
   const activeWild = new Set(world.creatures.filter((c) => c.species === 'wild').map((c) => c.sp)).size;
   const young = world.succession && typeof SUCCESSION === 'object' && (world.maturity ?? 0) < SUCCESSION.wild; // a new pond isn't ready for them yet
   if (activeWild < 4 && !young && Math.random() < 0.025) arrive(world, 'wild', true);

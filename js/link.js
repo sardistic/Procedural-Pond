@@ -191,6 +191,30 @@ function packPond(world) {
   const marked = saved.map((c, i) => [c, i]).filter(([c]) => c.life.genome.eld);
   w.vu(marked.length);
   for (const [c, i] of marked) { w.vu(i); w.u8(Math.round(clamp(c.life.corruption || 0, 0, 1) * 127) | (c.life.bound ? 128 : 0)); }
+  // Later still: what the marked have taken in (and who Ascended),
+  const took = saved.map((c, i) => [c, i]).filter(([c]) => c.life.absorbed || c.life.ascended);
+  w.vu(took.length);
+  for (const [c, i] of took) { w.vu(i); w.u8(Math.min(127, c.life.absorbed || 0) | (c.life.ascended ? 128 : 0)); }
+  // the litter on the beach and any blight,
+  const lit = (world.litter || []).filter((l) => LITTER_CODES.includes(l.k)).slice(0, 255);
+  w.u8(lit.length);
+  for (const l of lit) { w.u8(LITTER_CODES.indexOf(l.k) | (Math.min(15, l.hp) << 4)); w.u16(Math.round(l.x)); w.u16(Math.round(l.y)); }
+  const B = world.blight;
+  w.u8(B ? BLIGHT_CODES.indexOf(B.k) : 0);
+  if (B) { w.u16(Math.round(clamp(B.until - world.days, 0, 60) * 1000)); w.u8(B.sp && KIND_CODES.includes(B.sp) ? KIND_CODES.indexOf(B.sp) : 255); }
+  // each structure's upgrades (in the order above),
+  w.u8(st.length);
+  for (const s of st) {
+    w.u8(((s.lv && s.lv.reach) || 0) | (((s.lv && s.lv.strength) || 0) << 2) | (((s.stack || 1) - 1) << 4));
+    w.u8((s.branch === 'life' ? 1 : s.branch === 'dark' ? 2 : 0) | ((s.blv || 0) << 2));
+  }
+  // each plant's traits and the day it was planted (in the growth order),
+  w.vu(grown.length);
+  for (const p of grown) { w.u8(packPlantTraits(p.tr)); w.vu(p.born != null ? Math.round(Math.max(0, p.born) * 10) + 1 : 0); }
+  // and corruption, with the eldritch paths opened.
+  const G2 = world.game || {};
+  w.vu(Math.floor(G2.corruption || 0)); w.vu(Math.floor(G2.corruptionEarned || 0));
+  w.u8(ELD_PATH_CODES.reduce((a, k, i) => a | (G2.eldPaths && G2.eldPaths[k] ? 1 << i : 0), 0));
   return w.bytes();
 }
 
@@ -310,6 +334,25 @@ function unpackV2(r, v = 2) {
               if (c) Object.assign(c.L, { corruption: (v & 127) / 127, bound: !!(v & 128) });
             }
           }
+          if (r.i < r.b.length) {
+            for (let n = r.vu(); n > 0; n--) { const i = r.vu(), v = r.u8(), c = s.creatures[i]; if (c) Object.assign(c.L, { absorbed: v & 127, ascended: !!(v & 128) }); }
+            s.litter = [];
+            for (let n = r.u8(); n > 0; n--) { const v = r.u8(), x = r.u16(), y = r.u16(), k = LITTER_CODES[v & 15]; if (k) s.litter.push({ k, x, y, hp: (v >> 4) || 1 }); }
+            const bk = BLIGHT_CODES[r.u8()];
+            if (bk) { const left = r.u16() / 1000, sp = KIND_CODES[r.u8()] || null; s.blight = { k: bk, left, sp }; }
+            const ns = r.u8();
+            for (let i = 0; i < ns; i++) {
+              const a = r.u8(), b = r.u8(), t = s.structures[i];
+              if (t) Object.assign(t, { lv: { reach: a & 3, strength: (a >> 2) & 3 }, stack: ((a >> 4) & 7) + 1, branch: [null, 'life', 'dark'][b & 3] || null, blv: b >> 2 });
+            }
+            s.plantTraits = [];
+            for (let n = r.vu(); n > 0; n--) { const tr = r.u8(), born = r.vu(); s.plantTraits.push([tr, born]); }
+            if (s.game) {
+              s.game.corruption = r.vu(); s.game.corruptionEarned = r.vu();
+              const bits = r.u8();
+              s.game.eldPaths = Object.fromEntries(ELD_PATH_CODES.filter((k, i) => bits & (1 << i)).map((k) => [k, true]));
+            }
+          }
         }
       }
     }
@@ -387,6 +430,12 @@ function withGrowth(plants, growth) {
   return plants.map((p, i) => ({ ...p, g: growth[i], age: 0, span: rand(...(PLANT_LIFE[p.k] || [0, 40, 80]).slice(1)) }));
 }
 
+// Plants' traits, and the day they were planted (links from before have none).
+function withTraits(plants, list) {
+  if (!list || list.length !== plants.length) return plants;
+  return plants.map((p, i) => ({ ...p, tr: unpackPlantTraits(list[i][0]) || undefined, born: list[i][1] ? (list[i][1] - 1) / 10 : p.born }));
+}
+
 // Turn a decoded link into a regular save (see save.js), regrowing the scenery
 // from the seed and the wild species from theirs.
 function linkToSave(s) {
@@ -429,7 +478,9 @@ function linkToSave(s) {
       ...s.addedRocks,
     ],
     pebbles: tmp.pebbles.map((p) => [p.x, p.y, p.s, PEBBLE_MATS.indexOf(p.m)]),
-    plants: withGrowth([...plants.map((p) => ({ k: p.make, s: p.seed, x: p.x, y: p.y, a: p.args, oi: p.oi })), ...s.addedPlants], s.growth),
+    plants: withTraits(withGrowth([...plants.map((p) => ({ k: p.make, s: p.seed, x: p.x, y: p.y, a: p.args, oi: p.oi })), ...s.addedPlants], s.growth), s.plantTraits),
+    litter: (s.litter || []).map((l) => ({ ...l, b: s.days })),
+    blight: s.blight ? { k: s.blight.k, until: s.days + s.blight.left, sp: s.blight.sp } : null,
     succession: s.succession || null,
     schools: s.schools,
     creatures: s.creatures.map((c) => {

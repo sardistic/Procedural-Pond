@@ -396,7 +396,7 @@ function renderCensus() {
         ul.append(m);
       }
       if (list.length > 60) ul.append(el('li', 'more', `and ${list.length - 60} more`));
-      if (kind !== 'tadpole') {
+      if (kind !== 'tadpole' && !world.observe) {
         const all = el('button', 'recycle-all');
         all.type = 'button';
         all.append(document.createTextNode(`Recycle all ${list.length} for `), el('i', 'essence'), document.createTextNode(String(S ? S.value : 0)));
@@ -693,6 +693,7 @@ const RARITY_WORDS = ['a common species', 'an uncommon species', 'a scarce speci
 const yearsLabel = (y) => (y < 1 ? `${Math.round(y * 12)} months` : `${y} years`);
 
 function openSpawnCard(kind, anchor) {
+  if (world.observe) return; // someone else's pond: look only
   if (spawnUi.kind === kind) { closeSpawnCard(); return; }
   spawnUi.kind = kind;
   spawnUi.anchor = anchor;
@@ -909,7 +910,7 @@ function renderCreature() {
     const rate = eldRate(world, c) * L.lifespan;
     box.append(stage, bar, colored('span', 'note', L.bound ? 'Bound: the change in it has stopped.'
       : `${rate > 4 ? 'Changing fast here' : rate > 2 ? 'Changing' : 'Changing slowly'}: faster at night, in deep water, near the idol, the whale fall or the mythic.${st === 2 ? ' Small animals circle it; those too close lose their minds; at night it dreams the mark into its neighbours.' : st === 1 ? ' The water around it feels wrong.' : ''}`));
-    if (here) {
+    if (here && !world.observe) {
       const acts = el('div', 'eld-acts');
       const fd = el('button', null);
       fd.type = 'button';
@@ -925,6 +926,18 @@ function renderCreature() {
       box.append(acts);
     }
     parts.push(box);
+  }
+  // Growing its traits (traits.js): essence raises its genes; corruption, the eldritch.
+  if (here && !world.observe) {
+    parts.push(el('h4', null, 'Grow its traits'));
+    const tree = el('div', 'trait-tree');
+    for (const key of ANIMAL_TRAITS) {
+      const E = ENHANCE[key], lv = animalLevel(c, key), cost = animalTraitCost(c, key);
+      tree.append(traitButton(E.label, 'essence', lv < 3 ? cost : null, `${E.label}: ${E.note}`, lv >= 3, () => buyAnimalTrait(world, c, key), pips(lv, 3), (GENE_INFO[E.buff] || {}).color, renderCreature));
+    }
+    const eldKeys = Object.entries(ELD_TRAITS).filter(([, T]) => T.ok(c) && (!T.path || eldPath(world, T.path)));
+    for (const [k, T] of eldKeys) tree.append(traitButton(T.label, 'corruption', T.cost(c), T.note, false, () => buyEldTrait(world, c, k), null, '#3aff9a', renderCreature));
+    parts.push(tree);
   }
   parts.push(el('h4', null, 'Genes'));
   const genes = el('ul', 'genes');
@@ -961,7 +974,7 @@ function renderCreature() {
     parts.push(ul);
   }
   const acts = el('div', 'cr-acts');
-  if (here) {
+  if (here && !world.observe) {
     const f = el('button', null, cam.follow === c ? 'Following' : 'Follow');
     f.type = 'button';
     f.addEventListener('click', () => { cam.tour = false; byId('tour').setAttribute('aria-pressed', false); follow(c); });
@@ -1000,7 +1013,7 @@ function renderCreature() {
 const hatchUi = { open: false, timer: 0, sig: '' };
 
 function setHatchery(open) {
-  hatchUi.open = open && !!world.hatchery;
+  hatchUi.open = open && !!world.hatchery && !world.observe;
   byId('hatchery').hidden = !hatchUi.open;
   if (hatchUi.open) { setScore(false); hatchUi.sig = ''; renderHatchery(); }
 }
@@ -1119,24 +1132,31 @@ const SLICE_SKY = hexToInt('#7ec8e0'), SLICE_SAND = hexToInt('#c8b484'), SLICE_R
 function drawSlice() {
   const cv = byId('slice'), g = cv.getContext('2d'), S = cv.width, T = cv.height, img = g.createImageData(S, T), px = new Uint32Array(img.data.buffer);
   const side = world.shoreSide ?? 3, axisX = side < 2, len = axisX ? world.W : world.H, cross = axisX ? world.H : world.W;
-  const toWorld = (i) => {
-    const a = (i + 0.5) / S * len, pos = side === 0 || side === 2 ? a : len - 1 - a;
-    return pos;
-  };
-  const tide = world.shore ? world.tide.level : 0.5, surf = 6 + (1 - tide) * 10, floorY = 24, abyssY = T - 3;
+  // a: distance from the landward edge (0) out to the far side (len); pos: the world coordinate along the axis.
+  const posOf = (a) => (side === 0 || side === 2 ? a : len - 1 - a), aOf = (pos) => (side === 0 || side === 2 ? pos : len - 1 - pos);
+  const at = (a, f) => { const pos = clamp(posOf(a), 0, len - 1); return axisX ? [pos, cross * f] : [cross * f, pos]; };
+  const tide = world.shore ? world.tide.level : 0.5, surf = 6 + (1 - tide) * 10, toeY = 22, shelfY = 27, abyssY = T - 3;
+  // Where the beach ends and where the drop-off begins (across three lines of the pond).
+  let beach = 0, lip = len;
+  if (world.shore) for (let a = 0; a < len; a += 2) { if ([0.3, 0.5, 0.7].some((f) => shoreAt(world, ...at(a, f)) > 0.02)) beach = a; }
+  if (world.depth) for (let a = beach; a < len; a += 2) { if ([0.3, 0.5, 0.7].some((f) => depthAt(world, ...at(a, f)) > 0.05)) { lip = a; break; } }
+  // The beach keeps at least a quarter of the strip however far the pond grows.
+  const share = world.shore && beach > 4 ? Math.max(0.25, beach / len) : 0;
+  const toA = (i) => { const u = (i + 0.5) / S; return !share ? u * len : u < share ? u / share * beach : beach + (u - share) / (1 - share) * (len - beach); };
+  const toI = (a) => (!share ? a / len : a < beach ? a / beach * share : share + (a - beach) / Math.max(1, len - beach) * (1 - share)) * S;
   const water = world.waterColor || SLICE_WATER, dark = DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed;
   const ground = new Float32Array(S);
   for (let i = 0; i < S; i++) {
-    const pos = toWorld(i);
+    const a = toA(i);
     let e = 0, d = 0;
-    for (const f of [0.3, 0.5, 0.7]) {
-      const x = axisX ? pos : cross * f, y = axisX ? cross * f : pos;
-      e += shoreAt(world, x, y) / 3; d += depthAt(world, x, y) / 3;
-    }
-    ground[i] = e > 0 ? 6 + (1 - e) * (floorY - 6) : floorY + d * (abyssY - floorY);
+    for (const f of [0.3, 0.5, 0.7]) { const [x, y] = at(a, f); e += shoreAt(world, x, y) / 3; d += depthAt(world, x, y) / 3; }
+    // The beach, then a floor sloping gently down to the drop-off, then the deep shelves.
+    const slope = clamp((a - beach) / Math.max(1, lip - beach), 0, 1);
+    ground[i] = e > 0.02 ? 6 + (1 - e) * (toeY - 6) : d > 0.02 ? shelfY + d * (abyssY - shelfY) : toeY + slope * (shelfY - toeY);
+    const sand = mixColor(SLICE_SAND, 0xff2a3a44, slope * 0.35);
     for (let j = 0; j < T; j++) {
       let c;
-      if (j >= ground[i]) c = d > 0.05 ? SLICE_ROCK : SLICE_SAND;
+      if (j >= ground[i]) c = d > 0.05 ? SLICE_ROCK : e > 0.02 ? SLICE_SAND : sand;
       else if (j < surf) c = mixColor(SLICE_SKY, 0xff101820, world.darkness * 0.8);
       else c = mixColor(water, dark, clamp((j - surf) / (abyssY - surf), 0, 1) * 0.95);
       px[i + j * S] = c;
@@ -1153,13 +1173,21 @@ function drawSlice() {
   // Animals at their depth.
   for (const c of world.creatures) {
     if (!c.life) continue;
-    const a = axisX ? c.x : c.y, pos = side === 0 || side === 2 ? a : len - 1 - a, i = clamp(Math.floor(pos / len * S), 0, S - 1);
+    const i = clamp(Math.floor(toI(aOf(axisX ? c.x : c.y))), 0, S - 1);
     const y = lerp(ground[i] - 1, surf + 1, clamp((c.z || 0) / 46, 0, 1));
-    g.fillStyle = DEEP[c.species] ? (DEEP[c.species].mythic ? '#ff6fae' : '#9ae0ff') : c.life.traits.length ? '#ffd166' : '#dff6f0';
+    g.fillStyle = c.life.genome.eld ? '#3aff9a' : DEEP[c.species] ? (DEEP[c.species].mythic ? '#ff6fae' : '#9ae0ff') : c.life.traits.length ? '#ffd166' : '#dff6f0';
     g.fillRect(i, Math.round(y), 1, 1);
   }
+  // What's on screen: the view's stretch of the pond, exact at every zoom.
+  if (typeof visibleRect === 'function') {
+    const [x0, y0, x1, y1] = visibleRect(), a0 = aOf(axisX ? x0 : y0), a1 = aOf(axisX ? x1 : y1);
+    const i0 = Math.floor(toI(Math.min(a0, a1))), i1 = Math.ceil(toI(Math.max(a0, a1)));
+    g.strokeStyle = '#ffd166';
+    g.lineWidth = 1;
+    g.strokeRect(i0 + 0.5, 0.5, Math.max(2, i1 - i0) - 1, T - 1);
+  }
   const tier = E ? E.tier : 0;
-  cv.title = `${tierName(world, tier)}${next ? ` · next: ${tierName(world, E.tier + 1).toLowerCase()} (erosion ${E.e.toFixed(1)} of ${next.erosion})` : ' · the deepest the pond can go'}. Click for the depths and what lives there.`;
+  cv.title = `${tierName(world, tier)}${next ? ` · next: ${tierName(world, E.tier + 1).toLowerCase()} (erosion ${E.e.toFixed(1)} of ${next.erosion})` : ' · the deepest the pond can go'}. The box is what's on screen. Click for the depths and what lives there.`;
 }
 
 function setEvo(open) {
@@ -1171,7 +1199,7 @@ function setEvo(open) {
 function renderEvo() {
   if (!evoUi.open) return;
   const E = world.erosion || newErosion(), G = world.game, next = DEPTH_TIERS[E.tier + 1];
-  const sig = JSON.stringify([E.tier, Math.floor(E.e * 10), G.unlocked || [], Math.floor((G.essence || 0) / 5)]);
+  const sig = JSON.stringify([E.tier, Math.floor(E.e * 10), G.unlocked || [], Math.floor((G.essence || 0) / 5), Math.floor(G.corruption || 0), G.eldPaths || {}]);
   if (sig === evoUi.sig) return;
   evoUi.sig = sig;
   const eta = tierEta(world);
@@ -1190,7 +1218,7 @@ function renderEvo() {
   const counts = [0, 0, 0];
   for (const c of world.creatures) { const s = c.life ? eldStage(c.life) : -1; if (s >= 0) counts[s]++; }
   const ELD_NOTES = [
-    'A mark that comes from nowhere (1 in 1,500 births), from fossils, or from being born near the drowned idol or in the abyss. It passes to young: 20% from one marked parent, 45% from two.',
+    'A mark that comes from nowhere (1 in 1,500 births), from fossils, or from being born near the drowned idol or in the abyss. It passes to young: 15% from one marked parent, 35% from two. The pond resists it: once about one animal in twelve is marked, the dreams stop spreading it.',
     'The change comes on over a lifetime, faster at night, in deep water, near the idol or the whale fall, and near the mythic; in the shallows most die before it’s done. New eyes open; the water nearby feels wrong.',
     'Transcended: a crown of tentacles and a sigil that glows at night. It draws small animals into circling it, drives the closest mad, and dreams its mark into its neighbours. Each one wears the pond deeper.',
   ];
@@ -1202,6 +1230,22 @@ function renderEvo() {
     eld.append(node);
   });
   eld.append(el('p', 'note', 'On a marked animal’s card: feed the dream (essence pushes the change on) or bind it (essence sets it back and stops it). The hatchery can breed for the deep dream.'));
+  // The paths: what corruption buys for the whole pond.
+  const paths = el('div', 'eld-paths');
+  paths.append(colored('h4', null, `The eldritch paths · ${Math.floor(G.corruption || 0)} corruption`));
+  for (const [k, P] of Object.entries(ELD_PATHS)) {
+    const owned = eldPath(world, k), open = pathOpen(world, k), b = el('button', owned ? 'path owned' : 'path');
+    b.type = 'button';
+    const nm = el('b', null, P.label);
+    b.append(nm);
+    if (!owned) { const pr = el('span', 'pr'); pr.append(el('i', 'corrupt'), document.createTextNode(String(P.cost))); b.append(pr); }
+    b.append(colored('span', 'note', owned ? `Open: ${P.note}` : P.note));
+    b.disabled = !!world.observe || owned || !open || (G.corruption || 0) < P.cost;
+    b.title = owned ? 'This path is open' : !open ? `Needs ${P.needs.map((n) => ELD_PATHS[n].label).join(' and ')} first` : `${P.cost} corruption`;
+    b.addEventListener('click', () => { if (buyPath(world, k)) { evoUi.sig = ''; renderEvo(); } });
+    paths.append(b);
+  }
+  eld.append(paths);
   byId('evo-tree').replaceChildren(eld, ...branches.map((br) => {
     const col = el('div', 'evo-col');
     col.append(colored('h3', null, br === 'salt' ? 'Salt: down into the abyss' : 'Fresh: down into the drowned cathedral'));
@@ -1273,7 +1317,7 @@ function updateScoreHud() {
   if (!G) return;
   const rank = world.link && G.board && G.points >= BOARD_MIN && Net.rank ? `#${Net.rank}` : '';
   if (!world.erosion) return;
-  const depth = pondFathoms(world), key = `${depth}|${G.pearls}|${G.essence}|${world.seed}|${rank}`;
+  const depth = pondFathoms(world), key = `${depth}|${G.pearls}|${G.essence}|${world.seed}|${rank}|${Math.floor(G.corruption || 0)}`;
   if (key === scoreUi.shown) return;
   const was = scoreUi.shown ? +scoreUi.shown.split('|')[0] : null;
   scoreUi.shown = key;
@@ -1282,6 +1326,8 @@ function updateScoreHud() {
   byId('score-points').textContent = `${fmtShort(depth)} fm`;
   byId('score-pearls').textContent = fmtShort(G.pearls);
   byId('score-essence').textContent = fmtShort(G.essence || 0);
+  byId('score-corruption').textContent = fmtShort(Math.floor(G.corruption || 0));
+  byId('bar-cor').hidden = !(G.corruptionEarned > 0 || G.corruption > 0);
   if (was != null && depth > was) restartAnim(byId('score-btn'), 'bump');
 }
 
@@ -1324,6 +1370,15 @@ function renderScorePanel(force = false) {
     : G.points < BOARD_MIN || !Net.rank ? `listed at ${BOARD_MIN} pts` : `rank${Net.board && Net.board.ponds ? ` of ${fmt(Net.board.ponds)}` : ''}`;
   byId('sp-flies').textContent = `Tonight: ${plan.yellow} of ${plan.full} fireflies${plan.blue ? ` and ${plan.blue} blue` : ''}. ` +
     `A full swarm means the deepest ponds' range, ${fmt(plan.high)}+ fathoms${plan.blue ? '.' : '; blue fireflies come once you reach it.'}`;
+  // Litter, visitors and the risk of a blight; and corruption, if there's any.
+  const litter = (world.litter || []).length, risk = Math.round(blightRisk(world) * 100);
+  byId('sp-coast').replaceChildren(colorize([
+    `Visitors: ${fmt(G.views || 0)}`,
+    litter ? `litter on the beach: ${litter} (the water ${Math.round((world.pollution || 0) * 100)}% fouled; click it to clear)` : 'the beach is clean',
+    world.blight ? `${capFirst(BLIGHTS[world.blight.k].label(world))} is in the pond` : `risk of a blight at dawn: ${risk}%`,
+    world.river ? `the river runs ${world.river.w} wide` : '',
+    G.corruptionEarned ? `corruption: ${Math.floor(G.corruption || 0)}` : '',
+  ].filter(Boolean).join(' · ') + '. Popular, high-scoring ponds draw more litter; aerators make blights rarer.'));
   byId('sp-best').textContent = G.best ? `Best find: ${TIERS[G.best.tier]} ${findLabel(G.best)}${G.best.name ? `, ${G.best.name}` : ''}` : '';
   byId('sp-recent').replaceChildren(...(G.recent.length ? G.recent.slice(0, 6).map((r) => {
     const li = el('li');
@@ -1384,6 +1439,74 @@ function renderScorePanel(force = false) {
 }
 
 // ---- wiring ------------------------------------------------------------------------------------
+
+// ---- a plant's or structure's card: what it is, and traits to grow (traits.js) ----------------------
+const objUi = { o: null };
+const pips = (lv, max) => '●'.repeat(lv) + '○'.repeat(Math.max(0, max - lv));
+function traitButton(label, cur, cost, note, maxed, fn, extra, color, redraw) {
+  const b = el('button', 'trait'), nm = el('b', null, label);
+  b.type = 'button';
+  if (color) nm.style.color = color;
+  b.append(nm);
+  if (extra) b.append(el('span', 'pips', extra));
+  if (cost != null) { const pr = el('span', 'pr'); pr.append(el('i', cur === 'essence' ? 'essence' : cur === 'corruption' ? 'corrupt' : 'pearl'), document.createTextNode(String(cost))); b.append(pr); }
+  b.title = note;
+  b.disabled = !!world.observe || maxed || (cost != null && have(world, cur) < cost);
+  b.addEventListener('click', () => { if (fn() !== false) redraw(); });
+  return b;
+}
+
+function showObject(o) {
+  objUi.o = o;
+  hideCreature();
+  byId('object').hidden = false;
+  renderObject();
+}
+function hideObject() { objUi.o = null; byId('object').hidden = true; }
+
+function renderObject() {
+  const o = objUi.o, box = byId('object');
+  if (!o) return;
+  const isS = !!(o.kind && STRUCTURES[o.kind]), parts = [], head = el('header', 'cr-head'), close = el('button', 'icon', '×');
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Close');
+  close.addEventListener('click', hideObject);
+  const here = isS ? world.structures.includes(o) : world.plants.includes(o) || world.pads.includes(o);
+  head.append(el('b', null, isS ? STRUCTURES[o.kind].label : PLANT_NAMES[o.make] || o.make), el('span'), close);
+  parts.push(head);
+  const tree = el('div', 'trait-tree');
+  if (isS) {
+    const def = STRUCTURES[o.kind];
+    parts.push(colored('p', 'cr-sub', `${def.desc}.`), el('p', 'note', `Built on day ${Math.floor(o.born || 0) + 1}${depthAt(world, o.x, o.y) > 0.15 ? ' · in deep water: it lets the pond hold more, and draws deep life up' : ''}`));
+    for (const [k, T] of Object.entries(STRUCT_TRAITS)) {
+      const lv = (o.lv && o.lv[k]) || 0;
+      tree.append(traitButton(T.label, 'pearls', lv < T.max ? T.cost(o, lv) : null, T.note, lv >= T.max, () => buyStructTrait(world, o, k), pips(lv, T.max), null, renderObject));
+    }
+    if (o.kind === 'island') {
+      const st = o.stack || 1, rc = raiseCost(o);
+      tree.append(traitButton('Raise the island', 'pearls', st < ISLAND_MAX ? rc.pearls : null, `bigger, higher and lusher (and ${rc.essence} essence)`, st >= ISLAND_MAX, () => raiseIsland(world, o), pips(st, ISLAND_MAX), '#7cc44c', renderObject));
+      if (st >= 3) {
+        for (const [k, B] of Object.entries(ISLAND_BRANCH)) {
+          if (o.branch && o.branch !== k) continue;
+          const lv = o.blv || 0;
+          tree.append(traitButton(B.label, B.cur, lv < 3 ? B.cost(lv) : null, B.note, lv >= 3, () => growIsland(world, o, k), pips(lv, 3), k === 'life' ? '#ffd870' : '#3aff9a', renderObject));
+        }
+      } else parts.push(el('p', 'note', 'Raise it to level 3 and it can go one of two ways: lanterns of life, or the whispering stone.'));
+    }
+    if (o.kind === 'hatchery') tree.append(traitButton('Open the hatchery', null, null, '', false, () => { hideObject(); setHatchery(true); return false; }, null, '#f8c050', renderObject));
+  } else {
+    const g = o.growth ?? 1, likes = typeof likedByText === 'function' ? likedByText(o.make) : '';
+    parts.push(colored('p', 'cr-sub', `${Math.round(g * 100)}% grown · ${o.age != null ? `${Math.floor(o.age)} of about ${Math.round(o.span || 0)} days` : 'full grown'}${o.born != null ? ' · planted by you' : ''}`));
+    if (likes) parts.push(colored('p', 'note', likes));
+    for (const [k, T] of Object.entries(PLANT_TRAITS)) {
+      const lv = (o.tr && o.tr[k]) || 0;
+      tree.append(traitButton(T.label, T.cur, lv < T.max ? T.cost(lv) : null, T.note, lv >= T.max, () => buyPlantTrait(world, o, k), pips(lv, T.max), k === 'eld' ? '#3aff9a' : k === 'glow' ? '#9af0b0' : null, renderObject));
+    }
+  }
+  if (!here) parts.push(colored('p', 'cr-gone', 'It is gone from the pond'));
+  else parts.push(el('h4', null, world.observe ? 'Its traits' : 'Grow it'), tree);
+  box.replaceChildren(...parts);
+}
 
 function initHud() {
   buildDock();
@@ -1463,5 +1586,5 @@ function hudTick(dt) {
     }
   }
   evoUi.timer -= dt;
-  if (evoUi.timer <= 0) { evoUi.timer = 0.5; drawSlice(); renderEvo(); }
+  if (evoUi.timer <= 0) { evoUi.timer = 0.25; drawSlice(); renderEvo(); }
 }

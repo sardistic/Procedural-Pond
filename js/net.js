@@ -77,6 +77,7 @@ async function pushPond(world) {
   }
   world.game.finds.splice(0, sent); // those finds are on the shared feed now
   if (typeof res.rank === 'number') Net.rank = res.rank;
+  if (typeof res.views === 'number') world.game.views = res.views; // how many have come to look: popular ponds draw litter
   if (typeof res.high === 'number') Net.board = { ...(Net.board || {}), high: res.high };
   return world.link.id;
 }
@@ -98,3 +99,8 @@ async function fetchBoard() {
 }
 
 const shortUrl = (id) => `${location.origin}/${id}`;
+
+// The ponds either side of one along the shared beach: { west, east }, each { id, depth, points, habitat, animals } or null.
+async function fetchNeighbours(id) {
+  try { return await api('GET', `/neighbours${id ? `?id=${encodeURIComponent(id)}` : ''}`); } catch { return { west: null, east: null }; }
+}

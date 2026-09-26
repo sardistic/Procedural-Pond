@@ -130,7 +130,8 @@ function layout(regen) {
     out = new Uint32Array(image.data.buffer);
     regen = true;
   }
-  world.maxPop = Math.round(W * H / 2400);
+  world.maxPopBase = Math.round(W * H / 2400);
+  world.maxPop = world.maxPopBase + (world.maxPopBonus || 0); // what's built in the deep lets it hold more
   // The minimap keeps the pond's shape.
   mini.height = clamp(Math.round(mini.width * H / W), 54, 200);
   mini.style.height = `${mini.height}px`;
@@ -245,6 +246,7 @@ function buildPond() {
   stopFollow();
   Object.assign(world, {
     creatures: [], food: [], eggs: [], effects: [], swarms: [], targets: {}, journal: [], glints: [], structures: [], hatchery: null, remains: [], fossils: [],
+    litter: [], blight: null, riverW: 0, islandKey: null, scourKey: null, deepPlaced: 0, maxPopBonus: 0, pollution: 0,
     days: 0.4, clock: 0.4, spawning: 0, spawnNight: -1, records: null, moon: null,
     tide: { level: 0.5, range: 0, rising: true, flow: 0, surf: 0, wave: 0 },
   });
@@ -277,7 +279,9 @@ function buildPond() {
   initZones(world);
   $('seed-name').textContent = world.seed;
   const m = moonInfo(world.days, world.moon0);
-  if (resume && world.silentRestore) {
+  if (resume && world.quietRestore) {
+    // (an observed pond brought up to date: nothing to announce)
+  } else if (resume && world.silentRestore) {
     logEvent(world, `✦ The pond has deepened: ${world.silentRestore}`, null, { cat: 'rare', pri: 3 });
     world.silentRestore = null;
   } else if (resume) {
@@ -378,9 +382,14 @@ function update(dt) {
   updateErosion(world, dt);
   updateDeep(world, dt);
   updateEldritch(world, dt);
+  updateCoast(world, dt);
+  updateGulls(world, dt);
   updateZones(world, dt);
   updateGame(world, dt);
-  for (const c of world.creatures) if (!c.dying) c.update(dt, world);
+  for (const c of world.creatures) {
+    if (c.dread && (c.dread.t -= dt) <= 0) c.dread = null;
+    if (!c.dying && !c.absorbing) c.update(dt, world);
+  }
   world.remains = world.remains.filter((rm) => rm.update(dt, world));
   world.fossils = world.fossils.filter((f) => f.update(dt, world));
   if (world.creatures.some((c) => c.gone || c.caught)) {
@@ -456,6 +465,8 @@ function render(full = false) {
   r.begin();
   for (const p of world.plants) drawGrown(r, p, t);
   for (const s of world.structures) if (DRAW[s.kind]) DRAW[s.kind](r, s, t, world);
+  drawRiver(r, world, t);
+  for (const l of world.litter) l.draw(r, t, world);
   for (const rm of world.remains) rm.draw(r, t);
   for (const f of world.fossils) f.draw(r, t);
   for (const p of world.pads) drawGrown(r, p, t);
@@ -481,13 +492,19 @@ function render(full = false) {
   const amp = water.wobble * (1 + Math.max(0, world.weather.gust) * 0.5 + world.tide.surf * 0.3);
   for (let y = rect[1]; y <= rect[3]; y++) wob.x[y] = Math.round(Math.sin(y * 0.19 + t * 1.9) * amp * (0.55 + 0.45 * Math.sin(t * 0.4 + y * 0.013)));
   for (let x = rect[0]; x <= rect[2]; x++) wob.y[x] = Math.round(Math.sin(x * 0.15 + t * 1.6) * amp * (0.55 + 0.45 * Math.sin(t * 0.35 + x * 0.011)));
+  // A bloom turns the water green (a red tide, red); wind and surf raise a swell, bigger over the deep.
+  const bloom = world.blight && world.blight.k === 'bloom', hab = world.opts.habitat;
+  const fogColor = bloom ? mixColor(world.waterColor, BLOOM_TINT[hab] || BLOOM_TINT.mixed, 0.45) : world.waterColor;
+  const swell = clamp(0.3 + world.tide.surf * 0.35 + Math.max(0, world.weather.gust) * 0.45 + world.weather.rain * 0.15, 0, 1.2) * (hab === 'fresh' ? 0.7 : 1);
   r.compose(out, {
     bg: world.bg, bgLight: world.bgLight, caustic: world.caustic, t,
     outline: OUTLINE, emissive: EMISSIVE, fade: FADE, thick: THICK, anyThick, tint: light.tint,
     caustics: o.caustics && light.caustics, causticT: water.caustic, shadows: o.shadows, outlines: o.outlines,
-    fog: { color: world.waterColor, amount: water.fog }, wob,
+    fog: { color: fogColor, amount: water.fog + (bloom ? 0.12 : 0) }, wob,
     shore: world.shore, bgDry: world.bgDry, tide: world.tide.level, surf: world.tide.surf, wave: world.tide.wave,
     depth: world.depth, deepColor: DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed,
+    voidSkin: world.eldMarks && world.eldMarks.length || world.plants.some((p) => p.tr && p.tr.eld) ? VOID_SKIN : null,
+    swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6],
   }, rect);
   drawGlints();
   if (world.bones) drawBones();
@@ -498,10 +515,12 @@ function render(full = false) {
 
 // A plant drawn at its size as it grows (and shrinks as it dies back).
 function drawGrown(r, p, t) {
-  const g = p.growth ?? 1;
-  if (g < 0.999) r.setScale(p.x, p.y, Math.max(0.1, g), p.make === 'lily' || p.make === 'duckweed' ? 1 : Math.max(0.1, g)); // floating plants stay at the surface
+  const g = (p.growth ?? 1) * (1 + 0.15 * ((p.tr && p.tr.lush) || 0)); // lush plants grow bigger
+  const scaled = Math.abs(g - 1) > 0.001;
+  if (scaled) r.setScale(p.x, p.y, Math.max(0.1, g), p.make === 'lily' || p.make === 'duckweed' ? 1 : Math.max(0.1, g)); // floating plants stay at the surface
   p.draw(r, t, world);
-  if (g < 0.999) r.setScale();
+  if (scaled) r.setScale();
+  if (p.tr) drawPlantExtras(r, p, t, world);
 }
 
 // X-ray view of the underlying model: spine links, joint radii, and leg IK.
@@ -538,7 +557,7 @@ function drawBones() {
   }
 }
 
-let last = performance.now(), mapTimer = 0;
+let last = performance.now(), mapTimer = 0, nbTimer = 2;
 function frame(now) {
   // The first rAF timestamp can predate the load-time performance.now(); never step backwards.
   const dt = clamp((now - last) / 1000, 0, 0.05);
@@ -547,12 +566,15 @@ function frame(now) {
   updateCamera(dt);
   render();
   updateCard(dt);
-  Sound.update(world, world.paused ? 0 : dt);
+  Sound.update(world, world.paused ? 0 : dt, visibleRect(), view.k);
   hudTick(dt);
   saveTimer -= dt;
   if (saveTimer <= 0) { saveTimer = 15; saveNow(); }
   syncTimer -= dt;
   if (syncTimer <= 0) { syncTimer = 90; syncPond(); }
+  observeSync(dt);
+  nbTimer -= dt;
+  if (nbTimer <= 0) { nbTimer = 1; edgeHints(); if (Date.now() - NB.at > 300000) refreshNeighbours(); }
   boardTimer -= dt;
   if (boardTimer <= 0) { boardTimer = 300; refreshBoard(); }
   statusTimer -= dt;
@@ -626,6 +648,10 @@ function structuresChanged(reshape) {
 }
 
 function build(kind, x, y) {
+  if (kind === 'island') {
+    const base = world.structures.find((s) => s.kind === 'island' && Math.hypot(s.x - x, s.y - y) < islandRadius(world, s) * 1.2);
+    if (base) { raiseIsland(world, base); return; }
+  }
   const def = STRUCTURES[kind], why = canPlace(world, kind, x, y);
   if (why) { showTicker(`Can't build a ${def.label.toLowerCase()} here: ${why}`); return; }
   if (world.game.pearls < def.pearls) { notEnough(def.pearls, 'pearls'); return; }
@@ -683,6 +709,8 @@ function creatureAt(x, y) {
 }
 
 function removeAt(x, y) {
+  const li = litterAt(world, x, y);
+  if (li) { haulLitter(world, li); return; }
   const c = creatureAt(x, y);
   if (c) { recycle(c); return; }
   const st = structureAt(world, x, y);
@@ -775,6 +803,7 @@ function release() {
 }
 
 canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return; // right-click opens a card (contextmenu); it never uses the tool
   touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
   canvas.setPointerCapture(e.pointerId);
   if (touches.size === 2) {
@@ -787,6 +816,13 @@ canvas.addEventListener('pointerdown', (e) => {
   if (touches.size > 2) return;
   toWorld(e);
   const { x, y } = world.pointer;
+  if (world.observe) {
+    // Someone else's pond: pan and look; a tap on an animal opens its card.
+    const c = creatureAt(x, y);
+    if (c) tap = { x: e.clientX, y: e.clientY, t: performance.now(), c };
+    press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x, y, panning: false, over: 0 };
+    return;
+  }
   if (world.tool === 'net') { removeAt(x, y); return; }
   const c = creatureAt(x, y);
   if (c) {
@@ -795,9 +831,23 @@ canvas.addEventListener('pointerdown', (e) => {
     canvas.style.cursor = 'grabbing';
     tap = { x: e.clientX, y: e.clientY, t: performance.now(), c };
   } else {
-    press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x, y, panning: false };
+    press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x, y, panning: false, over: 0 };
+    // A long press opens the card of whatever is there (plants too).
+    press.longT = setTimeout(() => { if (press && !press.panning) press.done = openThingAt(x, y); }, 550);
   }
 });
+
+// Right-click (or a long press) opens the card of an animal, plant or structure.
+canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); toWorld(e); openThingAt(world.pointer.x, world.pointer.y); });
+function openThingAt(x, y) {
+  const c = creatureAt(x, y);
+  if (c && c.life) { showCreature(c); return true; }
+  const st = structureAt(world, x, y);
+  if (st) { showObject(st); return true; }
+  const p = [...world.pads, ...world.plants].reverse().find((q) => q.hit(x, y));
+  if (p) { showObject(p); return true; }
+  return false;
+}
 
 canvas.addEventListener('pointermove', (e) => {
   if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -813,7 +863,13 @@ canvas.addEventListener('pointermove', (e) => {
   if (press) {
     const dx = e.clientX - press.cx, dy = e.clientY - press.cy;
     if (!press.panning && dx * dx + dy * dy > 36) { press.panning = true; canvas.style.cursor = 'move'; stopFollow(); }
-    if (press.panning) { view.tx = press.tx + dx; view.ty = press.ty + dy; applyView(); }
+    if (press.panning) {
+      const wx = press.tx + dx, wy = press.ty + dy;
+      view.tx = wx; view.ty = wy; applyView();
+      // Past the end of the beach: the next pond along (see neighbours).
+      press.over = beachAxisX() ? wx - view.tx : wy - view.ty;
+      edgePull(press.over);
+    }
     return;
   }
   if (world.grab) return;
@@ -827,15 +883,22 @@ let tap = null;
 function pointerEnd(e) {
   touches.delete(e.pointerId);
   if (touches.size < 2) pinch = null;
+  if (press) clearTimeout(press.longT);
+  if (press && press.panning && Math.abs(press.over) >= EDGE_PULL) goNeighbour(press.over > 0 ? 'west' : 'east');
+  edgePull(0);
+  if (press && press.done) press = null; // a long press opened a card
   if (press && !press.panning && e.type === 'pointerup') {
     // Clicking the hatchery opens it (with any tool but the Net); feeding over
     // another structure tells you about it.
     const st = world.tool !== 'net' && structureAt(world, press.x, press.y);
     const rm = world.tool !== 'net' && remainsAt(world, press.x, press.y), fo = world.tool !== 'net' && fossilAt(world, press.x, press.y);
-    if (fo) collectFossil(world, fo);
+    const li = litterAt(world, press.x, press.y);
+    if (world.observe) { /* someone else's pond: look only */ }
+    else if (li) haulLitter(world, li);
+    else if (fo) collectFossil(world, fo);
     else if (rm) collectRemains(world, rm);
     else if (st && st.kind === 'hatchery') setHatchery(true);
-    else if (st && world.tool === 'feed') showTicker(`${STRUCTURES[st.kind].label}: ${STRUCTURES[st.kind].desc}`);
+    else if (st && world.tool === 'feed') showObject(st);
     else useTool(press.x, press.y);
   }
   // A quick click on an animal (not a drag) opens its card.
@@ -1010,6 +1073,99 @@ document.getElementById('map-layer').addEventListener('click', () => {
   const layers = MINI_LAYERS.filter(([k]) => k !== 'water' || world.opts.habitat === 'mixed');
   setMiniLayer(layers.indexOf(MINI_LAYERS[miniLayer]) + 1);
 });
+
+// ---- neighbours: the shared beach ----------------------------------------------------------------
+// Every pond lies on one long beach with the others, in the order they were
+// made. Drag past the end of your beach and you walk into the next pond along:
+// someone else's, run here from its owner's latest save (the master copy on the
+// server) and brought up to date as they play. You can look around, follow
+// animals and read cards, but not touch anything. Drag on past its far end for
+// the next one, or back (or press Return) to go home.
+const NB = { west: null, east: null, at: 0, busy: false };
+const EDGE_PULL = 150;
+const beachAxisX = () => (world.shoreSide ?? 3) >= 2; // a beach along the top or bottom runs left to right
+
+async function refreshNeighbours() {
+  if (NB.busy || !Net.base || IS_BOT) return;
+  NB.busy = true;
+  const id = world.observe ? world.observe.id : world.link && world.link.id;
+  const r = await fetchNeighbours(id);
+  Object.assign(NB, { west: r.west, east: r.east, at: Date.now(), busy: false });
+  edgeHints();
+}
+
+// The tab at each end of the beach, naming the pond beyond.
+function edgeHints() {
+  const ax = beachAxisX(), w = world.W * view.k, h = world.H * view.k;
+  for (const dir of ['west', 'east']) {
+    const el = $(`edge-${dir}`), n = NB[dir];
+    el.hidden = !n;
+    if (!n) continue;
+    el.classList.toggle('vertical', !ax);
+    const home = world.observe && n.id === world.observe.homeId;
+    el.querySelector('b').textContent = home ? 'your pond' : n.id;
+    el.querySelector('span').textContent = home ? 'drag here to go home' : `${(n.depth || 1).toLocaleString()} fm · ${HABITATS[n.habitat] || ''} · drag to visit`;
+    const atEnd = ax ? (dir === 'west' ? view.tx >= -1 : view.tx <= innerWidth - w + 1) : (dir === 'west' ? view.ty >= -1 : view.ty <= innerHeight - h + 1);
+    el.classList.toggle('near', atEnd);
+  }
+}
+
+function edgePull(over) {
+  const dir = over > 0 ? 'west' : 'east';
+  for (const d of ['west', 'east']) {
+    const el = $(`edge-${d}`);
+    const k = d === dir && NB[d] ? clamp(Math.abs(over) / EDGE_PULL, 0, 1) : 0;
+    el.style.setProperty('--pull', k.toFixed(2));
+    el.classList.toggle('pulling', k > 0.05);
+    el.classList.toggle('ready', k >= 1);
+  }
+}
+
+// Walk into the next pond along (or back into your own).
+function goNeighbour(dir) {
+  const n = NB[dir];
+  if (!n || HOME !== '/') return;
+  const home = world.observe ? world.observe.home : { path: world.link ? `/${world.link.id}` : `/?pond=${encodeURIComponent(world.seed)}`, id: world.link && world.link.id };
+  const arrive = dir === 'east' ? 'west' : 'east'; // come in at the near end of theirs
+  if (!world.observe) saveNow();
+  world.noSave = true;
+  try { sessionStorage.setItem('pond.home', JSON.stringify(home)); } catch { /* private mode: Return still works from the address */ }
+  document.body.classList.add('leaving');
+  if (home.id && n.id === home.id) location.assign(`${home.path}${home.path.includes('?') ? '&' : '?'}edge=${arrive}`);
+  else location.assign(`/${n.id}?observe=1&edge=${arrive}`);
+}
+
+document.getElementById('observe-home').addEventListener('click', () => goHome());
+function goHome() {
+  const home = world.observe && world.observe.home;
+  world.noSave = true;
+  location.assign(home ? home.path : '/');
+}
+
+// While observing: the owner's master copy, re-applied when it has moved on.
+let observeTimer = 60;
+async function observeSync(dt) {
+  if (!world.observe || (observeTimer -= dt) > 0) return;
+  observeTimer = 60;
+  const got = await fetchPond(world.observe.id);
+  if (!got || !(got.updated > world.observe.updated + 120000)) return;
+  world.observe.updated = got.updated;
+  const cx = (innerWidth / 2 - view.tx) / view.k, cy = (innerHeight / 2 - view.ty) / view.k, k = view.k;
+  world.resume = got.save;
+  world.quietRestore = true;
+  layout(true);
+  world.quietRestore = false;
+  view.k = k;
+  centerOn(cx, cy);
+  showTicker(`${world.observe.id} has moved on: brought up to date from its owner's pond`);
+}
+
+// Start at one end of the beach (arriving from a neighbour).
+function startAtEdge(edge) {
+  const ax = beachAxisX(), m = 0.18;
+  const x = ax ? (edge === 'west' ? world.W * m : world.W * (1 - m)) : world.W / 2, y = ax ? world.H / 2 : edge === 'west' ? world.H * m : world.H * (1 - m);
+  centerOn(x, y);
+}
 
 // ---- HUD ----------------------------------------------------------------------
 
@@ -1292,7 +1448,7 @@ async function refreshBoard() {
 }
 
 function saveNow() {
-  if (world.noSave || !world.raster) return;
+  if (world.noSave || world.observe || !world.raster) return;
   try {
     storeSave(serializePond(world));
     lastSaved = Date.now();
@@ -1312,6 +1468,7 @@ const ago = (ms) => {
 
 function updateSaveStatus() {
   const el = $('save-status');
+  if (world.observe) { el.textContent = 'look only'; el.title = "Someone else's pond: nothing here is saved or changed"; return; }
   el.textContent = saveFailed ? "can't save here" : lastSaved ? `saved ${ago(Date.now() - lastSaved)}` : 'saving…';
   el.title = saveFailed
     ? 'This browser is not letting the pond save (private browsing, or storage is full). Export keeps a copy as a file.'
@@ -1440,7 +1597,19 @@ async function boot() {
   const code = (/(?:^#|&)s=([A-Za-z0-9._-]+)/.exec(location.hash) || [])[1];
   const pathId = HOME === '/' && SHORT_ID.test(location.pathname.slice(1)) ? location.pathname.slice(1) : null;
   let linked = code ? await decodePond(code) : null, shortId = null, resume = null, adopt = false;
-  if (!linked && pathId) {
+  const params = new URLSearchParams(location.search), edge = params.get('edge');
+  let observe = null;
+  if (pathId && params.get('observe') === '1') {
+    // Walking the shared beach: someone else's pond, to look at only.
+    const got = await fetchPond(pathId);
+    let home = null;
+    try { home = JSON.parse(sessionStorage.getItem('pond.home') || 'null'); } catch { /* none */ }
+    if (got && !(home && home.id === pathId)) {
+      resume = got.save;
+      observe = { id: pathId, updated: got.updated, home: home || { path: '/', id: null }, homeId: home && home.id, seed: got.save.seed };
+    }
+  }
+  if (observe) { /* nothing more to decide */ } else if (!linked && pathId) {
     // Your own pond's link opens your save straight away; anyone else's comes from the server.
     const own = listSaves().find((s) => s.link === pathId), mine = own && loadSave(own.seed);
     if (mine && mine.link && mine.link.id === pathId) resume = mine;
@@ -1474,6 +1643,8 @@ async function boot() {
   }
   world.resume = resume;
   world.linkAdopt = adopt;
+  world.observe = observe;
+  if (observe) { world.noSave = true; document.body.classList.add('observing'); }
   world.seed = resume ? resume.seed : urlSeed || newSeedName();
   if (resume) {
     Object.assign(world.opts, resume.opts);
@@ -1485,13 +1656,20 @@ async function boot() {
   syncControls();
   layout(true);
   world.linkAdopt = false;
+  if (edge === 'west' || edge === 'east') startAtEdge(edge);
+  if (observe) {
+    $('observe-name').textContent = observe.id;
+    $('observe-bar').hidden = false;
+    logEvent(world, `You walked along the beach into ${observe.id}, someone else's pond. Look around; nothing here is yours to touch`, null, { cat: 'pond', pri: 2 });
+  }
+  setTimeout(refreshNeighbours, observe ? 500 : 4000);
   if (code && !linked) showTicker("That pond link couldn't be read, so this is its pond from day 1");
   if (pathId && !linked && !(world.link && world.link.id === pathId)) {
     showTicker(`No pond called ${pathId} was found (links left unused for a long while are cleared), so here is yours`);
   }
   if (innerWidth < 600) setHud(false); // on phones the pond comes first; ☰ opens the panel
   if (location.hash === '#bones') setBones(true);
-  if (HOME === '/') updateLink(); else history.replaceState(null, '', `${HOME}${new URL(shareUrl()).search}`);
+  if (observe) { /* keep the address: it names the pond you're looking at */ } else if (HOME === '/') updateLink(); else history.replaceState(null, '', `${HOME}${new URL(shareUrl()).search}`);
   syncTimer = world.link ? 30 : adopt ? 2 : 8; // a pond without a link gets one in a few seconds
   requestAnimationFrame(frame);
 }

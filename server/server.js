@@ -4,7 +4,10 @@
 //   PUT  /api/ponds/:id      update it (X-Pond-Key); returns the accepted points and rank
 //   GET  /api/ponds/:id      a stored pond, for anyone with the link
 //   GET  /api/board          the leaderboard, the high-score line and recent rare finds
+//   GET  /api/neighbours     the ponds on either side of one along the shared beach (?id=)
 //   GET  /api/health
+// Each pond counts its visitors (one view per address per pond every six hours);
+// the owner hears the count back, and popular ponds draw more litter.
 // Plain Node with its built-in SQLite; no packages. Scores are checked for
 // plausibility (they can only grow so fast), not proven: a pond runs in the
 // visitor's browser, so a determined cheat can't be stopped, only slowed.
@@ -69,6 +72,7 @@ db.exec(`
 const cols = new Set(db.prepare('PRAGMA table_info(ponds)').all().map((c) => c.name));
 if (!cols.has('erosion')) db.exec('ALTER TABLE ponds ADD COLUMN erosion REAL NOT NULL DEFAULT 0');
 if (!cols.has('depth')) db.exec('ALTER TABLE ponds ADD COLUMN depth INTEGER NOT NULL DEFAULT 0');
+if (!cols.has('views')) db.exec('ALTER TABLE ponds ADD COLUMN views INTEGER NOT NULL DEFAULT 0');
 db.exec('CREATE INDEX IF NOT EXISTS ponds_depth ON ponds (board, depth DESC)');
 const FATHOM_KNOTS = {
   salt: [[0, 2], [2, 8], [5, 110], [11, 550], [22, 2200], [40, 6000]],
@@ -91,6 +95,8 @@ const q = {
   insert: db.prepare('INSERT INTO ponds (id, key_hash, created, updated, opened, points, board, meta, save, erosion, depth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
   update: db.prepare('UPDATE ponds SET updated = ?, points = ?, board = ?, meta = ?, save = ?, erosion = ?, depth = ? WHERE id = ?'),
   opened: db.prepare('UPDATE ponds SET opened = ? WHERE id = ?'),
+  view: db.prepare('UPDATE ponds SET views = views + 1 WHERE id = ?'),
+  ring: db.prepare('SELECT id, depth, points, meta FROM ponds WHERE updated > ? ORDER BY created ASC, id ASC'),
   rank: db.prepare(`SELECT COUNT(*) AS n FROM ponds WHERE board = 1 AND points >= ${BOARD_MIN} AND (depth > ? OR (depth = ? AND points > ?))`),
   top: db.prepare(`SELECT id, points, depth, meta, updated FROM ponds WHERE board = 1 AND points >= ${BOARD_MIN} ORDER BY depth DESC, points DESC, created ASC LIMIT 20`),
   count: db.prepare(`SELECT COUNT(*) AS n FROM ponds WHERE board = 1 AND points >= ${BOARD_MIN}`),
@@ -203,7 +209,7 @@ async function createPond(req) {
     q.insert.run(id, hashKey(key), now, now, now, points, meta.board ? 1 : 0, JSON.stringify(publicMeta({ ...meta, points, erosion, depth })), save, erosion, depth);
     addFinds(id, meta.finds, now);
     boardCache = null;
-    return [201, { id, key, points, depth, rank: rankOf({ board: meta.board, points, depth }), high: board().high }];
+    return [201, { id, key, points, depth, views: 0, rank: rankOf({ board: meta.board, points, depth }), high: board().high }];
   }
   throw new HttpError(503, 'no free link, try again');
 }
@@ -221,16 +227,45 @@ async function updatePond(req, id) {
   q.update.run(now, points, meta.board ? 1 : 0, JSON.stringify(publicMeta({ ...meta, points, erosion, depth })), save, erosion, depth, id);
   addFinds(id, meta.finds, now);
   if (meta.board) boardCache = null;
-  return [200, { ok: true, points, depth, rank: rankOf({ board: meta.board, points, depth }), high: board().high }];
+  return [200, { ok: true, points, depth, views: row.views || 0, rank: rankOf({ board: meta.board, points, depth }), high: board().high }];
 }
 
-function getPond(id) {
+// One view per address per pond every six hours (observers re-fetch every minute).
+const viewSeen = new Map();
+const VIEW_GAP = 6 * 36e5;
+function countView(ip, id, now) {
+  const k = `${ip}|${id}`, at = viewSeen.get(k);
+  if (at && now - at < VIEW_GAP) return;
+  if (viewSeen.size > 50000) for (const [key, t] of viewSeen) if (now - t > VIEW_GAP) viewSeen.delete(key);
+  viewSeen.set(k, now);
+  q.view.run(id);
+}
+
+function getPond(req, id) {
   const row = q.get.get(id);
   if (!row) throw new HttpError(404, 'no such pond');
   const now = Date.now();
   if (now - row.opened > 36e5) q.opened.run(now, id);
+  countView(req.ip, id, now);
   const save = JSON.parse(zlib.inflateRawSync(row.save).toString('utf8'));
-  return [200, { id, save, meta: JSON.parse(row.meta), updated: row.updated }];
+  return [200, { id, save, meta: JSON.parse(row.meta), updated: row.updated, views: (row.views || 0) + 1 }];
+}
+
+// The shared beach: every pond active in the last month, in the order they were
+// made, in a ring. A pond's neighbours are the ones either side of it; without
+// one (a pond with no link yet), the newest and oldest ends meet around it.
+let ringCache = null;
+function neighbours(id) {
+  if (!ringCache || Date.now() - ringCache.at > 30000) ringCache = { at: Date.now(), rows: q.ring.all(Date.now() - 30 * 864e5) };
+  const rows = ringCache.rows, n = rows.length, i = id ? rows.findIndex((r) => r.id === id) : -1;
+  const side = (r) => {
+    if (!r || r.id === id) return null;
+    const m = JSON.parse(r.meta);
+    return { id: r.id, depth: r.depth, points: r.points, habitat: m.habitat, animals: m.animals };
+  };
+  if (!n) return { west: null, east: null };
+  if (i < 0) return { west: side(rows[n - 1]), east: side(rows[0]) };
+  return { west: n > 1 ? side(rows[(i - 1 + n) % n]) : null, east: n > 2 ? side(rows[(i + 1) % n]) : null };
 }
 
 // The top twenty, the high-score line (tenth place), and the latest rare finds.
@@ -248,13 +283,17 @@ function board() {
 }
 
 async function route(req) {
-  const path = new URL(req.url, 'http://pond').pathname;
+  const url = new URL(req.url, 'http://pond'), path = url.pathname;
   if (path === '/api/health' && req.method === 'GET') return [200, { ok: true }];
+  if (path === '/api/neighbours' && req.method === 'GET') {
+    const id = url.searchParams.get('id');
+    return [200, neighbours(id && ID_RE.test(id) ? id : null)];
+  }
   if (path === '/api/board' && req.method === 'GET') return [200, board()];
   if (path === '/api/ponds' && req.method === 'POST') return createPond(req);
   const m = /^\/api\/ponds\/([a-z-]{11,35})$/.exec(path);
   if (m && ID_RE.test(m[1])) {
-    if (req.method === 'GET') return getPond(m[1]);
+    if (req.method === 'GET') return getPond(req, m[1]);
     if (req.method === 'PUT') return updatePond(req, m[1]);
     throw new HttpError(405, 'method not allowed');
   }

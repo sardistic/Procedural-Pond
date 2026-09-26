@@ -635,7 +635,9 @@ const MYTHIC_ARRIVAL = {
   watcher: 'In the drowned dark, an eye opens. The Watcher is here',
 };
 function arriveDeep(world) {
-  const lure = (world.structures || []).reduce((a, s) => a + (STRUCTURES[s.kind].lure || 0), 0);
+  // The idol's lure, the Black Tide, and anything Ascended all draw the mythic up.
+  const lure = (world.structures || []).reduce((a, s) => a + (STRUCTURES[s.kind].lure || 0), 0) +
+    (typeof eldPath === 'function' && eldPath(world, 'tide') ? 1 : 0) + world.creatures.filter((c) => c.life && c.life.ascended).length;
   const pool = Object.keys(DEEP).filter((k) => deepAvailable(world, k) && (!DEEP[k].mythic || Math.random() < 0.06 * (1 + lure)));
   if (!pool.length) return;
   const kind = pick(pool);

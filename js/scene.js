@@ -356,6 +356,7 @@ function generateScenery(world) {
   const hab = world.opts.habitat || 'mixed', fresh = hab !== 'salt', salt = hab !== 'fresh', both = fresh && salt;
   const rocks = [], pebbles = [], plants = [];
   world.shoreSide = randi(0, 3);
+  world.riverOff = true; // the scenery is laid out on the beach as it was before rivers (links regrow it); the river is cut after
   makeShore(world);
   const clusters = Math.round(area / 18000) + 2;
   for (let c = 0; c < clusters; c++) {
@@ -403,6 +404,8 @@ function generateScenery(world) {
   world.pads = fresh ? Array.from({ length: clamp(Math.round(area / 40000 * k), 2, 14) }, () => makePlant('lily', world, ...wetPoint(world, 14))) : [];
   world.pads.forEach((p, i) => { p.oi = i; });
   world.motes = new Motes(world);
+  world.riverOff = false;
+  if (world.shore) makeShore(world);
 }
 
 // The deep band: boulders tumbled along the drop-off, and pale stalks on the deep floor.

@@ -91,10 +91,11 @@ function updateZones(world, dt, instant = false) {
     if (w) put(infl, c.x, c.y, (w === 'salt' ? 1 : -1) * G.territory);
   }
   for (const p of [...world.plants, ...world.pads]) {
-    if (PLANT_COVER[p.make]) put(tA, p.x, p.y, -PLANT_COVER[p.make]);
+    if (PLANT_COVER[p.make]) put(tA, p.x, p.y, -PLANT_COVER[p.make] * (1 + 0.5 * ((p.tr && p.tr.lush) || 0)));
     if (mixed && PLANT_WATER[p.make]) put(infl, p.x, p.y, PLANT_WATER[p.make]);
   }
   for (const s of world.structures || []) structureZones(world, s, put, tA, infl);
+  if (typeof riverZones === 'function') riverZones(world, put, tA, infl);
   if (mixed) {
     // Animals out of place raise tempers around them.
     for (const c of world.creatures) {
