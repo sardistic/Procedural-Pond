@@ -156,7 +156,7 @@ function updateErosion(world, dt) {
     E.tier++;
     if (typeof refreshSpeciesButtons === 'function') setTimeout(refreshSpeciesButtons, 0); // new builds, foods and plants
     if (next.expand && typeof expandWorld === 'function') expandWorld(next.expand, `${tierName(world, E.tier)} opens beyond the drop-off`);
-    else logEvent(world, `The pond has changed: ${tierName(world, E.tier).toLowerCase()}`, null, { cat: 'rare', pri: 3 });
+    else logEvent(world, `The pond has deepened: ${tierName(world, E.tier).toLowerCase()}`, null, { cat: 'rare', pri: 3 });
   }
 }
 
