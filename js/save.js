@@ -14,7 +14,7 @@ const MAX_SAVES = 12;
 const r2 = (v) => Math.round(v * 100) / 100;
 // Identifies this browser's copy of a pond, so a link to an older state of your
 // own pond doesn't roll it back, while someone else's copy of the same seed asks first.
-const newInst = () => Math.random().toString(36).slice(2, 10);
+const newInst = () => Array.from({ length: 8 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
 
 function readIndex() {
   try { return JSON.parse(localStorage.getItem(SAVE_INDEX) || '[]'); } catch { return []; }
@@ -91,7 +91,7 @@ function serializePond(world) {
     life: { name: c.life.name, gen: c.life.gen, genome: c.life.genome },
   });
   return {
-    v: SAVE_VERSION, seed: world.seed, savedAt: Date.now(), inst: world.inst, removed: world.removed,
+    v: SAVE_VERSION, seed: world.seed, savedAt: Date.now(), inst: world.inst, removed: world.removed, spawnCount: world.spawnCount,
     opts: { habitat: world.opts.habitat, floor: world.opts.floor, water: world.opts.water, world: world.opts.world },
     size: [world.W, world.H], shoreSide: world.shoreSide,
     t: r2(world.t), days: world.days, moon0: world.moon0, tide0: world.tide0,
@@ -103,12 +103,12 @@ function serializePond(world) {
     pebbles: world.pebbles.map((p) => [r2(p.x), r2(p.y), r2(p.s), PEBBLE_MATS.indexOf(p.m)]),
     plants: [...world.plants, ...world.pads].filter((p) => p.make).map((p) => ({ k: p.make, s: p.seed, x: r2(p.x), y: r2(p.y), a: args(p.args), oi: p.oi })),
     creatures: saved.map((c) => ({
-      k: c.make, s: c.seed, x: r2(c.x), y: r2(c.y), h: r2(c.heading), z: r2(c.z || 0), a: args(c.args),
+      k: c.make, s: c.seed, sn: c.sn, x: r2(c.x), y: r2(c.y), h: r2(c.heading), z: r2(c.z || 0), a: args(c.args),
       st: c.state === 'sit' ? 'sit' : undefined,
       L: {
         name: c.life.name, age: r2(c.life.age), energy: r2(c.life.energy), cooldown: r2(c.life.cooldown),
         lifespan: r2(c.life.lifespan), gen: c.life.gen, scale: c.life.scale, old: !!c.life.old,
-        genome: c.life.genome, traits: c.life.traits,
+        genome: c.life.genome, traits: c.life.traits, parents: c.life.parents,
       },
     })),
     schools,
@@ -182,7 +182,8 @@ function restorePond(world, d) {
     const c = makeCreature(r.k, world, r.x, r.y, a, r.s);
     placeRestored(c, r);
     initLife(c, { genome: r.L.genome, gen: r.L.gen, scale: r.L.scale, age: r.L.age, alpha: 1 });
-    Object.assign(c.life, { name: r.L.name, energy: r.L.energy, cooldown: r.L.cooldown, lifespan: r.L.lifespan, old: r.L.old });
+    Object.assign(c.life, { name: r.L.name, energy: r.L.energy, cooldown: r.L.cooldown, lifespan: r.L.lifespan, old: r.L.old, parents: r.L.parents || null });
+    c.sn = r.sn ?? null;
     return c;
   });
   d.creatures.forEach((r, i) => {
@@ -190,6 +191,7 @@ function restorePond(world, d) {
     if (c && r.a && r.a.leader != null && made[r.a.leader]) { c.leader = made[r.a.leader]; c.args.leader = c.leader; }
   });
   world.creatures = made.filter(Boolean);
+  world.spawnCount = d.spawnCount ?? world.creatures.reduce((n, c) => Math.max(n, (c.sn ?? -1) + 1), 0);
 
   world.eggs = [];
   for (const e of d.eggs || []) {

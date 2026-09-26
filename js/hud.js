@@ -272,7 +272,9 @@ function renderCensus() {
 // ---- journal: one line of recent activity that opens into the full log ------------------------
 
 const CATS = { all: 'All', life: 'Life', rare: 'Rare', hunt: 'Hunts', come: 'Comings & goings', sky: 'Sky & tide' };
-const journalUi = { open: false, filter: 'all', seq: -1, toast: '', toastUntil: 0 };
+const journalUi = { open: false, filter: 'all', list: null, lastSeq: 0, queue: [], current: null, until: 0, shownText: null };
+const TICKER_QUEUE = 4;                      // lines waiting at most; the least important are dropped
+const TICKER_DWELL = [3500, 4500, 6000, 8000]; // least time on screen, by priority (ms)
 
 function setJournal(open) {
   journalUi.open = open;
@@ -281,30 +283,62 @@ function setJournal(open) {
   if (open) { world.journalDirty = true; renderJournal(); setCensus(false); }
 }
 
+// A message of our own (e.g. "Link copied") jumps straight onto the ticker.
 function showTicker(text) {
-  journalUi.toast = text;
-  journalUi.toastUntil = performance.now() + 4000;
-  journalUi.seq = -1;
+  journalUi.queue.unshift({ text, cat: 'pond', pri: 4, clock: null });
+  journalUi.until = 0;
   renderJournal();
+}
+
+// The ticker shows one line at a time, long enough to read: important lines
+// stay longer and jump ahead, and when things are busy routine lines skip the
+// ticker (they are still in the full journal). A line that grows while it's up
+// (e.g. "3 Tetras moved on" becoming 4) updates in place.
+function feedTicker() {
+  if (world.journal !== journalUi.list) { // a different pond: start from its newest line
+    journalUi.list = world.journal;
+    journalUi.queue = journalUi.queue.filter((e) => e.pri === 4);
+    journalUi.current = null;
+    journalUi.until = 0;
+    journalUi.lastSeq = world.journal[0] ? world.journal[0].seq - 1 : 0;
+  }
+  const now = performance.now(), fresh = world.journal.filter((e) => e.seq > journalUi.lastSeq).reverse();
+  for (const e of fresh) {
+    journalUi.lastSeq = Math.max(journalUi.lastSeq, e.seq);
+    if (e === journalUi.current && now < journalUi.until) continue;
+    if (journalUi.queue.includes(e)) continue;
+    const busy = now < journalUi.until || journalUi.queue.length > 0;
+    if (busy && (e.pri ?? 1) === 0) continue;
+    journalUi.queue.push(e);
+    journalUi.queue.sort((a, b) => (b.pri ?? 1) - (a.pri ?? 1)); // stable: same priority keeps its order
+    journalUi.queue.length = Math.min(journalUi.queue.length, TICKER_QUEUE);
+  }
+  if (now >= journalUi.until && journalUi.queue.length) {
+    const e = journalUi.current = journalUi.queue.shift();
+    const read = 1600 + e.text.length * 55; // about the time it takes to read
+    journalUi.until = now + Math.max(TICKER_DWELL[Math.min(3, e.pri ?? 1)], read) * (journalUi.queue.length > 2 ? 0.8 : 1);
+    journalUi.shownText = null;
+    const line = byId('log-line');
+    line.classList.remove('flash', 'pri0', 'pri1', 'pri2', 'pri3');
+    void line.offsetWidth; // restart the flash animation
+    line.classList.add('flash', 'pri' + Math.min(3, e.pri ?? 1));
+  }
 }
 
 function entryTime(e) { return `D${e.day} ${clockLabel(e.clock)}`; }
 
 function renderJournal() {
-  const line = byId('log-line'), text = line.querySelector('.txt'), time = line.querySelector('time'), dot = line.querySelector('.dot');
-  const toast = performance.now() < journalUi.toastUntil, top = world.journal[0];
-  if (toast) {
-    if (journalUi.seq !== -2) { journalUi.seq = -2; text.textContent = journalUi.toast; time.textContent = ''; dot.className = 'dot cat-pond'; }
-  } else if (top && top.seq !== journalUi.seq) {
-    journalUi.seq = top.seq;
-    text.textContent = top.text;
-    line.title = `${top.text}\nClick for the journal (J)`;
-    time.textContent = clockLabel(top.clock);
-    dot.className = `dot cat-${top.cat}`;
-    line.classList.remove('flash');
-    void line.offsetWidth; // restart the flash animation
-    line.classList.add('flash');
+  feedTicker();
+  const line = byId('log-line'), e = journalUi.current;
+  if (e && e.text !== journalUi.shownText) {
+    journalUi.shownText = e.text;
+    line.querySelector('.txt').textContent = e.text;
+    line.querySelector('time').textContent = e.clock == null ? '' : clockLabel(e.clock);
+    line.querySelector('.dot').className = `dot cat-${e.cat}`;
+    line.title = `${e.text}\nClick for the journal (J)`;
   }
+  const more = line.querySelector('.more'), waiting = journalUi.queue.length ? `+${journalUi.queue.length}` : '';
+  if (more.textContent !== waiting) more.textContent = waiting;
   if (!journalUi.open || !world.journalDirty) return;
   world.journalDirty = false;
   const list = world.journal.filter((e) => journalUi.filter === 'all' || e.cat === journalUi.filter).slice(0, 80);

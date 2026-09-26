@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=8">
 
   <script type="application/ld+json">
   {
@@ -194,7 +194,7 @@
         <ol class="journal" id="journal"></ol>
       </section>
       <button type="button" id="log-line" class="log-line" aria-expanded="false" aria-controls="log-panel" aria-live="polite">
-        <i class="dot"></i><time></time><span class="txt"></span><span class="caret" aria-hidden="true">▴</span>
+        <i class="dot"></i><time></time><span class="txt"></span><span class="more" title="More news waiting"></span><span class="caret" aria-hidden="true">▴</span>
       </button>
     </div>
 
@@ -219,29 +219,29 @@
     </div>
 
     <div class="corner">
-      <canvas id="minimap" class="minimap" width="192" height="108" aria-label="Map of the whole pond; click to jump"></canvas>
       <div class="zoom" role="group" aria-label="Zoom">
-        <button type="button" id="zoom-out" class="icon" aria-label="Zoom out" title="Zoom out (-)">−</button>
-        <button type="button" id="zoom-level" title="Reset zoom (0)">100%</button>
         <button type="button" id="zoom-in" class="icon" aria-label="Zoom in" title="Zoom in (+)">+</button>
+        <button type="button" id="zoom-level" title="Reset zoom (0)">2×</button>
+        <button type="button" id="zoom-out" class="icon" aria-label="Zoom out" title="Zoom out (-)">−</button>
       </div>
+      <canvas id="minimap" class="minimap" width="192" height="108" aria-label="Map of the whole pond; click to jump"></canvas>
     </div>
   </div>
 
-  <script src="js/core.js?v=7"></script>
-  <script src="js/raster.js?v=7"></script>
-  <script src="js/creatures.js?v=7"></script>
-  <script src="js/critters.js?v=7"></script>
-  <script src="js/wildlife.js?v=7"></script>
-  <script src="js/wildfish.js?v=7"></script>
-  <script src="js/sound.js?v=7"></script>
-  <script src="js/life.js?v=7"></script>
-  <script src="js/plants.js?v=7"></script>
-  <script src="js/scene.js?v=7"></script>
-  <script src="js/sky.js?v=7"></script>
-  <script src="js/save.js?v=7"></script>
-  <script src="js/link.js?v=7"></script>
-  <script src="js/hud.js?v=7"></script>
-  <script src="js/main.js?v=10"></script>
+  <script src="js/core.js?v=8"></script>
+  <script src="js/raster.js?v=8"></script>
+  <script src="js/creatures.js?v=8"></script>
+  <script src="js/critters.js?v=8"></script>
+  <script src="js/wildlife.js?v=8"></script>
+  <script src="js/wildfish.js?v=8"></script>
+  <script src="js/sound.js?v=8"></script>
+  <script src="js/life.js?v=8"></script>
+  <script src="js/plants.js?v=8"></script>
+  <script src="js/scene.js?v=8"></script>
+  <script src="js/sky.js?v=8"></script>
+  <script src="js/save.js?v=8"></script>
+  <script src="js/link.js?v=8"></script>
+  <script src="js/hud.js?v=8"></script>
+  <script src="js/main.js?v=11"></script>
 </body>
 </html>

@@ -166,3 +166,19 @@ characters.
 save, the newer copy wins silently. A different inst for a seed you already
 have prompts before replacing it. An adopted link gets a new inst.
 Eggs, plankton and effects are not in links.
+
+## Pond links v2: store only what can't be recomputed
+- **Animal seeds:** `seedFor(hashString(pondSeed), sn)`, where `sn` is `world.spawnCount++` at creation (`makeCreature` when no seed is given and `world.seedBase` is set). Links store the zigzag delta of `sn` from the previous animal.
+- **Genes:** `genomeFor(seed)` for founders and newcomers (`initLife` default), and `childGenomeFor(seed, parentA, parentB)` for babies (`makeBaby`, which also records `life.parents` as parent seeds). The encoder checks each derivation with `sameGenome` and falls back to quantized gene bytes. Babies whose parents are gone still store their genes.
+- **Per animal:** kind+flags, sn delta, a 16x16 position cell, age/4s, a byte holding energy (4 bits) and growth (4 bits), args, then parent back-references (generation derived) or the generation.
+- **Header:** the pond name packs into 2 bytes when it matches the generator's word lists. Population targets are no longer stored; they are recomputed from the animals.
+- **Comparing copies:** the same `inst` compares by `days` (pond time), not wall-clock time.
+
+A typical pond is about 10 bytes per animal after the header, and 120 animals come to about 1.2k characters. v1 links still decode through `unpackV1`.
+
+## Ticker pacing
+The ticker (`feedTicker` in hud.js) holds a queue of at most 4 entries, sorted
+by priority (`CAT_PRI` defaults, overridden per call with `pri`). Priority 0
+entries are dropped from the ticker when anything is queued or showing. Each
+entry shows for max(priority dwell, 1.6s + 55ms per character), shortened by 20%
+when the backlog is long. `showTicker()` toasts jump the queue at priority 4.

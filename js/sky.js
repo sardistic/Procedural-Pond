@@ -63,14 +63,14 @@ function updateSky(world, dt) {
       logEvent(world, `Low tide${spring ? ': the beach lies wide open' : ''}`, null, { cat: 'sky' });
     }
   }
-  if (tide.surf > 0.9 && !tide.big) { tide.big = true; logEvent(world, 'Big waves are rolling in', null, { cat: 'sky' }); }
+  if (tide.surf > 0.9 && !tide.big) { tide.big = true; logEvent(world, 'Big waves are rolling in', null, { cat: 'sky', pri: 2 }); }
   else if (tide.surf < 0.65) tide.big = false;
 
   if (world.opts.light === 'cycle') {
     const c = world.clock;
     const crossed = (mark) => (prevClock < mark && c >= mark) || (c < prevClock && (mark > prevClock || mark <= c));
     if (crossed(0.27)) logEvent(world, `Dawn breaks over the pond: day ${Math.floor(world.days) + 1}`, null, { cat: 'sky' });
-    else if (crossed(0.5)) logEvent(world, 'The sun is high: midday', null, { cat: 'sky' });
+    else if (crossed(0.5)) logEvent(world, 'The sun is high: midday', null, { cat: 'sky', pri: 0 });
     else if (crossed(0.77)) {
       const flies = fitsHabitat(world, 'fresh') ? ', the fireflies come out' : '';
       logEvent(world, `Dusk settles${flies} and ${moonLine(m)}`, null, { cat: 'sky' });
@@ -88,7 +88,7 @@ function updateCoralSpawning(world, dt, m) {
     if (corals.length) {
       world.spawnNight = night;
       world.spawning = 30;
-      logEvent(world, 'Under the full moon, the corals are spawning', null, { cat: 'life' });
+      logEvent(world, 'Under the full moon, the corals are spawning', null, { cat: 'life', pri: 2 });
     }
   }
   if (world.spawning > 0) {

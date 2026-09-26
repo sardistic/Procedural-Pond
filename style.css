@@ -373,7 +373,7 @@ output {
 .bottom > * { pointer-events: auto; }
 .log { position: relative; flex: 0 1 360px; min-width: 0; }
 .dock { position: relative; flex: 1 1 auto; min-width: 0; display: flex; justify-content: center; }
-.corner { flex: none; display: grid; justify-items: end; gap: 6px; }
+.corner { flex: none; display: flex; align-items: flex-end; gap: 6px; }
 
 /* Category colours shared by the journal line, list and filters. */
 .dot { flex: none; width: 8px; height: 8px; background: var(--muted); box-shadow: 1px 1px 0 var(--ink); }
@@ -399,6 +399,12 @@ output {
 .log-line time:empty { display: none; }
 .log-line .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-line.flash { animation: flash 1.4s ease-out; }
+.log-line.flash.pri3 { animation: flash-hot 2.2s ease-out; }
+.log-line .more { flex: none; font-size: 9px; color: var(--hot); }
+
+@keyframes flash-hot {
+  from { background: #5a4a14; border-color: var(--hot); }
+}
 
 @keyframes flash {
   from { background: #2c5a4a; border-color: var(--hot); }
@@ -561,8 +567,10 @@ output {
 .wild-card.gone { opacity: 0.55; }
 .wild-card.gone .ct { color: var(--muted); }
 
-.corner .zoom { display: flex; gap: 4px; }
-.zoom #zoom-level { min-width: 44px; padding: 0 6px; height: 26px; }
+/* Zoom sits in a column to the left of the minimap: + on top, the level, − below. */
+.corner .zoom { display: flex; flex-direction: column; gap: 4px; }
+.corner .zoom button { width: 34px; height: 32px; padding: 0; }
+.zoom #zoom-level { font-size: 10px; color: var(--hot); }
 
 .minimap {
   width: 192px;

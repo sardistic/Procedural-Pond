@@ -149,9 +149,12 @@ const METABOLISM = { snail: 900, crab: 600, turtle: 700, ray: 600, frog: 520, sh
 // departures reads "4 Tetras moved on (3 of old age, 1 hungry)" instead of four lines.
 
 const MERGE_WINDOW = 40;
+// How much an entry deserves the ticker: 0 routine (full journal only when busy),
+// 1 normal, 2 notable, 3 important (rares, discoveries, records, the pond itself).
+const CAT_PRI = { pond: 3, rare: 3, sky: 1, life: 1, hunt: 1, come: 0 };
 
 function logEvent(world, text, subject = null, opts = {}) {
-  const { cat = 'pond', key = null, merge = null, data } = opts;
+  const { cat = 'pond', key = null, merge = null, data } = opts, pri = opts.pri ?? CAT_PRI[cat] ?? 1;
   const now = world.t || 0;
   if (key) {
     const e = world.journal.find((j) => j.key === key && now - j.t < MERGE_WINDOW);
@@ -161,6 +164,7 @@ function logEvent(world, text, subject = null, opts = {}) {
       if (data !== undefined) e.data.push(data);
       if (subject) e.subject = subject;
       if (merge) e.text = merge(e);
+      e.pri = Math.max(e.pri, pri);
       world.journal.splice(world.journal.indexOf(e), 1);
       world.journal.unshift(e);
       e.seq = ++world.journalSeq;
@@ -169,7 +173,7 @@ function logEvent(world, text, subject = null, opts = {}) {
     }
   }
   const e = {
-    t: now, clock: world.clock, day: Math.floor(world.days || 0) + 1, text, subject, cat, key, n: 1,
+    t: now, clock: world.clock, day: Math.floor(world.days || 0) + 1, text, subject, cat, key, n: 1, pri,
     data: data !== undefined ? [data] : [], seq: (world.journalSeq = (world.journalSeq || 0) + 1),
   };
   world.journal.unshift(e);
@@ -214,15 +218,24 @@ function lifespanFor(species, seed) {
   return withSeed(`life/${seed}`, () => rand(a, b));
 }
 
-function initLife(c, { genome = makeGenome(), gen = 0, scale = 1, age, alpha = 1 } = {}) {
+// Genes follow from seeds: a founder's or newcomer's from its own seed, a baby's
+// from its parents' genes plus its seed. A link can then store "parents #12 and
+// #15" (or nothing) instead of the genes themselves.
+const genomeFor = (seed) => withSeed(`genome/${seed}`, makeGenome);
+const childGenomeFor = (seed, a, b) => withSeed(`genome/${seed}`, () => childGenome(a, b));
+const GENOME_KEYS = [...Object.keys(GENE_LIMITS), 'shiny', 'shinyHue', 'seed', ...RECESSIVE];
+const sameGenome = (a, b) => GENOME_KEYS.every((k) => a[k] === b[k]);
+
+function initLife(c, { genome, gen = 0, scale = 1, age, alpha = 1, parents = null } = {}) {
   c.alpha = alpha;
   if (NO_LIFE.has(c.species)) return c;
+  if (!genome) genome = c.seed != null ? genomeFor(c.seed) : makeGenome();
   const [a, b] = LIFESPAN[c.species] || [450, 800];
   const lifespan = c.seed != null ? lifespanFor(c.species, c.seed) : rand(a, b);
   c.life = {
     genome, gen, lifespan, scale, name: c.seed != null ? nameFor(c.seed) : personName(),
     age: age ?? rand(0.05, 0.5) * lifespan,
-    energy: rand(0.6, 0.9), cooldown: rand(40, 100),
+    energy: rand(0.6, 0.9), cooldown: rand(40, 100), parents,
   };
   dyeCreature(c, genome);
   if (SCALABLE.has(c.species)) { captureBase(c); applyScale(c, scale * genome.size); }
@@ -412,7 +425,7 @@ function makeBaby(world, p, m, x, y) {
     default: return null;
   }
   return initLife(c, {
-    genome: childGenome(p.life.genome, m.life.genome),
+    genome: childGenomeFor(c.seed, p.life.genome, m.life.genome), parents: [p.seed, m.seed],
     gen: Math.max(p.life.gen, m.life.gen) + 1, scale: 0.35, age: 0, alpha: 0,
   });
 }
@@ -611,14 +624,14 @@ function updateLife(world, dt) {
       if (c.base && Math.abs(L.scale * L.genome.size - c.appliedScale) > 0.02) applyScale(c, L.scale * L.genome.size);
       if (L.scale >= 1 && L.gen > 0 && c.species !== 'tadpole') {
         const label = describe(c).label;
-        logEvent(world, `${who(c)} is fully grown`, c, { cat: 'life', key: `grown:${c.species}`, merge: (e) => `${e.n} young ${plural(label, e.n)} grew up` });
+        logEvent(world, `${who(c)} is fully grown`, c, { cat: 'life', pri: 0, key: `grown:${c.species}`, merge: (e) => `${e.n} young ${plural(label, e.n)} grew up` });
       }
     }
     if (!L.old && L.age > L.lifespan * 0.8) {
       L.old = true;
       const label = describe(c).label;
       logEvent(world, `${who(c)} is getting old: ${Math.floor(L.age / 60)} minutes in the pond`, c, {
-        cat: 'life', key: `old:${c.species}`, merge: (e) => `${e.n} ${plural(label, e.n)} are getting on in years`,
+        cat: 'life', pri: 0, key: `old:${c.species}`, merge: (e) => `${e.n} ${plural(label, e.n)} are getting on in years`,
       });
     }
     if (c.species === 'tadpole' && L.age > 50 && L.scale > 0.65) metamorphose(world, c);
@@ -714,7 +727,7 @@ function breed(world) {
     const where = rule.eggs === 'surface' ? 'at the surface' : rule.eggs === 'rock' ? 'on a rock'
       : rule.eggs === 'plant' && z > 1 ? 'in the weeds' : 'on the floor', label = describe(c).label;
     logEvent(world, `${c.life.name} & ${mate.life.name} laid ${eggs.cells.length} eggs ${where}`, c, {
-      cat: 'life', key: `eggs:${key}`, data: eggs.cells.length,
+      cat: 'life', pri: 0, key: `eggs:${key}`, data: eggs.cells.length,
       merge: (e) => `${e.n} pairs of ${plural(label, 2)} laid ${e.data.reduce((a, b) => a + b, 0)} eggs`,
     });
     counts[key] = (counts[key] || 0) + eggs.cells.length;
@@ -779,7 +792,7 @@ function arrive(world, kind, discover = false) {
     const sp = c.sp, habits = [sp.schooling && 'schools', sp.predator && 'hunts smaller fish', sp.habitat === 'salt' ? 'reef fish' : 'freshwater'].filter(Boolean);
     logEvent(world, `✦ New species spotted: ${sp.name}${group.length > 1 ? `, a school of ${group.length}` : ''} (${habits.join(', ')})`, c, { cat: 'rare' });
   } else if (kind === 'duck') {
-    logEvent(world, `A duck family paddled in: ${group.length} ducks`, c, { cat: 'come' });
+    logEvent(world, `A duck family paddled in: ${group.length} ducks`, c, { cat: 'come', pri: 1 });
   } else {
     const first = group.length > 1 ? `${SCHOOLING(c) ? 'A school' : 'A group'} of ${group.length} ${plural(label, group.length)} arrived` : `${who(c)} ${ARRIVE_VERB[kind] || 'swam in'}`;
     logEvent(world, first, c, {

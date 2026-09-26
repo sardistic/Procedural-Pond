@@ -36,7 +36,7 @@ the day, moon phase, tide and surf, plus the light mode, day length, current and
   - caustics, shadows and outlines on or off
 
   Settings are saved in localStorage.
-- **Zoom:** scroll wheel or pinch, the +/− buttons, or the **+**, **−** and **0** keys. The zoom level is a whole number of screen pixels per pond pixel (the label shows 2×, 3× and so on), so the art stays crisp.
+- **Zoom:** scroll wheel or pinch, the +/− buttons (in a column beside the minimap), or the **+**, **−** and **0** keys. The zoom level is a whole number of screen pixels per pond pixel (the label shows 2×, 3× and so on), so the art stays crisp.
 - **Your ponds:** every visitor gets their own pond, and it saves itself in the browser every few seconds (and when you leave). That covers the animals with their genes, names, ages and lineages, rares, eggs, discovered species, the journal, placed plants and rocks, and the day, moon and tide. Come back and it resumes where you left off. *Your ponds* in the menu lists your ponds (up to 12) to switch between or delete. *New pond* starts another pond while keeping this one.
 - **Pond links:** the address bar always holds a link to your pond as it is right now. Bookmark it, open it on another device, or use *Share* / *Copy link* to send it: whoever opens it gets that exact pond, with the same animals, genes, rares, family lines, time of day, moon and recent journal, as their own copy. The seed and settings sit in the query (`?pond=…`), so a truncated link still opens that pond from day 1. The living state sits in the `#fragment`, which never reaches the server. If you open an older link to your own pond, your newer save wins. If you open someone else's copy of a pond you also have, you're asked before yours is replaced.
 - **Seeds:** every pond has a seed name such as `misty-reed-42`, shown under the title. A plain `?pond=misty-reed-42` link (without the fragment) opens that pond from day 1, or resumes it if it's one of yours. *New pond* rolls a new seed.
@@ -57,6 +57,7 @@ With **Life** on (Scene section), the pond runs itself:
 - **Coming and going:** old or starving animals swim off the edge, and newcomers fade in from the edges to keep each species near its starting population.
 - **Wild species:** a generator invents new fish species, each with its own body shape, tail and fin style, colour scheme, pattern, behaviour (schooling, depth, predator or not) and name, such as "Barred Azure Discus". New ones turn up now and then, or you can add one with the *Wild fish* button.
 - **Moon, tides and surf:** the moon goes round every 8 days. Its phase sets how bright the nights are. It also sets the tides: every pond (except a pool) has a beach along one edge, and the tide floods and bares it twice a day. Spring tides at new and full moon move the water furthest; neap tides at the quarters barely move it. Freshwater ponds hardly have tides at all. The surf grows with spring tides and wind. Waves roll in as foam lines, shallow water is clearer, and water animals turn back before the waterline, while crabs, turtles, snails, starfish and frogs can cross the sand. The tidal stream pushes the current toward the beach and back. On a full-moon night the corals spawn: pink clouds drift up and the fish feast.
+- **Ticker:** the bottom-left line shows one entry at a time, for as long as it takes to read. Important news (rares, new species, records, big surf, coral spawning) stays longer and jumps the queue. Routine news (eggs laid, animals growing up or old, departures) skips the ticker when it's busy but is always in the journal. A small `+N` shows what's waiting.
 - **Journal:** each entry has a category (life, rare, hunts, comings and goings, sky and tide). Repeat events within about 40 seconds fold into one line with a count and a breakdown, e.g. "4 Tetras moved on (3 of old age, 1 hungry)" or "3 clutches of Koi hatched: 8 young, up to gen 3". It covers hatchings, eggs laid, animals growing up and growing old, record generations, arrivals, departures with reasons, catches, rare births, new species, weather, dawn, dusk, moonrise, high and low tide, big surf and coral spawning.
 - **Surface and weather:** ripples come from food, frogs, duck wakes, rising bubbles and rain showers. Wind gusts push the current around. **Weather** toggles rain and wind.
 - **Hover card:** hover an animal to see its name, species, stage, generation, age, energy and mood (hunting, fleeing, hungry, growing, moving on).
@@ -86,7 +87,13 @@ With **Life** on (Scene section), the pond runs itself:
 - `js/main.js`: the loop, the day/night cycle, fireflies, options, tools, zoom and pan, input and the HUD.
 - `js/sound.js`: the Web Audio soundscape, including a surf wash that swells as each wave arrives.
 - `js/save.js`: serializing and restoring whole ponds, and the localStorage save slots. Animals and plants are built by `makeCreature` and `makePlant` under their own seeds, so a save stores each one's seed plus its changing state (genes, name, age and so on) rather than its shapes and colours.
-- `js/link.js`: packs a pond into a link and back: a compact binary format (about 20 bytes per animal), deflated and written as base64url. Scenery regrows from the seed, and only the player's edits are stored.
+- `js/link.js`: packs a pond into a link and back. The format stores only what can't be recomputed:
+  - scenery regrows from the pond seed, and only the player's edits are stored;
+  - an animal's seed follows from the pond seed and its number;
+  - genes follow from the seed, or from the parents plus the seed;
+  - names and lifespans follow from the seed.
+
+  That leaves about 6 bytes per animal, so a 120-animal pond fits in about 1,200 characters. The bytes are deflated and written as base64url; v1 links still open.
 - `js/sky.js`: days, the moon, tides, surf and coral spawning, plus the sky events in the journal.
 - `js/hud.js`: the animal dock and census, the journal UI, and the sky tracker. Icons are rendered at runtime by the pond's own renderer.
 - Starfish live in `js/wildlife.js`; corals and urchins live in `js/plants.js`.

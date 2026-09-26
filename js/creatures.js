@@ -86,9 +86,17 @@ const outlineOf = (m) => mixColor(m[0], 0xff000000, 0.55);
 const CREATE = {}; // kind -> (world, x, y, args) => creature; each file registers its own
 const newSeed = () => (Math.random() * 2097152) >>> 0; // 21 bits: 3 bytes in a pond link
 
-function makeCreature(kind, world, x, y, args = {}, seed = newSeed()) {
+// In a pond, animals are numbered in the order they appear and each seed follows
+// from the pond's seed and that number, so a link can store the small number.
+const seedFor = (base, n) => hashString(`${base}:${n}`) & 0x1fffff;
+
+function makeCreature(kind, world, x, y, args = {}, seed) {
+  let sn = null;
+  if (seed === undefined) {
+    if (world.seedBase != null) { sn = world.spawnCount++; seed = seedFor(world.seedBase, sn); } else seed = newSeed();
+  }
   const c = withSeed(seed, () => CREATE[kind](world, x, y, args));
-  c.make = kind; c.seed = seed; c.args = args;
+  c.make = kind; c.seed = seed; c.args = args; c.sn = sn;
   return c;
 }
 

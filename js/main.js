@@ -166,6 +166,8 @@ function buildPond() {
   WILD_SPECIES.length = 0;
   const resume = world.resume;
   world.resume = null;
+  world.seedBase = hashString(world.seed); // animal seeds follow from the pond's
+  world.spawnCount = 0;
   if (resume) {
     restorePond(world, resume);
   } else {
@@ -1024,7 +1026,7 @@ async function boot() {
   if (linked) {
     const mine = loadSave(linked.seed);
     if (mine && mine.inst === linked.inst) {
-      resume = mine.savedAt >= linked.savedAt ? mine : linked;
+      resume = mine.days >= linked.days - 0.001 ? mine : linked; // the copy that has lived longer
     } else if (mine && !confirm(`This link opens the pond "${linked.seed}" on day ${Math.floor(linked.days) + 1}. ` +
         `You already have a different pond by that name here (day ${Math.floor(mine.days) + 1}). Open the link's version? Yours will be replaced.`)) {
       resume = mine;
