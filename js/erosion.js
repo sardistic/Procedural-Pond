@@ -110,12 +110,15 @@ function buildDepth(world) {
       // Distance past the original edge of the pond, into the deep band.
       const into = axisX ? (shifts ? ex - x : x - (W0 - 1)) : (shifts ? ex - y : y - (H0 - 1));
       const along = axisX ? y : x;
-      // A ragged drop-off a few pixels before the old edge, then deeper step by step.
-      const lip = 6 + (fbm(along * 0.04, seed, 31) - 0.5) * 16;
+      // A ragged drop-off that wanders well either side of the old edge (no straight seam),
+      // a slope down from it, then terraces whose risers slope into each other.
+      const lip = 12 + (fbm(along * 0.011, seed, 31) - 0.5) * 80 + (fbm(along * 0.05, seed, 33) - 0.5) * 22;
       const t = (into + lip) / (ex + lip);
       if (t <= 0) continue;
-      const shelf = Math.floor(t * 4 + (fbm(x * 0.03, y * 0.03, 32) - 0.5) * 0.9) / 4; // terraces
-      depth[p] = Math.round(clamp(0.25 + 0.75 * clamp(shelf, 0, 1), 0, 1) * maxD * 255);
+      const s = t * 4 + (fbm(x * 0.03, y * 0.03, 32) - 0.5) * 0.9, f = s - Math.floor(s);
+      const shelf = (Math.floor(s) + smoothstep(0.7, 1, f)) / 4;
+      const slope = smoothstep(0, 0.2, t) * (0.85 + 0.3 * fbm(x * 0.06, y * 0.06, 34)); // the lip: down gently, unevenly
+      depth[p] = Math.round(clamp((0.25 + 0.75 * clamp(shelf, 0, 1)) * slope, 0, 1) * maxD * 255);
     }
   }
   world.depth = typeof applyScour === 'function' ? applyScour(world, depth) : depth;

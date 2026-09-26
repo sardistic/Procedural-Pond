@@ -823,10 +823,14 @@ output {
 .observe-bar b { font-weight: 400; color: var(--hot); }
 .observe-bar button { padding: 4px 8px; box-shadow: none; }
 .edge {
-  position: fixed; top: 50%; z-index: 5; display: grid; gap: 2px; max-width: 150px; padding: 8px 10px;
+  position: fixed; top: 50%; z-index: 5; display: grid; gap: 2px; max-width: 150px; padding: 8px 10px; text-align: left;
   font-size: 9px; color: var(--muted); background: var(--panel); border: 2px solid var(--edge); box-shadow: 3px 3px 0 var(--ink);
   transform: translateY(-50%); opacity: 0; pointer-events: none; transition: opacity 0.3s;
 }
+.edge.near, .edge.pulling { pointer-events: auto; cursor: pointer; }
+.nb-ask { position: fixed; top: 50%; left: 50%; z-index: 7; width: 280px; transform: translate(-50%, -50%); font-size: 10px; color: var(--text); }
+.nb-ask p { margin: 0 0 10px; line-height: 1.5; }
+.nb-ask #nb-go { color: var(--hot); border-color: var(--hot); }
 .edge b { font-weight: 400; font-size: 10px; color: var(--text); overflow-wrap: anywhere; }
 .edge i { display: block; height: 4px; margin-top: 3px; background: linear-gradient(90deg, var(--hot) calc(var(--pull, 0) * 100%), var(--ink) 0); }
 .edge-west { left: 8px; }
@@ -835,7 +839,7 @@ output {
 .edge-west.vertical { top: 64px; }
 body.observing .edge-west.vertical { top: 104px; }
 .edge-east.vertical { bottom: 150px; }
-.edge.near { opacity: 0.75; }
+.edge.near { opacity: 0.55; }
 .edge.pulling { opacity: 1; }
 .edge.ready { border-color: var(--hot); }
 body.leaving canvas { transition: opacity 0.3s; opacity: 0.2; }

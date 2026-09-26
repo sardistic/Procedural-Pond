@@ -40,6 +40,8 @@ function hashString(s) {
 }
 
 // Run fn with Math.random temporarily driven by a seeded generator.
+const smoothstep = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+
 function withSeed(seed, fn) {
   const original = Math.random;
   Math.random = mulberry32(hashString(String(seed)));

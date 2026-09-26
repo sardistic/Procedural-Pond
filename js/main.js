@@ -820,7 +820,7 @@ canvas.addEventListener('pointerdown', (e) => {
     // Someone else's pond: pan and look; a tap on an animal opens its card.
     const c = creatureAt(x, y);
     if (c) tap = { x: e.clientX, y: e.clientY, t: performance.now(), c };
-    press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x, y, panning: false, over: 0 };
+    press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x, y, panning: false, over: 0, ends: viewAtEnds() };
     return;
   }
   if (world.tool === 'net') { removeAt(x, y); return; }
@@ -831,7 +831,7 @@ canvas.addEventListener('pointerdown', (e) => {
     canvas.style.cursor = 'grabbing';
     tap = { x: e.clientX, y: e.clientY, t: performance.now(), c };
   } else {
-    press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x, y, panning: false, over: 0 };
+    press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x, y, panning: false, over: 0, ends: viewAtEnds() };
     // A long press opens the card of whatever is there (plants too).
     press.longT = setTimeout(() => { if (press && !press.panning) press.done = openThingAt(x, y); }, 550);
   }
@@ -866,8 +866,10 @@ canvas.addEventListener('pointermove', (e) => {
     if (press.panning) {
       const wx = press.tx + dx, wy = press.ty + dy;
       view.tx = wx; view.ty = wy; applyView();
-      // Past the end of the beach: the next pond along (see neighbours).
-      press.over = beachAxisX() ? wx - view.tx : wy - view.ty;
+      // Past the end of the beach: the next pond along (see neighbours). Only when
+      // the view was already at that end when the drag began, so ordinary panning never counts.
+      const over = beachAxisX() ? wx - view.tx : wy - view.ty;
+      press.over = (over > 0 && press.ends.west) || (over < 0 && press.ends.east) ? over : 0;
       edgePull(press.over);
     }
     return;
@@ -884,7 +886,7 @@ function pointerEnd(e) {
   touches.delete(e.pointerId);
   if (touches.size < 2) pinch = null;
   if (press) clearTimeout(press.longT);
-  if (press && press.panning && Math.abs(press.over) >= EDGE_PULL) goNeighbour(press.over > 0 ? 'west' : 'east');
+  if (press && press.panning && Math.abs(press.over) >= edgePullNeeded()) askNeighbour(press.over > 0 ? 'west' : 'east');
   edgePull(0);
   if (press && press.done) press = null; // a long press opened a card
   if (press && !press.panning && e.type === 'pointerup') {
@@ -988,6 +990,7 @@ const TENSION = hexToInt('#ef3a3a'), FRESH_TINT = hexToInt('#5ad25a'), SALT_TINT
 // once as dry sand; which one it shows follows the tide.
 function paintMinimapBackground() {
   const mw = mini.width, mh = mini.height, { W, H, bg, bgDry, shore } = world, water = world.waterColor;
+  const deep = DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed;
   miniCell = new Int32Array(mw * mh); miniWet = new Uint32Array(mw * mh); miniDry = new Uint32Array(mw * mh);
   const avg = (cs) => {
     let r = 0, g = 0, b = 0;
@@ -997,16 +1000,20 @@ function paintMinimapBackground() {
   };
   for (let j = 0, k = 0; j < mh; j++) {
     for (let i = 0; i < mw; i++, k++) {
-      const wet = [], dry = [];
+      const wet = [], dry = [], cells = [];
       for (let sy = 0; sy < 3; sy++) {
         for (let sx = 0; sx < 3; sx++) {
           const p = Math.min(W - 1, Math.floor((i + (sx + 0.5) / 3) / mw * W)) + Math.min(H - 1, Math.floor((j + (sy + 0.5) / 3) / mh * H)) * W;
+          cells.push(p);
           wet.push(bg[p]);
           dry.push(bgDry && shore && shore[p] ? bgDry[p] : bg[p]);
         }
       }
       miniCell[k] = Math.min(W - 1, Math.floor((i + 0.5) / mw * W)) + Math.min(H - 1, Math.floor((j + 0.5) / mh * H)) * W;
-      miniWet[k] = mixColor(avg(wet), water, 0.45);
+      // Deep water darkens as it does in the pond itself (averaged over the cell, so the drop-off shades in).
+      let dd = 0;
+      if (world.depth) for (const q of cells) dd += world.depth[q];
+      miniWet[k] = mixColor(mixColor(avg(wet), water, 0.45), deep, (dd / cells.length / 255) * 0.85);
       miniDry[k] = avg(dry);
     }
   }
@@ -1082,7 +1089,13 @@ document.getElementById('map-layer').addEventListener('click', () => {
 // animals and read cards, but not touch anything. Drag on past its far end for
 // the next one, or back (or press Return) to go home.
 const NB = { west: null, east: null, at: 0, busy: false };
-const EDGE_PULL = 150;
+// How far to pull past the end: about half the screen, and never less than 320 px.
+const edgePullNeeded = () => Math.max(320, 0.45 * (beachAxisX() ? innerWidth : innerHeight));
+// Whether the view is already at either end of the beach.
+function viewAtEnds() {
+  const ax = beachAxisX(), w = world.W * view.k, h = world.H * view.k;
+  return ax ? { west: view.tx >= -1, east: view.tx <= innerWidth - w + 1 } : { west: view.ty >= -1, east: view.ty <= innerHeight - h + 1 };
+}
 const beachAxisX = () => (world.shoreSide ?? 3) >= 2; // a beach along the top or bottom runs left to right
 
 async function refreshNeighbours() {
@@ -1114,12 +1127,26 @@ function edgePull(over) {
   const dir = over > 0 ? 'west' : 'east';
   for (const d of ['west', 'east']) {
     const el = $(`edge-${d}`);
-    const k = d === dir && NB[d] ? clamp(Math.abs(over) / EDGE_PULL, 0, 1) : 0;
+    const k = d === dir && NB[d] ? clamp(Math.abs(over) / edgePullNeeded(), 0, 1) : 0;
     el.style.setProperty('--pull', k.toFixed(2));
     el.classList.toggle('pulling', k > 0.05);
     el.classList.toggle('ready', k >= 1);
   }
 }
+
+// Pulling all the way (or clicking the tab) only asks; going takes a click on Go.
+function askNeighbour(dir) {
+  const n = NB[dir];
+  if (!n || HOME !== '/') return;
+  const home = world.observe && n.id === world.observe.homeId;
+  $('nb-ask-text').textContent = home ? 'Walk back home to your pond?' : `Walk along the beach into ${n.id}? It's someone else's pond: you can look, but not touch.`;
+  $('nb-ask').dataset.dir = dir;
+  $('nb-ask').hidden = false;
+  $('nb-go').focus();
+}
+document.getElementById('nb-go').addEventListener('click', () => { document.getElementById('nb-ask').hidden = true; goNeighbour(document.getElementById('nb-ask').dataset.dir); });
+document.getElementById('nb-stay').addEventListener('click', () => { document.getElementById('nb-ask').hidden = true; });
+for (const d of ['west', 'east']) document.getElementById(`edge-${d}`).addEventListener('click', () => askNeighbour(d));
 
 // Walk into the next pond along (or back into your own).
 function goNeighbour(dir) {
@@ -1572,7 +1599,7 @@ addEventListener('keydown', (e) => {
   else if (e.key === 't' || e.key === 'T') $('tour').click();
   else if (e.key === 'm' || e.key === 'M') $('sound').click();
   else if (e.key === 'p' || e.key === 'P') setScore(!scoreUi.open);
-  else if (e.key === 'Escape') stopFollow();
+  else if (e.key === 'Escape') { stopFollow(); $('nb-ask').hidden = true; }
 });
 
 addEventListener('resize', () => applyView());

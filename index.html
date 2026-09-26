@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=16">
+  <link rel="stylesheet" href="style.css?v=17">
 
   <script type="application/ld+json">
   {
@@ -230,7 +230,7 @@
           <li>Corruption (the green diamond) comes from marked animals as they live and change. It buys the eldritch paths (in the depths), corrupted plants, the dark island, and eldritch traits on a marked animal's card.</li>
           <li>Popular, high-scoring ponds draw litter along the tide line: click it to clear it (a pearl or more each). Left alone it spoils the water, and a dirty, busy pond risks a blight at dawn (a bloom, or a sickness in a crowded species). Aerators make blights rarer.</li>
           <li>Structures and plants built in deep water let the pond hold more animals, draw deep life up, and in time bring deep species within reach without paying to unlock them. Anything left standing on the floor slowly scours it deeper.</li>
-          <li>All ponds share one long beach: drag past the end of yours to walk into the next player's pond and look around (you can't touch anything there), and on to the one after. Drag back, or press Return, to come home.</li>
+          <li>All ponds share one long beach: from the end of yours, pull on past it (or click the tab there) and you're asked whether to walk into the next player's pond. You can look around but not touch anything, and go on to the one after. Return brings you home.</li>
           <li>Animals like certain plants and rocks nearby (hover one to see), calm water, and their own kind of water. Comfortable, well-fed animals age slower and rarely wander off; aggressive water drives them away and keeps newcomers out. Spirulina keeps them fed for longer; brine shrimp brings them into breeding condition.</li>
         </ul>
       </details>
@@ -269,8 +269,12 @@
     <span>Looking at <b id="observe-name"></b>, someone else's pond: look only</span>
     <button type="button" id="observe-home" title="Back to your own pond">Return to my pond</button>
   </div>
-  <div id="edge-west" class="edge edge-west" hidden><b></b><span></span><i></i></div>
-  <div id="edge-east" class="edge edge-east" hidden><b></b><span></span><i></i></div>
+  <button type="button" id="edge-west" class="edge edge-west" hidden><b></b><span></span><i></i></button>
+  <button type="button" id="edge-east" class="edge edge-east" hidden><b></b><span></span><i></i></button>
+  <div id="nb-ask" class="pop nb-ask" hidden role="dialog" aria-label="Visit the next pond">
+    <p id="nb-ask-text"></p>
+    <div class="grid2"><button type="button" id="nb-go">Go</button><button type="button" id="nb-stay">Stay here</button></div>
+  </div>
   <section id="evo" class="pop evo" hidden aria-label="The depths">
     <header class="pop-head"><b>The depths</b><button type="button" id="evo-close" class="icon" aria-label="Close">×</button></header>
     <p class="note" id="evo-status"></p>
@@ -330,31 +334,31 @@
     </div>
   </div>
 
-  <script src="js/core.js?v=18"></script>
-  <script src="js/raster.js?v=18"></script>
-  <script src="js/creatures.js?v=18"></script>
-  <script src="js/critters.js?v=18"></script>
-  <script src="js/wildlife.js?v=18"></script>
-  <script src="js/wildfish.js?v=18"></script>
-  <script src="js/sound.js?v=18"></script>
-  <script src="js/life.js?v=18"></script>
-  <script src="js/plants.js?v=18"></script>
-  <script src="js/scene.js?v=18"></script>
-  <script src="js/structures.js?v=18"></script>
-  <script src="js/erosion.js?v=18"></script>
-  <script src="js/sky.js?v=18"></script>
-  <script src="js/ecology.js?v=18"></script>
-  <script src="js/game.js?v=18"></script>
-  <script src="js/deep.js?v=18"></script>
-  <script src="js/remains.js?v=18"></script>
-  <script src="js/eldritch.js?v=18"></script>
-  <script src="js/coast.js?v=18"></script>
-  <script src="js/gulls.js?v=18"></script>
-  <script src="js/traits.js?v=18"></script>
-  <script src="js/save.js?v=18"></script>
-  <script src="js/link.js?v=18"></script>
-  <script src="js/net.js?v=18"></script>
-  <script src="js/hud.js?v=18"></script>
-  <script src="js/main.js?v=21"></script>
+  <script src="js/core.js?v=19"></script>
+  <script src="js/raster.js?v=19"></script>
+  <script src="js/creatures.js?v=19"></script>
+  <script src="js/critters.js?v=19"></script>
+  <script src="js/wildlife.js?v=19"></script>
+  <script src="js/wildfish.js?v=19"></script>
+  <script src="js/sound.js?v=19"></script>
+  <script src="js/life.js?v=19"></script>
+  <script src="js/plants.js?v=19"></script>
+  <script src="js/scene.js?v=19"></script>
+  <script src="js/structures.js?v=19"></script>
+  <script src="js/erosion.js?v=19"></script>
+  <script src="js/sky.js?v=19"></script>
+  <script src="js/ecology.js?v=19"></script>
+  <script src="js/game.js?v=19"></script>
+  <script src="js/deep.js?v=19"></script>
+  <script src="js/remains.js?v=19"></script>
+  <script src="js/eldritch.js?v=19"></script>
+  <script src="js/coast.js?v=19"></script>
+  <script src="js/gulls.js?v=19"></script>
+  <script src="js/traits.js?v=19"></script>
+  <script src="js/save.js?v=19"></script>
+  <script src="js/link.js?v=19"></script>
+  <script src="js/net.js?v=19"></script>
+  <script src="js/hud.js?v=19"></script>
+  <script src="js/main.js?v=22"></script>
 </body>
 </html>

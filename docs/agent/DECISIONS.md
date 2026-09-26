@@ -409,5 +409,16 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
   - Also: pointer pans only (a tap opens a card), no spawn card, hatchery, recycle, trait buttons or path buttons, and the save status says "look only".
   - `observeSync` re-fetches every 60 s and re-applies the owner's master save when it's 2 minutes newer, keeping the camera (`quietRestore` skips the welcome log).
 
+## Walking the beach takes a choice; the drop-off slopes
+- Walking to a neighbour was too easy at 150 px of overscroll: people went by accident. Now:
+  - The pull only counts in a direction whose end the view was already at when the drag began (`press.ends` from `viewAtEnds`), so ordinary panning never counts.
+  - It needs `max(320 px, 45% of the viewport along the beach)`.
+  - A full pull, or a click on the end tab, opens the `#nb-ask` prompt; only Go navigates (Stay and Esc close it). cdp14 checks each case.
+- The pond's old edge showed as a straight seam in the pond and the minimap. Past the lip the depth jumped to the first shelf at once, and the lip wandered only ±8 px. Now:
+  - The lip wanders about ±40 px with two noise octaves.
+  - Depth ramps in with `smoothstep(0, 0.2, t)` times noise, and shelf risers slope (`smoothstep(0.7, 1)` within each terrace). cdp14 checks the start is under 40 and varies more than 25 px.
+  - The minimap shades wet cells toward `DEEP_COLOR` by average depth × 0.85, like compose.
+- These are the same depths for every pond (derived, not stored), so links and saves are unchanged.
+
 ## Fair points for pond size
 `award` multiplies by `sizeFairness = clamp(√(960×540 / original area), 0.6, 1.5)`. Deepening doesn't count toward the area.
