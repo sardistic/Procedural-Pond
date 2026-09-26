@@ -642,6 +642,9 @@ output {
 
 .score-panel { top: calc(100% + 8px); bottom: auto; left: 50%; transform: translateX(-50%); width: min(360px, calc(100vw - 24px)); }
 .score-panel h3 { margin: 12px 0 6px; font-size: 11px; font-weight: 400; color: var(--hot); }
+.score-depth { display: flex; align-items: baseline; gap: 10px; margin-top: 8px; padding: 6px 8px; border: 2px solid var(--btn-edge); background: linear-gradient(90deg, #0f2c38, #06101e); }
+.score-depth b { font-size: 18px; font-weight: 400; color: var(--hot); }
+.score-depth span { font-size: 10px; color: #9ae0ff; }
 .score-top { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
 .score-top div { display: grid; gap: 2px; padding: 6px; border: 2px solid var(--btn-edge); background: #0f2c38; }
 .score-top b { font-size: 14px; font-weight: 400; color: var(--hot); }
@@ -814,6 +817,12 @@ output {
 .story li { line-height: 1.4; color: var(--text); }
 .story time { margin-right: 6px; color: var(--muted); }
 .cr-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+.eld { display: grid; gap: 4px; margin-top: 8px; padding: 6px; border: 2px solid #3a1e4a; background: linear-gradient(135deg, #140a1e, #0a1a14); }
+.eld b { font-weight: 400; }
+.eld .note { margin: 0; }
+.eld-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.eld-acts button { padding: 4px; box-shadow: none; color: #d8f0e0; border-color: #3a8a5a; }
+.eld-col .evo-node { border-color: #3a1e4a; }
 .cr-acts .recycle { color: #f0d8ff; border-color: #9a5ae0; }
 .cls { text-shadow: none; }
 
@@ -827,16 +836,16 @@ output {
 
 /* ---- hatchery ---- */
 
-.hatch { position: fixed; top: 64px; left: 50%; bottom: auto; transform: translateX(-50%); width: min(380px, calc(100vw - 24px)); max-height: calc(100vh - 240px); font-size: 10px; color: var(--muted); }
+.hatch { position: fixed; top: 60px; left: 50%; bottom: auto; transform: translateX(-50%); width: min(540px, calc(100vw - 24px)); max-height: calc(100vh - 200px); font-size: 10px; color: var(--muted); }
 .hatch h3 { margin: 12px 0 6px; font-size: 11px; font-weight: 400; color: var(--hot); }
-.hatch-feed { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: center; margin-top: 10px; }
-.hatch-btn { flex-direction: column; height: 80px; gap: 4px; font-size: 12px; color: var(--hot); border-color: var(--hot); background: #2a3a18; }
+.hatch-feed { display: grid; grid-template-columns: 150px 1fr; gap: 14px; align-items: center; margin-top: 10px; }
+.hatch-btn { flex-direction: column; height: 132px; gap: 6px; font-size: 14px; color: var(--hot); border-color: var(--hot); background: #2a3a18; }
 .hatch-btn b { margin: 0; font-weight: 400; color: var(--hot); }
 .hatch-btn span:last-child { font-size: 9px; color: var(--text); }
 .hatch-btn.squish { animation: hatch-pop 0.25s ease-out; }
-.hatch-btn .egg { width: 22px; height: 28px; border-radius: 50% 50% 46% 46% / 60% 60% 40% 40%; background: radial-gradient(circle at 35% 30%, #fff8dc, #e0d4a4 55%, #8a7a50); box-shadow: 2px 2px 0 var(--ink); }
+.hatch-btn .egg { width: 44px; height: 56px; border-radius: 50% 50% 46% 46% / 60% 60% 40% 40%; background: radial-gradient(circle at 35% 30%, #fff8dc, #e0d4a4 55%, #8a7a50); box-shadow: 2px 2px 0 var(--ink); }
 @keyframes hatch-pop { from { transform: scale(0.92); } }
-.hatch-prog .tidebar { height: 10px; }
+.hatch-prog .tidebar { height: 16px; }
 .hatch-prog .tidebar i { background: linear-gradient(90deg, #b8a676, #f8c050); }
 .hatch-stock, .hatch-ups { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .slot { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "nm b" "sub b"; align-items: center; gap: 1px 8px; padding: 4px 6px; border: 2px solid #1c4654; }
@@ -844,6 +853,19 @@ output {
 .slot .note { grid-area: sub; margin: 0; }
 .slot button { grid-area: b; padding: 3px 6px; box-shadow: none; }
 .slot.empty { border-style: dashed; }
+.slot.picker { display: grid; grid-template-columns: 1fr; grid-template-areas: none; gap: 4px; }
+.pair { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 8px; padding: 4px 6px; text-align: left; box-shadow: none; border-color: #1c4654; background: transparent; }
+.pair .ic { display: grid; place-items: center; }
+.pair img { image-rendering: pixelated; }
+.pair .who { display: grid; grid-template-columns: auto 1fr; gap: 1px 8px; align-items: baseline; }
+.pair .who b { margin: 0; font-weight: 400; color: var(--text); }
+.pair .tr { font-size: 9px; color: var(--muted); }
+.pair .val { display: flex; align-items: center; color: #c38bff; }
+.pair:hover { border-color: var(--hot); }
+/* The dock's egg: opens the hatchery, with its brood filling as a ring. */
+.hatch-dock { flex: none; align-self: center; width: 44px; height: 44px; padding: 0; background: linear-gradient(to top, #8a6a24 var(--p, 0%), #0f2c38 0); } /* fills as the brood's food comes in */
+.hatch-dock .egg { width: 20px; height: 26px; border-radius: 50% 50% 46% 46% / 60% 60% 40% 40%; background: radial-gradient(circle at 35% 30%, #fff8dc, #e0d4a4 55%, #8a7a50); box-shadow: 1px 1px 0 var(--ink); }
+.hatch-dock.ready { animation: bump 1.2s ease-out infinite; }
 .hatch-ups li { display: grid; grid-template-columns: 1fr 30px 70px; grid-template-areas: "nm lv b" "n n n"; align-items: center; gap: 1px 6px; }
 .hatch-ups b { grid-area: nm; font-weight: 400; color: var(--text); }
 .hatch-ups .lv { grid-area: lv; color: var(--hot); }

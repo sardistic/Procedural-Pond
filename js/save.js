@@ -58,6 +58,7 @@ function storeSave(d) {
   }
   list.unshift({
     seed: d.seed, habitat: d.opts.habitat, days: d.days, savedAt: d.savedAt, points: d.game ? d.game.points : 0, link: d.link ? d.link.id : null,
+    depth: fathomsOf(d.erosion ? d.erosion.e : 0, d.opts.habitat === 'fresh' ? 'fresh' : 'salt'),
     animals: d.creatures.length, rares: d.creatures.filter((c) => c.L.traits && c.L.traits.length).length,
   });
   localStorage.setItem(SAVE_INDEX, JSON.stringify(list));
@@ -66,7 +67,7 @@ function storeSave(d) {
 // ---- serialize ---------------------------------------------------------------------
 
 function serializePond(world) {
-  const saved = world.creatures.filter((c) => c.make && c.life && !c.leaving && !c.gone && !c.caught);
+  const saved = world.creatures.filter((c) => c.make && c.life && !c.leaving && !c.dying && !c.gone && !c.caught);
   const uid = new Map(saved.map((c, i) => [c, i]));
   const schools = [], schoolIdx = new Map();
   const schoolRef = (s) => {
@@ -102,17 +103,23 @@ function serializePond(world) {
     targets: world.targets, eco: { ...ECO }, journalSeq: world.journalSeq,
     game: world.game, lineage: world.lineage ? [...world.lineage.values()] : [], link: world.link || null,
     structures: (world.structures || []).map((s) => ({ k: s.kind, x: r2(s.x), y: r2(s.y), s: s.seed, born: r2(s.born) })),
+    fossils: (world.fossils || []).map((f) => ({ x: r2(f.x), y: r2(f.y), k: f.kind, g: f.gene, born: r2(f.born) })),
     erosion: world.erosion || null, expandPx: world.expandPx || 0, base: world.expandPx ? baseSize(world) : [world.W, world.H],
     hatchery: world.hatchery ? { ...world.hatchery, stock: packStock(world.hatchery) } : null,
     wild: WILD_SPECIES,
     rocks: world.rocks.map((r) => ({ x: r2(r.x), y: r2(r.y), a: r2(r.a), b: r2(r.b), ang: r2(r.ang), h: r2(r.h), m: ROCK_MATS.indexOf(r.m), seed: r.seed, oi: r.oi, born: r.born })),
     pebbles: world.pebbles.map((p) => [r2(p.x), r2(p.y), r2(p.s), PEBBLE_MATS.indexOf(p.m)]),
-    plants: [...world.plants, ...world.pads].filter((p) => p.make).map((p) => ({ k: p.make, s: p.seed, x: r2(p.x), y: r2(p.y), a: args(p.args), oi: p.oi, born: p.born })),
+    plants: [...world.plants, ...world.pads].filter((p) => p.make).map((p) => ({
+      k: p.make, s: p.seed, x: r2(p.x), y: r2(p.y), a: args(p.args), oi: p.oi, born: p.born,
+      g: p.growth != null ? r2(p.growth) : undefined, age: p.age != null ? r2(p.age) : undefined, span: p.span != null ? r2(p.span) : undefined,
+    })),
+    succession: world.succession || null,
     creatures: saved.map((c) => ({
       k: c.make, s: c.seed, sn: c.sn, x: r2(c.x), y: r2(c.y), h: r2(c.heading), z: r2(c.z || 0), a: args(c.args),
       st: c.state === 'sit' ? 'sit' : undefined,
       L: {
         name: c.life.name, age: r2(c.life.age), energy: r2(c.life.energy), cooldown: r2(c.life.cooldown), fed: r2(c.life.fed || 0), comfort: r2(c.life.comfort ?? 0.5),
+        corruption: c.life.genome.eld ? r2(c.life.corruption || 0) : undefined, bound: c.life.bound || undefined,
         lifespan: r2(c.life.lifespan), gen: c.life.gen, scale: c.life.scale, old: !!c.life.old, inbred: r2(c.life.inbred || 0),
         genome: c.life.genome, traits: c.life.traits, parents: c.life.parents,
       },
@@ -151,7 +158,7 @@ function placeRestored(c, r) {
 function shiftSave(d, dx, dy) {
   if (!dx && !dy) return d;
   const mv = (o) => { if (o) { o.x += dx; o.y += dy; } };
-  d.creatures.forEach(mv); d.plants.forEach(mv); d.rocks.forEach(mv); (d.structures || []).forEach(mv); (d.eggs || []).forEach(mv);
+  d.creatures.forEach(mv); d.plants.forEach(mv); d.rocks.forEach(mv); (d.structures || []).forEach(mv); (d.eggs || []).forEach(mv); (d.fossils || []).forEach(mv);
   d.pebbles = (d.pebbles || []).map(([x, y, s, m]) => [x + dx, y + dy, s, m]);
   for (const s of d.schools || []) { s.tx += dx; s.ty += dy; }
   if (d.erosion) (d.erosion.lagoons || []).forEach(mv);
@@ -175,9 +182,12 @@ function restorePond(world, d) {
   const spById = new Map(WILD_SPECIES.map((s) => [s.id, s]));
 
   world.expandPx = d.expandPx || 0;
+  world.succession = d.succession || null;
   world.erosion = { ...newErosion(), ...(d.erosion || {}), next: 0 };
   // Structures first: islands shape the beach that makeShore builds.
   world.structures = (d.structures || []).filter((s) => STRUCTURES[s.k]).map((s) => makeStructure(s.k, world, s.x, s.y, s.s, s.born ?? world.days));
+  world.fossils = (d.fossils || []).map((f) => new Fossil(f.x, f.y, f.k, f.g, f.born));
+  world.remains = [];
   world.hatchery = null;
   if (d.hatchery) {
     const h = newHatchery();
@@ -195,6 +205,7 @@ function restorePond(world, d) {
     const plant = makePlant(p.k, world, p.x, p.y, p.a || {}, p.s);
     plant.oi = p.oi;
     if (p.born != null) plant.born = p.born;
+    if (p.g != null) Object.assign(plant, { growth: p.g, age: p.age, span: p.span });
     (p.k === 'lily' ? world.pads : world.plants).push(plant);
   }
   world.motes = new Motes(world);
@@ -215,8 +226,9 @@ function restorePond(world, d) {
     initLife(c, { genome: r.L.genome, gen: r.L.gen, scale: r.L.scale, age: r.L.age, alpha: 1, inbred: r.L.inbred || 0 });
     Object.assign(c.life, {
       name: r.L.name, energy: r.L.energy, cooldown: r.L.cooldown, lifespan: r.L.lifespan, old: r.L.old, parents: r.L.parents || null,
-      fed: r.L.fed || 0, comfort: r.L.comfort ?? 0.5,
+      fed: r.L.fed || 0, comfort: r.L.comfort ?? 0.5, corruption: r.L.corruption || 0, bound: !!r.L.bound,
     });
+    if (c.life.genome.eld) c.life.traits = eldTraits(c.life);
     c.sn = r.sn ?? null;
     return c;
   });

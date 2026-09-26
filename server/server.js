@@ -32,7 +32,7 @@ const SPECIES = new Set(['koi', 'tetra', 'eel', 'axolotl', 'turtle', 'crab', 'ra
   'puffer', 'octopus', 'duck', 'shrimp', 'dragonfly', 'wild', 'starfish']);
 const TRAIT_RARITY = {
   pale: 1, piebald: 1, giant: 2, dwarf: 2, melanistic: 2, xanthic: 2, marbled: 2, axanthic: 3, albino: 3, leucistic: 3,
-  shiny: 4, ghost: 4, glow: 4, chimera: 5,
+  shiny: 4, ghost: 4, glow: 4, chimera: 5, touched: 4, changed: 5, eldritch: 7,
 };
 const HABITATS = new Set(['fresh', 'mixed', 'salt']);
 
@@ -65,14 +65,34 @@ db.exec(`
   );
 `);
 
+// Depth (the score): the erosion a pond reports, turned into fathoms the same way the page does.
+const cols = new Set(db.prepare('PRAGMA table_info(ponds)').all().map((c) => c.name));
+if (!cols.has('erosion')) db.exec('ALTER TABLE ponds ADD COLUMN erosion REAL NOT NULL DEFAULT 0');
+if (!cols.has('depth')) db.exec('ALTER TABLE ponds ADD COLUMN depth INTEGER NOT NULL DEFAULT 0');
+db.exec('CREATE INDEX IF NOT EXISTS ponds_depth ON ponds (board, depth DESC)');
+const FATHOM_KNOTS = {
+  salt: [[0, 2], [2, 8], [5, 110], [11, 550], [22, 2200], [40, 6000]],
+  fresh: [[0, 1], [2, 4], [5, 60], [11, 300], [22, 900], [40, 1700]],
+};
+function fathomsOf(e, habitat) {
+  const K = FATHOM_KNOTS[habitat === 'fresh' ? 'fresh' : 'salt'];
+  let i = 0;
+  while (i < K.length - 2 && e > K[i + 1][0]) i++;
+  const [e0, f0] = K[i], [e1, f1] = K[i + 1];
+  return Math.max(1, Math.round(f0 * (f1 / f0) ** ((e - e0) / (e1 - e0))));
+}
+const EROSION_RATE = 0.02;  // most erosion a pond can add per real second
+const EROSION_BURST = 3;
+const FIRST_EROSION = 30;
+
 const q = {
   get: db.prepare('SELECT * FROM ponds WHERE id = ?'),
   exists: db.prepare('SELECT 1 FROM ponds WHERE id = ?'),
-  insert: db.prepare('INSERT INTO ponds (id, key_hash, created, updated, opened, points, board, meta, save) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
-  update: db.prepare('UPDATE ponds SET updated = ?, points = ?, board = ?, meta = ?, save = ? WHERE id = ?'),
+  insert: db.prepare('INSERT INTO ponds (id, key_hash, created, updated, opened, points, board, meta, save, erosion, depth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
+  update: db.prepare('UPDATE ponds SET updated = ?, points = ?, board = ?, meta = ?, save = ?, erosion = ?, depth = ? WHERE id = ?'),
   opened: db.prepare('UPDATE ponds SET opened = ? WHERE id = ?'),
-  rank: db.prepare(`SELECT COUNT(*) AS n FROM ponds WHERE board = 1 AND points >= ${BOARD_MIN} AND points > ?`),
-  top: db.prepare(`SELECT id, points, meta, updated FROM ponds WHERE board = 1 AND points >= ${BOARD_MIN} ORDER BY points DESC, created ASC LIMIT 20`),
+  rank: db.prepare(`SELECT COUNT(*) AS n FROM ponds WHERE board = 1 AND points >= ${BOARD_MIN} AND (depth > ? OR (depth = ? AND points > ?))`),
+  top: db.prepare(`SELECT id, points, depth, meta, updated FROM ponds WHERE board = 1 AND points >= ${BOARD_MIN} ORDER BY depth DESC, points DESC, created ASC LIMIT 20`),
   count: db.prepare(`SELECT COUNT(*) AS n FROM ponds WHERE board = 1 AND points >= ${BOARD_MIN}`),
   addFind: db.prepare('INSERT INTO finds (at, pond, tier, species, traits, how) VALUES (?, ?, ?, ?, ?, ?)'),
   finds: db.prepare('SELECT at, pond, tier, species, traits, how FROM finds ORDER BY n DESC LIMIT 20'),
@@ -103,7 +123,7 @@ function cleanFind(f) {
 function cleanMeta(m) {
   if (!m || typeof m !== 'object') m = {};
   return {
-    points: int(m.points, 0, 1e12), animals: int(m.animals, 0, 5000), species: int(m.species, 0, 200), rares: int(m.rares, 0, 5000),
+    points: int(m.points, 0, 1e12), erosion: Math.max(0, Math.min(500, Number(m.erosion) || 0)), animals: int(m.animals, 0, 5000), species: int(m.species, 0, 200), rares: int(m.rares, 0, 5000),
     gen: int(m.gen, 0, 100000), days: Math.max(0, Math.min(1e7, Math.round((Number(m.days) || 0) * 100) / 100)),
     habitat: HABITATS.has(m.habitat) ? m.habitat : 'mixed', board: m.board !== false, best: cleanFind(m.best),
     finds: Array.isArray(m.finds) ? m.finds.slice(0, 5).map(cleanFind).filter((f) => f && f.tier >= 2) : [],
@@ -162,7 +182,7 @@ function allowCreate(ip) {
 
 // Place on the leaderboard, or null for ponds that aren't listed (opted out, or too small yet).
 function rankOf(row) {
-  return row.board && row.points >= BOARD_MIN ? q.rank.get(row.points).n + 1 : null;
+  return row.board && row.points >= BOARD_MIN ? q.rank.get(row.depth, row.depth, row.points).n + 1 : null;
 }
 
 function addFinds(id, finds, now) {
@@ -176,14 +196,14 @@ async function createPond(req) {
   if (!allowCreate(req.ip)) throw new HttpError(429, 'too many new links today');
   const body = await readJson(req), meta = cleanMeta(body.meta), save = cleanSave(body.save), now = Date.now();
   const key = crypto.randomBytes(18).toString('base64url');
-  const points = Math.min(meta.points, FIRST_POINTS);
+  const points = Math.min(meta.points, FIRST_POINTS), erosion = Math.min(meta.erosion, FIRST_EROSION), depth = fathomsOf(erosion, meta.habitat);
   for (let i = 0; i < 12; i++) {
     const id = newId();
     if (q.exists.get(id)) continue;
-    q.insert.run(id, hashKey(key), now, now, now, points, meta.board ? 1 : 0, JSON.stringify(publicMeta({ ...meta, points })), save);
+    q.insert.run(id, hashKey(key), now, now, now, points, meta.board ? 1 : 0, JSON.stringify(publicMeta({ ...meta, points, erosion, depth })), save, erosion, depth);
     addFinds(id, meta.finds, now);
     boardCache = null;
-    return [201, { id, key, points, rank: rankOf({ board: meta.board, points }), high: board().high }];
+    return [201, { id, key, points, depth, rank: rankOf({ board: meta.board, points, depth }), high: board().high }];
   }
   throw new HttpError(503, 'no free link, try again');
 }
@@ -196,10 +216,12 @@ async function updatePond(req, id) {
   // Scores grow only so fast: a claim is capped by what the time since the last update allows.
   const allowed = row.points + POINT_RATE * Math.max(0, (now - row.updated) / 1000) + POINT_BURST;
   const points = Math.min(meta.points, Math.floor(allowed));
-  q.update.run(now, points, meta.board ? 1 : 0, JSON.stringify(publicMeta({ ...meta, points })), save, id);
+  // Depth too can only grow so fast.
+  const erosion = Math.min(meta.erosion, (row.erosion || 0) + EROSION_RATE * Math.max(0, (now - row.updated) / 1000) + EROSION_BURST), depth = fathomsOf(erosion, meta.habitat);
+  q.update.run(now, points, meta.board ? 1 : 0, JSON.stringify(publicMeta({ ...meta, points, erosion, depth })), save, erosion, depth, id);
   addFinds(id, meta.finds, now);
   if (meta.board) boardCache = null;
-  return [200, { ok: true, points, rank: rankOf({ board: meta.board, points }), high: board().high }];
+  return [200, { ok: true, points, depth, rank: rankOf({ board: meta.board, points, depth }), high: board().high }];
 }
 
 function getPond(id) {
@@ -217,10 +239,10 @@ function board() {
   if (boardCache && Date.now() - boardCache.at < 15000) return boardCache.data;
   const top = q.top.all().map((r) => {
     const m = JSON.parse(r.meta);
-    return { id: r.id, points: r.points, updated: r.updated, animals: m.animals, species: m.species, rares: m.rares, gen: m.gen, days: m.days, habitat: m.habitat, best: m.best };
+    return { id: r.id, points: r.points, depth: r.depth, updated: r.updated, animals: m.animals, species: m.species, rares: m.rares, gen: m.gen, days: m.days, habitat: m.habitat, best: m.best };
   });
   const finds = q.finds.all().map((f) => ({ at: f.at, pond: f.pond, tier: f.tier, species: f.species, traits: f.traits.split(','), how: f.how }));
-  const data = { top, high: top.length >= 10 ? top[9].points : 0, finds, ponds: q.count.get().n };
+  const data = { top, high: top.length >= 10 ? top[9].depth : 0, finds, ponds: q.count.get().n };
   boardCache = { at: Date.now(), data };
   return data;
 }

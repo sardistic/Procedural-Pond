@@ -258,7 +258,7 @@ class Octopus extends Creature {
         gx = f.x - this.x; gy = f.y - this.y; want = prey ? this.maxSpeed : this.cruise * 1.4;
         if (Math.hypot(gx, gy) < (prey ? 5 : 3)) eat(world, this, f);
       } else if (this.mode === 'walk') {
-        if (this.timer <= 0 || Math.hypot(this.tx - this.x, this.ty - this.y) < 6) { this.mode = 'pause'; this.timer = rand(3, 9); }
+        if (this.timer <= 0 || Math.hypot(this.tx - this.x, this.ty - this.y) < 6) { this.mode = 'pause'; this.timer = rand(3, 9) * (2.2 - activity(world, this)); }
         gx = this.tx - this.x; gy = this.ty - this.y; want = this.cruise;
       } else if (this.timer <= 0) {
         this.mode = 'walk'; this.newTarget(world, true); this.timer = rand(4, 9);

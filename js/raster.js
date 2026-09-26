@@ -26,7 +26,11 @@ class Raster {
     this.alpha = 1;                   // < 1 draws an ordered-dither fraction of pixels (fades)
     this.castShadows = true;
     this.clip = [0, 0, W - 1, H - 1]; // only this rectangle is rasterized (the visible part)
+    this.k = 1; this.kz = 1; this.kx = 0; this.ky = 0; // draw scaled by k about (kx, ky): see setScale
   }
+
+  // Everything drawn until the next setScale() is scaled about (x, y); heights by kz.
+  setScale(x = 0, y = 0, k = 1, kz = k) { this.kx = x; this.ky = y; this.k = k; this.kz = kz; }
 
   setClip(x0, y0, x1, y1) {
     this.clip = [Math.max(0, x0 | 0), Math.max(0, y0 | 0), Math.min(this.W - 1, x1 | 0), Math.min(this.H - 1, y1 | 0)];
@@ -60,6 +64,11 @@ class Raster {
   // relative to radius (1 = round, <1 = flat). shader is a material or
   // (u along 0..1, v across -1..1, x, y) => material|null.
   tube(ax, ay, ar, az, bx, by, br, bz, hs, shader, id, u0 = 0, u1 = 1) {
+    if (this.k !== 1) {
+      const k = this.k, sx = this.kx, sy = this.ky;
+      ax = sx + (ax - sx) * k; ay = sy + (ay - sy) * k; bx = sx + (bx - sx) * k; by = sy + (by - sy) * k;
+      ar *= k; br *= k; az *= this.kz; bz *= this.kz;
+    }
     const [cx0, cy0, cx1, cy1] = this.clip;
     if (ar < 0.72) ar = 0.72;
     if (br < 0.72) br = 0.72;
@@ -99,6 +108,10 @@ class Raster {
   // Rotated half-ellipsoid: semi-axes a (along ang) and b, dome height hs.
   // Function shaders get local coords (lx, ly) in -1..1.
   ellipsoid(cx, cy, a, b, ang, z0, hs, shader, id) {
+    if (this.k !== 1) {
+      const k = this.k;
+      cx = this.kx + (cx - this.kx) * k; cy = this.ky + (cy - this.ky) * k; a *= k; b *= k; z0 *= this.kz; hs *= k;
+    }
     const [cx0, cy0, cx1, cy1] = this.clip;
     if (a < 0.6) a = 0.6;
     if (b < 0.6) b = 0.6;
@@ -131,6 +144,7 @@ class Raster {
   }
 
   dot(x, y, h, m, id) {
+    if (this.k !== 1) { x = this.kx + (x - this.kx) * this.k; y = this.ky + (y - this.ky) * this.k; h *= this.kz; }
     const xi = Math.floor(x), yi = Math.floor(y), [cx0, cy0, cx1, cy1] = this.clip;
     if (xi < cx0 || yi < cy0 || xi > cx1 || yi > cy1) return;
     this.put(xi, yi, h, m, 0, 0, 1, id);

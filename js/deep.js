@@ -99,12 +99,18 @@ class Shark extends Fish {
       outline: outlineOf(sand ? DM.sand : DM.sharkBack),
     });
     this.sand = sand;
+    this.alwaysSwims = !sand; // a reef shark has to keep moving to breathe
     this.predWeight = sand ? 1.4 : 2.2;
     this.shoreMargin = sand ? 0.06 : SHORE_MARGIN; // sand sharks cruise right up the shallows
     const s = rand(0, 99);
     this.skin = sand ? bakeShader((u, v) => (vnoise(u * 20 + s, v * 3, 12) > 0.62 ? DM.sandSpot : Math.abs(v) > 0.8 ? DM.sharkBelly : DM.sand), 48, 12)
       : bakeShader((u, v) => (Math.abs(v) > 0.72 ? DM.sharkBelly : u < 0.04 ? DM.sharkFin : DM.sharkBack), 48, 12);
     this.fin = sand ? DM.sand : DM.sharkFin;
+  }
+
+  wander(world) {
+    super.wander(world);
+    if (this.alwaysSwims) this.cruiseNow = Math.max(this.cruiseNow, this.cruise * 0.75);
   }
 
   draw(r) {
@@ -639,7 +645,7 @@ function arriveDeep(world) {
   world.creatures.push(...group);
   ECO.arrivals += group.length;
   const G = world.game, first = G && !G.seen.includes(`species:${kind}`);
-  if (first) G.seen.push(`species:${kind}`);
+  if (first) { G.seen.push(`species:${kind}`); deepenBy(world, 0.1); }
   const pts = award(world, (DEEP[kind].mythic ? 150 : 20) + (first ? 30 : 0), DEEP[kind].mythic ? 'mythic sightings' : 'deep sightings', group[0]);
   const text = DEEP[kind].mythic ? `✦ ${MYTHIC_ARRIVAL[kind]} · +${pts}` : `✦ From the deep: ${withArticle(SINGULAR[kind].toLowerCase())}${group.length > 1 ? ` school of ${group.length}` : ''} came up out of the dark${first ? ', a first for this pond' : ''} · +${pts}`;
   logEvent(world, text, group[0], { cat: 'rare', pri: 3 });

@@ -19,6 +19,41 @@ const DEPTH_TIERS = [
   { erosion: 22, salt: 'The abyss', fresh: 'The drowned cathedral', depth: 1, expand: 0.22 },
 ];
 const DEEP_COLOR = { salt: hexToInt('#02040e'), fresh: hexToInt('#050806'), mixed: hexToInt('#03050c') };
+
+// ---- depth is the score -------------------------------------------------------------------------
+// A pond's score is its deepest point, in fathoms, rising through the real zones:
+// in salt water the twilight zone starts near 110 fathoms, the midnight zone 550 and
+// the abyss 2,200 (the hadal trenches beyond reach 6,000); a deep lake 60, a sunless
+// cave 300, a drowned cathedral 900. Between these points it rises geometrically.
+const FATHOM_KNOTS = {
+  salt: [[0, 2], [2, 8], [5, 110], [11, 550], [22, 2200], [40, 6000]],
+  fresh: [[0, 1], [2, 4], [5, 60], [11, 300], [22, 900], [40, 1700]],
+};
+function fathomsOf(e, branch) {
+  const K = FATHOM_KNOTS[branch] || FATHOM_KNOTS.salt;
+  let i = 0;
+  while (i < K.length - 2 && e > K[i + 1][0]) i++;
+  const [e0, f0] = K[i], [e1, f1] = K[i + 1], t = (e - e0) / (e1 - e0);
+  return Math.max(1, Math.round(f0 * (f1 / f0) ** t));
+}
+const pondFathoms = (world) => fathomsOf(world.erosion ? world.erosion.e : 0, branchOf(world));
+
+// What wears the pond deeper. Points count too, but on a log curve, so a deep,
+// high-scoring pond can't run away with itself: 1,000 points add 0.6, 10,000
+// add 2.1, 100,000 add 4, 1,000,000 add 6.
+const pointsDepth = (p) => 2 * Math.log10(1 + Math.max(0, p) / 1000);
+const DEPTH_PARTS = { tide: 'the tides', time: 'time', built: 'your structures', growth: 'plant life', life: 'evolution', points: 'points', essence: 'essence spent' };
+
+// Evolution deepens the pond a step at a time: new generations, rare births,
+// discoveries and hatchery broods.
+function deepenBy(world, amount, part = 'life') {
+  const E = world.erosion;
+  if (!E || !(amount > 0)) return;
+  if (E.acc == null) E.acc = E.e || 0;
+  E.acc += amount;
+  E.parts = E.parts || {};
+  E.parts[part] = (E.parts[part] || 0) + amount;
+}
 const MAX_LAGOONS = 4;
 
 const newErosion = () => ({ e: 0, tier: 0, lagoons: [], next: 0 });
@@ -89,17 +124,27 @@ function buildDepth(world) {
 
 function updateErosion(world, dt) {
   const E = world.erosion;
-  if (!E || !world.shore || world.opts.life === false) return;
-  const tide = world.tide, hab = world.opts.habitat;
-  // Surf and a big tidal range wear the pond fastest; lakes erode slowly.
-  const rate = hab === 'fresh' ? 0.16 + 0.2 * tide.surf : 0.1 + 0.4 * tide.surf * Math.max(0.3, tide.range);
-  E.e += dt / world.opts.dayLength * rate;
+  if (!E || world.opts.life === false || dt <= 0) return;
+  if (E.acc == null) E.acc = E.e || 0; // ponds from before: what they'd worn so far
+  const P = E.parts || (E.parts = {}), tide = world.tide, hab = world.opts.habitat, days = dt / world.opts.dayLength;
+  // Experience with the tide: surf and a big tidal range wear the pond fastest (lakes and pools barely).
+  const tideRate = !world.shore ? 0 : hab === 'fresh' ? 0.07 + 0.12 * tide.surf : 0.05 + 0.26 * tide.surf * Math.max(0.3, tide.range);
+  // Time alive, structures built (deep ones more), and the pond's plant life.
+  const builtRate = Math.min(0.1, (world.structures || []).reduce((a, s) => a + (STRUCTURES[s.kind].tier ? 0.03 : 0.012), 0));
+  const rates = { tide: tideRate, time: 0.05, built: builtRate, growth: 0.05 * (world.maturity ?? 1) };
+  for (const [k, r] of Object.entries(rates)) { P[k] = (P[k] || 0) + r * days; E.acc += r * days; }
+  const before = E.e;
+  E.pts = pointsDepth(world.game ? world.game.points : 0);
+  E.e = Math.max(E.e, E.acc + E.pts);
+  // The recent pace, for the time-to-next-tier estimate (erosion per pond second).
+  const inst = (E.e - before) / dt;
+  E.pace = E.pace ? E.pace + (inst - E.pace) * Math.min(1, dt / 120) : inst;
   E.next -= dt;
   if (E.next > 0) return;
   E.next = 3;
   // Tide pools, one per couple of units of erosion past the first tier.
   const want = E.e >= DEPTH_TIERS[1].erosion ? Math.min(MAX_LAGOONS, 1 + Math.floor((E.e - DEPTH_TIERS[1].erosion) / 3)) : 0;
-  if (E.lagoons.length < want && carveLagoon(world)) {
+  if (world.shore && E.lagoons.length < want && carveLagoon(world)) {
     makeShore(world);
     bakeBackground(world);
     if (typeof paintMinimapBackground === 'function') paintMinimapBackground();
@@ -130,12 +175,20 @@ function carveLagoon(world) {
   return false;
 }
 
+// Roughly how long until the next tier at the recent pace, in real seconds.
+function tierEta(world) {
+  const E = world.erosion, next = E && DEPTH_TIERS[E.tier + 1];
+  if (!next || !E.pace) return null;
+  return (next.erosion - E.e) / E.pace / Math.max(0.25, world.opts.speed);
+}
+const etaLabel = (s) => (s == null ? '' : s < 90 ? 'about a minute' : s < 3600 ? `about ${Math.round(s / 60)} minutes` : `about ${(s / 3600).toFixed(s < 36000 ? 1 : 0)} hours`);
+
 // Spend essence to wear the pond faster.
 const deepenCost = (world) => 12 + 10 * (world.erosion ? world.erosion.tier : 0);
 function deepenPond(world) {
   const cost = deepenCost(world);
   if (!spendEssence(world, cost)) return false;
-  world.erosion.e += 1;
+  deepenBy(world, 1, 'essence');
   world.erosion.next = 0;
   return true;
 }

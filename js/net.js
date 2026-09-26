@@ -43,7 +43,8 @@ async function api(method, path, body, key) {
 function pondMeta(world) {
   const G = world.game, alive = world.creatures.filter((c) => c.life && !c.leaving);
   return {
-    points: G.points, animals: alive.length, species: new Set(alive.map((c) => (c.species === 'wild' ? `w${c.sp.id}` : c.species))).size,
+    points: G.points, erosion: world.erosion ? Math.round(world.erosion.e * 1000) / 1000 : 0, depth: typeof pondFathoms === 'function' ? pondFathoms(world) : 1,
+    animals: alive.length, species: new Set(alive.map((c) => (c.species === 'wild' ? `w${c.sp.id}` : c.species))).size,
     rares: alive.filter((c) => c.life.traits.length).length, gen: world.records ? world.records.gen : 0,
     days: Math.round(world.days * 100) / 100, habitat: world.opts.habitat, board: !!G.board,
     best: G.best ? { tier: G.best.tier, species: G.best.species, traits: G.best.traits, how: G.best.how } : null,

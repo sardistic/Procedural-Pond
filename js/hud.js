@@ -347,7 +347,7 @@ function renderCensus() {
     if (c.life.traits.length) rares++;
   }
   byId('census-summary').textContent = `${total} animals · ${groups.size} species · ${rares} rare`;
-  byId('census-stats').textContent = `born ${ECO.births} · arrived ${ECO.arrivals} · moved on ${ECO.departures} · eaten ${ECO.eaten}`;
+  byId('census-stats').textContent = `born ${ECO.births} · arrived ${ECO.arrivals} · moved on ${ECO.departures} · died ${ECO.died || 0} · eaten ${ECO.eaten}`;
 
   const rows = [], sum = speciesSummary(world);
   const worth = (k) => (k === 'tadpole' ? 0 : (sum.get(k) || { value: 0 }).value);
@@ -753,13 +753,32 @@ function renderSpawnCard() {
     b.addEventListener('click', () => { if (spawnUi.enh.has(key)) spawnUi.enh.delete(key); else spawnUi.enh.add(key); renderSpawnCard(); });
     boosts.append(b);
   }
+  const genes = G.fossilGenes || [];
+  let ancient = null;
+  if (genes.length) {
+    ancient = el('div', 'sc-boosts ancient');
+    ancient.append(el('span', 'sc-sub', 'Ancient genes from fossils (free; the first of the spawn shows it)'));
+    for (const [i, g] of genes.entries()) {
+      const b = el('button', 'boost');
+      b.type = 'button';
+      b.setAttribute('aria-pressed', spawnUi.ancient === i);
+      const nm = el('b', null, g);
+      nm.style.color = CLASS_COLOR[g] || '#ffd166';
+      b.append(nm, el('span', 'bc', 'ancient'));
+      b.addEventListener('click', () => { spawnUi.ancient = spawnUi.ancient === i ? null : i; renderSpawnCard(); });
+      ancient.append(b);
+    }
+  }
   const buy = el('button', 'sc-buy');
   buy.type = 'button';
   buy.disabled = (G.essence || 0) < price;
   buy.append(document.createTextNode(`Spawn ${SPECIES[kind].label.toLowerCase()} for `), el('i', 'essence'), document.createTextNode(fmt(price)));
   buy.title = buy.disabled ? `You have ${fmt(G.essence || 0)} essence. Recycle animals with the Net for more.` : '';
-  buy.addEventListener('click', () => { if (buyAnimal(kind, [...spawnUi.enh])) renderSpawnCard(); });
-  box.replaceChildren(...[head, facts, have, boosts, buy].filter(Boolean));
+  buy.addEventListener('click', () => {
+    const gene = spawnUi.ancient != null ? genes[spawnUi.ancient] : null;
+    if (buyAnimal(kind, [...spawnUi.enh], gene)) { spawnUi.ancient = null; renderSpawnCard(); }
+  });
+  box.replaceChildren(...[head, facts, have, boosts, ancient, buy].filter(Boolean));
   box.hidden = false;
   const bar = byId('animals').getBoundingClientRect(), a = spawnUi.anchor.getBoundingClientRect(), w = box.offsetWidth;
   box.style.left = `${Math.round(clamp(a.left + a.width / 2 - w / 2, 8, innerWidth - w - 8))}px`;
@@ -877,6 +896,36 @@ function renderCreature() {
     for (const k of d.carries) { const ch = chip(`carries ${k}`, CLASS_COLOR[k] || '#8fbcb8'); ch.classList.add('carrier'); t.append(ch); }
     parts.push(t);
   }
+  // The mark: its stage, how fast it's coming on, and what you can do about it.
+  const st = eldStage(L);
+  if (st >= 0) {
+    const box = el('div', 'eld');
+    const stage = el('b', null, `The mark: ${ELD_STAGES[st]}`);
+    stage.style.color = CLASS_COLOR[st === 2 ? 'eldritch' : st === 1 ? 'changed' : 'touched'];
+    const bar = el('span', 'gbar'), fillEl = el('i');
+    fillEl.style.width = `${Math.round((L.corruption || 0) * 100)}%`;
+    fillEl.style.background = 'linear-gradient(90deg, #8a5ae0, #3aff9a)';
+    bar.append(fillEl);
+    const rate = eldRate(world, c) * L.lifespan;
+    box.append(stage, bar, colored('span', 'note', L.bound ? 'Bound: the change in it has stopped.'
+      : `${rate > 4 ? 'Changing fast here' : rate > 2 ? 'Changing' : 'Changing slowly'}: faster at night, in deep water, near the idol, the whale fall or the mythic.${st === 2 ? ' Small animals circle it; those too close lose their minds; at night it dreams the mark into its neighbours.' : st === 1 ? ' The water around it feels wrong.' : ''}`));
+    if (here) {
+      const acts = el('div', 'eld-acts');
+      const fd = el('button', null);
+      fd.type = 'button';
+      fd.append(document.createTextNode('Feed the dream '), el('i', 'essence'), document.createTextNode(String(feedDreamCost(c))));
+      fd.disabled = (world.game.essence || 0) < feedDreamCost(c) || L.corruption >= 1;
+      fd.addEventListener('click', () => { feedDream(world, c); renderCreature(); });
+      const bd = el('button', null);
+      bd.type = 'button';
+      bd.append(document.createTextNode('Bind it '), el('i', 'essence'), document.createTextNode(String(bindCost(c))));
+      bd.disabled = (world.game.essence || 0) < bindCost(c);
+      bd.addEventListener('click', () => { bindMark(world, c); renderCreature(); });
+      acts.append(fd, bd);
+      box.append(acts);
+    }
+    parts.push(box);
+  }
   parts.push(el('h4', null, 'Genes'));
   const genes = el('ul', 'genes');
   for (const k of BUFF_ROWS) genes.append(geneBar(k, L.buffs[k]));
@@ -967,13 +1016,13 @@ function renderHatchery() {
   byId('hatch-status').textContent = !pair
     ? (H.stock.length < 2 ? 'Stock a breeding pair: open an animal\u2019s card and choose \u201cTo hatchery\u201d.' : 'These two can\u2019t breed: they must be the same kind.')
     : `${Math.floor(H.nutrients)} of ${cost} food · ${n} young a brood${ready > 1 ? ` · ${ready} broods ready` : ''}${auto ? ` · auto-feeding ${auto.toFixed(2)}/s` : ''}`;
-  const sig = JSON.stringify([H.stock.map((r) => r.s), H.focus, H.levels, Math.floor(world.game.pearls / 5), Math.floor((world.game.essence || 0) / 2)]);
+  const sig = JSON.stringify([H.stock.map((r) => r.s), H.focus, H.levels, Math.floor(world.game.pearls / 5), Math.floor((world.game.essence || 0) / 5),
+    H.stock.length < 2 ? Math.floor(world.t / 4) : 0, (world.game.fossilGenes || []).length]);
   if (sig === hatchUi.sig) return;
   hatchUi.sig = sig;
   // The pair.
-  const stock = [0, 1].map((i) => {
-    const rec = H.stock[i], li = el('li', rec ? 'slot' : 'slot empty');
-    if (!rec) { li.append(el('span', 'note', 'Empty')); return li; }
+  const stock = [0, 1].filter((i) => H.stock[i]).map((i) => {
+    const rec = H.stock[i], li = el('li', 'slot');
     const tier = tierOf(rec.traits || []), nm = el('b', null, rec.name);
     if (tier) nm.style.color = TIER_COLOR[tier];
     const label = rec.species === 'wild' && rec.args.sp ? rec.args.sp.name : SINGULAR[rec.species] || rec.species;
@@ -984,13 +1033,57 @@ function renderHatchery() {
     li.append(nm, colored('span', 'note', `${label} · gen ${rec.gen}${rec.traits.length ? ` · ${rec.traits.join(' ')}` : ''}`), rel);
     return li;
   });
+  // Empty places: the pond's breeding lines to choose from, most valuable first.
+  if (H.stock.length < 2) {
+    const cands = hatchCandidates(world), pick = el('li', 'slot empty picker');
+    pick.append(el('span', 'sc-sub', H.stock.length ? `Pair ${H.stock[0].name} with:` : 'Choose a breeding pair from your pond'));
+    if (!cands.length) pick.append(el('span', 'note', H.stock.length ? 'No other grown animal of its kind in the pond yet.' : 'No kind has two grown animals yet: let the pond grow, or spawn some from the dock.'));
+    const rows = H.stock.length
+      ? cands.flatMap((c) => c.list.slice(0, 6).map((a) => ({ animals: [a], key: c.key })))
+      : cands.slice(0, 8).map((c) => ({ animals: c.list.slice(0, 2), key: c.key, n: c.list.length }));
+    for (const row of rows) {
+      const first = row.animals[0], b = el('button', 'pair'), ic = el('span', 'ic');
+      b.type = 'button';
+      ic.append(iconImg(iconFor(first), 26));
+      const who = el('div', 'who');
+      for (const a of row.animals) {
+        const t = tierOf(a.life.traits), nm = el('b', null, a.life.name);
+        if (t) nm.style.color = TIER_COLOR[t];
+        who.append(nm, colored('span', 'tr', a.life.traits.length ? a.life.traits.join(' ') : describe(a).label));
+      }
+      const val = el('span', 'val');
+      val.append(el('i', 'essence'), document.createTextNode(String(row.animals.reduce((s, a) => s + recycleValue(a), 0))));
+      b.append(ic, who, val);
+      b.title = row.n ? `${describe(first).label}: ${row.n} grown in the pond. These two go into the hatchery.` : `Put ${first.life.name} in as the other half of the pair`;
+      b.addEventListener('click', () => {
+        for (const a of row.animals) { const why = stockHatchery(world, a); if (why) { showTicker(why); break; } }
+        hatchUi.sig = '';
+        renderHatchery();
+      });
+      pick.append(b);
+    }
+    stock.push(pick);
+  }
   byId('hatch-stock').replaceChildren(...stock);
+  // Ancient genes waiting to be infused into the next brood.
+  const genes = world.game.fossilGenes || [];
+  const inf = byId('hatch-infuse');
+  inf.hidden = !genes.length && !H.infuse;
+  inf.replaceChildren(el('span', 'sc-sub', H.infuse ? `The next brood's first young will carry the ancient ${H.infuse} gene` : 'Infuse an ancient gene into the next brood:'),
+    ...(H.infuse ? [] : genes.map((g, i) => {
+      const b = el('button', 'chip', g);
+      b.type = 'button';
+      b.style.color = CLASS_COLOR[g] || '#ffd166';
+      b.addEventListener('click', () => { H.infuse = genes.splice(i, 1)[0]; hatchUi.sig = ''; renderHatchery(); });
+      return b;
+    })));
   // What to breed for.
-  byId('hatch-focus').replaceChildren(...Object.entries(HATCH_FOCUS).map(([key, f]) => {
+  const dreamOk = (world.erosion && world.erosion.tier >= 2) || world.creatures.some((c) => c.life && c.life.genome.eld) || H.stock.some((r) => r.genome.eld);
+  byId('hatch-focus').replaceChildren(...Object.entries(HATCH_FOCUS).filter(([key]) => key !== 'dream' || dreamOk).map(([key, f]) => {
     const b = el('button', 'chip', f.label);
     b.type = 'button';
     b.setAttribute('aria-pressed', H.focus === key);
-    const info = GENE_INFO[key] || (key === 'calm' ? GENE_INFO.aggression : key === 'rarity' ? GENE_INFO.luck : key === 'size' ? { color: '#ffb86b' } : null);
+    const info = GENE_INFO[key] || (key === 'calm' ? GENE_INFO.aggression : key === 'rarity' ? GENE_INFO.luck : key === 'size' ? { color: '#ffb86b' } : key === 'dream' ? { color: '#3aff9a' } : null);
     if (info) b.style.color = info.color;
     b.addEventListener('click', () => { H.focus = key; renderHatchery(); });
     return b;
@@ -1081,7 +1174,8 @@ function renderEvo() {
   const sig = JSON.stringify([E.tier, Math.floor(E.e * 10), G.unlocked || [], Math.floor((G.essence || 0) / 5)]);
   if (sig === evoUi.sig) return;
   evoUi.sig = sig;
-  byId('evo-status').replaceChildren(colorize(next ? `Now: ${tierName(world, E.tier)}. Erosion ${E.e.toFixed(1)} of ${next.erosion} to reach ${tierName(world, E.tier + 1).toLowerCase()}. Surf and big tides wear the pond; salt water erodes fastest.`
+  const eta = tierEta(world);
+  byId('evo-status').replaceChildren(colorize(next ? `Now: ${tierName(world, E.tier)}. Erosion ${E.e.toFixed(1)} of ${next.erosion} to reach ${tierName(world, E.tier + 1).toLowerCase()}${eta ? `, ${etaLabel(eta)} at the recent pace` : ''}. Surf and big tides wear the pond fastest (salt water most, fresh least); a faster speed or shorter days speed it up.`
     : `Now: ${tierName(world, E.tier)}, the deepest the pond can go.`));
   const prev = DEPTH_TIERS[E.tier].erosion;
   byId('evo-fill').style.width = next ? `${Math.round(clamp((E.e - prev) / (next.erosion - prev), 0, 1) * 100)}%` : '100%';
@@ -1090,7 +1184,25 @@ function renderEvo() {
   dig.replaceChildren(document.createTextNode('Wear the pond deeper: '), el('i', 'essence'), document.createTextNode(String(deepenCost(world))));
   dig.disabled = (G.essence || 0) < deepenCost(world);
   const branches = world.opts.habitat === 'mixed' ? ['salt', 'fresh'] : [branchOf(world)];
-  byId('evo-tree').replaceChildren(...branches.map((br) => {
+  // The rare branch: the eldritch, with what's in the pond at each stage.
+  const eld = el('div', 'evo-col eld-col');
+  eld.append(colored('h3', null, 'The eldritch: a rare branch'));
+  const counts = [0, 0, 0];
+  for (const c of world.creatures) { const s = c.life ? eldStage(c.life) : -1; if (s >= 0) counts[s]++; }
+  const ELD_NOTES = [
+    'A mark that comes from nowhere (1 in 1,500 births), from fossils, or from being born near the drowned idol or in the abyss. It passes to young: 20% from one marked parent, 45% from two.',
+    'The change comes on over a lifetime, faster at night, in deep water, near the idol or the whale fall, and near the mythic; in the shallows most die before it’s done. New eyes open; the water nearby feels wrong.',
+    'Transcended: a crown of tentacles and a sigil that glows at night. It draws small animals into circling it, drives the closest mad, and dreams its mark into its neighbours. Each one wears the pond deeper.',
+  ];
+  ELD_STAGES.forEach((name, i) => {
+    const node = el('div', counts[i] ? 'evo-node reached' : 'evo-node');
+    const b = el('b', null, `${name}${counts[i] ? ` · ${counts[i]} in the pond` : ''}`);
+    b.style.color = CLASS_COLOR[['touched', 'changed', 'eldritch'][i]];
+    node.append(b, el('span', 'note', ELD_NOTES[i]));
+    eld.append(node);
+  });
+  eld.append(el('p', 'note', 'On a marked animal’s card: feed the dream (essence pushes the change on) or bind it (essence sets it back and stops it). The hatchery can breed for the deep dream.'));
+  byId('evo-tree').replaceChildren(eld, ...branches.map((br) => {
     const col = el('div', 'evo-col');
     col.append(colored('h3', null, br === 'salt' ? 'Salt: down into the abyss' : 'Fresh: down into the drowned cathedral'));
     DEPTH_TIERS.forEach((t, i) => {
@@ -1160,16 +1272,17 @@ function updateScoreHud() {
   const G = world.game;
   if (!G) return;
   const rank = world.link && G.board && G.points >= BOARD_MIN && Net.rank ? `#${Net.rank}` : '';
-  const key = `${G.points}|${G.pearls}|${G.essence}|${world.seed}|${rank}`;
+  if (!world.erosion) return;
+  const depth = pondFathoms(world), key = `${depth}|${G.pearls}|${G.essence}|${world.seed}|${rank}`;
   if (key === scoreUi.shown) return;
   const was = scoreUi.shown ? +scoreUi.shown.split('|')[0] : null;
   scoreUi.shown = key;
   byId('bar-name').textContent = world.seed;
   byId('bar-rank').textContent = rank;
-  byId('score-points').textContent = fmtShort(G.points);
+  byId('score-points').textContent = `${fmtShort(depth)} fm`;
   byId('score-pearls').textContent = fmtShort(G.pearls);
   byId('score-essence').textContent = fmtShort(G.essence || 0);
-  if (was != null && G.points > was) restartAnim(byId('score-btn'), 'bump');
+  if (was != null && depth > was) restartAnim(byId('score-btn'), 'bump');
 }
 
 // "+15" drifting up from where the points were earned (or "−8" where pearls were spent).
@@ -1197,6 +1310,11 @@ function visitPond(id) {
 function renderScorePanel(force = false) {
   if (!scoreUi.open || !world.game) return;
   const G = world.game, plan = fireflyPlan(world);
+  const E = world.erosion || newErosion();
+  byId('sp-depth').textContent = `${fmt(pondFathoms(world))} fathoms`;
+  byId('sp-zone').textContent = tierName(world, E.tier);
+  const parts = Object.entries({ ...(E.parts || {}), points: E.pts || 0 }).filter(([, v]) => v > 0.05).sort((a, b) => b[1] - a[1]);
+  byId('sp-parts').replaceChildren(colorize(parts.length ? `Deepened by ${parts.map(([k, v]) => `${DEPTH_PARTS[k] || k} ${v.toFixed(1)}`).join(', ')}` : 'The pond has only just begun to wear deeper.'));
   byId('sp-points').textContent = fmt(G.points);
   byId('sp-pearls').textContent = fmt(G.pearls);
   byId('sp-essence').textContent = fmt(G.essence || 0);
@@ -1205,7 +1323,7 @@ function renderScorePanel(force = false) {
   byId('sp-rank-note').textContent = !Net.base ? 'offline' : !G.board ? 'not listed'
     : G.points < BOARD_MIN || !Net.rank ? `listed at ${BOARD_MIN} pts` : `rank${Net.board && Net.board.ponds ? ` of ${fmt(Net.board.ponds)}` : ''}`;
   byId('sp-flies').textContent = `Tonight: ${plan.yellow} of ${plan.full} fireflies${plan.blue ? ` and ${plan.blue} blue` : ''}. ` +
-    `A full swarm is the high-score range, ${fmt(plan.high)}+ points${plan.blue ? '.' : '; blue fireflies come once you reach it.'}`;
+    `A full swarm means the deepest ponds' range, ${fmt(plan.high)}+ fathoms${plan.blue ? '.' : '; blue fireflies come once you reach it.'}`;
   byId('sp-best').textContent = G.best ? `Best find: ${TIERS[G.best.tier]} ${findLabel(G.best)}${G.best.name ? `, ${G.best.name}` : ''}` : '';
   byId('sp-recent').replaceChildren(...(G.recent.length ? G.recent.slice(0, 6).map((r) => {
     const li = el('li');
@@ -1229,8 +1347,8 @@ function renderScorePanel(force = false) {
     const li = el('li', p.id === mine ? 'me' : ''), btn = el('button', 'board-row');
     btn.type = 'button';
     btn.title = p.id === mine ? 'Your pond' : `Visit ${p.id}`;
-    btn.append(el('span', 'rk', `#${i + 1}`), el('b', null, p.id), el('span', 'pt', fmt(p.points)),
-      el('span', 'mt', [p.best && `${TIERS[p.best.tier]} ${findLabel(p.best)}`, `${p.animals} animals`, `day ${Math.floor(p.days) + 1}`].filter(Boolean).join(' · ')));
+    btn.append(el('span', 'rk', `#${i + 1}`), el('b', null, p.id), el('span', 'pt', `${fmt(p.depth || 1)} fm`),
+      el('span', 'mt', [p.best && `${TIERS[p.best.tier]} ${findLabel(p.best)}`, `${fmt(p.points)} points`, `${p.animals} animals`, `day ${Math.floor(p.days) + 1}`].filter(Boolean).join(' · ')));
     if (p.best) btn.querySelector('.mt').style.color = TIER_COLOR[p.best.tier];
     btn.addEventListener('click', () => visitPond(p.id));
     li.append(btn);
@@ -1238,7 +1356,7 @@ function renderScorePanel(force = false) {
   });
   if (mine && Net.rank && !b.top.some((p) => p.id === mine)) {
     const li = el('li', 'me'), row = el('div', 'board-row');
-    row.append(el('span', 'rk', `#${Net.rank}`), el('b', null, mine), el('span', 'pt', fmt(G.points)), el('span', 'mt', 'your pond'));
+    row.append(el('span', 'rk', `#${Net.rank}`), el('b', null, mine), el('span', 'pt', `${fmt(pondFathoms(world))} fm`), el('span', 'mt', 'your pond'));
     li.append(row);
     rows.push(li);
   }
@@ -1282,6 +1400,7 @@ function initHud() {
   });
   byId('score-close').addEventListener('click', () => setScore(false));
   byId('hatch-close').addEventListener('click', () => setHatchery(false));
+  byId('hatch-btn').addEventListener('click', () => setHatchery(!hatchUi.open));
   byId('slice').addEventListener('click', () => setEvo(!evoUi.open));
   byId('open-depths').addEventListener('click', () => setEvo(!evoUi.open));
   byId('open-hatchery').addEventListener('click', () => { if (world.hatchery && hatcheryStructure(world)) setHatchery(!hatchUi.open); else showTicker('Build a hatchery first (the Build section, 250 pearls and 40 essence)'); });
@@ -1331,7 +1450,18 @@ function hudTick(dt) {
   creatureUi.timer -= dt;
   if (creatureUi.c && creatureUi.timer <= 0) { creatureUi.timer = 0.5; renderCreature(); }
   hatchUi.timer -= dt;
-  if (hatchUi.open && hatchUi.timer <= 0) { hatchUi.timer = 0.2; renderHatchery(); }
+  if (hatchUi.timer <= 0) {
+    hatchUi.timer = 0.2;
+    renderHatchery();
+    const H = world.hatchery, has = !!(H && hatcheryStructure(world)), btn = byId('hatch-btn');
+    btn.hidden = !has;
+    if (has) {
+      const k = Math.min(1, H.nutrients / hatchCost(H));
+      btn.style.setProperty('--p', `${Math.round(k * 100)}%`);
+      btn.classList.toggle('ready', k >= 1 && !!hatchPair(H));
+      btn.title = `Hatchery: ${Math.floor(H.nutrients)} of ${hatchCost(H)} food${hatchPair(H) ? '' : ' · needs a breeding pair'}. Click to open.`;
+    }
+  }
   evoUi.timer -= dt;
   if (evoUi.timer <= 0) { evoUi.timer = 0.5; drawSlice(); renderEvo(); }
 }

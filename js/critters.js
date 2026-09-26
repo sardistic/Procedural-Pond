@@ -10,6 +10,12 @@ const CRAB_VARIETIES = [
 ];
 
 class Crab extends Walker {
+  // At night, crabs forage over the beach the tide has bared.
+  newTarget(world, avoidRocks) {
+    if (world.darkness > 0.5 && Math.random() < 0.4 && this.haulOut(world)) return;
+    super.newTarget(world, avoidRocks);
+  }
+
   constructor(world, x, y) {
     const v = pick(CRAB_VARIETIES);
     const legs = [];
@@ -143,7 +149,7 @@ class Frog extends Creature {
     const s = rand(0, 99);
     this.skin = bakeShader((u, vv) => (v.spot && vnoise(u * 4 + s, vv * 2.5, 23) > 0.66 ? v.spot : v.skin), 16, 16);
     this.legs = [1, -1].map((side) => ({ side, sx: 0, sy: 0, ex: 0, ey: 0, fx: 0, fy: 0 }));
-    const live = world.pads.filter((p) => !p.dead);
+    const live = world.pads.filter((p) => !p.dead && (p.growth ?? 1) >= 0.5);
     if (live.length) {
       const p = pick(live);
       this.land(p);
@@ -179,7 +185,7 @@ class Frog extends Creature {
     this.timer -= dt;
     if (this.pad && this.pad.dead) { this.pad = null; this.state = 'swim'; }
     if (this.targetPad && this.targetPad.dead) this.targetPad = null;
-    const live = world.pads.filter((p) => !p.dead);
+    const live = world.pads.filter((p) => !p.dead && (p.growth ?? 1) >= 0.5);
 
     if (this.grabbed) {
       const p = world.pointer;

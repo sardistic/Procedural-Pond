@@ -11,12 +11,12 @@
 // stay. The family tree of every animal is kept for the dock's charts, and the
 // fireflies at night show how your score compares to the high scores.
 
-const START_PEARLS = 60;
-const START_ESSENCE = 30;
+const START_PEARLS = 30;
+const START_ESSENCE = 15;
 const TIER_ESSENCE = [0, 2, 5, 12, 30, 80]; // extra essence for recycling a rare, by tier
 const TIER_VALUE = [1, 3, 8, 20, 50, 150];   // points for a birth by tier (arrivals score half)
 const FIRST_BONUS = 20;                       // the first of a rare kind in this pond
-const HIGH_FLOOR = 10000;                     // the high-score range, until the leaderboard sets it higher
+const HIGH_FLOOR = 110;                        // the high-score depth (fathoms), until the leaderboard sets it deeper
 
 const PLANT_PRICE = { weed: 4, eelgrass: 4, duckweed: 3, marimo: 8, lily: 8, anemone: 15, coral: 15, urchin: 6, rock: 2 };
 const FOOD_PRICE = { pellet: 0, spirulina: 3, brine: 5 };
@@ -191,6 +191,8 @@ function scoreRare(world, c, tier, how) {
     pts = TIER_VALUE[tier] * (1 + 0.25 * Math.min(bred, 8));
   }
   const n = award(world, pts + (first ? FIRST_BONUS : 0), how === 'born' ? 'rare births' : 'rare arrivals', c);
+  // Firsts deepen the pond; repeats only a little (less in a big pond, where there are more of them).
+  if (typeof deepenBy === 'function') deepenBy(world, tier * (first ? 0.03 : (how === 'born' ? 0.002 : 0.001) * clamp(960 * 540 / (world.W * world.H), 0.4, 2.5)));
   const bred = G.lines[key] || 0, verb = how === 'born' ? 'hatched' : 'arrived';
   const note = first ? ', a first for this pond' : how === 'born' && bred > 1 ? `, bred ${bred}×` : '';
   if (tier <= 1 && how === 'arrived' && !first) { noteFind(world, c, tier, how); return; } // uncommon newcomers just score
@@ -246,6 +248,8 @@ function updateComfort(world) {
   for (const p of world.plants) (spots[p.make] || (spots[p.make] = [])).push(p);
   for (const p of world.pads) if (!p.dead) (spots.lily || (spots.lily = [])).push(p);
   for (const s of world.structures || []) (spots[s.kind] || (spots[s.kind] = [])).push(s);
+  spots.remains = world.remains || [];
+  world.likeSpots = spots;
   const lights = world.darkness > 0.5 ? world.creatures.filter((c) => geneBuffs(c).light > 0.3) : [];
   const R2 = COMFORT_R * COMFORT_R;
   for (const c of world.creatures) {
@@ -255,7 +259,7 @@ function updateComfort(world) {
     let n = likes ? 0 : 1.8; // drifters don't mind
     if (likes) {
       for (const k of likes) {
-        for (const s of spots[k] || []) if ((s.x - c.x) ** 2 + (s.y - c.y) ** 2 < R2 && ++n >= 3) break;
+        for (const s of spots[k] || []) if ((s.growth ?? 1) >= 0.4 && (s.x - c.x) ** 2 + (s.y - c.y) ** 2 < R2 && ++n >= 3) break;
         if (n >= 3) break;
       }
     }
@@ -265,6 +269,47 @@ function updateComfort(world) {
     L.comfort += (clamp(target, 0, 1) - L.comfort) * 0.2;
   }
 }
+
+// ---- natural rhythms and favourite places ---------------------------------------------------
+// When each species is about: most fish and birds by day; eels, octopus, catfish,
+// crabs, frogs, shrimp, snails and axolotls at night (resting near cover by day);
+// rays and hunting wild fish at dawn and dusk; sharks, jellies, starfish and the
+// deep all the time.
+const RHYTHM = {
+  eel: 'night', octopus: 'night', catfish: 'night', crab: 'night', frog: 'night', shrimp: 'night', snail: 'night', axolotl: 'night',
+  ray: 'dusk', snake: 'day', shark: 'always', sandshark: 'dusk', jelly: 'always', starfish: 'always', kraken: 'night', watcher: 'night',
+};
+function activity(world, c) {
+  const r = RHYTHM[c.species] || (typeof DEEP !== 'undefined' && DEEP[c.species] ? 'always' : c.species === 'wild' && c.sp.predator ? 'dusk' : 'day');
+  const d = world.darkness || 0;
+  if (r === 'always') return 1;
+  if (r === 'night') return 0.35 + 0.8 * d;
+  if (r === 'dusk') return 0.5 + 0.7 * (1 - Math.abs(d - 0.5) * 2);
+  return 1 - 0.65 * d;
+}
+
+// Somewhere an animal likes to be (a liked plant, rock or structure), nearer ones
+// more likely, so each species gathers where it's most comfortable.
+function likedSpot(world, c) {
+  const likes = likesOf(c), spots = world.likeSpots;
+  if (!likes || !spots) return null;
+  const cand = [];
+  let total = 0;
+  for (const k of likes) {
+    for (const s of spots[k] || []) {
+      if ((s.growth ?? 1) < 0.4) continue;
+      const d = Math.hypot(s.x - c.x, s.y - c.y);
+      if (d > 220) continue;
+      const w = 1 / (d + 40);
+      cand.push([s, w]); total += w;
+    }
+  }
+  if (!cand.length) return null;
+  let r = Math.random() * total;
+  for (const [s, w] of cand) if ((r -= w) <= 0) return s;
+  return cand[0][0];
+}
+const spotRadius = (s) => (s.kind && STRUCTURES[s.kind] ? STRUCTURES[s.kind].size : s.R || s.r || s.a || 6);
 
 // How fast an animal ages (1 = as the clock runs), and its chance of wandering
 // off at each migration check (every 6 s).
@@ -360,11 +405,11 @@ function dawnIncome(world) {
 // first and two more each time the score doubles; the top three ponds get more.
 
 function fireflyPlan(world) {
-  const full = Math.round(world.W * world.H / 9000) + 4, pts = world.game ? world.game.points : 0;
+  const full = Math.round(world.W * world.H / 9000) + 4, f = typeof pondFathoms === 'function' ? pondFathoms(world) : 1;
   const net = typeof Net !== 'undefined' ? Net : null;
   const high = Math.max(HIGH_FLOOR, (net && net.board && net.board.high) || 0);
-  const yellow = pts <= 0 ? 0 : Math.max(1, Math.round(full * Math.sqrt(Math.min(1, pts / high))));
-  let blue = pts >= high ? 2 + 2 * Math.floor(Math.log2(pts / high)) : 0;
+  const yellow = Math.max(1, Math.round(full * clamp(Math.log(1 + f) / Math.log(1 + high), 0, 1)));
+  let blue = f >= high ? 2 + 2 * Math.floor(Math.log2(f / high)) : 0;
   const rank = net && net.rank;
   if (blue && rank === 1) blue = Math.max(blue, Math.round(full * 0.75));
   else if (blue && rank && rank <= 3) blue = Math.max(blue, Math.round(full * 0.4));

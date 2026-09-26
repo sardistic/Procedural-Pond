@@ -98,7 +98,7 @@ function packPond(world) {
     w.u8(v); w.u8(v >> 8); w.u8(v >> 16);
   }
 
-  const saved = world.creatures.filter((c) => c.make && c.life && !c.leaving && !c.gone && !c.caught && KIND_CODES.includes(c.make));
+  const saved = world.creatures.filter((c) => c.make && c.life && !c.leaving && !c.dying && !c.gone && !c.caught && KIND_CODES.includes(c.make));
   const index = new Map(saved.map((c, i) => [c, i])), bySeed = new Map(saved.map((c, i) => [c.seed, i]));
   const schools = [], schoolIdx = new Map();
   for (const c of saved) {
@@ -156,7 +156,7 @@ function packPond(world) {
       if (g.shiny) w.u8(clamp(Math.round(g.shinyHue), 0, 255));
       // v3: the later genes, then the pattern seed (piebald, marbled and chimera use it).
       w.u8((g.xanthic || 0) | ((g.axanthic || 0) << 2) | (g.glow ? 16 : 0) | (g.ghost ? 32 : 0));
-      w.u8((g.leu || 0) | ((g.mar || 0) << 2) | ((g.mut || 0) << 4) | (g.chi ? 64 : 0));
+      w.u8((g.leu || 0) | ((g.mar || 0) << 2) | ((g.mut || 0) << 4) | (g.chi ? 64 : 0) | (g.eld ? 128 : 0));
       for (const k of FGENES) w.u8(q8(g[k] ?? 0.5, 0, 1));
       if (g.piebald === 2 || g.mar || g.chi) w.u16(g.seed || 0);
     }
@@ -179,6 +179,18 @@ function packPond(world) {
   w.vu(Math.round(E.e * 100)); w.u8(E.tier); w.vu(world.expandPx || 0);
   w.u8(E.lagoons.length);
   for (const L of E.lagoons) { w.u16(Math.round(L.x)); w.u16(Math.round(L.y)); w.u8(Math.round(L.r)); w.vu(L.seed); }
+  // Plant growth (generated plants by index, then the added ones), and the animals still to come.
+  const byOi = (list) => list.filter((p) => p.oi != null).sort((a, b) => a.oi - b.oi);
+  const grown = [...byOi(world.plants), ...byOi(world.pads), ...added];
+  w.vu(grown.length);
+  for (const p of grown) w.u8(Math.round(clamp(p.growth ?? 1, 0, 1) * 255));
+  const want = Object.entries((world.succession && world.succession.want) || {}).filter(([k]) => KIND_CODES.includes(k));
+  w.u8(world.succession ? 1 + want.length : 0);
+  for (const [k, n] of want) { w.u8(KIND_CODES.indexOf(k)); w.u8(Math.min(255, n)); }
+  // How far the mark has gone in each marked animal (and whether it's bound).
+  const marked = saved.map((c, i) => [c, i]).filter(([c]) => c.life.genome.eld);
+  w.vu(marked.length);
+  for (const [c, i] of marked) { w.vu(i); w.u8(Math.round(clamp(c.life.corruption || 0, 0, 1) * 127) | (c.life.bound ? 128 : 0)); }
   return w.bytes();
 }
 
@@ -247,7 +259,7 @@ function unpackV2(r, v = 2) {
       if (v >= 3) {
         const x = r.u8(), l = r.u8();
         Object.assign(g, { xanthic: x & 3, axanthic: (x >> 2) & 3, glow: !!(x & 16), ghost: !!(x & 32) });
-        Object.assign(g, { leu: l & 3, mar: (l >> 2) & 3, mut: (l >> 4) & 3, chi: !!(l & 64) });
+        Object.assign(g, { leu: l & 3, mar: (l >> 2) & 3, mut: (l >> 4) & 3, chi: !!(l & 64), eld: !!(l & 128) });
         for (const k of FGENES) g[k] = r.u8() / 255;
         g.seed = g.piebald === 2 || g.mar || g.chi ? r.u16() : randi(0, 9999);
       } else {
@@ -284,6 +296,21 @@ function unpackV2(r, v = 2) {
         s.erosion = { e: r.vu() / 100, tier: r.u8(), lagoons: [] };
         s.expandPx = r.vu();
         for (let n = r.u8(); n > 0; n--) s.erosion.lagoons.push({ x: r.u16(), y: r.u16(), r: r.u8(), seed: r.vu() });
+        if (r.i < r.b.length) {
+          s.growth = [];
+          for (let n = r.vu(); n > 0; n--) s.growth.push(r.u8() / 255);
+          const ns = r.u8();
+          if (ns) {
+            s.succession = { want: {}, seen: [] };
+            for (let n = ns - 1; n > 0; n--) { const k = KIND_CODES[r.u8()], c = r.u8(); if (k) s.succession.want[k] = c; }
+          }
+          if (r.i < r.b.length) {
+            for (let n = r.vu(); n > 0; n--) {
+              const i = r.vu(), v = r.u8(), c = s.creatures[i];
+              if (c) Object.assign(c.L, { corruption: (v & 127) / 127, bound: !!(v & 128) });
+            }
+          }
+        }
       }
     }
   }
@@ -354,6 +381,12 @@ function unpackV1(r) {
   return s;
 }
 
+// Plants as they were grown (links from before growth was stored have them all grown).
+function withGrowth(plants, growth) {
+  if (!growth || growth.length !== plants.length) return plants;
+  return plants.map((p, i) => ({ ...p, g: growth[i], age: 0, span: rand(...(PLANT_LIFE[p.k] || [0, 40, 80]).slice(1)) }));
+}
+
 // Turn a decoded link into a regular save (see save.js), regrowing the scenery
 // from the seed and the wild species from theirs.
 function linkToSave(s) {
@@ -396,7 +429,8 @@ function linkToSave(s) {
       ...s.addedRocks,
     ],
     pebbles: tmp.pebbles.map((p) => [p.x, p.y, p.s, PEBBLE_MATS.indexOf(p.m)]),
-    plants: [...plants.map((p) => ({ k: p.make, s: p.seed, x: p.x, y: p.y, a: p.args, oi: p.oi })), ...s.addedPlants],
+    plants: withGrowth([...plants.map((p) => ({ k: p.make, s: p.seed, x: p.x, y: p.y, a: p.args, oi: p.oi })), ...s.addedPlants], s.growth),
+    succession: s.succession || null,
     schools: s.schools,
     creatures: s.creatures.map((c) => {
       const lifespan = c.L.lifespan || lifespanFor(c.k, c.seed);

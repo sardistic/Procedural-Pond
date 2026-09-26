@@ -524,7 +524,9 @@ function dawnStructures(world) {
   }
   if (ess) gainEssence(world, ess, 'the deep structures');
   sproutAround(world);
+  seedPlants(world);
   applyStains(world);
+  dawnFinds(world);
 }
 
 // Plants take root around structures, rocks and plants that have been there a while.
@@ -544,7 +546,7 @@ function sproutAround(world) {
       if (world.plants.filter((p) => (p.x - x) ** 2 + (p.y - y) ** 2 < 400).length >= 3) continue;
       const salt = saltAt(world, x, y) > 0, deep = depthAt(world, x, y) > 0.35;
       const kind = deep ? (salt ? 'blackcoral' : 'glowcap') : salt ? pick(['coral', 'coral', 'anemone', 'weed']) : pick(['weed', 'weed', 'eelgrass', 'marimo']);
-      const p = makePlant(kind, world, x, y, kind === 'weed' ? { habitat: salt ? 'salt' : 'fresh' } : {});
+      const p = sprouting(makePlant(kind, world, x, y, kind === 'weed' ? { habitat: salt ? 'salt' : 'fresh' } : {}));
       p.born = world.days;
       world.plants.push(p);
       grown++;
@@ -552,6 +554,71 @@ function sproutAround(world) {
     }
   }
   if (grown) logEvent(world, `${grown} new plant${grown > 1 ? 's' : ''} took root around the old stones and structures`, null, { cat: 'life', pri: 0, key: 'sprout' });
+}
+
+// ---- plant life ---------------------------------------------------------------------------------------
+// Every plant grows from a seedling, lives out its span (in pond days, by kind:
+// weeds and duckweed come and go, corals and moss balls last), then dies back
+// and is gone. Mature plants seed around them each dawn, so the pond fills in
+// over time without overcrowding. The pond's maturity (plant life against its
+// size) decides which animals it can support (see succession in main.js).
+const PLANT_LIFE = {
+  weed: [0.25, 30, 60], eelgrass: [0.22, 30, 60], duckweed: [0.35, 15, 30], lily: [0.22, 20, 45], marimo: [0.08, 100, 200],
+  anemone: [0.15, 60, 120], coral: [0.09, 80, 150], urchin: [0.15, 40, 80], blackcoral: [0.05, 150, 260], glowcap: [0.25, 20, 40],
+}; // [growth per day, lifespan in days (min, max)]
+const SEEDS = { weed: 0.14, eelgrass: 0.12, duckweed: 0.2, lily: 0.1, marimo: 0.04, anemone: 0.05, coral: 0.05, urchin: 0.04, blackcoral: 0.03, glowcap: 0.12 };
+
+function sprouting(p, growth = 0.15) {
+  const L = PLANT_LIFE[p.make] || [0.4, 40, 80];
+  p.growth = growth; p.age = 0; p.span = rand(L[1], L[2]);
+  return p;
+}
+
+let plantTick = 0;
+function updatePlantLife(world, dt) {
+  plantTick -= dt;
+  if (plantTick > 0) return;
+  const step = (1 - plantTick) / world.opts.dayLength; // pond days since the last tick
+  plantTick = 1;
+  let biomass = 0, died = 0;
+  for (const list of [world.plants, world.pads]) {
+    for (let i = list.length - 1; i >= 0; i--) {
+      const p = list[i];
+      if (p.growth == null) { p.growth = 1; p.age = rand(0, 30); p.span = rand(...(PLANT_LIFE[p.make] || [0, 40, 80]).slice(1)); } // older saves: grown plants, mid-life
+      const [rate] = PLANT_LIFE[p.make] || [0.4];
+      p.age += step;
+      if (p.age < p.span) p.growth = Math.min(1, p.growth + rate * step);
+      else p.growth -= 0.4 * step; // dying back
+      if (p.growth < 0.12) {
+        if (p.oi != null) (list === world.pads ? world.removed.pads : world.removed.plants).push(p.oi);
+        p.dead = true;
+        list.splice(i, 1);
+        died++;
+        continue;
+      }
+      biomass += p.growth;
+    }
+  }
+  world.maturity = clamp(biomass / (world.W * world.H / 4500), 0, 1); // 1: about as much as a wild pond grows
+  if (died) logEvent(world, `${died} old plant${died > 1 ? 's' : ''} died back`, null, { cat: 'life', pri: 0, key: 'plants-died', merge: (e) => `${e.n} old plants died back` });
+}
+
+// Each dawn, mature plants may drop a seedling nearby (room permitting).
+function seedPlants(world) {
+  const cap = world.W * world.H / 2200;
+  let seeded = 0;
+  for (const p of [...world.plants, ...world.pads]) {
+    if (world.plants.length + world.pads.length >= cap || seeded >= 10) break;
+    if ((p.growth ?? 1) < 0.9 || Math.random() > (SEEDS[p.make] || 0.05)) continue;
+    const a = rand(0, TAU), d = rand(12, 30), x = p.x + Math.cos(a) * d, y = p.y + Math.sin(a) * d;
+    if (x < 8 || y < 8 || x > world.W - 8 || y > world.H - 8 || (world.shore && shoreAt(world, x, y) > world.tide.level - 0.2)) continue;
+    if ((p.make === 'blackcoral' || p.make === 'glowcap') && depthAt(world, x, y) < 0.3) continue;
+    if (world.plants.filter((o) => (o.x - x) ** 2 + (o.y - y) ** 2 < 400).length >= 3) continue;
+    const child = sprouting(makePlant(p.make, world, x, y, { ...(p.args || {}) }));
+    child.born = world.days;
+    (p.make === 'lily' ? world.pads : world.plants).push(child);
+    seeded++;
+  }
 }
 
 // ---- stains: the ground discolours around old things -------------------------------------------
@@ -603,6 +670,7 @@ const HATCH_FOCUS = {
   vitality: { label: 'Vitality', gene: 'vit', hi: 1 }, intellect: { label: 'Intellect', gene: 'iq', hi: 1 },
   light: { label: 'Light', gene: 'lum', hi: 1 }, tolerance: { label: 'Tolerance', gene: 'tol', hi: 1 },
   calm: { label: 'Calm', gene: 'agg', hi: 0 }, rarity: { label: 'Rarity', mutate: true },
+  dream: { label: 'The deep dream', eld: true },
 };
 // Levers, bought with pearls (p) or essence (e); each level costs more than the last.
 const HATCH_UPGRADES = {
@@ -655,7 +723,10 @@ function hatchBrood(world) {
     const kind = a.k === 'frog' ? 'tadpole' : a.k;
     const c = makeCreature(kind, world, x, y, { ...(a.args || {}), ...(school ? { school } : {}) });
     const g = childGenomeFor(c.seed, a.genome, b.genome);
-    if (focus.mutate || H.levels.lamp) {
+    if (i === 0 && H.infuse) { applyAncientGene(g, H.infuse); H.infuse = null; }
+    // Bred for the deep dream: the mark, now and then, stronger under the lamp.
+    if (focus.eld && Math.random() < 0.18 + 0.06 * H.levels.lamp) g.eld = true;
+    if (focus.eld) { /* the other traits are left as inheritance made them */ } else if (focus.mutate || H.levels.lamp) {
       const tries = (focus.mutate ? 1 : 0) + H.levels.lamp * 0.3;
       if (Math.random() < tries) {
         const k = pick(['albino', 'melanistic', 'piebald', 'xanthic', 'axanthic', 'leu', 'glow', 'ghost', 'shiny']);
@@ -673,6 +744,7 @@ function hatchBrood(world) {
   }
   H.broods++;
   scoreBirths(world, babies);
+  deepenBy(world, 0.02);
   const ess = gainEssence(world, 2 + H.levels.tank, 'hatchery');
   logEvent(world, `The hatchery hatched ${n} young from ${a.name} & ${b.name}, bred for ${focus.label.toLowerCase()} · +${ess} essence`, babies[0], { cat: 'life', pri: 1, key: 'hatch-brood', merge: (e) => `The hatchery hatched ${e.n} broods` });
 }
@@ -682,6 +754,26 @@ function schoolFor(rec, s) {
   if (rec.k === 'tetra') return { tx: s.x, ty: s.y, tz: 22, until: 0, kind: rec.schoolKind || 'neon' };
   if (rec.k === 'wild' && rec.args.sp && rec.args.sp.schooling) return { tx: s.x, ty: s.y, tz: (rec.args.sp.zMin + rec.args.sp.zMax) / 2, until: 0, wild: rec.args.sp };
   return null;
+}
+
+// Breeding lines in the pond with at least two grown animals, each with its
+// most valuable pair, most valuable lines first. With one animal already
+// stocked, only its own line, as single animals to pair it with.
+function hatchCandidates(world) {
+  const H = world.hatchery, lines = new Map(), worth = (c) => recycleValue(c) + tierOf(c.life.traits) * 10;
+  for (const c of world.creatures) {
+    if (!c.life || c.leaving || c.unsettled || c.dying || c.species === 'tadpole' || c.life.scale < 0.9 || !BREED[c.species]) continue;
+    const key = breedKey(c);
+    if (!lines.has(key)) lines.set(key, []);
+    lines.get(key).push(c);
+  }
+  const out = [];
+  for (const [key, list] of lines) {
+    if (H.stock.length === 1 ? key !== H.stock[0].key : list.length < 2) continue;
+    list.sort((a, b) => worth(b) - worth(a));
+    out.push({ key, list, value: list.slice(0, 2).reduce((a, c) => a + worth(c), 0) });
+  }
+  return out.sort((a, b) => b.value - a.value);
 }
 
 // Take an animal out of the pond into the hatchery's stock (two at most).

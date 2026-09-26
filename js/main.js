@@ -53,7 +53,7 @@ const world = {
   raster: null, bg: null, bgLight: null, waterColor: 0, motes: null, wob: null, glints: [],
   caustic: makeCausticTile(),
   creatures: [], plants: [], pads: [], food: [], rocks: [], pebbles: [],
-  effects: [], eggs: [], swarms: [], targets: {}, journal: [], journalDirty: false, seed: '', maxPop: 200, structures: [], hatchery: null,
+  effects: [], eggs: [], swarms: [], targets: {}, journal: [], journalDirty: false, seed: '', maxPop: 200, structures: [], hatchery: null, remains: [], fossils: [],
   weather: { rain: 0, target: 0, next: rand(60, 140), gust: 0 },
   current: { s: 0, angle: 0, base: rand(-PI, PI), x: 0, y: 0 },
   pointer: { x: -999, y: -999, inside: false },
@@ -163,7 +163,7 @@ function spawn(kind, x, y, how = 'founder') {
 // Buying spawn with essence (the dock's spawn card). Each animal in it settles in
 // with its species' chance (lower in harder habitats, higher when hardy); those
 // that don't fade away and half their share comes back.
-function buyAnimal(kind, enh = []) {
+function buyAnimal(kind, enh = [], ancient = null) {
   const price = spawnPrice(kind, enh);
   if (world.creatures.length >= world.maxPop + 60) { showTicker('The pond is full: no room for more'); return false; }
   if (!spendEssence(world, price)) { notEnough(price, 'essence'); return false; }
@@ -171,12 +171,14 @@ function buyAnimal(kind, enh = []) {
   const group = SPECIES[kind].spawn(world, x, y);
   const p = settleChance(world, kind, enh.includes('hardy') ? ENHANCE.hardy.settle : 0);
   let failed = 0;
-  for (const c of group) {
-    initLife(c, { alpha: 0 });
+  const genes = world.game.fossilGenes || [], ai = ancient ? genes.indexOf(ancient) : -1;
+  group.forEach((c, i) => {
+    // The first of the spawn carries the fossil's gene, and shows it.
+    if (i === 0 && ai >= 0) { initLife(c, { alpha: 0, genome: applyAncientGene(genomeFor(c.seed), ancient) }); genes.splice(ai, 1); } else initLife(c, { alpha: 0 });
     applyEnhancements(c, enh);
     noteBorn(world, c, 'bought');
-    if (Math.random() >= p) { c.unsettled = 3; failed++; }
-  }
+    if (Math.random() >= p && !(i === 0 && ai >= 0)) { c.unsettled = 3; failed++; } // a fossil's gift always takes
+  });
   world.creatures.push(...group);
   const ok = group.length - failed, label = describe(group[0]).label;
   world.targets[kind] = (world.targets[kind] || 0) + ok;
@@ -242,7 +244,7 @@ function buildPond() {
   release();
   stopFollow();
   Object.assign(world, {
-    creatures: [], food: [], eggs: [], effects: [], swarms: [], targets: {}, journal: [], glints: [], structures: [], hatchery: null,
+    creatures: [], food: [], eggs: [], effects: [], swarms: [], targets: {}, journal: [], glints: [], structures: [], hatchery: null, remains: [], fossils: [],
     days: 0.4, clock: 0.4, spawning: 0, spawnNight: -1, records: null, moon: null,
     tide: { level: 0.5, range: 0, rising: true, flow: 0, surf: 0, wave: 0 },
   });
@@ -261,8 +263,11 @@ function buildPond() {
     world.link = null;
     world.erosion = newErosion();
     world.expandPx = 0;
+    world.succession = { want: {}, seen: [] };
+    world.maturity = 0;
     withSeed(`${world.seed}/${world.opts.habitat}`, () => {
       generateScenery(world);
+      barePond();
       populate();
       world.moon0 = Math.random();
       world.tide0 = Math.random();
@@ -294,6 +299,46 @@ function buildPond() {
   refreshSpeciesButtons();
 }
 
+// A new pond starts nearly bare: most of the plants its seed would grow are
+// taken out (recorded as removed, so links still match), and the rest are
+// seedlings. They grow, seed and die back from there.
+function barePond() {
+  for (const [list, key] of [[world.plants, 'plants'], [world.pads, 'pads']]) {
+    for (let i = list.length - 1; i >= 0; i--) {
+      const p = list[i];
+      if (hash2(p.oi * 7.3, 1.7, 404) < (key === 'pads' ? 0.7 : 0.6)) { world.removed[key].push(p.oi); list.splice(i, 1); continue; }
+      sprouting(p, rand(0.15, 0.4));
+    }
+  }
+}
+
+// Which animals a pond can support as its plant life matures (0 = from the start).
+const SUCCESSION = {
+  snail: 0, shrimp: 0, crab: 0, starfish: 0, jelly: 0, dragonfly: 0.1, tetra: 0.15, frog: 0.2, clown: 0.25, wild: 0.25,
+  puffer: 0.35, axolotl: 0.35, duck: 0.4, eel: 0.45, ray: 0.45, koi: 0.5, turtle: 0.55, octopus: 0.6, snake: 0.6,
+};
+// As the pond matures, the animals it's ready for find their way in.
+function succession() {
+  const S = world.succession;
+  if (!S) return;
+  const m = world.maturity ?? 0; // not measured yet: wait for the plants' first tick
+  let left = 0;
+  for (const [kind, want] of Object.entries(S.want)) {
+    const min = SUCCESSION[kind] ?? 0.3, have = world.targets[kind] || 0;
+    if (have >= want) continue;
+    left++;
+    if (m < min || Math.random() > 0.05) continue;
+    const group = arrive(world, kind);
+    if (!group) continue;
+    world.targets[kind] = have + group.length;
+    if (!S.seen.includes(kind)) {
+      S.seen.push(kind);
+      logEvent(world, `✦ The pond is alive enough now for ${plural(SINGULAR[kind] || kind, 2).toLowerCase()}: the first ones found their way in`, group[0], { cat: 'come', pri: 2 });
+    }
+  }
+  if (!left) world.succession = null;
+}
+
 // Starting population scales with the world's area and fits the habitat.
 const POPULATION = {
   koi: 1.5, tetra: 0.5, eel: 0.3, axolotl: 0.35, turtle: 0.3, crab: 0.5, ray: 0.35, frog: 0.6, snail: 0.35, jelly: 0.6,
@@ -305,7 +350,9 @@ function populate() {
     if (!fitsHabitat(world, SPECIES_HABITAT[kind])) continue;
     const n = per * m * (pure ? 1.4 : 1) * (kind === 'wild' && world.opts.habitat === 'salt' ? 2 : 1);
     const count = Math.floor(n) + (Math.random() < n % 1 ? 1 : 0);
-    for (let i = 0; i < count; i++) spawn(kind);
+    // Only pioneers at first (and fewer of them); the rest wait for the pond to mature.
+    if (world.succession && (SUCCESSION[kind] ?? 0.3) > 0) { if (count) world.succession.want[kind] = count; continue; }
+    for (let i = 0; i < Math.ceil(count * (world.succession ? 0.6 : 1)); i++) spawn(kind);
   }
 }
 
@@ -330,9 +377,12 @@ function update(dt) {
   updateLife(world, dt);
   updateErosion(world, dt);
   updateDeep(world, dt);
+  updateEldritch(world, dt);
   updateZones(world, dt);
   updateGame(world, dt);
-  for (const c of world.creatures) c.update(dt, world);
+  for (const c of world.creatures) if (!c.dying) c.update(dt, world);
+  world.remains = world.remains.filter((rm) => rm.update(dt, world));
+  world.fossils = world.fossils.filter((f) => f.update(dt, world));
   if (world.creatures.some((c) => c.gone || c.caught)) {
     if (world.grab && (world.grab.gone || world.grab.caught)) release();
     world.creatures = world.creatures.filter((c) => !c.gone && !c.caught);
@@ -340,6 +390,7 @@ function update(dt) {
   for (const p of world.plants) p.update(dt, world);
   for (const p of world.pads) p.update(dt, world);
   updateStructures(world, dt);
+  updatePlantLife(world, dt);
   for (const f of world.food) f.update(dt, world);
   world.food = world.food.filter((f) => !f.eaten);
   world.motes.update(dt, world);
@@ -403,9 +454,11 @@ function render(full = false) {
   // Rasterize a margin above/left of the view: shadows of things just off-screen still land on it.
   r.setClip(rect[0] - 30, rect[1] - 30, rect[2] + 3, rect[3] + 3);
   r.begin();
-  for (const p of world.plants) p.draw(r, t, world);
+  for (const p of world.plants) drawGrown(r, p, t);
   for (const s of world.structures) if (DRAW[s.kind]) DRAW[s.kind](r, s, t, world);
-  for (const p of world.pads) p.draw(r, t, world);
+  for (const rm of world.remains) rm.draw(r, t);
+  for (const f of world.fossils) f.draw(r, t);
+  for (const p of world.pads) drawGrown(r, p, t);
   for (const f of world.food) f.draw(r, t, world);
   let anyThick = false;
   for (const c of world.creatures) {
@@ -414,6 +467,7 @@ function render(full = false) {
     FADE[c.id] = a < 1 ? 1 : 0;
     if (THICK[c.id]) anyThick = true;
     c.draw(r, t, world);
+    if (c.life && c.life.genome.eld) drawEldritch(r, c, t, world);
   }
   r.alpha = 1;
   for (const e of world.eggs) e.draw(r, t);
@@ -440,6 +494,14 @@ function render(full = false) {
   if (full || world.bones) ctx.putImageData(image, 0, 0);
   else ctx.putImageData(image, 0, 0, rect[0], rect[1], rect[2] - rect[0] + 1, rect[3] - rect[1] + 1);
   updateSkyHud(light);
+}
+
+// A plant drawn at its size as it grows (and shrinks as it dies back).
+function drawGrown(r, p, t) {
+  const g = p.growth ?? 1;
+  if (g < 0.999) r.setScale(p.x, p.y, Math.max(0.1, g), p.make === 'lily' || p.make === 'duckweed' ? 1 : Math.max(0.1, g)); // floating plants stay at the surface
+  p.draw(r, t, world);
+  if (g < 0.999) r.setScale();
 }
 
 // X-ray view of the underlying model: spine links, joint radii, and leg IK.
@@ -505,7 +567,7 @@ function frame(now) {
 // Food and plants cost pearls (game.js). Each plant helps the species that like it.
 const plantTool = (kind, label, list = 'plants') => ({
   label, price: PLANT_PRICE[kind], likedBy: kind,
-  place: (x, y) => world[list].push(makePlant(kind, world, x, y)),
+  place: (x, y) => { const p = sprouting(makePlant(kind, world, x, y), 0.3); p.born = world.days; world[list].push(p); }, // it grows from a seedling
 });
 const TOOLS = {
   feed: { label: 'Pellets', food: 'pellet', price: 0, hint: 'click to feed (free) · drag animals · scroll to zoom · drag water to pan' },
@@ -766,10 +828,14 @@ function pointerEnd(e) {
   touches.delete(e.pointerId);
   if (touches.size < 2) pinch = null;
   if (press && !press.panning && e.type === 'pointerup') {
-    // Feeding over a structure tells you about it instead (and opens the hatchery).
-    const st = world.tool === 'feed' && structureAt(world, press.x, press.y);
-    if (st && st.kind === 'hatchery') setHatchery(true);
-    else if (st) showTicker(`${STRUCTURES[st.kind].label}: ${STRUCTURES[st.kind].desc}`);
+    // Clicking the hatchery opens it (with any tool but the Net); feeding over
+    // another structure tells you about it.
+    const st = world.tool !== 'net' && structureAt(world, press.x, press.y);
+    const rm = world.tool !== 'net' && remainsAt(world, press.x, press.y), fo = world.tool !== 'net' && fossilAt(world, press.x, press.y);
+    if (fo) collectFossil(world, fo);
+    else if (rm) collectRemains(world, rm);
+    else if (st && st.kind === 'hatchery') setHatchery(true);
+    else if (st && world.tool === 'feed') showTicker(`${STRUCTURES[st.kind].label}: ${STRUCTURES[st.kind].desc}`);
     else useTool(press.x, press.y);
   }
   // A quick click on an animal (not a drag) opens its card.
@@ -1272,7 +1338,7 @@ function renderPondList() {
     open.className = 'pond-open';
     name.textContent = s.seed;
     meta.textContent = [HABITATS[s.habitat] || '', `day ${Math.floor(s.days) + 1}`, `${s.animals} animals`, s.rares && `✦ ${s.rares}`,
-      s.points && `★ ${s.points.toLocaleString()}`, s.current ? 'open now' : ago(Date.now() - s.savedAt)].filter(Boolean).join(' · ');
+      `${(s.current ? pondFathoms(world) : s.depth || 1).toLocaleString()} fathoms`, s.current ? 'open now' : ago(Date.now() - s.savedAt)].filter(Boolean).join(' · ');
     if (s.link) open.title = `pond.nz/${s.link}`;
     open.append(name, meta);
     open.title = s.current ? 'The pond you are watching' : `Open ${s.seed}`;

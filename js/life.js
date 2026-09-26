@@ -79,6 +79,14 @@ function childGenome3(a, b, m = 1) {
   return g;
 }
 
+// The eldritch mark ('eld', a fourth stream): almost never out of nowhere, but
+// passed on readily; what it becomes is up to the pond (see eldritch.js).
+function makeGenome4() { return { eld: Math.random() < 1 / 1500 }; }
+function childGenome4(a, b, m = 1) {
+  const n = (a.eld ? 1 : 0) + (b.eld ? 1 : 0);
+  return { eld: Math.random() < (n === 2 ? 0.45 : n === 1 ? 0.2 : m / 1500) };
+}
+
 // Hypermutable parents (two mutator copies) and shiny ones ("luck") raise the odds of new mutations.
 const mutFactor = (a, b) => (1 + 1.5 * ((a.mut === 2 ? 1 : 0) + (b.mut === 2 ? 1 : 0))) * (a.shiny || b.shiny ? 1.5 : 1);
 
@@ -109,6 +117,7 @@ function childGenome(a, b, m = 1) {
 // hides the others, then axanthic, xanthic, melanistic.
 function traitsOf(g) {
   const t = [];
+  if (g.eld) t.push('touched');
   if (g.chi) t.push('chimera');
   if (g.shiny) t.push('shiny');
   if (g.glow) t.push('glow');
@@ -133,7 +142,7 @@ const LOCI = [...RECESSIVE, ...RECESSIVE2, 'leu', 'mar', 'mut'];
 // Rarity tiers: each trait adds its rarity, and the sum sets the tier.
 const TRAIT_RARITY = {
   pale: 1, piebald: 1, giant: 2, dwarf: 2, melanistic: 2, xanthic: 2, marbled: 2, axanthic: 3, albino: 3, leucistic: 3,
-  shiny: 4, ghost: 4, glow: 4, chimera: 5,
+  shiny: 4, ghost: 4, glow: 4, chimera: 5, touched: 4, changed: 5, eldritch: 7,
 };
 const TIERS = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic'];
 const TIER_COLOR = ['#8fbcb8', '#7ee0c3', '#6fb7ef', '#c38bff', '#ffb347', '#ff6fae'];
@@ -146,7 +155,7 @@ const RARE_OUTLINE = {
   shiny: hexToInt('#ffd166'), glow: hexToInt('#7dffb0'), ghost: hexToInt('#eaf6ff'), albino: hexToInt('#ff9eb5'),
   axanthic: hexToInt('#8ecbff'), xanthic: hexToInt('#ffe45c'), melanistic: hexToInt('#a78bfa'), piebald: hexToInt('#7ee0c3'),
   giant: hexToInt('#ffb86b'), dwarf: hexToInt('#c3a6ff'), leucistic: hexToInt('#f4f0e8'), marbled: hexToInt('#d8a0ff'),
-  chimera: hexToInt('#ff6fae'),
+  chimera: hexToInt('#ff6fae'), touched: hexToInt('#8a5ae0'), changed: hexToInt('#6a3ac8'), eldritch: hexToInt('#3aff9a'),
 };
 const RED_EYE = solid('#d8203a');
 const PIEBALD_WHITE = mat('#9aa0a6', '#d0d4d6', '#f0f0ec', '#ffffff');
@@ -361,21 +370,22 @@ function lifespanFor(species, seed) {
 // #15" (or nothing) instead of the genes themselves.
 const genomeFor = (seed) => ({
   ...withSeed(`genome/${seed}`, makeGenome), ...withSeed(`genome2/${seed}`, makeGenome2), ...withSeed(`genome3/${seed}`, makeGenome3),
+  ...withSeed(`genome4/${seed}`, makeGenome4),
 });
 function childGenomeFor(seed, a, b) {
   const m = mutFactor(a, b);
   return {
     ...withSeed(`genome/${seed}`, () => childGenome(a, b, m)), ...withSeed(`genome2/${seed}`, () => childGenome2(a, b, m)),
-    ...withSeed(`genome3/${seed}`, () => childGenome3(a, b, m)),
+    ...withSeed(`genome3/${seed}`, () => childGenome3(a, b, m)), ...withSeed(`genome4/${seed}`, () => childGenome4(a, b, m)),
   };
 }
-const GENOME_KEYS = [...Object.keys(GENE_LIMITS), 'shiny', 'shinyHue', 'seed', ...RECESSIVE, ...RECESSIVE2, 'glow', 'ghost', ...FGENES, 'leu', 'mar', 'mut', 'chi'];
+const GENOME_KEYS = [...Object.keys(GENE_LIMITS), 'shiny', 'shinyHue', 'seed', ...RECESSIVE, ...RECESSIVE2, 'glow', 'ghost', ...FGENES, 'leu', 'mar', 'mut', 'chi', 'eld'];
 const sameGenome = (a, b) => GENOME_KEYS.every((k) => (a[k] || 0) === (b[k] || 0));
 // Genomes saved before a gene existed read as not having it (working genes read as average).
 function fillGenome(g) {
   for (const k of [...RECESSIVE2, 'leu', 'mar', 'mut']) g[k] = g[k] || 0;
   for (const k of FGENES) if (typeof g[k] !== 'number') g[k] = 0.5;
-  g.glow = !!g.glow; g.ghost = !!g.ghost; g.chi = !!g.chi;
+  g.glow = !!g.glow; g.ghost = !!g.ghost; g.chi = !!g.chi; g.eld = !!g.eld;
   return g;
 }
 
@@ -471,7 +481,7 @@ function initLife(c, { genome, gen = 0, scale = 1, age, alpha = 1, parents = nul
   c.life = {
     genome, gen, lifespan, scale, name: c.seed != null ? nameFor(c.seed) : personName(),
     age: age ?? rand(0.05, 0.5) * lifespan,
-    energy: rand(0.6, 0.9), cooldown: rand(40, 100), parents, ...temper, comfort: 0.5, fed: 0, inbred,
+    energy: rand(0.6, 0.9), cooldown: rand(40, 100), parents, ...temper, comfort: 0.5, fed: 0, inbred, corruption: 0,
   };
   dyeCreature(c, genome);
   if (SCALABLE.has(c.species)) { captureBase(c); applyScale(c, scale * genome.size); }
@@ -644,6 +654,7 @@ class Eggs {
       if (gen > record.gen) {
         record.gen = gen;
         const pts = award(world, 5 * gen, 'record', first);
+        if (typeof deepenBy === 'function') deepenBy(world, 0.1);
         logEvent(world, `A new record: ${label} lineage reaches generation ${gen}${pts ? ` · +${pts}` : ''}`, first, { cat: 'rare' });
       }
       scoreBirths(world, babies);
@@ -678,8 +689,10 @@ function makeBaby(world, p, m, x, y) {
     case 'frog': c = makeCreature('tadpole', world, x, y); break;
     default: return null;
   }
+  const g = childGenomeFor(c.seed, p.life.genome, m.life.genome);
+  if (!g.eld && typeof eldBirthChance === 'function' && Math.random() < eldBirthChance(world, x, y)) g.eld = true;
   return initLife(c, {
-    genome: childGenomeFor(c.seed, p.life.genome, m.life.genome), parents: [p.seed, m.seed],
+    genome: g, parents: [p.seed, m.seed],
     gen: Math.max(p.life.gen, m.life.gen) + 1, scale: 0.35, age: 0, alpha: 0, inbred: inbreedingOf(world, p.seed, m.seed),
   });
 }
@@ -822,6 +835,7 @@ function updateLife(world, dt) {
 
   for (const c of world.creatures) {
     if (c.alpha === undefined) c.alpha = 1;
+    if (c.dying) { dieStep(world, c, dt); continue; }
     if (c.unsettled) { // a bought spawn that didn't take: it shows faintly, then is gone
       c.unsettled -= dt;
       c.alpha = clamp(c.unsettled / 2, 0, 0.6);
@@ -903,9 +917,8 @@ function updateLife(world, dt) {
       });
     }
     if (c.species === 'tadpole' && L.age > 50 && L.scale > 0.65) metamorphose(world, c);
-    if (!c.leaving && !c.grabbed && (L.age > L.lifespan || L.energy <= 0)) {
-      c.leaving = true;
-      c.leaveWhy = L.energy <= 0 ? 'hungry' : 'of old age';
+    if (!c.leaving && !c.dying && !c.grabbed && (L.age > L.lifespan || L.energy <= 0)) {
+      c.dying = { t: 0, why: L.energy <= 0 ? 'of hunger' : 'of old age' };
     }
   }
 
@@ -949,7 +962,7 @@ function assignHunts(world) {
   for (const p of preds) {
     const P = geneBuffs(p);
     // Aggressive predators hunt before they're really hungry.
-    if (!p.life || p.life.energy > Math.min(0.85, 0.6 * P.aggression)) { p.prey = null; continue; }
+    if (!p.life || p.life.energy > Math.min(0.85, 0.6 * P.aggression * (0.4 + 0.6 * activity(world, p)))) { p.prey = null; continue; }
     const cur = p.prey;
     if (cur && !cur.caught && !cur.gone && Math.hypot(cur.x - p.x, cur.y - p.y) < 90) continue;
     let best = null, bd = Infinity;
@@ -1049,10 +1062,12 @@ function migrate(world) {
       c.leaveWhy = a > 0.7 ? 'fled the danger' : mm > 0.5 ? 'in the wrong water' : 'restless';
     }
   }
+  if (typeof succession === 'function') succession();
   // Deep water draws its own visitors, once erosion has opened it.
   if (world.erosion && world.erosion.tier >= 1 && Math.random() < 0.02 && typeof arriveDeep === 'function') arriveDeep(world);
   const activeWild = new Set(world.creatures.filter((c) => c.species === 'wild').map((c) => c.sp)).size;
-  if (activeWild < 4 && Math.random() < 0.025) arrive(world, 'wild', true);
+  const young = world.succession && typeof SUCCESSION === 'object' && (world.maturity ?? 0) < SUCCESSION.wild; // a new pond isn't ready for them yet
+  if (activeWild < 4 && !young && Math.random() < 0.025) arrive(world, 'wild', true);
 }
 
 function arrive(world, kind, discover = false) {
@@ -1089,6 +1104,7 @@ function arrive(world, kind, discover = false) {
   if (discover) {
     const sp = c.sp, habits = [sp.schooling && 'schools', sp.predator && 'hunts smaller fish', sp.habitat === 'salt' ? 'reef fish' : 'freshwater'].filter(Boolean);
     const pts = award(world, 10, 'new species', c);
+    if (typeof deepenBy === 'function') deepenBy(world, 0.1);
     logEvent(world, `✦ New species spotted: ${sp.name}${group.length > 1 ? `, a school of ${group.length}` : ''} (${habits.join(', ')})${pts ? ` · +${pts}` : ''}`, c, { cat: 'rare' });
   } else if (kind === 'duck') {
     logEvent(world, `A duck family paddled in: ${group.length} ducks`, c, { cat: 'come', pri: 1 });
@@ -1100,6 +1116,7 @@ function arrive(world, kind, discover = false) {
     });
   }
   for (const r of group) if (r.life && r.life.traits.length) scoreArrival(world, r);
+  return group;
 }
 
 // ---- inspector ----------------------------------------------------------------

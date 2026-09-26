@@ -299,5 +299,41 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
 - **Plants:** black coral and glowcaps (tier 3) grow only where depth > 0.3, and dawn sprouts in deep water become them. Their `PLANT_CODES` are appended.
 - **Menus:** the Build and tool menus hide items until their tier and water fit, and refresh when a tier is reached. The evolution tree lists each tier's extras (`DEEP_EXTRAS`). The menu gains Depths and Hatchery buttons (the side view is hidden on phones).
 
+## Depth is the score (fathoms)
+- **Fathoms:** `fathomsOf(e, branch)` interpolates geometrically between `FATHOM_KNOTS` per branch (salt: 2 fm at 0, 8 at tier 1, 110 at tier 2, 550 at tier 3, 2,200 at tier 4; fresh is shallower). The bar, the leaderboard, the index entry and the fireflies (`HIGH_FLOOR = 110`) all use it. The server duplicates the knots and computes depth from reported erosion.
+- **What deepens:** `updateErosion` sets `E.e = max(E.e, E.acc + pointsDepth(points))`. `E.acc` gathers the tide (none without a shore; fresh `0.07 + 0.12·surf`, salt `0.05 + 0.26·surf·range`), time (0.05), structures (≤ 0.1) and plant growth (`0.05·maturity`), plus `deepenBy` steps (`E.parts` records each source for the score panel). `pointsDepth = 2·log10(1 + p/1000)`, so points help but can't feed a points→depth→points loop.
+- **Evolution steps (tuned by 1-hour sims):** a generation record 0.1, a new wild species 0.1, a first deep sighting 0.1, a fossil 0.1, a brood 0.02. Rare births add `tier × 0.03` for a first, otherwise `tier × 0.002` (0.001 for arrivals) times `clamp(960·540/area, 0.4, 2.5)`, because repeats scale with population. Transcendence adds 0.3 the first time per species, then 0.02. A pioneer-start mixed pond reached twilight (~10) in an hour; a crowded one reached midnight (~14).
+- **Server:** `erosion` and `depth` columns (ALTER TABLE on start); ranking is `depth DESC, points DESC`; `high` is tenth place's depth. Erosion is capped at 30 for a new pond and grows at most 0.02/s + 3 per update.
+
+## Hatchery access
+- **Picker:** while the pair isn't full, the stock list shows `hatchCandidates` (lines with two grown animals, or the stocked animal's own line) as buttons with icon, names, traits and worth. The panel signature includes a 4 s time bucket while a place is empty, so the list stays fresh.
+- **Reopening:** clicking the hatchery works with any tool but the Net. The dock's `#hatch-btn` egg is a fixed 44 px square that fills from the bottom (`--p`) and pulses when a brood is ready; a conic wedge looked wrong when the dock wrapped and the button stretched.
+
+## Behaviour
+- **Rhythms:** `RHYTHM` (night, dusk, day, always) gives `activity(world, c)`, which scales cruising, walker pauses, octopus pauses and the hunting threshold. Out of hours, fish rest near a liked spot unless `alwaysSwims` (reef sharks).
+- **Liked spots:** `likedSpot` picks from `world.likeSpots` (plants grown past 0.4, structures, remains), which `updateComfort` builds. `newTarget` heads there 55% of the time; schools 50%.
+- **Specials:** turtles haul out to bask by day (`haulOut` to a dry spot just above the tide), crabs forage the bared beach at night.
+
+## Remains and fossils (remains.js)
+- **Dying:** old age and hunger set `c.dying`. `dieStep` stops, sinks and fades the animal over 3 s, then makes `Remains` (bones from the body joints). The main loop skips `c.update` for dying animals, and saves and links skip them.
+- **Remains:** worth `0.6 × recycleValue + 1` essence plus `2 + TIER_VALUE` points when clicked; they last 150 s, less with scavengers nearby (who gain energy). Scavengers like 'remains' as a spot.
+- **Fossils:** at dawn, `0.08 + 0.05·tier` chance, on the beach between elevations 0.42 and 0.9, at most 3, gone after 4 days. Clicking gives `15 + 5·tier` essence, 25 points and a weighted ancient gene into `G.fossilGenes`. `applyAncientGene` sets it so the animal shows it; the spawn card gives it to the first of a spawn (which always settles), and the hatchery infuses it into the next brood's first young.
+- **Naming:** `REMAINS_BONE`, because main.js already declares `BONE` for the X-ray view. The Node sims don't load main.js; a concatenation of all scripts in page order is the check for top-level clashes.
+
+## The eldritch branch (eldritch.js)
+- **Genes:** `genome4/<seed>` holds `eld` (1/1500 × the mutation factor; 20% from one marked parent, 45% from two). Links carry it in bit 7 of the loci byte. `makeBaby` can also mark young by `eldBirthChance` (0.03 in the abyss, +0.08 near the idol). The hatchery's dream focus marks young at `0.18 + 0.06·lamp`.
+- **Stages:** `L.corruption` grows at `1/(1.6·lifespan)` × (1 + 1.2·darkness) × (1 + 2·depth) × idol 3 / whale fall 1.6 / mythic within 160 px 2; bound animals stop. Thirds give touched → changed → eldritch (`eldTraits` swaps the trait; TRAIT_RARITY 4/5/7). The slower base rate means most marked animals in the shallows die before transcending.
+- **Effects (per 1 s tick):** changed and transcendent animals lower neighbours' comfort (dread). A transcendent one draws at most 4 prey to circle it and maddens at most 3 within 30 px (jittered heading, 2.5× wiggle); caps came after a sim showed 72 maddened at once. At night it marks a neighbour at 0.4% per tick.
+- **Player options:** feed the dream (`10 + 20·c` essence, +0.2) and bind (`15 + 30·c`, −0.3 and stops it).
+- **Persistence:** saves store `corruption` and `bound`; links add a trailer block (saved index, corruption ×127, bound bit).
+
+## Slow start and plant life
+- **Bare start:** `barePond` runs after `generateScenery` inside the seeded stream and removes plants by `hash2(oi·7.3, 1.7, 404) < 0.6` (0.7 for pads). They go into `world.removed`, so links regrow the same pond. The rest become seedlings at growth 0.15–0.4. `generateScenery` itself is unchanged.
+- **Succession:** `populate` spawns only kinds with `SUCCESSION[kind] === 0`, at 60%, and records the rest in `world.succession.want`. `succession()` (each migrate tick) brings a group once `world.maturity` reaches the kind's threshold, logs the first, and clears itself when done. Wild discoveries wait for `SUCCESSION.wild`. `world.maturity` starts at 0 and counts as 0 until measured; treating an undefined value as 1 let a frog in during the first second.
+- **Plant life:** `PLANT_LIFE[kind] = [growth per day, min span, max span]` (weeds grow fully in about 3 days, corals about 9). Past its span a plant loses 0.4 growth a day and is removed below 0.12, and generated ones go into `removed`. `seedPlants` at dawn gives mature plants a `SEEDS[kind]` chance of a seedling 12–30 px away (≤ 10 a dawn, ≤ 3 within 20 px, total cap area/2200). `maturity = Σgrowth / (area/4500)`, clamped to 1.
+- **Drawing:** `Raster.setScale(x, y, k, kz)` scales tube, ellipsoid and dot about a point; plants draw at `k = growth`, with lily pads and duckweed keeping `kz = 1` so they stay at the surface. Frogs only use pads grown past 0.5.
+- **Persistence:** saves store `g`, `age` and `span`, and plants restored without them are mature and mid-life. Links add a growth trailer (u8 per plant: generated by `oi`, then added) and the succession `want` list.
+- **Economy:** `START_PEARLS` 30 and `START_ESSENCE` 15.
+
 ## Fair points for pond size
 `award` multiplies by `sizeFairness = clamp(√(960×540 / original area), 0.6, 1.5)`. Deepening doesn't count toward the area.

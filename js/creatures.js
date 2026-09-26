@@ -161,6 +161,18 @@ class Creature {
 
   newTarget(world, avoidRocks) {
     const m = Math.min(28, world.W * 0.15, world.H * 0.15), wet = world.shore && !AMPHIBIOUS.has(this.species);
+    // More often than not, head for somewhere this species likes.
+    if (this.life && Math.random() < 0.55 && typeof likedSpot === 'function') {
+      const s = likedSpot(world, this);
+      if (s) {
+        const a = rand(0, TAU), R = spotRadius(s) + rand(3, 14);
+        const x = clamp(s.x + Math.cos(a) * R, m, world.W - m), y = clamp(s.y + Math.sin(a) * R, m, world.H - m);
+        if ((!wet || shoreAt(world, x, y) <= world.tide.level - (this.shoreMargin ?? SHORE_MARGIN) - 0.06) && (!this.keepIn || this.keepIn(world, x, y))) {
+          this.tx = x; this.ty = y;
+          return;
+        }
+      }
+    }
     let best = null, be = Infinity;
     for (let tries = 0; tries < 12; tries++) {
       const x = rand(m, world.W - m), y = rand(m, world.H - m);
@@ -237,7 +249,7 @@ class Fish extends Creature {
       } else {
         if (this.timer <= 0 || Math.hypot(this.tx - this.x, this.ty - this.y) < 8) this.wander(world);
         gx = this.tx - this.x; gy = this.ty - this.y;
-        want = this.cruiseNow * (1 - 0.5 * (world.darkness || 0)); // lazier at night
+        want = this.cruiseNow * activity(world, this);
       }
       const p = world.pointer;
       if (this.skittish && p.inside && !world.grab) {
@@ -268,7 +280,9 @@ class Fish extends Creature {
     this.speed += (want - this.speed) * Math.min(1, dt * 1.8);
     // Tail-beat: the head sways around its heading, and the chain turns that into a travelling wave.
     this.phase += dt * this.wiggleFreq * (0.35 + sp);
-    const dir = this.heading + Math.sin(this.phase) * this.wiggleAmp * (0.25 + Math.min(sp, 1.2));
+    // Too near a transcendent thing, a fish swims wrong: jerking, twitching, off course.
+    if (this.maddened) this.heading = wrapAngle(this.heading + (Math.random() - 0.5) * dt * 10);
+    const dir = this.heading + Math.sin(this.phase) * this.wiggleAmp * (0.25 + Math.min(sp, 1.2)) * (this.maddened ? 2.5 : 1);
     this.x = clamp(this.x + Math.cos(dir) * this.speed * dt, 1, world.W - 1);
     this.y = clamp(this.y + Math.sin(dir) * this.speed * dt, 1, world.H - 1);
     this.z += (this.tz - this.z) * Math.min(1, dt * 0.6);
@@ -280,6 +294,14 @@ class Fish extends Creature {
     this.timer = rand(3, 9);
     this.cruiseNow = this.cruise * (Math.random() < 0.2 ? 0.3 : rand(0.6, 1.1));
     this.tz = rand(this.zMin, this.zMax);
+    // Out of its active hours it rests: near cover, low down, drifting slowly.
+    if (this.life && activity(world, this) < 0.55 && !this.alwaysSwims) {
+      const s = likedSpot(world, this);
+      if (s) { const a = rand(0, TAU), R = spotRadius(s) + rand(2, 8); this.tx = clamp(s.x + Math.cos(a) * R, 8, world.W - 8); this.ty = clamp(s.y + Math.sin(a) * R, 8, world.H - 8); }
+      this.tz = this.zMin;
+      this.timer = rand(7, 15);
+      this.cruiseNow = this.cruise * 0.3;
+    }
   }
 
   social() { return [0, 0]; }
@@ -361,6 +383,8 @@ class Tetra extends Fish {
     if (s.until <= world.t) {
       const m = Math.min(28, world.W * 0.15, world.H * 0.15);
       [s.tx, s.ty] = wetPoint(world, m, Math.max(0, world.tide.level - SHORE_MARGIN - 0.06));
+      const fav = Math.random() < 0.5 && typeof likedSpot === 'function' && likedSpot(world, this);
+      if (fav && shoreAt(world, fav.x, fav.y) <= world.tide.level - SHORE_MARGIN - 0.06) { s.tx = fav.x + rand(-10, 10); s.ty = fav.y + rand(-10, 10); }
       s.tz = rand(this.zMin, this.zMax);
       s.until = world.t + rand(3, 7);
     }
@@ -456,6 +480,20 @@ class Walker extends Creature {
   // Frame the legs are laid out in; crabs override this to face sideways.
   legBase(L) { return this.body.a[L.bi]; }
 
+  // Head for a spot on dry sand just above the waterline (turtles basking,
+  // crabs foraging the bared beach), marked to rest there a good while.
+  haulOut(world) {
+    if (!world.shore) return false;
+    for (let i = 0; i < 24; i++) {
+      const x = rand(10, world.W - 10), y = rand(10, world.H - 10), e = shoreAt(world, x, y);
+      if (e > world.tide.level + 0.02 && e < world.tide.level + 0.25 && Math.hypot(x - this.x, y - this.y) < 260) {
+        this.tx = x; this.ty = y; this.restHere = true;
+        return true;
+      }
+    }
+    return false;
+  }
+
   footRest(L) {
     const b = this.body, a = this.legBase(L) + L.ang, d = b.w[L.bi] + L.reach;
     return [b.x[L.bi] + Math.cos(a) * d, b.y[L.bi] + Math.sin(a) * d];
@@ -477,11 +515,12 @@ class Walker extends Creature {
         if (Math.hypot(gx, gy) < this.widths[0] + 1.5) eat(world, this, f);
       } else if (this.mode === 'walk') {
         if (this.timer <= 0 || Math.hypot(this.tx - this.x, this.ty - this.y) < 6) {
-          if (Math.random() < 0.55) { this.mode = 'pause'; this.timer = rand(1, 4); }
+          const act = activity(world, this);
+          if (Math.random() < 0.35 + 0.5 * (1 - act)) { this.mode = 'pause'; this.timer = rand(1, 4) * (2.5 - act) * (this.restHere ? 5 : 1); this.restHere = false; }
           else { this.newTarget(world, true); this.timer = rand(3, 7); }
         }
         gx = this.tx - this.x; gy = this.ty - this.y;
-        want = this.mode === 'walk' ? this.cruise : 0;
+        want = this.mode === 'walk' ? this.cruise * Math.max(0.5, activity(world, this)) : 0;
       } else if (this.timer <= 0) {
         this.mode = 'walk';
         this.newTarget(world, true);
@@ -605,6 +644,12 @@ class Axolotl extends Walker {
 }
 
 class Turtle extends Walker {
+  // By day, a turtle that isn't hungry often hauls out onto the beach to bask.
+  newTarget(world, avoidRocks) {
+    if (world.darkness < 0.3 && (!this.life || this.life.energy > 0.5) && Math.random() < 0.35 && this.haulOut(world)) return;
+    super.newTarget(world, avoidRocks);
+  }
+
   constructor(world, x, y) {
     super(world, x, y, {
       species: 'turtle',
