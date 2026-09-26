@@ -78,3 +78,33 @@ and Cloudflare's Web Analytics beacon, which Cloudflare injects at the edge.
 `favicon.ico` (16/32/48), `icon-192.png`, `icon-512.png` and
 `apple-touch-icon.png` using only Node built-ins. `og.png` is a 1200x630
 screenshot of seed `jade-cove-12` with a title card.
+
+## HUD split out of the menu
+The menu (`#hud`) only holds habitat, tools, scene, about and action buttons.
+`js/hud.js` owns the animal dock and census (bottom-centre), the journal
+line and log (bottom-left), and the sky tracker (top-right). It is loaded
+before `main.js` and uses main's globals only at call time: main calls
+`initHud()` once, then `hudTick()` and `updateSkyHud()` every frame. Dock and
+census icons are rendered by the game renderer into data URLs, cached per
+species or wild species, shrunk to about 20 native pixels and shown at an
+integer scale.
+
+## Time, moon and tides
+`world.days` always advances (dayLength seconds per day); the clock is
+`days % 1`. Fixed light modes only freeze the tint, not time. The moon age is
+`moon0 + days / 8`. Tide level is `0.5 + 0.32 * range * sin(2π(2·days + tide0))`,
+where the range scales with the spring factor |cos(2π·age)| and the habitat
+(fresh 0.08, mixed 0.75, salt 1). `world.shore` is a per-pixel beach
+elevation (0..255) along one seeded edge; water covers a pixel while its
+elevation is below the tide level. Compose renders the dry/wet sand, the
+foam line and the surf crests, and scales fog down in the shallows. Animals
+not in `AMPHIBIOUS` are pushed seaward by `Creature.avoid`, pick targets
+below the waterline, and never arrive or leave across the beach edge. Pool
+tiles have no shore.
+
+## Journal merging
+`logEvent(world, text, subject, { cat, key, data, merge })`: an entry with the
+same key newer than `MERGE_WINDOW` (40 sim-seconds) is updated in place. Its
+count grows, `data` accumulates, `merge(entry)` rewrites the text, and it
+moves back to the top. Rare births, new species and sky events use no key,
+so they are never merged.

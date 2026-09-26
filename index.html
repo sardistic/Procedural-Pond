@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=4">
+  <link rel="stylesheet" href="style.css?v=5">
 
   <script type="application/ld+json">
   {
@@ -67,7 +67,6 @@
   <aside id="hud">
     <header>
       <h1>Procedural Pond</h1>
-      <button type="button" id="clock" class="clock" title="Time of day. Click to switch cycle / day / dusk / night (L)">☀ 07:12</button>
       <button type="button" id="collapse" class="icon" aria-label="Hide panel" title="Hide panel (H)">–</button>
     </header>
     <p class="hint" id="hint">click to feed · drag animals · scroll to zoom</p>
@@ -77,20 +76,6 @@
       <button type="button" data-hab="mixed" title="Everything together">Both</button>
       <button type="button" data-hab="salt" title="Saltwater: reef fish, corals, starfish, octopus">Salt</button>
     </div>
-
-    <details open>
-      <summary>Animals</summary>
-      <div class="grid2" id="animals"></div>
-      <p class="sub">Wild species <span id="wildcount"></span></p>
-      <ul class="wildlist" id="wildlist"></ul>
-      <p class="stats" id="stats"></p>
-      <button type="button" id="clear" class="wide">Clear animals</button>
-    </details>
-
-    <details>
-      <summary>Journal</summary>
-      <ol class="journal" id="journal"></ol>
-    </details>
 
     <details>
       <summary>Tools &amp; plants</summary>
@@ -102,11 +87,7 @@
       <div class="fields">
         <label>Floor <select id="opt-floor"></select></label>
         <label>Water <select id="opt-water"></select></label>
-        <label>Light <select id="opt-light"></select></label>
-        <label>Day length <input type="range" id="opt-day" min="60" max="600" step="30"><output></output></label>
         <label>World <select id="opt-world"></select></label>
-        <label>Current <input type="range" id="opt-current" min="0" max="100" step="5"><output></output></label>
-        <label>Speed <input type="range" id="opt-speed" min="0.25" max="3" step="0.25"><output></output></label>
       </div>
       <div class="grid3">
         <button type="button" data-toggle="caustics">Caustics</button>
@@ -121,13 +102,13 @@
     <details class="about">
       <summary>About</summary>
       <h2>A living pixel-art pond</h2>
-      <p>Procedural Pond is a self-running aquarium in your browser. Every animal is a chain of joints that follows its head, the idea from argonautcode's procedural animation sketch, drawn by a tiny voxel renderer into chunky, shaded pixel art.</p>
+      <p>Procedural Pond is a self-running aquarium in your browser. Every animal is a chain of joints that follows its head, the idea from <a href="https://github.com/argonautcode/animal-proc-anim" target="_blank" rel="noopener">argonautcode's procedural animation sketch</a>, drawn by a tiny voxel renderer into chunky, shaded pixel art.</p>
       <h3>What happens here</h3>
       <ul>
-        <li>Koi, tetras, eels, axolotls, turtles, crabs, stingrays, frogs, snakes, snails, jellyfish, clownfish, pufferfish, an octopus, ducks, shrimp and dragonflies.</li>
+        <li>Koi, tetras, eels, axolotls, turtles, crabs, stingrays, frogs, snakes, snails, jellyfish, clownfish, pufferfish, an octopus, ducks, shrimp, starfish and dragonflies.</li>
         <li>New fish species are invented as you watch, each with its own shape, colours, pattern and name.</li>
         <li>Animals get hungry, grow up, lay eggs, pass their genes on, hunt, flee and eventually move on.</li>
-        <li>A day/night cycle with fireflies, rain showers, wind, ripples and an optional generative soundscape.</li>
+        <li>A day/night cycle and a moon whose phases drive the tides and surf on the beach. Corals spawn under the full moon.</li>
         <li>Freshwater, saltwater or both: reef fish, corals and starfish, or koi, frogs and lily pads.</li>
         <li>Genetics with rare albino, melanistic, piebald and shiny animals that breed true.</li>
         <li>Every pond has a seed: share the link and friends get the same pond.</li>
@@ -143,8 +124,36 @@
       <button type="button" id="sound" aria-pressed="false" title="Generative soundscape (M)">Sound</button>
       <button type="button" id="share" title="Copy a link to this pond">Share</button>
     </div>
-    <p class="keys">Arrows/WASD pan · +/− zoom · F follow · T tour · B bones · Space pause · L light · M sound · H hide</p>
+    <p class="keys">Arrows/WASD pan · +/− zoom · F follow · T tour · C animals · J journal · L light · B bones · Space pause · M sound · H hide</p>
   </aside>
+  <button type="button" id="show-hud" class="icon" hidden aria-label="Show panel" title="Show panel (H)">☰</button>
+
+  <div id="sky" class="sky">
+    <button type="button" id="sky-btn" class="sky-btn" aria-expanded="false" aria-controls="sky-panel" aria-label="Time, moon and tide">
+      <canvas id="sky-icon" width="16" height="16"></canvas>
+    </button>
+    <section id="sky-panel" class="pop sky-panel" hidden aria-label="Time, moon and tide">
+      <div class="sky-head">
+        <canvas id="sky-big" width="16" height="16" aria-hidden="true"></canvas>
+        <div><b id="sky-time"></b><span id="sky-state"></span></div>
+      </div>
+      <div class="daybar" aria-hidden="true"><i id="daybar-mark"></i></div>
+      <div class="moon-row">
+        <canvas id="sky-moon" width="16" height="16" aria-hidden="true"></canvas>
+        <div><b id="moon-name"></b><span id="moon-note"></span></div>
+      </div>
+      <div class="tide-row"><span>Tide</span><div class="tidebar"><i id="tide-fill"></i></div></div>
+      <p class="note" id="tide-text"></p>
+      <p class="note" id="surf-text"></p>
+      <div class="fields">
+        <label>Light <select id="opt-light"></select></label>
+        <label>Day length <input type="range" id="opt-day" min="60" max="600" step="30"><output></output></label>
+        <label>Current <input type="range" id="opt-current" min="0" max="100" step="5"><output></output></label>
+        <label>Speed <input type="range" id="opt-speed" min="0.25" max="3" step="0.25"><output></output></label>
+      </div>
+    </section>
+  </div>
+
   <div id="inspect" class="inspect" hidden>
     <b class="nm"></b>
     <span class="sp"></span>
@@ -157,30 +166,61 @@
     <span></span>
     <button type="button" id="follow-stop" title="Stop following (Esc)">Stop</button>
   </div>
-  <p id="ticker" class="ticker" aria-live="polite"></p>
-  <button type="button" id="show-hud" class="icon" hidden aria-label="Show panel" title="Show panel (H)">☰</button>
 
-  <canvas id="minimap" class="minimap" width="192" height="108" aria-label="Map of the whole pond; click to jump"></canvas>
-  <div class="zoom" role="group" aria-label="Zoom">
-    <button type="button" id="zoom-out" class="icon" aria-label="Zoom out" title="Zoom out (-)">−</button>
-    <button type="button" id="zoom-level" title="Reset zoom (0)">100%</button>
-    <button type="button" id="zoom-in" class="icon" aria-label="Zoom in" title="Zoom in (+)">+</button>
+  <div class="bottom">
+    <div class="log">
+      <section id="log-panel" class="pop log-panel" hidden aria-label="Journal">
+        <header class="pop-head"><b>Journal</b><button type="button" id="log-close" class="icon" aria-label="Close journal">×</button></header>
+        <div class="chips" id="log-filters" role="group" aria-label="Show"></div>
+        <ol class="journal" id="journal"></ol>
+      </section>
+      <button type="button" id="log-line" class="log-line" aria-expanded="false" aria-controls="log-panel" aria-live="polite">
+        <i class="dot"></i><time></time><span class="txt"></span><span class="caret" aria-hidden="true">▴</span>
+      </button>
+    </div>
+
+    <div class="dock">
+      <section id="census" class="pop census" hidden aria-label="Animals in the pond">
+        <header class="pop-head">
+          <b id="census-summary"></b>
+          <button type="button" id="census-close" class="icon" aria-label="Close animal details">×</button>
+        </header>
+        <p class="note" id="census-stats"></p>
+        <ol class="census-rows" id="census-rows"></ol>
+        <h3>Wild species <span id="wild-count"></span></h3>
+        <ul class="wild-cards" id="wild-cards"></ul>
+        <button type="button" id="clear" class="wide">Clear animals</button>
+      </section>
+      <div class="dock-bar">
+        <div id="animals" class="animals" role="group" aria-label="Add animals"></div>
+        <button type="button" id="census-btn" class="census-btn" aria-expanded="false" aria-controls="census" title="Details about the animals in the pond (C)">
+          <b id="census-count">0</b><span class="caret" aria-hidden="true">▴</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="corner">
+      <canvas id="minimap" class="minimap" width="192" height="108" aria-label="Map of the whole pond; click to jump"></canvas>
+      <div class="zoom" role="group" aria-label="Zoom">
+        <button type="button" id="zoom-out" class="icon" aria-label="Zoom out" title="Zoom out (-)">−</button>
+        <button type="button" id="zoom-level" title="Reset zoom (0)">100%</button>
+        <button type="button" id="zoom-in" class="icon" aria-label="Zoom in" title="Zoom in (+)">+</button>
+      </div>
+    </div>
   </div>
 
-  <footer>
-    inspired by <a href="https://github.com/argonautcode/animal-proc-anim" target="_blank" rel="noopener">argonautcode/animal-proc-anim</a>
-  </footer>
-
-  <script src="js/core.js?v=4"></script>
-  <script src="js/raster.js?v=4"></script>
-  <script src="js/creatures.js?v=4"></script>
-  <script src="js/critters.js?v=4"></script>
-  <script src="js/wildlife.js?v=4"></script>
-  <script src="js/wildfish.js?v=4"></script>
-  <script src="js/sound.js?v=4"></script>
-  <script src="js/life.js?v=4"></script>
-  <script src="js/plants.js?v=4"></script>
-  <script src="js/scene.js?v=4"></script>
-  <script src="js/main.js?v=7"></script>
+  <script src="js/core.js?v=5"></script>
+  <script src="js/raster.js?v=5"></script>
+  <script src="js/creatures.js?v=5"></script>
+  <script src="js/critters.js?v=5"></script>
+  <script src="js/wildlife.js?v=5"></script>
+  <script src="js/wildfish.js?v=5"></script>
+  <script src="js/sound.js?v=5"></script>
+  <script src="js/life.js?v=5"></script>
+  <script src="js/plants.js?v=5"></script>
+  <script src="js/scene.js?v=5"></script>
+  <script src="js/sky.js?v=5"></script>
+  <script src="js/hud.js?v=5"></script>
+  <script src="js/main.js?v=8"></script>
 </body>
 </html>

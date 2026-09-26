@@ -17,18 +17,19 @@ const WORLD_SIZES = {
   large: { label: 'Large', size: [1280, 720] },
 };
 const HABITAT_DEFAULTS = { fresh: { water: 'pond', floor: 'sand' }, mixed: { water: 'teal', floor: 'sand' }, salt: { water: 'reef', floor: 'coral' } };
-const NIGHT = [0.28, 0.38, 0.66];
+// Night tint runs from a dark new-moon blue to a silvery full-moon blue.
+const NIGHT_DARK = [0.2, 0.27, 0.5], NIGHT_MOON = [0.4, 0.48, 0.74];
 const LIGHTS = {
   cycle: { label: 'Day/night cycle' },
   day: { label: 'Always day', tint: [1, 1, 1] },
   dusk: { label: 'Always dusk', tint: [1.0, 0.72, 0.6] },
-  night: { label: 'Always night', tint: NIGHT },
+  night: { label: 'Always night', tint: null },
 };
-// Tint keyframes over one day; 0 = midnight, 0.5 = noon.
+// Tint keyframes over one day; 0 = midnight, 0.5 = noon. null = tonight's moonlit night.
 const CYCLE = [
-  [0, NIGHT], [0.2, NIGHT], [0.26, [0.62, 0.5, 0.72]], [0.3, [0.95, 0.72, 0.7]], [0.36, [1, 0.95, 0.9]],
+  [0, null], [0.2, null], [0.26, [0.62, 0.5, 0.72]], [0.3, [0.95, 0.72, 0.7]], [0.36, [1, 0.95, 0.9]],
   [0.42, [1, 1, 1]], [0.62, [1, 1, 1]], [0.69, [1, 0.78, 0.58]], [0.74, [0.9, 0.55, 0.55]],
-  [0.78, [0.55, 0.42, 0.66]], [0.83, NIGHT], [1, NIGHT],
+  [0.78, [0.55, 0.42, 0.66]], [0.83, null], [1, null],
 ];
 
 function loadOpts() {
@@ -46,7 +47,9 @@ function saveOpts() {
 }
 
 const world = {
-  W: 0, H: 0, t: 0, clock: 0.4, darkness: 0, light: null, // start mid-morning
+  W: 0, H: 0, t: 0, days: 0.4, clock: 0.4, darkness: 0, light: null, // start mid-morning of day 1
+  moon0: 0, tide0: 0, moon: null, tide: { level: 0.5, range: 0, rising: true, flow: 0, surf: 0, wave: 0 },
+  shore: null, shoreSide: 3, shoreN: [0, 1], bgDry: null, spawning: 0, spawnNight: -1, records: null, journalSeq: 0,
   raster: null, bg: null, bgLight: null, waterColor: 0, motes: null, wob: null, glints: [],
   caustic: makeCausticTile(),
   creatures: [], plants: [], pads: [], food: [], rocks: [], pebbles: [],
@@ -88,13 +91,15 @@ world.autoSize = (() => {
 const worldDims = () => (WORLD_SIZES[world.opts.world] || WORLD_SIZES.auto).size || world.autoSize;
 
 function lighting() {
-  const o = world.opts;
-  let tint = (LIGHTS[o.light] || LIGHTS.cycle).tint;
+  const o = world.opts, m = world.moon || moonInfo(world.days, world.moon0);
+  const night = NIGHT_DARK.map((v, j) => lerp(v, NIGHT_MOON[j], m.illum));
+  let tint = o.light === 'night' ? night : (LIGHTS[o.light] || LIGHTS.cycle).tint;
   if (!tint) {
     const c = world.clock;
     let i = 0;
     while (i < CYCLE.length - 2 && CYCLE[i + 1][0] <= c) i++;
-    const [t0, a] = CYCLE[i], [t1, b] = CYCLE[i + 1], k = clamp((c - t0) / (t1 - t0), 0, 1);
+    const [t0, a0] = CYCLE[i], [t1, b0] = CYCLE[i + 1], k = clamp((c - t0) / (t1 - t0), 0, 1);
+    const a = a0 || night, b = b0 || night;
     tint = a.map((v, j) => lerp(v, b[j], k));
   }
   const rain = world.weather.rain;
@@ -151,13 +156,24 @@ function spawn(kind, x, y) {
 function buildPond() {
   release();
   stopFollow();
-  Object.assign(world, { creatures: [], food: [], eggs: [], effects: [], swarms: [], targets: {}, journal: [], glints: [] });
+  Object.assign(world, {
+    creatures: [], food: [], eggs: [], effects: [], swarms: [], targets: {}, journal: [], glints: [],
+    days: 0.4, clock: 0.4, spawning: 0, spawnNight: -1, records: null, moon: null,
+    tide: { level: 0.5, range: 0, rising: true, flow: 0, surf: 0, wave: 0 },
+  });
   Object.assign(ECO, { births: 0, arrivals: 0, departures: 0, eaten: 0, rares: 0 });
   WILD_SPECIES.length = 0;
-  withSeed(`${world.seed}/${world.opts.habitat}`, () => { generateScenery(world); populate(); });
+  withSeed(`${world.seed}/${world.opts.habitat}`, () => {
+    generateScenery(world);
+    populate();
+    world.moon0 = Math.random();
+    world.tide0 = Math.random();
+  });
+  updateSky(world, 0);
   $('seed-name').textContent = world.seed;
   const kind = { fresh: 'freshwater pond', salt: 'saltwater pond', mixed: 'pond' }[world.opts.habitat];
-  logEvent(world, `You found a ${kind} called ${world.seed}`);
+  const m = moonInfo(world.days, world.moon0);
+  logEvent(world, `You found a ${kind} called ${world.seed}. Tonight: ${m.name.toLowerCase()}.`, null, { cat: 'pond' });
   refreshSpeciesButtons();
 }
 
@@ -185,12 +201,12 @@ function update(dt) {
   cur.angle = cur.base + Math.sin(world.t * 0.05) * 0.8;
   cur.x = Math.cos(cur.angle) * cur.s;
   cur.y = Math.sin(cur.angle) * cur.s;
-  const before = world.clock;
-  if (world.opts.light === 'cycle') world.clock = (world.clock + dt / world.opts.dayLength) % 1;
-  const crossed = (mark) => (before < mark && world.clock >= mark) || (world.clock < before && (mark > before || mark <= world.clock));
-  if (crossed(0.27)) logEvent(world, 'Dawn breaks over the pond');
-  else if (crossed(0.5)) logEvent(world, 'The sun is high: midday');
-  else if (crossed(0.77)) logEvent(world, 'Dusk settles and the fireflies come out');
+  updateSky(world, dt);
+  if (world.shore) {
+    // Tidal streams: the water floods toward the beach, then ebbs away.
+    const k = world.tide.flow * 0.35;
+    cur.x += world.shoreN[0] * k; cur.y += world.shoreN[1] * k;
+  }
   world.light = lighting();
   world.darkness = world.light.darkness;
   updateFireflies(dt);
@@ -226,9 +242,15 @@ const GLINT = hexToInt('#f6fcff'), GLINT_SOFT = hexToInt('#cfe6ee');
 function updateGlints(dt) {
   world.glints = world.glints.filter((g) => (g.t += dt) < 0.35);
   const [x0, y0, x1, y1] = visibleRect();
-  const k = (1 - world.darkness) * (1 - world.weather.rain) * (world.opts.caustics ? 1 : 0.4);
+  // Sunlight by day; a little moonlight on bright nights.
+  const moon = world.moon ? world.moon.illum : 0;
+  const k = ((1 - world.darkness) + world.darkness * moon * 0.35) * (1 - world.weather.rain) * (world.opts.caustics ? 1 : 0.4);
   let n = (x1 - x0) * (y1 - y0) * 0.000007 * k * dt * 60;
-  while (Math.random() < n) { world.glints.push({ x: randi(x0 + 1, x1 - 1), y: randi(y0 + 1, y1 - 1), t: 0, star: Math.random() < 0.25 }); n--; }
+  while (Math.random() < n) {
+    const g = { x: randi(x0 + 1, x1 - 1), y: randi(y0 + 1, y1 - 1), t: 0, star: Math.random() < 0.25 };
+    if (!isDry(world, g.x, g.y)) world.glints.push(g);
+    n--;
+  }
 }
 
 function drawGlints() {
@@ -269,13 +291,14 @@ function render(full = false) {
   }
   r.alpha = 1;
   for (const e of world.eggs) e.draw(r, t);
-  world.motes.draw(r);
+  world.motes.draw(r, world);
   r.castShadows = false;
   for (const e of world.effects) e.draw(r, t);
   r.castShadows = true;
   r.alpha = 1;
   // Refraction: rows and columns of the floor shift by a pixel as the surface moves.
-  const water = WATERS[o.water] || WATERS.teal, wob = world.wob, amp = water.wobble * (1 + Math.max(0, world.weather.gust) * 0.5);
+  const water = WATERS[o.water] || WATERS.teal, wob = world.wob;
+  const amp = water.wobble * (1 + Math.max(0, world.weather.gust) * 0.5 + world.tide.surf * 0.3);
   for (let y = rect[1]; y <= rect[3]; y++) wob.x[y] = Math.round(Math.sin(y * 0.19 + t * 1.9) * amp * (0.55 + 0.45 * Math.sin(t * 0.4 + y * 0.013)));
   for (let x = rect[0]; x <= rect[2]; x++) wob.y[x] = Math.round(Math.sin(x * 0.15 + t * 1.6) * amp * (0.55 + 0.45 * Math.sin(t * 0.35 + x * 0.011)));
   r.compose(out, {
@@ -283,12 +306,13 @@ function render(full = false) {
     outline: OUTLINE, emissive: EMISSIVE, fade: FADE, thick: THICK, anyThick, tint: light.tint,
     caustics: o.caustics && light.caustics, causticT: water.caustic, shadows: o.shadows, outlines: o.outlines,
     fog: { color: world.waterColor, amount: water.fog }, wob,
+    shore: world.shore, bgDry: world.bgDry, tide: world.tide.level, surf: world.tide.surf, wave: world.tide.wave,
   }, rect);
   drawGlints();
   if (world.bones) drawBones();
   if (full || world.bones) ctx.putImageData(image, 0, 0);
   else ctx.putImageData(image, 0, 0, rect[0], rect[1], rect[2] - rect[0] + 1, rect[3] - rect[1] + 1);
-  updateClock(light);
+  updateSkyHud(light);
 }
 
 // X-ray view of the underlying model: spine links, joint radii, and leg IK.
@@ -325,7 +349,7 @@ function drawBones() {
   }
 }
 
-let last = performance.now(), countTimer = 0, mapTimer = 0;
+let last = performance.now(), mapTimer = 0;
 function frame(now) {
   // The first rAF timestamp can predate the load-time performance.now(); never step backwards.
   const dt = clamp((now - last) / 1000, 0, 0.05);
@@ -335,8 +359,7 @@ function frame(now) {
   render();
   updateCard(dt);
   Sound.update(world, world.paused ? 0 : dt);
-  countTimer -= dt;
-  if (countTimer <= 0) { countTimer = 0.5; updateCounts(); renderJournal(); }
+  hudTick(dt);
   mapTimer -= dt;
   if (mapTimer <= 0) { mapTimer = 0.12; drawMinimap(); }
   requestAnimationFrame(frame);
@@ -637,60 +660,6 @@ function button(label) {
   return b;
 }
 
-for (const [kind, s] of Object.entries(SPECIES)) {
-  const b = button('');
-  b.dataset.spawn = kind;
-  b.title = `Add ${s.label.toLowerCase()}`;
-  b.innerHTML = `<i style="--c:${s.color}"></i><span>${s.label}</span><b>0</b>`;
-  b.addEventListener('click', () => spawn(kind));
-  $('animals').append(b);
-}
-
-function updateCounts() {
-  const n = {};
-  for (const c of world.creatures) n[c.species] = (n[c.species] || 0) + 1;
-  for (const btn of document.querySelectorAll('[data-spawn]')) btn.querySelector('b').textContent = n[btn.dataset.spawn] || 0;
-  // Wild species seen in the pond right now.
-  const wild = new Map();
-  for (const c of world.creatures) if (c.species === 'wild') wild.set(c.sp, (wild.get(c.sp) || 0) + 1);
-  $('wildlist').innerHTML = [...wild].map(([sp, k]) => `<li><i style="--c:${sp.color}"></i>${sp.name}<b>${k}</b></li>`).join('');
-  $('wildcount').textContent = WILD_SPECIES.length ? `${WILD_SPECIES.length} discovered` : '';
-  const rares = world.creatures.filter((c) => c.life && c.life.traits.length).length;
-  $('stats').textContent = `born ${ECO.births} · arrived ${ECO.arrivals} · left ${ECO.departures} · eaten ${ECO.eaten} · rares here ${rares}`;
-}
-
-// Journal: newest first; entries about an animal that is still around can be clicked to follow it.
-const clockLabel = (c) => `${String(Math.floor(c * 24)).padStart(2, '0')}:${String(Math.floor((c * 24 % 1) * 60)).padStart(2, '0')}`;
-let lastTicked = null, tickerTimer = 0;
-function renderJournal() {
-  if (world.journal[0] && world.journal[0] !== lastTicked) {
-    lastTicked = world.journal[0];
-    showTicker(lastTicked.text);
-  }
-  if (!world.journalDirty) return;
-  world.journalDirty = false;
-  const list = $('journal');
-  list.replaceChildren(...world.journal.slice(0, 40).map((e) => {
-    const li = document.createElement('li'), time = document.createElement('time');
-    time.textContent = clockLabel(e.clock);
-    li.append(time, document.createTextNode(e.text));
-    if (e.subject) {
-      li.classList.add('link');
-      li.title = 'Follow';
-      li.addEventListener('click', () => { if (alive(e.subject)) follow(e.subject); else showTicker('They are no longer in the pond'); });
-    }
-    return li;
-  }));
-}
-
-function showTicker(text) {
-  const t = $('ticker');
-  t.textContent = text;
-  t.classList.add('show');
-  clearTimeout(tickerTimer);
-  tickerTimer = setTimeout(() => t.classList.remove('show'), 6000);
-}
-
 function shareUrl() {
   const u = new URL(location.href);
   u.search = ''; u.hash = '';
@@ -799,21 +768,14 @@ for (const b of document.querySelectorAll('[data-toggle]')) {
   b.addEventListener('click', () => { setOpt(key, !world.opts[key]); b.setAttribute('aria-pressed', world.opts[key]); });
 }
 
-// The clock shows the time of day; clicking it steps through the light modes.
-const clockBtn = $('clock');
+// Light modes: L (or the sky panel) steps through them.
 const LIGHT_ORDER = Object.keys(LIGHTS);
-let clockText = '';
-function updateClock(light) {
-  const o = world.opts, c = world.clock;
-  const icon = light.darkness > 0.6 ? '☾' : light.tint ? '◐' : '☀';
-  const text = o.light === 'cycle' ? `${icon} ${clockLabel(c)}` : `${icon} ${o.light}`;
-  if (text !== clockText) { clockText = text; clockBtn.textContent = text; }
-}
 function setLight(mode) {
   setOpt('light', mode);
   $('opt-light').value = mode;
+  showTicker(`Light: ${LIGHTS[mode].label}`);
 }
-clockBtn.addEventListener('click', () => setLight(LIGHT_ORDER[(LIGHT_ORDER.indexOf(world.opts.light) + 1) % LIGHT_ORDER.length]));
+const cycleLight = () => setLight(LIGHT_ORDER[(LIGHT_ORDER.indexOf(world.opts.light) + 1) % LIGHT_ORDER.length]);
 
 function setBones(on) { world.bones = on; $('bones').setAttribute('aria-pressed', on); }
 function setPaused(on) { world.paused = on; $('pause').setAttribute('aria-pressed', on); }
@@ -887,7 +849,7 @@ addEventListener('keydown', (e) => {
   if (e.key === 'b' || e.key === 'B') setBones(!world.bones);
   else if (e.key === ' ') { e.preventDefault(); setPaused(!world.paused); }
   else if (e.key === 'h' || e.key === 'H') setHud(hud.classList.contains('hidden'));
-  else if (e.key === 'l' || e.key === 'L') clockBtn.click();
+  else if (e.key === 'l' || e.key === 'L') cycleLight();
   else if (e.key === '+' || e.key === '=') zoomStep(1);
   else if (e.key === '-' || e.key === '_') zoomStep(-1);
   else if (e.key === '0') resetView();
@@ -900,6 +862,7 @@ addEventListener('keydown', (e) => {
 addEventListener('resize', () => applyView());
 
 setTool('feed');
+initHud();
 layout(true);
 if (innerWidth < 600) setHud(false); // on phones the pond comes first; ☰ opens the panel
 if (!params.get('pond') || (world.opts.world === 'auto' && !params.get('size'))) history.replaceState(null, '', `${new URL(shareUrl()).search}${location.hash}`);

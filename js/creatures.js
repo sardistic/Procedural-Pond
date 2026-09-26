@@ -111,6 +111,11 @@ class Creature {
       if (this.y < margin) fy += (margin - this.y) / margin;
       if (this.y > H - margin) fy -= (this.y - (H - margin)) / margin;
     }
+    // The beach: water animals turn back before the waterline.
+    if (world.shore && !AMPHIBIOUS.has(this.species)) {
+      const e = shoreAt(world, this.x, this.y), lim = world.tide.level - 0.08;
+      if (e > lim) { const f = (e - lim) * 14; fx -= world.shoreN[0] * f; fy -= world.shoreN[1] * f; }
+    }
     for (const r of world.rocks) {
       if (r.h + 2 < clearZ) continue;
       const dx = this.x - r.x, dy = this.y - r.y, d = Math.hypot(dx, dy) || 1;
@@ -128,6 +133,7 @@ class Creature {
     for (let tries = 0; tries < 10; tries++) {
       this.tx = rand(m, world.W - m);
       this.ty = rand(m, world.H - m);
+      if (world.shore && !AMPHIBIOUS.has(this.species) && shoreAt(world, this.tx, this.ty) > world.tide.level - 0.12) continue;
       if (!avoidRocks || !world.rocks.some((r) => Math.hypot(r.x - this.tx, r.y - this.ty) < Math.max(r.a, r.b) + 6)) break;
     }
   }
@@ -318,7 +324,7 @@ class Tetra extends Fish {
     const s = this.school;
     if (s.until <= world.t) {
       const m = Math.min(28, world.W * 0.15, world.H * 0.15);
-      s.tx = rand(m, world.W - m); s.ty = rand(m, world.H - m);
+      [s.tx, s.ty] = wetPoint(world, m, Math.max(0, world.tide.level - 0.15));
       s.tz = rand(this.zMin, this.zMax);
       s.until = world.t + rand(3, 7);
     }

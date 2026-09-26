@@ -196,16 +196,17 @@ function makeDecor(r, outline) {
 class Food {
   constructor(x, y, z = 40, kind = 'pellet') {
     this.x = x; this.y = y; this.z = z; this.kind = kind;
-    this.life = kind === 'plankton' ? rand(40, 70) : 25;
+    this.life = kind === 'pellet' ? 25 : rand(40, 70);
     this.eaten = false;
     this.ph = rand(0, TAU);
   }
 
   update(dt, world) {
     const cur = world.current;
-    if (this.kind === 'plankton') {
+    if (this.kind === 'spawn' && this.z < 42) this.z += 3.5 * dt; // coral spawn floats up
+    if (this.kind === 'plankton' || this.kind === 'spawn') {
       // Drifts with the current and a lazy wobble, slowly sinking.
-      this.z = Math.max(1, this.z - 0.4 * dt);
+      if (this.kind === 'plankton') this.z = Math.max(1, this.z - 0.4 * dt);
       this.x = clamp(this.x + (cur.x * 5 + Math.sin(world.t * 0.8 + this.ph) * 1.2) * dt, 1, world.W - 1);
       this.y = clamp(this.y + (cur.y * 5 + Math.cos(world.t * 0.7 + this.ph) * 1.2) * dt, 1, world.H - 1);
       this.life -= dt;
@@ -223,15 +224,17 @@ class Food {
   }
 
   draw(r) {
-    if (this.kind === 'plankton') {
+    if (this.kind !== 'pellet') {
       r.alpha = Math.min(1, this.life / 5, (70 - this.life) / 2 + 0.3);
-      r.dot(this.x, this.y, this.z, PLANKTON_MAT, PLANKTON_ID);
+      r.dot(this.x, this.y, this.z, this.kind === 'spawn' ? SPAWN_MAT : PLANKTON_MAT, PLANKTON_ID);
       r.alpha = 1;
       return;
     }
     r.ellipsoid(this.x, this.y, 0.8, 0.8, 0, this.z, 0.8, PAL.pellet, FOOD_ID);
   }
 }
+
+const SPAWN_MAT = solid('#ffb8d8');
 
 // ---- motes: suspended particles that make the water feel like water -----------------
 
@@ -258,13 +261,57 @@ class Motes {
     }
   }
 
-  draw(r) {
+  draw(r, world) {
     r.castShadows = false;
     r.alpha = 0.55;
-    for (let i = 0; i < this.x.length; i++) r.dot(this.x[i], this.y[i], this.z[i], this.mat, MOTE_ID);
+    for (let i = 0; i < this.x.length; i++) {
+      if (world.shore && isDry(world, this.x[i], this.y[i])) continue;
+      r.dot(this.x[i], this.y[i], this.z[i], this.mat, MOTE_ID);
+    }
     r.alpha = 1;
     r.castShadows = true;
   }
+}
+
+// ---- shore: a beach along one edge that the tide floods and bares ------------------
+// world.shore holds the beach elevation per pixel (0 = open water, 255 = top of
+// the beach). Water covers a pixel while its elevation is below the tide level.
+
+const SHORE_SIDES = [[-1, 0], [1, 0], [0, -1], [0, 1]]; // left, right, top, bottom: direction toward the beach
+const AMPHIBIOUS = new Set(['crab', 'turtle', 'snail', 'starfish', 'frog', 'firefly', 'gnat', 'dragonfly']);
+
+function makeShore(world) {
+  const { W, H } = world, side = world.shoreSide, band = Math.min(W, H) * 0.22;
+  const shore = new Uint8Array(W * H);
+  for (let y = 0, p = 0; y < H; y++) {
+    for (let x = 0; x < W; x++, p++) {
+      const d = side === 0 ? x : side === 1 ? W - 1 - x : side === 2 ? y : H - 1 - y;
+      const along = side < 2 ? y : x;
+      const local = band * (0.65 + 0.7 * fbm(along * 0.006, side * 7.3, 51));
+      const e = 1 - d / local + (fbm(x * 0.03, y * 0.03, 52) - 0.5) * 0.1;
+      shore[p] = e <= 0 ? 0 : Math.min(255, Math.round(e * 255));
+    }
+  }
+  world.shore = shore;
+  world.shoreN = SHORE_SIDES[side];
+}
+
+function shoreAt(world, x, y) {
+  if (!world.shore) return 0;
+  const xi = clamp(x | 0, 0, world.W - 1), yi = clamp(y | 0, 0, world.H - 1);
+  return world.shore[xi + yi * world.W] / 255;
+}
+
+const isDry = (world, x, y) => !!world.shore && shoreAt(world, x, y) > world.tide.level;
+
+// A random spot that stays underwater even at low tide.
+function wetPoint(world, m = 20, maxShore = 0.12) {
+  let x = 0, y = 0;
+  for (let i = 0; i < 16; i++) {
+    x = rand(m, world.W - m); y = rand(m, world.H - m);
+    if (shoreAt(world, x, y) <= maxShore) break;
+  }
+  return [x, y];
 }
 
 // ---- layout ---------------------------------------------------------------------
@@ -285,6 +332,8 @@ function generateScenery(world) {
   const { W, H } = world, area = W * H;
   const hab = world.opts.habitat || 'mixed', fresh = hab !== 'salt', salt = hab !== 'fresh', both = fresh && salt;
   const rocks = [], pebbles = [], plants = [];
+  world.shoreSide = randi(0, 3);
+  makeShore(world);
   const clusters = Math.round(area / 18000) + 2;
   for (let c = 0; c < clusters; c++) {
     const cx = rand(W * 0.05, W * 0.95), cy = rand(H * 0.05, H * 0.95);
@@ -299,27 +348,32 @@ function generateScenery(world) {
       pebbles.push({ x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, s: rand(0.8, 1.7), m: pick(PEBBLE_MATS) });
     }
   }
+  // Plants grow where the water stays (some seaweed is left out at low tide).
   const nearRock = (spread) => {
-    const r = Math.random() < 0.6 && pick(rocks);
-    return r ? [r.x + rand(-1, 1) * (r.a + spread), r.y + rand(-1, 1) * (r.a + spread)] : [rand(6, W - 6), rand(6, H - 6)];
+    for (let i = 0; i < 8; i++) {
+      const r = Math.random() < 0.6 && pick(rocks);
+      const p = r ? [r.x + rand(-1, 1) * (r.a + spread), r.y + rand(-1, 1) * (r.a + spread)] : [rand(6, W - 6), rand(6, H - 6)];
+      if (shoreAt(world, ...p) < 0.32) return p;
+    }
+    return wetPoint(world, 10);
   };
   const add = (n, make) => { for (let k = 0; k < n; k++) plants.push(make()); };
   const k = both ? 0.6 : 1; // "both" shares the space between the two worlds
   add(Math.round(area / 12000 * k) + 2, () => new Weed(...nearRock(5), salt && !fresh ? 'salt' : fresh && !salt ? 'fresh' : null));
-  add(Math.round(area / 20000) + 1, () => new Eelgrass(rand(10, W - 10), rand(10, H - 10)));
+  add(Math.round(area / 20000) + 1, () => new Eelgrass(...wetPoint(world, 10, 0.3)));
   if (salt) {
     add(Math.round(area / 30000 * (both ? 1 : 1.6)) + 1, () => new Anemone(...nearRock(7)));
     add(Math.round(area / 9000 * k), () => new Coral(...nearRock(9)));
     add(Math.round(area / 40000 * k) + 1, () => new Urchin(...nearRock(6)));
   }
   if (fresh) {
-    add(Math.round(area / 25000 * k) + 1, () => new Marimo(rand(10, W - 10), rand(10, H - 10)));
-    add(Math.round(area / 60000 * k) + 1, () => new Duckweed(rand(15, W - 15), rand(15, H - 15)));
+    add(Math.round(area / 25000 * k) + 1, () => new Marimo(...wetPoint(world, 10)));
+    add(Math.round(area / 60000 * k) + 1, () => new Duckweed(...wetPoint(world, 15)));
   }
   world.rocks = rocks;
   world.pebbles = pebbles;
   world.plants = plants;
-  world.pads = fresh ? Array.from({ length: clamp(Math.round(area / 40000 * k), 2, 14) }, () => new LilyPad(world)) : [];
+  world.pads = fresh ? Array.from({ length: clamp(Math.round(area / 40000 * k), 2, 14) }, () => new LilyPad(world, ...wetPoint(world, 14))) : [];
   world.motes = new Motes(world);
 }
 
@@ -330,7 +384,10 @@ function bakeBackground(world) {
   const r = world.raster, { W, H } = world;
   const key = FLOOR_ALIASES[world.opts.floor] || world.opts.floor;
   const floor = FLOORS[key] || FLOORS.sand, water = WATERS[world.opts.water] || WATERS.teal;
-  const light = hexToInt(water.light), black = hexToInt('#000000');
+  const light = hexToInt(water.light), black = hexToInt('#000000'), sun = hexToInt('#fff0d2');
+  if (key === 'tiles') world.shore = null;           // a pool has no beach
+  else if (!world.shore && world.shoreSide !== undefined) makeShore(world);
+  const shore = world.shore;
   const savedClip = r.clip;
   r.clip = [0, 0, W - 1, H - 1];
   r.zBase.fill(0);
@@ -349,7 +406,7 @@ function bakeBackground(world) {
     }
   }
   if (floor.decor) withSeed(`${world.seed}/floor/${key}`, () => floor.decor(makeDecor(r, outline), W, H));
-  const bg = new Uint32Array(W * H), bgLight = new Uint32Array(W * H);
+  const bg = new Uint32Array(W * H), bgLight = new Uint32Array(W * H), bgDry = shore ? new Uint32Array(W * H) : null;
   const { id, z, col, sh } = r;
   for (let y = 0, p = 0; y < H; y++) {
     for (let x = 0; x < W; x++, p++) {
@@ -375,18 +432,20 @@ function bakeBackground(world) {
           if (sh[p] > 1.2) c = shadeColor(c);
         }
       }
-      // Darker water toward the tank edges, in dithered steps.
+      // Darker water toward the tank edges, in dithered steps (not on the beach).
       const edge = Math.min(x / W, (W - 1 - x) / W, y / H, (H - 1 - y) / H);
       const e = Math.floor((Math.max(0, 0.05 - edge) * 4 + dither(x, y) * 0.06) * 10) / 10;
-      if (e > 0) c = mixColor(c, black, e);
+      if (e > 0 && !(shore && shore[p])) c = mixColor(c, black, e);
       bg[p] = c;
       bgLight[p] = mixColor(c, light, 0.14);
+      if (bgDry && shore[p]) bgDry[p] = mixColor(c, sun, 0.18);
     }
   }
   r.zBase.set(r.z);
   r.clip = savedClip;
   world.bg = bg;
   world.bgLight = bgLight;
+  world.bgDry = bgDry;
   world.waterColor = hexToInt(water.color);
   if (world.motes) world.motes.mat = solid(water.mote);
 }

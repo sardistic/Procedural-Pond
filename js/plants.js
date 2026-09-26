@@ -210,6 +210,7 @@ class Duckweed {
     if (this.y < 10 || this.y > world.H - 10) this.vy = -this.vy;
     this.x = clamp(this.x, 10, world.W - 10);
     this.y = clamp(this.y, 10, world.H - 10);
+    floatOffBeach(this, world, dt);
   }
 
   draw(r, t) {
@@ -217,6 +218,16 @@ class Duckweed {
       r.ellipsoid(this.x + l.ox + Math.sin(t * 0.5 + l.p) * 0.4, this.y + l.oy + Math.cos(t * 0.4 + l.p) * 0.4,
         l.s, l.s * 0.8, l.a, 44, 0.5, PAL.duckweed, this.id);
     }
+  }
+}
+
+// Floating plants drift back off the beach as the tide goes out.
+function floatOffBeach(o, world, dt) {
+  if (!world.shore) return;
+  const e = shoreAt(world, o.x, o.y), lim = world.tide.level - 0.1;
+  if (e > lim) {
+    const k = Math.min(3, (e - lim) * 40) * dt * 6;
+    o.x -= world.shoreN[0] * k; o.y -= world.shoreN[1] * k;
   }
 }
 
@@ -249,6 +260,7 @@ class LilyPad {
     if (this.y < this.r || this.y > world.H - this.r) this.vy = -this.vy;
     this.x = clamp(this.x, this.r, world.W - this.r);
     this.y = clamp(this.y, this.r, world.H - this.r);
+    floatOffBeach(this, world, dt);
   }
 
   draw(r) {

@@ -12,6 +12,7 @@ const SHADOW_X = 0.3, SHADOW_Y = 0.42;
 const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => v / 16 - 0.5);
 const CAUSTIC_SIZE = 128;
 const SURFACE_Z = 46; // the water surface; fog fades out toward it
+const FOAM = hexToInt('#f2fbf8'), FOAM_SOFT = hexToInt('#c4e4e0');
 
 class Raster {
   constructor(W, H) {
@@ -140,6 +141,8 @@ class Raster {
   // - cast shadows and animated caustics on the floor
   // - refraction: the floor shimmers under the surface
   // - depth fog: the deeper a pixel, the more it takes on the water colour
+  // - the beach: dry sand above the tide line, a foam line at the water's edge,
+  //   and surf that rolls in toward it; shallow water is clearer
   // - an optional light tint (emissive ids resist it: level 1 half, level 2 fully)
   compose(out, s, rect = [0, 0, this.W - 1, this.H - 1]) {
     const { W, H, id, col, z, zBase, sh } = this;
@@ -159,11 +162,17 @@ class Raster {
     }
     const fogK = 64 / SURFACE_Z;
     const wx = wob ? wob.x : null, wy = wob ? wob.y : null;
+    const shore = s.shore || null, bgDry = s.bgDry, tideL = (s.tide ?? 1) * 255;
+    const surf = s.surf || 0, wave = s.wave || 0, surfReach = 30 + 70 * surf, foamW = 0.05 + 0.07 * surf;
     const [rx0, ry0, rx1, ry1] = rect;
     for (let y = ry0; y <= ry1; y++) {
       for (let x = rx0, p = rx0 + y * W; x <= rx1; x++, p++) {
         const i = id[p];
-        let c, n, depth;
+        let c, n, depth, fogScale = 1;
+        if (shore) {
+          const sp = shore[p];
+          if (sp > tideL) fogScale = 0; else if (sp) fogScale = Math.min(1, (tideL - sp) / 60);
+        }
         if (i === 0) {
           const zb = zBase[p];
           let best = 0, bz = zb + 0.5;
@@ -192,10 +201,30 @@ class Raster {
               const qx = x + wx[y], qy = y + wy[x];
               q = (qx < 0 ? 0 : qx >= W ? W - 1 : qx) + (qy < 0 ? 0 : qy >= H ? H - 1 : qy) * W;
             }
-            c = doCaustics && caustic[((x + o1x) & TM) | (((y + o1y) & TM) << 7)] +
-                caustic[((y + o2y) & TM) | (((x + o2x) & TM) << 7)] < causticT ? bgLight[q] : bg[q];
-            if (doShadows && sh[p] > zb + 1.5) c = shadeColor(c);
-            depth = zBase[q];
+            const se = shore ? shore[q] : 0;
+            if (se > tideL) {
+              // Beach above the waterline: sunlit dry sand, darker where the water just left.
+              c = se < tideL + 9 ? shadeColor(bg[q]) : bgDry[q];
+              if (doShadows && sh[p] > zb + 1.5) c = shadeColor(c);
+              depth = 0;
+            } else {
+              c = doCaustics && caustic[((x + o1x) & TM) | (((y + o1y) & TM) << 7)] +
+                  caustic[((y + o2y) & TM) | (((x + o2x) & TM) << 7)] < causticT ? bgLight[q] : bg[q];
+              if (doShadows && sh[p] > zb + 1.5) c = shadeColor(c);
+              depth = zBase[q];
+              if (se) {
+                // Foam at the water's edge, and waves that roll in toward it.
+                const d = tideL - se;
+                if (d < 2.5) { c = (x + y) & 1 ? FOAM : FOAM_SOFT; fogScale = 0; }
+                else if (surf > 0 && d < surfReach) {
+                  const w = (d * 0.045 + wave) % 1;
+                  if (w < foamW * (1 - d / surfReach) && caustic[(x & TM) | ((y & TM) << 7)] > 0.18) {
+                    c = d < surfReach * 0.45 ? FOAM : FOAM_SOFT;
+                    fogScale = 0;
+                  }
+                }
+              }
+            }
           }
         } else {
           c = col[p];
@@ -211,8 +240,8 @@ class Raster {
             c = shadeColor(c);
           }
         }
-        if (fogA) {
-          const k = (depth * fogK) | 0, a = fogA[k < 0 ? 0 : k > 64 ? 64 : k];
+        if (fogA && fogScale > 0) {
+          const k = (depth * fogK) | 0, a = (fogA[k < 0 ? 0 : k > 64 ? 64 : k] * fogScale) | 0;
           if (a) {
             const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
             c = (0xff000000 | ((cb + (((fb - cb) * a) >> 8)) << 16) | ((cg + (((fgc - cg) * a) >> 8)) << 8) | (cr + (((fr - cr) * a) >> 8))) >>> 0;

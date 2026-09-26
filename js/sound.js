@@ -5,7 +5,7 @@
 
 const Sound = {
   ctx: null, master: null, on: false,
-  water: null, waterFilter: null, rain: null, budget: 0,
+  water: null, waterFilter: null, rain: null, surf: null, budget: 0,
 
   start() {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -37,6 +37,13 @@ const Sound = {
     this.rain = ctx.createGain();
     this.rain.gain.value = 0;
     loop().connect(hp).connect(this.rain).connect(this.master);
+
+    // Surf: a band of noise that swells each time a wave reaches the beach.
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 0.6;
+    this.surf = ctx.createGain();
+    this.surf.gain.value = 0;
+    loop().connect(bp).connect(this.surf).connect(this.master);
     return true;
   },
 
@@ -118,6 +125,8 @@ const Sound = {
     const now = this.ctx.currentTime;
     this.rain.gain.setTargetAtTime(world.weather.rain * 0.22, now, 0.5);
     this.waterFilter.frequency.setTargetAtTime(380 + world.current.s * 700, now, 0.5);
+    const tide = world.tide, wash = tide && world.shore ? tide.surf * 0.2 * (0.2 + 0.8 * Math.exp(-(tide.wave % 1) * 4)) : 0;
+    this.surf.gain.setTargetAtTime(wash, now, 0.12);
     const pan = () => rand(-0.8, 0.8), has = (s) => world.creatures.some((c) => c.species === s);
     if (world.darkness < 0.3 && world.weather.rain < 0.3 && Math.random() < dt * 0.12) this.chirp(pan());
     if (world.darkness > 0.4 && has('frog') && Math.random() < dt * 0.35) this.croak(pan());

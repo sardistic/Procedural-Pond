@@ -143,15 +143,51 @@ const ARRIVE_VERB = { dragonfly: 'flew in', frog: 'hopped in', crab: 'scuttled i
 const METABOLISM = { snail: 900, crab: 600, turtle: 700, ray: 600, frog: 520, shrimp: 500, starfish: 1500 };
 
 // ---- journal: a running story of the pond --------------------------------------
+// Entries carry a category (life, rare, hunt, come, sky, pond). Events that share
+// a merge key within MERGE_WINDOW sim-seconds fold into one line: the entry keeps
+// every event's data and `merge(entry)` rewrites its text, so a burst of
+// departures reads "4 Tetras moved on (3 of old age, 1 hungry)" instead of four lines.
 
-function logEvent(world, text, subject = null) {
-  world.journal.unshift({ clock: world.clock, text, subject });
-  if (world.journal.length > 80) world.journal.pop();
+const MERGE_WINDOW = 40;
+
+function logEvent(world, text, subject = null, opts = {}) {
+  const { cat = 'pond', key = null, merge = null, data } = opts;
+  const now = world.t || 0;
+  if (key) {
+    const e = world.journal.find((j) => j.key === key && now - j.t < MERGE_WINDOW);
+    if (e) {
+      e.n++;
+      e.t = now; e.clock = world.clock; e.day = Math.floor(world.days || 0) + 1;
+      if (data !== undefined) e.data.push(data);
+      if (subject) e.subject = subject;
+      if (merge) e.text = merge(e);
+      world.journal.splice(world.journal.indexOf(e), 1);
+      world.journal.unshift(e);
+      e.seq = ++world.journalSeq;
+      world.journalDirty = true;
+      return e;
+    }
+  }
+  const e = {
+    t: now, clock: world.clock, day: Math.floor(world.days || 0) + 1, text, subject, cat, key, n: 1,
+    data: data !== undefined ? [data] : [], seq: (world.journalSeq = (world.journalSeq || 0) + 1),
+  };
+  world.journal.unshift(e);
+  if (world.journal.length > 150) world.journal.pop();
   world.journalDirty = true;
+  return e;
 }
 
 const who = (c) => (c.life ? `${c.life.name} the ${describe(c).label}` : `a ${describe(c).label.toLowerCase()}`);
 const plural = (label, n) => (n === 1 || /fish|shrimp|koi|sh$/i.test(label) ? label : label.endsWith('y') ? label.slice(0, -1) + 'ies' : label + 's');
+const aOrN = (n, label) => (n === 1 ? `${/^[aeiou]/i.test(label) ? 'an' : 'a'} ${label}` : `${n} ${plural(label, n)}`);
+// "3 Tetras and a Shrimp" from a list of labels.
+function tally(labels) {
+  const counts = new Map();
+  for (const l of labels) counts.set(l, (counts.get(l) || 0) + 1);
+  const parts = [...counts].sort((a, b) => b[1] - a[1]).map(([l, n]) => aOrN(n, l));
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
+}
 const SCHOOLING = (c) => c.species === 'tetra' || c.species === 'shrimp' || (c.species === 'wild' && c.sp.schooling);
 
 function captureBase(c) {
@@ -199,7 +235,12 @@ function eat(world, c, f) {
     gain = 0.55;
     ECO.eaten++;
     addBubbles(world, f.x, f.y, f.z, 3);
-    if (f.life) logEvent(world, `${who(c)} caught ${who(f)}`, c);
+    if (f.life) {
+      logEvent(world, `${who(c)} caught ${who(f)}`, c, {
+        cat: 'hunt', key: `catch:${c.id}`, data: describe(f).label,
+        merge: (e) => `${who(c)} caught ${tally(e.data)}`,
+      });
+    }
   } else {
     f.eaten = true;
     gain = f.kind === 'plankton' ? 0.1 : 0.3;
@@ -276,6 +317,7 @@ class Sparkle {
 }
 
 function addRipple(world, x, y, size = 1, silent = false) {
+  if (world.shore && isDry(world, x, y)) return;
   if (world.effects.length < 220) world.effects.push(new Ripple(x, y, size));
   if (!silent && typeof Sound !== 'undefined') Sound.plop(x / world.W, size);
 }
@@ -316,11 +358,22 @@ class Eggs {
       if (baby) { world.creatures.push(baby); ECO.births++; babies.push(baby); }
     }
     if (babies.length) {
-      const first = babies[0], n = babies.length;
-      const young = first.species === 'tadpole' ? `${n} tadpole${n > 1 ? 's' : ''}` : `${n} young ${plural(describe(first).label, n)}`;
-      logEvent(world, `${this.parent.life.name} & ${this.mate.life.name}'s eggs hatched: ${young} (gen ${first.life.gen})`, first);
+      const first = babies[0], n = babies.length, label = describe(first).label, gen = first.life.gen;
+      const young = first.species === 'tadpole' ? `${n} tadpole${n > 1 ? 's' : ''}` : `${n} young ${plural(label, n)}`;
+      logEvent(world, `${this.parent.life.name} & ${this.mate.life.name}'s eggs hatched: ${young} (gen ${gen})`, first, {
+        cat: 'life', key: `hatch:${this.key}`, data: { n, gen },
+        merge: (e) => {
+          const total = e.data.reduce((a, d) => a + d.n, 0), top = Math.max(...e.data.map((d) => d.gen));
+          return `${e.n} clutches of ${plural(label, 2)} hatched: ${total} young, up to gen ${top}`;
+        },
+      });
+      const record = world.records || (world.records = { gen: 2 });
+      if (gen > record.gen) {
+        record.gen = gen;
+        logEvent(world, `A new record: ${label} lineage reaches generation ${gen}`, first, { cat: 'rare' });
+      }
       for (const b of babies) {
-        if (b.life.traits.length) logEvent(world, `✦ A rare ${b.life.traits.join(' ')} ${describe(b).label} hatched: ${b.life.name}!`, b);
+        if (b.life.traits.length) logEvent(world, `✦ A rare ${b.life.traits.join(' ')} ${describe(b).label} hatched: ${b.life.name}!`, b, { cat: 'rare' });
       }
     }
     if (this.z > 30) addRipple(world, this.x, this.y, 0.8);
@@ -339,7 +392,7 @@ class Eggs {
   }
 }
 
-const breedKey = (c) => (c.species === 'wild' ? `wild:${c.sp.id}` : c.species);
+const breedKey = (c) => (c.species === 'wild' ? `wild:${c.sp.id}` : c.species === 'tadpole' ? 'frog' : c.species);
 
 function makeBaby(world, p, m, x, y) {
   let c;
@@ -394,7 +447,9 @@ function metamorphose(world, t) {
   t.gone = true;
   addBubbles(world, t.x, t.y, t.z, 3);
   world.creatures.push(f);
-  logEvent(world, `${f.life.name} the tadpole grew legs and became a froglet`, f);
+  logEvent(world, `${f.life.name} the tadpole grew legs and became a froglet`, f, {
+    cat: 'life', key: 'froglet', merge: (e) => `${e.n} tadpoles grew legs and became froglets`,
+  });
 }
 
 // ---- gnats: day-time swarms over the surface, food for frogs -------------------
@@ -466,8 +521,10 @@ function updateWeather(world, dt) {
   w.next -= dt;
   if (world.opts.weather === false) w.target = 0;
   else if (w.next <= 0) {
-    if (w.target === 0) { w.target = rand(0.45, 1); w.next = rand(25, 60); logEvent(world, 'Clouds roll in and it starts to rain'); }
-    else { w.target = 0; w.next = rand(90, 240); logEvent(world, 'The rain eases off'); }
+    if (w.target === 0) {
+      w.target = rand(0.45, 1); w.next = rand(25, 60);
+      logEvent(world, w.target > 0.8 ? 'Dark clouds roll in: a downpour' : 'Clouds roll in and it starts to rain', null, { cat: 'sky' });
+    } else { w.target = 0; w.next = rand(90, 240); logEvent(world, 'The rain eases off', null, { cat: 'sky' }); }
   }
   w.rain += (w.target - w.rain) * Math.min(1, dt * 0.12);
   w.gust = world.opts.weather === false ? 0 : (vnoise(world.t * 0.15, 3, 77) - 0.5) * 2;
@@ -499,9 +556,17 @@ function updateLife(world, dt) {
         if (c.alpha <= 0) {
           c.gone = true;
           ECO.departures++;
-          if (c.life && !SCHOOLING(c) && c.species !== 'tadpole') {
-            const m = Math.floor(c.life.age / 60);
-            logEvent(world, `${who(c)} moved on${c.life.energy <= 0 ? ' in search of food' : m ? ` after ${m} minutes` : ''}`);
+          if (c.life && c.species !== 'tadpole') {
+            const m = Math.floor(c.life.age / 60), label = describe(c).label;
+            const why = c.leaveWhy || 'restless';
+            logEvent(world, `${who(c)} moved on${why === 'hungry' ? ' in search of food' : m ? ` after ${m} minutes` : ''}`, null, {
+              cat: 'come', key: `leave:${c.species === 'wild' ? c.sp.id : c.species}`, data: why,
+              merge: (e) => {
+                const why = new Map();
+                for (const d of e.data) why.set(d, (why.get(d) || 0) + 1);
+                return `${e.n} ${plural(label, e.n)} moved on (${[...why].map(([k, n]) => `${n} ${k}`).join(', ')})`;
+              },
+            });
           }
         }
       }
@@ -538,9 +603,23 @@ function updateLife(world, dt) {
     if (L.scale < 1) {
       L.scale = Math.min(1, L.scale + dt * (L.energy > 0.3 ? 0.008 : 0.003));
       if (c.base && Math.abs(L.scale * L.genome.size - c.appliedScale) > 0.02) applyScale(c, L.scale * L.genome.size);
+      if (L.scale >= 1 && L.gen > 0 && c.species !== 'tadpole') {
+        const label = describe(c).label;
+        logEvent(world, `${who(c)} is fully grown`, c, { cat: 'life', key: `grown:${c.species}`, merge: (e) => `${e.n} young ${plural(label, e.n)} grew up` });
+      }
+    }
+    if (!L.old && L.age > L.lifespan * 0.8) {
+      L.old = true;
+      const label = describe(c).label;
+      logEvent(world, `${who(c)} is getting old: ${Math.floor(L.age / 60)} minutes in the pond`, c, {
+        cat: 'life', key: `old:${c.species}`, merge: (e) => `${e.n} ${plural(label, e.n)} are getting on in years`,
+      });
     }
     if (c.species === 'tadpole' && L.age > 50 && L.scale > 0.65) metamorphose(world, c);
-    if (!c.leaving && !c.grabbed && (L.age > L.lifespan || L.energy <= 0)) c.leaving = true;
+    if (!c.leaving && !c.grabbed && (L.age > L.lifespan || L.energy <= 0)) {
+      c.leaving = true;
+      c.leaveWhy = L.energy <= 0 ? 'hungry' : 'of old age';
+    }
   }
 
   if (!on) {
@@ -559,7 +638,9 @@ function updateLife(world, dt) {
 function steerOut(c, world) {
   const { W, H } = world;
   if (!c.exit) {
-    const d = [c.x, W - c.x, c.y, H - c.y], i = d.indexOf(Math.min(...d));
+    const d = [c.x, W - c.x, c.y, H - c.y];
+    if (world.shore && !AMPHIBIOUS.has(c.species)) d[world.shoreSide] = Infinity; // not across the beach
+    const i = d.indexOf(Math.min(...d));
     c.exit = [[2, c.y], [W - 2, c.y], [c.x, 2], [c.x, H - 2]][i];
   }
   [c.tx, c.ty] = c.exit;
@@ -624,6 +705,12 @@ function breed(world) {
     } else if (rule.eggs === 'surface') z = 41;
     const eggs = new Eggs(world, c, mate, x, y, z, rule.eggs);
     world.eggs.push(eggs);
+    const where = rule.eggs === 'surface' ? 'at the surface' : rule.eggs === 'rock' ? 'on a rock'
+      : rule.eggs === 'plant' && z > 1 ? 'in the weeds' : 'on the floor', label = describe(c).label;
+    logEvent(world, `${c.life.name} & ${mate.life.name} laid ${eggs.cells.length} eggs ${where}`, c, {
+      cat: 'life', key: `eggs:${key}`, data: eggs.cells.length,
+      merge: (e) => `${e.n} pairs of ${plural(label, 2)} laid ${e.data.reduce((a, b) => a + b, 0)} eggs`,
+    });
     counts[key] = (counts[key] || 0) + eggs.cells.length;
     for (const p of [c, mate]) { p.life.cooldown = rand(80, 140); p.life.energy -= 0.3; }
   }
@@ -655,7 +742,9 @@ function migrate(world) {
 }
 
 function arrive(world, kind, discover = false) {
-  const { W, H } = world, side = randi(0, 3);
+  const { W, H } = world;
+  let side = randi(0, 3);
+  if (world.shore && side === world.shoreSide && !AMPHIBIOUS.has(kind)) side = (side + 1 + randi(0, 2)) % 4;
   const x = side === 0 ? 4 : side === 1 ? W - 4 : rand(20, W - 20);
   const y = side === 2 ? 4 : side === 3 ? H - 4 : rand(20, H - 20);
   let group;
@@ -679,13 +768,21 @@ function arrive(world, kind, discover = false) {
   }
   world.creatures.push(...group);
   ECO.arrivals += group.length;
-  const c = group[0];
-  if (discover) logEvent(world, `New species spotted: ${c.sp.name}${group.length > 1 ? ` (a school of ${group.length})` : ''}`, c);
-  else if (kind === 'duck') logEvent(world, 'A duck family paddled in', c);
-  else if (group.length > 1) logEvent(world, `${SCHOOLING(c) ? 'A school' : 'A group'} of ${group.length} ${plural(describe(c).label, group.length)} arrived`, c);
-  else logEvent(world, `${who(c)} ${ARRIVE_VERB[kind] || 'swam in'}`, c);
+  const c = group[0], label = describe(c).label;
+  if (discover) {
+    const sp = c.sp, habits = [sp.schooling && 'schools', sp.predator && 'hunts smaller fish', sp.habitat === 'salt' ? 'reef fish' : 'freshwater'].filter(Boolean);
+    logEvent(world, `✦ New species spotted: ${sp.name}${group.length > 1 ? `, a school of ${group.length}` : ''} (${habits.join(', ')})`, c, { cat: 'rare' });
+  } else if (kind === 'duck') {
+    logEvent(world, `A duck family paddled in: ${group.length} ducks`, c, { cat: 'come' });
+  } else {
+    const first = group.length > 1 ? `${SCHOOLING(c) ? 'A school' : 'A group'} of ${group.length} ${plural(label, group.length)} arrived` : `${who(c)} ${ARRIVE_VERB[kind] || 'swam in'}`;
+    logEvent(world, first, c, {
+      cat: 'come', key: `arrive:${kind}`, data: group.length,
+      merge: (e) => `${e.data.reduce((a, b) => a + b, 0)} ${plural(label, 2)} arrived`,
+    });
+  }
   for (const r of group) {
-    if (r.life && r.life.traits.length) logEvent(world, `✦ A rare ${r.life.traits.join(' ')} ${describe(r).label} arrived: ${r.life.name}`, r);
+    if (r.life && r.life.traits.length) logEvent(world, `✦ A rare ${r.life.traits.join(' ')} ${describe(r).label} arrived: ${r.life.name}`, r, { cat: 'rare' });
   }
 }
 
