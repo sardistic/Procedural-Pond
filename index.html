@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
 
   <script type="application/ld+json">
   {
@@ -89,7 +89,7 @@
 
     <details id="ponds">
       <summary>Your ponds</summary>
-      <p class="note">Your pond saves itself in this browser and is here when you come back. The address bar always holds a link to it as it is right now: bookmark it, or share it and friends get this exact pond.</p>
+      <p class="note">Your pond saves itself in this browser and is here when you come back. Share it and you get a short link of four words that keeps up as your pond grows; friends who open it get their own copy.</p>
       <ol class="pond-list" id="pond-list"></ol>
       <div class="grid2">
         <button type="button" id="reset" title="Start a brand new pond; this one stays saved">New pond</button>
@@ -129,8 +129,9 @@
         <li>Animals get hungry, grow up, lay eggs, pass their genes on, hunt, flee and eventually move on.</li>
         <li>A day/night cycle and a moon whose phases drive the tides and surf on the beach. Corals spawn under the full moon.</li>
         <li>Freshwater, saltwater or both: reef fish, corals and starfish, or koi, frogs and lily pads.</li>
-        <li>Genetics with rare albino, melanistic, piebald and shiny animals that breed true.</li>
-        <li>Your pond saves itself and is waiting when you come back. Its link carries the whole living pond, so sharing it shows friends your pond just as it is.</li>
+        <li>Genetics with rare albino, melanistic, xanthic, axanthic, piebald, shiny, glowing, ghostly, giant and dwarf animals, from Uncommon up to Mythic.</li>
+        <li>Points for every birth and rare find, pearls to spend on animals, plants and food, a shared leaderboard, and fireflies that show your score at night.</li>
+        <li>Your pond saves itself and is waiting when you come back. Share it with a short four-word link.</li>
       </ul>
       <p>Made by <a href="https://sardistic.com/">sardistic</a>. <a href="https://github.com/sardistic/Procedural-Pond">Source on GitHub</a>.</p>
     </details>
@@ -143,7 +144,7 @@
       <button type="button" id="sound" aria-pressed="false" title="Generative soundscape (M)">Sound</button>
       <button type="button" id="share" title="Copy a link to this pond as it is now">Share</button>
     </div>
-    <p class="keys">Arrows/WASD pan · +/− zoom · F follow · T tour · C animals · J journal · L light · B bones · Space pause · M sound · H hide</p>
+    <p class="keys">Arrows/WASD pan · +/− zoom · F follow · T tour · C animals · J journal · P score · L light · B bones · Space pause · M sound · H hide</p>
   </aside>
   <button type="button" id="show-hud" class="icon" hidden aria-label="Show panel" title="Show panel (H)">☰</button>
 
@@ -173,6 +174,41 @@
     </section>
   </div>
 
+  <div id="score" class="score">
+    <button type="button" id="score-btn" class="score-btn" aria-expanded="false" aria-controls="score-panel" title="Points, pearls and the leaderboard (P)">
+      <span class="pts" title="Points"><i aria-hidden="true">★</i><b id="score-points">0</b></span>
+      <span class="prl" title="Pearls to spend"><i class="pearl" aria-hidden="true"></i><b id="score-pearls">0</b></span>
+    </button>
+    <section id="score-panel" class="pop score-panel" hidden aria-label="Score and leaderboard">
+      <header class="pop-head"><b>Score</b><button type="button" id="score-close" class="icon" aria-label="Close score">×</button></header>
+      <div class="score-top">
+        <div><b id="sp-points">0</b><span>points</span></div>
+        <div><b id="sp-pearls">0</b><span>pearls</span></div>
+        <div><b id="sp-rank">–</b><span id="sp-rank-note">rank</span></div>
+      </div>
+      <p class="note" id="sp-flies"></p>
+      <p class="note best" id="sp-best"></p>
+      <h3>Lately</h3>
+      <ol class="earn-list" id="sp-recent"></ol>
+      <h3>Leaderboard</h3>
+      <ol class="board" id="sp-board"></ol>
+      <h3>Rare finds in every pond</h3>
+      <ol class="finds" id="sp-finds"></ol>
+      <details class="how">
+        <summary>How to earn</summary>
+        <ul>
+          <li>Every birth: 1 point. Rare births score by tier: Uncommon 3, Rare 8, Epic 20, Legendary 50, Mythic 150.</li>
+          <li>Breed the same rare again and each one is worth 25% more, up to 3×. The first of a kind in your pond adds 20.</li>
+          <li>Rare animals arriving on their own: half their tier. A new wild species: 10. A generation record: 5 per generation. Coral spawning: 20. An animal that lives out its life: 1.</li>
+          <li>Each dawn: a pearl per species in the pond, plus up to 5 for how comfortable they are.</li>
+          <li>Points are your score; every point also pays a pearl to spend on animals, plants and food.</li>
+          <li>Animals like certain plants and rocks nearby (hover one to see). Comfortable, well-fed animals age slower and rarely wander off. Spirulina keeps them fed for longer; brine shrimp brings them into breeding condition.</li>
+        </ul>
+      </details>
+      <label class="check"><input type="checkbox" id="sp-join" checked> Show my pond on the leaderboard</label>
+    </section>
+  </div>
+
   <div id="inspect" class="inspect" hidden>
     <b class="nm"></b>
     <span class="sp"></span>
@@ -180,7 +216,9 @@
     <span class="meta"></span>
     <div class="bar" title="energy"><i></i></div>
     <span class="mood"></span>
+    <span class="care"></span>
   </div>
+  <div id="lineage" class="lineage" hidden aria-live="off"></div>
   <div id="follow" class="follow" hidden>
     <span></span>
     <button type="button" id="follow-stop" title="Stop following (Esc)">Stop</button>
@@ -228,20 +266,22 @@
     </div>
   </div>
 
-  <script src="js/core.js?v=8"></script>
-  <script src="js/raster.js?v=8"></script>
-  <script src="js/creatures.js?v=8"></script>
-  <script src="js/critters.js?v=8"></script>
-  <script src="js/wildlife.js?v=8"></script>
-  <script src="js/wildfish.js?v=8"></script>
-  <script src="js/sound.js?v=8"></script>
-  <script src="js/life.js?v=8"></script>
-  <script src="js/plants.js?v=8"></script>
-  <script src="js/scene.js?v=8"></script>
-  <script src="js/sky.js?v=8"></script>
-  <script src="js/save.js?v=8"></script>
-  <script src="js/link.js?v=8"></script>
-  <script src="js/hud.js?v=8"></script>
-  <script src="js/main.js?v=11"></script>
+  <script src="js/core.js?v=9"></script>
+  <script src="js/raster.js?v=9"></script>
+  <script src="js/creatures.js?v=9"></script>
+  <script src="js/critters.js?v=9"></script>
+  <script src="js/wildlife.js?v=9"></script>
+  <script src="js/wildfish.js?v=9"></script>
+  <script src="js/sound.js?v=9"></script>
+  <script src="js/life.js?v=9"></script>
+  <script src="js/plants.js?v=9"></script>
+  <script src="js/scene.js?v=9"></script>
+  <script src="js/sky.js?v=9"></script>
+  <script src="js/game.js?v=9"></script>
+  <script src="js/save.js?v=9"></script>
+  <script src="js/link.js?v=9"></script>
+  <script src="js/net.js?v=9"></script>
+  <script src="js/hud.js?v=9"></script>
+  <script src="js/main.js?v=12"></script>
 </body>
 </html>

@@ -124,6 +124,7 @@ const FROG_VARIETIES = [
 ];
 
 const FROG_TONGUE = mat('#8a2a3a', '#c84a5a', '#f07a8a', '#ffb0ba');
+const FROG_SWIM_Z = 40, FROG_GROUND_Z = 2.4; // at the surface, or sitting on dry sand
 
 class Frog extends Creature {
   constructor(world, x, y) {
@@ -205,7 +206,8 @@ class Frog extends Creature {
       const tx = h.pad ? h.pad.x : h.x1, ty = h.pad ? h.pad.y : h.y1;
       this.x = lerp(h.x0, tx, h.t);
       this.y = lerp(h.y0, ty, h.t);
-      this.z = lerp(h.z0, h.pad ? 45.6 : 40, h.t) + Math.sin(PI * h.t) * 12;
+      const land = h.pad ? 45.6 : isDry(world, h.x1, h.y1) ? FROG_GROUND_Z : FROG_SWIM_Z;
+      this.z = lerp(h.z0, land, h.t) + Math.sin(PI * h.t) * 12;
       this.ext = h.t < 0.5 ? 1 : 1 - (h.t - 0.5) * 2;
       if (h.t >= 1) {
         if (h.pad && !h.pad.dead) this.land(h.pad);
@@ -227,7 +229,13 @@ class Frog extends Creature {
       this.speed *= 1 - Math.min(1, 1.8 * dt);
       this.x = clamp(this.x + Math.cos(this.heading) * this.speed * dt, 2, world.W - 2);
       this.y = clamp(this.y + Math.sin(this.heading) * this.speed * dt, 2, world.H - 2);
-      this.z += (40 - this.z) * Math.min(1, dt * 2);
+      if (isDry(world, this.x, this.y)) {
+        // On land each kick is a little hop off the sand.
+        const hop = k < 0.35 ? Math.sin(PI * k / 0.35) * 3 : 0;
+        this.z += (FROG_GROUND_Z + hop - this.z) * Math.min(1, dt * 10);
+      } else {
+        this.z += (FROG_SWIM_Z - this.z) * Math.min(1, dt * 2);
+      }
       if (this.targetPad && Math.hypot(gx - this.x, gy - this.y) < this.targetPad.r * 0.7) this.land(this.targetPad);
     }
     this.body.resolve(this.x, this.y, this.heading);

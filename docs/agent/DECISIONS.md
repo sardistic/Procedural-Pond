@@ -182,3 +182,28 @@ by priority (`CAT_PRI` defaults, overridden per call with `pri`). Priority 0
 entries are dropped from the ticker when anything is queued or showing. Each
 entry shows for max(priority dwell, 1.6s + 55ms per character), shortened by 20%
 when the backlog is long. `showTicker()` toasts jump the queue at priority 4.
+
+## Short links and the pond API
+Share links are four words (`pond.nz/amber-heron-moss-lantern`, 256^4 ids) that point at a full save stored by a small API (`server/`, Node 24 built-in SQLite, no npm packages). It runs as a second Compose service; nginx proxies `/api/` to it with a per-request DNS lookup, so the static site starts and serves without it.
+- **Ownership:** creating a link returns a random key. Only its SHA-256 is stored, and the key lives only in the owner's local save (`save.link`, stripped before upload and by the server). Updates need the key. Anyone else who opens a link adopts a copy with a new `inst`, no link and a fresh score.
+- **Syncing:** a linked pond uploads every 90 s and when the tab is hidden. A pond joins the board, and gets a link, on its own at 50 points unless the player opts out. The address bar shows `/<id>` for linked ponds and falls back to the `#s=` fragment link otherwise, or when there is no server (file://).
+- **Limits:** nginx allows 60 requests a minute per `CF-Connecting-IP` with a burst of 30, and bodies up to 2 MB (the API takes 1.5 MB). There are 40 new links per address per day. Ponds neither opened nor updated for 180 days are deleted. The feed keeps the latest 300 finds.
+- **Scores are plausibility-checked, not proven:** an update's points are capped at the previous points + 15/s since the last update + 2000, and a new pond at 20,000. Finds are rebuilt server-side from whitelisted species and trait names, and their tier is recomputed. No free text from players is shown to others; the board shows the server-made ids.
+
+## Game layer: points, pearls, tiers
+`game.js` keeps `world.game` (points, pearls, per-reason totals, rare line counts, first-of-kind keys, pending finds, best find, dawn day, board opt-in). Points never decrease and every point also pays a pearl. Calibrated with the headless sim, a 480×270 pond earns about 2,700 points an hour; bigger ponds earn more.
+- **Tiers:** trait rarity sums to Common … Mythic. Rare births pay `TIER_VALUE[tier] × (1 + 0.25 × min(bred, 8))`, arrivals half, and the first of a kind +20.
+- **Prices:** animals 4-30, plants 2-15, spirulina 3, brine 5. Pellets and the founding population are free.
+- **Fireflies:** the yellow count is `full × sqrt(points / high)`, where `high = max(10000, 10th place)`. Blue fireflies appear past `high`: 2 + 2 per doubling, or 75% / 40% of the swarm for ranks 1 / 2-3 (only once inside the range).
+
+## New genes use their own random stream
+Xanthic and axanthic (recessive), glow and ghost (mutations, 15% / 40% inheritance from one / two carriers) and the dwarf roll come from `genome2/<seed>`, merged over `genome/<seed>`. Every existing seed keeps its original genes. `fillGenome` defaults missing keys, and `sameGenome` treats missing as 0/false. Links carry the new genes in an optional byte flagged by bit 7 of the trait byte, and the score after the journal (read only if bytes remain). Older links still decode.
+
+## Temperament, comfort and food
+`vigor` (0.8-1.25) and `wander` (skewed low) are rolled from `temper/<seed>`, so links don't store them. Comfort (0-1) eases toward the count of liked plants and rocks within 56 px (3 saturates), updated every 2 s. Ageing runs at `(1/vigor) × (1.1 - 0.4 × comfort) × (fed ? 0.85 : 1)`. Every 6 s a grown animal leaves with probability `0.004 × wander × (1 - comfort)² × (fed ? 0.4 : 1)`. Food sets `L.fed` seconds: pellet and spawn 45, brine 90 (and resets the breeding cooldown), spirulina 240.
+
+## Family trees
+`world.lineage` is a Map from seed to `{k, w, n, g, p, t, c, b, how, d, why, pts}`. It covers every animal that lived here (founder, bought, arrived or born), keeps up to 600 records, and prunes the oldest departed first. It is saved in full saves and short links, but not in `#s=` links, which rebuild it from the animals present. A tadpole's record is re-keyed to the frog it becomes, and the frog now keeps the tadpole's parents.
+
+## Frogs on the beach
+A frog swimming onto dry sand drops to ground height (z 2.4) and hops. Before, it stayed at swimming height (40), so its shadow landed about 17 px away.

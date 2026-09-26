@@ -142,14 +142,31 @@ function openSpot() {
   return [W / 2, H / 2];
 }
 
-function spawn(kind, x, y) {
-  if (world.creatures.length >= world.maxPop + 60) return;
+function spawn(kind, x, y, how = 'founder') {
+  if (world.creatures.length >= world.maxPop + 60) return false;
   if (x === undefined) [x, y] = openSpot();
   const group = SPECIES[kind].spawn(world, x, y);
-  for (const c of group) initLife(c, { alpha: 0 });
+  for (const c of group) { initLife(c, { alpha: 0 }); noteBorn(world, c, how); }
   world.creatures.push(...group);
   world.targets[kind] = (world.targets[kind] || 0) + group.length;
   updateCounts();
+  return true;
+}
+
+// The dock's buttons buy animals with pearls.
+function buyAnimal(kind) {
+  const price = ANIMAL_PRICE[kind] ?? 10;
+  if (world.creatures.length >= world.maxPop + 60) { showTicker('The pond is full: no room for more'); return; }
+  if (!spend(world, price)) { notEnough(price); return; }
+  spawn(kind, undefined, undefined, 'bought');
+}
+
+let poorAt = 0;
+function notEnough(price) {
+  if (performance.now() - poorAt < 2500) return;
+  poorAt = performance.now();
+  showTicker(`Not enough pearls: that costs ${price} and you have ${world.game.pearls}. Pearls come from births, rare animals and each dawn.`);
+  flashPearls();
 }
 
 // Scenery and starting animals come from the seed (and habitat), so a shared
@@ -172,6 +189,9 @@ function buildPond() {
     restorePond(world, resume);
   } else {
     world.inst = newInst();
+    world.game = newGame();
+    world.lineage = new Map();
+    world.link = null;
     withSeed(`${world.seed}/${world.opts.habitat}`, () => {
       generateScenery(world);
       populate();
@@ -186,8 +206,11 @@ function buildPond() {
     const animals = world.creatures.length, rares = world.creatures.filter((c) => c.life && c.life.traits.length).length;
     const summary = `day ${Math.floor(world.days) + 1}, ${animals} animals${rares ? `, ${rares} rare` : ''}`;
     if (world.linkAdopt) {
-      world.inst = newInst(); // someone else's pond becomes your own copy
-      logEvent(world, `You opened ${world.seed} from a link: ${summary}`, null, { cat: 'pond' });
+      // Someone else's pond becomes your own copy, with its own score and link.
+      world.inst = newInst();
+      world.game = newGame();
+      world.link = null;
+      logEvent(world, `You opened ${world.seed} from a link: ${summary}. This copy is yours, with its own score`, null, { cat: 'pond' });
     } else {
       logEvent(world, `Welcome back to ${world.seed}: ${summary}`, null, { cat: 'pond' });
     }
@@ -232,6 +255,7 @@ function update(dt) {
   world.darkness = world.light.darkness;
   updateFireflies(dt);
   updateLife(world, dt);
+  updateGame(world, dt);
   for (const c of world.creatures) c.update(dt, world);
   if (world.creatures.some((c) => c.gone || c.caught)) {
     if (world.grab && (world.grab.gone || world.grab.caught)) release();
@@ -245,16 +269,19 @@ function update(dt) {
   updateGlints(dt);
 }
 
-// Fireflies drift in after dark and fly off at dawn.
+// Fireflies drift in after dark and fly off at dawn. How many come, and whether
+// blue ones join them, follows the score (fireflyPlan in game.js).
 function updateFireflies(dt) {
-  const target = world.darkness > 0.55 ? Math.round(world.W * world.H / 9000) + 4 : 0;
-  const flies = world.creatures.filter((c) => c.species === 'firefly' && !c.leaving);
-  if (flies.length < target && Math.random() < dt * 3) {
-    const f = new Firefly(world, rand(10, world.W - 10), rand(10, world.H - 10));
-    f.alpha = 0;
-    world.creatures.push(f);
+  const plan = world.darkness > 0.55 ? fireflyPlan(world) : { yellow: 0, blue: 0 };
+  for (const blue of [false, true]) {
+    const want = blue ? plan.blue : plan.yellow;
+    const flies = world.creatures.filter((c) => c.species === 'firefly' && !c.leaving && c.blue === blue);
+    if (flies.length < want && Math.random() < dt * 3) {
+      const f = new Firefly(world, rand(10, world.W - 10), rand(10, world.H - 10), blue);
+      f.alpha = 0;
+      world.creatures.push(f);
+    } else if (flies.length > want && Math.random() < dt * 3) flies[0].leaving = true;
   }
-  else if (flies.length > target && Math.random() < dt * 3) flies[0].leaving = true;
   if (world.creatures.some((c) => c.gone)) world.creatures = world.creatures.filter((c) => !c.gone);
 }
 
@@ -383,6 +410,10 @@ function frame(now) {
   hudTick(dt);
   saveTimer -= dt;
   if (saveTimer <= 0) { saveTimer = 15; saveNow(); }
+  syncTimer -= dt;
+  if (syncTimer <= 0) { syncTimer = 90; syncPond(); }
+  boardTimer -= dt;
+  if (boardTimer <= 0) { boardTimer = 300; refreshBoard(); }
   statusTimer -= dt;
   if (statusTimer <= 0) { statusTimer = 1; updateSaveStatus(); }
   mapTimer -= dt;
@@ -392,25 +423,45 @@ function frame(now) {
 
 // ---- tools --------------------------------------------------------------------
 
+// Food and plants cost pearls (game.js). Each plant helps the species that like it.
+const plantTool = (kind, label, list = 'plants') => ({
+  label, price: PLANT_PRICE[kind], likedBy: kind,
+  place: (x, y) => world[list].push(makePlant(kind, world, x, y)),
+});
 const TOOLS = {
-  feed: { label: 'Feed', hint: 'click to feed · drag animals · scroll to zoom · drag water to pan' },
+  feed: { label: 'Pellets', food: 'pellet', price: 0, hint: 'click to feed (free) · drag animals · scroll to zoom · drag water to pan' },
+  spirulina: { label: 'Spirulina', food: 'spirulina', price: FOOD_PRICE.spirulina, hint: 'spirulina keeps animals well fed 5× longer: they age slower and stay' },
+  brine: { label: 'Brine', food: 'brine', price: FOOD_PRICE.brine, hint: 'live brine shrimp: a big meal that brings animals straight into breeding condition' },
   net: { label: 'Net', hint: 'click an animal, plant or rock to remove it' },
-  weed: { label: 'Weed', place: (x, y) => world.plants.push(makePlant('weed', world, x, y)) },
-  eelgrass: { label: 'Eelgrass', place: (x, y) => world.plants.push(makePlant('eelgrass', world, x, y)) },
-  anemone: { label: 'Anemone', place: (x, y) => world.plants.push(makePlant('anemone', world, x, y)) },
-  coral: { label: 'Coral', place: (x, y) => world.plants.push(makePlant('coral', world, x, y)) },
-  urchin: { label: 'Urchin', place: (x, y) => world.plants.push(makePlant('urchin', world, x, y)) },
-  marimo: { label: 'Marimo', place: (x, y) => world.plants.push(makePlant('marimo', world, x, y)) },
-  duckweed: { label: 'Duckweed', place: (x, y) => world.plants.push(makePlant('duckweed', world, x, y)) },
-  lily: { label: 'Lily pad', place: (x, y) => world.pads.push(makePlant('lily', world, x, y)) },
-  rock: { label: 'Rock', place: (x, y) => { world.rocks.push(makeRock(x, y, rand(5, 10))); bakeBackground(world); paintMinimapBackground(); } },
+  weed: plantTool('weed', 'Weed'),
+  eelgrass: plantTool('eelgrass', 'Eelgrass'),
+  anemone: plantTool('anemone', 'Anemone'),
+  coral: plantTool('coral', 'Coral'),
+  urchin: plantTool('urchin', 'Urchin'),
+  marimo: plantTool('marimo', 'Marimo'),
+  duckweed: plantTool('duckweed', 'Duckweed'),
+  lily: plantTool('lily', 'Lily pad', 'pads'),
+  rock: {
+    label: 'Rock', price: PLANT_PRICE.rock, likedBy: 'rock',
+    place: (x, y) => { world.rocks.push(makeRock(x, y, rand(5, 10))); bakeBackground(world); paintMinimapBackground(); },
+  },
 };
 
+// Which animals are happier near a plant or rock, for the tool's hint.
+function likedByText(kind) {
+  const who = Object.entries(LIKES).filter(([k, l]) => l.includes(kind) && k !== 'tadpole' && SPECIES[k] && fitsHabitat(world, SPECIES_HABITAT[k])).map(([k]) => SINGULAR[k].toLowerCase());
+  return who.length ? `liked by ${who.slice(0, 4).join(', ')}${who.length > 4 ? '…' : ''}` : '';
+}
+
 function useTool(x, y) {
-  const tool = TOOLS[world.tool];
+  const tool = TOOLS[world.tool], price = tool.price || 0;
+  if (tool.food && world.food.filter((f) => f.fed).length >= 90) return;
+  if (!tool.place && !tool.food) return;
+  if (!spend(world, price)) { notEnough(price); return; }
+  if (price) floatAward(x, y, `−${price}`, 'spend');
   if (tool.place) tool.place(x, y);
-  else if (world.food.filter((f) => f.kind === 'pellet').length < 90) {
-    for (let i = 0; i < 4; i++) world.food.push(new Food(x + rand(-3, 3), y + rand(-3, 3)));
+  else {
+    for (let i = tool.food === 'pellet' ? 4 : 3; i > 0; i--) world.food.push(new Food(x + rand(-3, 3), y + rand(-3, 3), 40, tool.food));
     addRipple(world, x, y, 1);
   }
 }
@@ -425,6 +476,7 @@ function removeAt(x, y) {
   const c = creatureAt(x, y);
   if (c) {
     world.creatures.splice(world.creatures.indexOf(c), 1);
+    noteGone(world, c, 'netted');
     if (world.targets[c.species]) world.targets[c.species]--;
     addRipple(world, c.x, c.y, 0.8);
     updateCounts();
@@ -694,6 +746,9 @@ function button(label) {
   return b;
 }
 
+// Where the page lives: "/" on the web; the file itself when opened from disk.
+const HOME = location.protocol === 'file:' ? location.pathname : '/';
+
 function shareUrl() {
   const u = new URL(location.href);
   u.search = ''; u.hash = '';
@@ -715,9 +770,16 @@ function updateCard(dt) {
   const d = describe(c), age = d.age == null ? '' : `${Math.floor(d.age / 60)}m ${String(Math.floor(d.age % 60)).padStart(2, '0')}s`;
   card.querySelector('.nm').textContent = d.name || d.label;
   card.querySelector('.sp').textContent = d.name ? d.label : '';
-  card.querySelector('.traits').textContent = [d.traits.length && `✦ ${d.traits.join(' · ')}`, d.carries.length && `carries ${d.carries.join(', ')}`].filter(Boolean).join('  ·  ');
+  const traits = card.querySelector('.traits');
+  traits.textContent = [d.traits.length && `✦ ${TIERS[d.tier]}: ${d.traits.join(' · ')}`, d.carries.length && `carries ${d.carries.join(', ')}`].filter(Boolean).join('  ·  ');
+  traits.style.color = d.tier ? TIER_COLOR[d.tier] : '';
   card.querySelector('.meta').textContent = [d.stage, d.gen != null && `gen ${d.gen}`, age].filter(Boolean).join(' · ');
   card.querySelector('.mood').textContent = d.mood;
+  const likes = c.life ? likesOf(c) : null;
+  card.querySelector('.care').textContent = !c.life ? '' : [
+    d.comfort != null && (likes ? `${comfortWord(d.comfort)} (likes ${likes.map((k) => LIKE_LABEL[k]).join(', ')})` : comfortWord(d.comfort)),
+    d.fed && 'well fed', ...d.temper,
+  ].filter(Boolean).join(' · ');
   const bar = card.querySelector('.bar');
   bar.hidden = d.energy == null;
   if (d.energy != null) bar.firstElementChild.style.width = `${Math.round(d.energy * 100)}%`;
@@ -729,12 +791,17 @@ function updateCard(dt) {
 
 function setTool(name) {
   world.tool = name;
+  const t = TOOLS[name];
   for (const b of $('tools').children) b.setAttribute('aria-pressed', b.dataset.tool === name);
-  $('hint').textContent = TOOLS[name].hint || `click to place ${TOOLS[name].label.toLowerCase()} · drag to pan`;
+  $('hint').textContent = t.hint || [`click to place ${t.label.toLowerCase()} (${t.price} pearls)`, t.likedBy && likedByText(t.likedBy)].filter(Boolean).join(' · ');
 }
 for (const [name, t] of Object.entries(TOOLS)) {
   const b = button(t.label);
   b.dataset.tool = name;
+  if (t.price != null) {
+    b.append(Object.assign(document.createElement('b'), { className: 'price', textContent: t.price ? t.price : 'free' }));
+    b.title = t.price ? `${t.label}: ${t.price} pearls` : `${t.label}: free`;
+  }
   b.addEventListener('click', () => setTool(name));
   $('tools').append(b);
 }
@@ -772,7 +839,7 @@ $('opt-world').addEventListener('change', (e) => {
   setOpt('world', e.target.value);
   if (e.target.value === 'auto') world.autoSize = screenWorld();
   layout(true);
-  history.replaceState(null, '', new URL(shareUrl()).search);
+  history.replaceState(null, '', HOME + new URL(shareUrl()).search);
 });
 
 // Switching habitat picks fitting water and floor, then regrows the pond from the same seed.
@@ -786,8 +853,7 @@ function setHabitat(h) {
   const d = HABITAT_DEFAULTS[h];
   setOpt('water', d.water); setOpt('floor', d.floor);
   $('opt-water').value = d.water; $('opt-floor').value = d.floor;
-  const u = new URL(shareUrl());
-  history.replaceState(null, '', u.search);
+  history.replaceState(null, '', HOME + new URL(shareUrl()).search);
   layout(true);
 }
 for (const b of document.querySelectorAll('[data-hab]')) b.addEventListener('click', () => setHabitat(b.dataset.hab));
@@ -828,26 +894,37 @@ $('show-hud').addEventListener('click', () => setHud(true));
 $('zoom-in').addEventListener('click', () => zoomStep(1));
 $('zoom-out').addEventListener('click', () => zoomStep(-1));
 zoomLabel.addEventListener('click', resetView);
-$('clear').addEventListener('click', () => { release(); world.creatures = []; world.eggs = []; world.targets = {}; updateCounts(); });
+$('clear').addEventListener('click', () => {
+  release();
+  for (const c of world.creatures) noteGone(world, c, 'cleared');
+  world.creatures = []; world.eggs = []; world.targets = {};
+  updateCounts();
+});
 $('reset').addEventListener('click', () => {
   saveNow(); // the pond you're leaving stays in "Your ponds"
   world.seed = newSeedName();
   world.autoSize = screenWorld(); // a new pond fits the window as it is now
   world.current.base = rand(-PI, PI);
   layout(true);
-  history.replaceState(null, '', new URL(shareUrl()).search);
+  history.replaceState(null, '', HOME + new URL(shareUrl()).search);
   saveNow();
   renderPondList();
 });
-// Share the pond exactly as it is now: the link carries its whole state.
+// Share the pond. With the server: a short four-word link to the pond, kept up
+// to date as it grows. Without it: the long link that carries the pond itself.
 async function sharePond() {
-  await updateLink(true);
-  const url = location.href;
+  let url = null;
+  if (Net.base) {
+    try { await pushPond(world); saveNow(); refreshBoard(); url = shortUrl(world.link.id); } catch { /* fall back to the long link */ }
+  }
+  if (!url) { await updateLink(true); url = location.href; }
+  const note = world.link ? `Link copied: ${url.replace(/^https?:\/\//, '')} opens your pond, and it keeps up as your pond grows`
+    : 'Link copied: it opens this pond just as it is right now';
   try {
     if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ title: 'Procedural Pond', text: `Come see my pond, ${world.seed}`, url });
-    else { await navigator.clipboard.writeText(url); showTicker('Link copied: it opens this pond just as it is right now'); }
+    else { await navigator.clipboard.writeText(url); showTicker(note); }
   } catch {
-    prompt('Copy this link to share your pond as it is now:', url);
+    prompt('Copy this link to share your pond:', url);
   }
 }
 $('share').addEventListener('click', sharePond);
@@ -885,6 +962,31 @@ $('snapshot').addEventListener('click', () => {
 // ---- saving: autosave, your ponds, and the pond link ----------------------------------
 
 let saveTimer = 4, statusTimer = 0, lastSaved = 0, saveFailed = false; // first save soon after load
+let syncTimer = 30, boardTimer = 3, syncing = false;
+
+// Keep the server's copy behind the short link up to date. A pond without a link
+// gets one once it has earned enough points to join the leaderboard.
+async function syncPond(force = false) {
+  if (syncing || world.noSave || !world.raster || !world.game || !Net.base) return false;
+  if (!world.link && !force && !(world.game.board && world.game.points >= BOARD_MIN)) return false;
+  syncing = true;
+  try {
+    const had = !!world.link, finds = world.game.finds.length;
+    await pushPond(world);
+    saveNow();
+    if (!had || finds) refreshBoard();
+    if (!had) logEvent(world, `Your pond joined the leaderboard: ${world.link.id}`, null, { cat: 'pond', pri: 2 });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    syncing = false;
+  }
+}
+
+async function refreshBoard() {
+  try { await fetchBoard(); renderScorePanel(true); } catch { /* offline: the pond carries on */ }
+}
 
 function saveNow() {
   if (world.noSave || !world.raster) return;
@@ -917,13 +1019,13 @@ function updateSaveStatus() {
 function openPond(seed) {
   if (seed !== world.seed) saveNow();
   world.noSave = true; // don't let the page-hide save overwrite what we're opening
-  location.assign(`${location.pathname}?pond=${encodeURIComponent(seed)}`);
+  location.assign(`${HOME}?pond=${encodeURIComponent(seed)}`);
 }
 
 function renderPondList() {
   const list = listSaves().filter((s) => s.seed !== world.seed);
   const here = {
-    seed: world.seed, habitat: world.opts.habitat, days: world.days, current: true,
+    seed: world.seed, habitat: world.opts.habitat, days: world.days, current: true, points: world.game.points, link: world.link && world.link.id,
     animals: world.creatures.filter((c) => c.life).length, rares: world.creatures.filter((c) => c.life && c.life.traits.length).length,
   };
   $('pond-list').replaceChildren(...[here, ...list].map((s) => {
@@ -933,9 +1035,11 @@ function renderPondList() {
     open.className = 'pond-open';
     name.textContent = s.seed;
     meta.textContent = [HABITATS[s.habitat] || '', `day ${Math.floor(s.days) + 1}`, `${s.animals} animals`, s.rares && `✦ ${s.rares}`,
-      s.current ? 'open now' : ago(Date.now() - s.savedAt)].filter(Boolean).join(' · ');
+      s.points && `★ ${s.points.toLocaleString()}`, s.current ? 'open now' : ago(Date.now() - s.savedAt)].filter(Boolean).join(' · ');
+    if (s.link) open.title = `pond.nz/${s.link}`;
     open.append(name, meta);
     open.title = s.current ? 'The pond you are watching' : `Open ${s.seed}`;
+    if (s.current && s.link) open.title = `The pond you are watching · ${location.host || 'pond.nz'}/${s.link}`;
     if (!s.current) open.addEventListener('click', () => openPond(s.seed));
     li.append(open);
     if (!s.current) {
@@ -958,16 +1062,21 @@ function renderPondList() {
 
 $('ponds').addEventListener('toggle', () => { if ($('ponds').open) renderPondList(); });
 
-// The address bar always holds a link to the pond as it is now: the seed and
-// settings in the query (enough to regrow it on day 1 if the rest is lost), and
-// the whole living pond in the #fragment, which never reaches the server.
+// The address bar always holds a link to the pond. With a short link that's
+// all it needs (/amber-heron-moss-lantern). Otherwise: the seed and settings in
+// the query (enough to regrow it on day 1 if the rest is lost), and the whole
+// living pond in the #fragment, which never reaches the server.
 let linkBusy = false;
 async function updateLink(force = false) {
   if ((linkBusy && !force) || world.noSave || !world.raster) return;
+  if (world.link && world.link.id && HOME === '/') {
+    if (location.pathname !== `/${world.link.id}` || location.search || location.hash) history.replaceState(null, '', `/${world.link.id}`);
+    return;
+  }
   linkBusy = true;
   try {
     const code = await encodePond(world);
-    history.replaceState(null, '', `${location.pathname}${new URL(shareUrl()).search}#s=${code}`);
+    history.replaceState(null, '', `${HOME}${new URL(shareUrl()).search}#s=${code}`);
   } catch {
     /* keep the previous link */
   } finally {
@@ -975,7 +1084,7 @@ async function updateLink(force = false) {
   }
 }
 
-addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
+addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { saveNow(); syncPond(); } });
 addEventListener('pagehide', saveNow);
 
 const PAN_KEYS = { arrowleft: [1, 0], arrowright: [-1, 0], arrowup: [0, 1], arrowdown: [0, -1], a: [1, 0], d: [-1, 0], w: [0, 1], s: [0, -1] };
@@ -999,6 +1108,7 @@ addEventListener('keydown', (e) => {
   else if (e.key === 'f' || e.key === 'F') { if (world.hover) follow(world.hover); else stopFollow(); }
   else if (e.key === 't' || e.key === 'T') $('tour').click();
   else if (e.key === 'm' || e.key === 'M') $('sound').click();
+  else if (e.key === 'p' || e.key === 'P') setScore(!scoreUi.open);
   else if (e.key === 'Escape') stopFollow();
 });
 
@@ -1012,21 +1122,31 @@ function syncControls() {
 }
 
 // Which pond opens:
-//  - a pond link (#s=...): that pond as it was when the link was made. If it's
-//    an older copy of your own pond, your newer save wins; if you already have a
-//    different pond with that name, you're asked first.
+//  - a short link (/amber-heron-moss-lantern) or a long pond link (#s=...):
+//    that pond. If it's your own pond, the newer copy wins; if you already have
+//    a different pond with that name, you're asked first. Anyone else's pond
+//    becomes your own copy, with its own score.
 //  - ?pond=<name> you have saved: yours. One you don't have starts on day 1.
 //  - no link: the pond you last had open, or a brand-new one.
 async function boot() {
   setTool('feed');
   initHud();
   const code = (/(?:^#|&)s=([A-Za-z0-9._-]+)/.exec(location.hash) || [])[1];
-  const linked = code ? await decodePond(code) : null;
+  const pathId = HOME === '/' && SHORT_ID.test(location.pathname.slice(1)) ? location.pathname.slice(1) : null;
+  let linked = code ? await decodePond(code) : null, shortId = null;
+  if (!linked && pathId) {
+    const got = await fetchPond(pathId);
+    if (got) { linked = got.save; shortId = pathId; }
+  }
   let resume = null, adopt = false;
   if (linked) {
     const mine = loadSave(linked.seed);
-    if (mine && mine.inst === linked.inst) {
-      resume = mine.days >= linked.days - 0.001 ? mine : linked; // the copy that has lived longer
+    if (mine && ((shortId && mine.link && mine.link.id === shortId) || mine.inst === linked.inst)) {
+      // Your own pond: the copy that has lived longer, keeping your link, score and family trees.
+      resume = mine.days >= linked.days - 0.001 ? mine : {
+        ...linked, link: mine.link, lineage: linked.lineage && linked.lineage.length ? linked.lineage : mine.lineage,
+        game: { ...(mine.game || {}), ...(linked.game && linked.game.points >= ((mine.game && mine.game.points) || 0) ? linked.game : {}) },
+      };
     } else if (mine && !confirm(`This link opens the pond "${linked.seed}" on day ${Math.floor(linked.days) + 1}. ` +
         `You already have a different pond by that name here (day ${Math.floor(mine.days) + 1}). Open the link's version? Yours will be replaced.`)) {
       resume = mine;
@@ -1051,9 +1171,11 @@ async function boot() {
   layout(true);
   world.linkAdopt = false;
   if (code && !linked) showTicker("That pond link couldn't be read, so this is its pond from day 1");
+  if (pathId && !linked) showTicker(`No pond called ${pathId} was found (links unused for half a year are cleared), so here is yours`);
   if (innerWidth < 600) setHud(false); // on phones the pond comes first; ☰ opens the panel
   const keepHash = /(?:^#|&)s=/.test(location.hash) ? '' : location.hash;
-  history.replaceState(null, '', `${new URL(shareUrl()).search}${keepHash}`);
+  if (world.link && HOME === '/') history.replaceState(null, '', `/${world.link.id}${keepHash}`);
+  else history.replaceState(null, '', `${HOME}${new URL(shareUrl()).search}${keepHash}`);
   if (location.hash === '#bones') setBones(true);
   requestAnimationFrame(frame);
 }

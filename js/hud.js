@@ -1,7 +1,8 @@
 'use strict';
-// On-screen HUD pieces outside the menu: the animal dock with its census, the
-// journal, and the sky tracker. Loaded before main.js; main calls initHud()
-// once, then hudTick() and updateSkyHud() every frame.
+// On-screen HUD pieces outside the menu: the animal dock with its census and
+// family trees, the journal, the sky tracker, and the score with the
+// leaderboard. Loaded before main.js; main calls initHud() once, then hudTick()
+// and updateSkyHud() every frame.
 
 const byId = (id) => document.getElementById(id);
 const clockLabel = (c) => `${String(Math.floor(c * 24)).padStart(2, '0')}:${String(Math.floor((c * 24 % 1) * 60)).padStart(2, '0')}`;
@@ -136,7 +137,7 @@ function iconImg(icon, box = ICON_CSS) {
   return img;
 }
 
-// ---- dock: one button per species, click to add ------------------------------------------
+// ---- dock: one button per species; click to buy one, hover for its family tree -----------
 
 const DOCK_KINDS = Object.keys(SPECIES);
 
@@ -147,28 +148,153 @@ function buildDock() {
     b.type = 'button';
     b.className = 'ani';
     b.dataset.spawn = kind;
-    b.setAttribute('aria-label', `Add ${SPECIES[kind].label.toLowerCase()}`);
+    b.setAttribute('aria-label', `Add ${SPECIES[kind].label.toLowerCase()} for ${ANIMAL_PRICE[kind]} pearls`);
     b.append(iconImg(speciesIcon(kind)), Object.assign(document.createElement('b'), { textContent: '0' }));
-    b.addEventListener('click', () => spawn(kind));
+    b.addEventListener('click', () => { buyAnimal(kind); if (lineUi.kind === kind) renderLineage(); });
+    b.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') showLineage(kind, b); });
+    b.addEventListener('pointerleave', hideLineage);
+    b.addEventListener('focus', () => showLineage(kind, b));
+    b.addEventListener('blur', hideLineage);
     box.append(b);
   }
 }
 
 function updateCounts() {
-  const n = {};
+  const n = {}, pearls = world.game ? world.game.pearls : 0;
   let total = 0;
   for (const c of world.creatures) {
     n[c.species] = (n[c.species] || 0) + 1;
     if (c.life) total++;
   }
   for (const b of document.querySelectorAll('#animals [data-spawn]')) {
-    const k = n[b.dataset.spawn] || 0, el = b.lastChild;
+    const kind = b.dataset.spawn, k = n[kind] || 0, el = b.lastChild, price = ANIMAL_PRICE[kind];
+    b.classList.toggle('poor', pearls < price);
     if (el.textContent === String(k)) continue;
     el.textContent = k;
     b.classList.toggle('none', !k);
-    b.title = `${SPECIES[b.dataset.spawn].label}: ${k} in the pond. Click to add more.`;
+    b.title = `${SPECIES[kind].label}: ${k} in the pond. Click to add more for ${price} pearls.`;
   }
   byId('census-count').textContent = total;
+}
+
+// ---- family trees: hover a dock icon ------------------------------------------------------------
+// Every animal of the species that has lived here (lineage records, game.js):
+// a tree with each generation on its own row and lines to the parents, then the
+// animals themselves, those here now first, by points.
+
+const lineUi = { kind: null, anchor: null, timer: 0 };
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function showLineage(kind, anchor) {
+  lineUi.kind = kind;
+  lineUi.anchor = anchor;
+  lineUi.timer = 0;
+  renderLineage();
+}
+
+function hideLineage() {
+  lineUi.kind = null;
+  byId('lineage').hidden = true;
+}
+
+function svgEl(tag, attrs) {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+}
+
+function lineageTree(nodes, isHere) {
+  const W = 300, gens = [...new Set(nodes.map((r) => r.g))].sort((a, b) => a - b).slice(-7);
+  const rows = gens.map((g) => nodes.filter((r) => r.g === g).sort((a, b) => (a.b ?? 0) - (b.b ?? 0) || a.s - b.s));
+  const ROW = 30, H = rows.length * ROW + 4, pos = new Map();
+  rows.forEach((row, j) => {
+    const step = Math.min(26, (W - 48) / Math.max(1, row.length - 1));
+    row.forEach((r, i) => pos.set(r.s, [Math.round(44 + (W - 48) / 2 + (i - (row.length - 1) / 2) * step), 14 + j * ROW]));
+  });
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, 'shape-rendering': 'crispEdges', 'aria-hidden': 'true' });
+  rows.forEach((row, j) => {
+    const t = svgEl('text', { x: 2, y: 17 + j * ROW, class: 'gen' });
+    t.textContent = `gen ${gens[j]}`;
+    svg.append(t);
+  });
+  // Elbow lines: down from each parent, across, and down into the child.
+  for (const r of nodes) {
+    const b = pos.get(r.s);
+    for (const p of r.p || []) {
+      const a = pos.get(p);
+      if (!a || !b) continue;
+      const mid = Math.round((a[1] + b[1]) / 2) + 0.5;
+      svg.append(svgEl('path', { d: `M${a[0] + 0.5} ${a[1] + 6}V${mid}H${b[0] + 0.5}V${b[1] - 6}`, class: isHere(r) ? 'edge' : 'edge old' }));
+    }
+  }
+  for (const r of nodes) {
+    const at = pos.get(r.s);
+    if (!at) continue;
+    const tier = tierOf(r.t || []), s = tier >= 3 ? 11 : 9;
+    svg.append(svgEl('rect', {
+      x: at[0] - s / 2, y: at[1] - s / 2, width: s, height: s, fill: r.c,
+      stroke: tier ? TIER_COLOR[tier] : '#0b1a22', 'stroke-width': tier ? 2 : 1, opacity: isHere(r) ? 1 : 0.4,
+    }));
+  }
+  return svg;
+}
+
+function renderLineage() {
+  const kind = lineUi.kind, box = byId('lineage');
+  if (!kind || census.open || !world.lineage) { box.hidden = true; return; }
+  const inKind = (r) => r.k === kind || (kind === 'frog' && r.k === 'tadpole');
+  const recs = [...world.lineage.values()].filter(inKind);
+  const here = new Set(world.creatures.filter((c) => c.life && !c.leaving).map((c) => c.seed));
+  const isHere = (r) => r.d == null && here.has(r.s);
+  const alive = recs.filter(isHere).sort((a, b) => b.pts - a.pts || (a.b ?? 0) - (b.b ?? 0));
+  const gone = recs.filter((r) => !isHere(r)).sort((a, b) => (b.d ?? 0) - (a.d ?? 0));
+  const best = recs.reduce((m, r) => Math.max(m, tierOf(r.t || [])), 0);
+  const likes = LIKES[kind], price = ANIMAL_PRICE[kind];
+
+  const head = el('div', 'line-head');
+  head.append(el('b', null, SPECIES[kind].label), el('span', null, [`${alive.length} here`, `${recs.length} known`, best && `best ${TIERS[best]}`].filter(Boolean).join(' · ')));
+  const sub = el('p', 'note', [`Click to add: ${price} pearls`, likes && `likes ${likes.map((k) => LIKE_LABEL[k]).join(', ')}`].filter(Boolean).join(' · '));
+  const parts = [head, sub];
+
+  if (recs.length) {
+    // The tree: those here now and the recently gone, plus their ancestors so families connect.
+    const pick = new Map();
+    for (const r of [...alive.slice(0, 20), ...gone.slice(0, 8)]) pick.set(r.s, r);
+    let frontier = [...pick.values()];
+    for (let depth = 0; depth < 4 && pick.size < 44; depth++) {
+      const next = [];
+      for (const r of frontier) {
+        for (const p of r.p || []) {
+          const pr = world.lineage.get(p);
+          if (pr && !pick.has(p) && pick.size < 44) { pick.set(p, pr); next.push(pr); }
+        }
+      }
+      frontier = next;
+    }
+    const nodes = [...pick.values()];
+    if (nodes.some((r) => r.p)) parts.push(lineageTree(nodes, isHere));
+    else parts.push(el('p', 'note', 'No families yet: well-fed adults that meet a mate lay eggs, and the tree grows from there.'));
+
+    const ul = el('ol', 'line-list');
+    for (const r of [...alive, ...gone].slice(0, 8)) {
+      const tier = tierOf(r.t || []), li = el('li', isHere(r) ? '' : 'gone'), sw = el('i');
+      sw.style.background = r.c;
+      const name = el('b', null, r.n), tr = el('span', 'tr', tier ? `${TIERS[tier]} ${r.t.join(' ')}` : '');
+      if (tier) tr.style.color = TIER_COLOR[tier];
+      const sp = r.w != null && WILD_SPECIES[r.w] ? `${WILD_SPECIES[r.w].name} · ` : '';
+      const status = isHere(r) ? 'here' : r.d != null ? `left day ${Math.floor(r.d) + 1}${r.why ? ` (${r.why})` : ''}` : 'gone';
+      li.append(sw, name, tr, el('span', 'mt', `${sp}gen ${r.g} · ${r.pts ? `+${r.pts}` : '0'} pts · ${status}`));
+      ul.append(li);
+    }
+    parts.push(ul);
+  } else {
+    parts.push(el('p', 'note', 'None have lived here yet.'));
+  }
+  box.replaceChildren(...parts);
+  box.hidden = false;
+  const bar = byId('animals').getBoundingClientRect(), a = lineUi.anchor.getBoundingClientRect(), w = box.offsetWidth;
+  box.style.left = `${Math.round(clamp(a.left + a.width / 2 - w / 2, 8, innerWidth - w - 8))}px`;
+  box.style.bottom = `${Math.round(innerHeight - bar.top + 14)}px`;
 }
 
 // ---- census: details about the animals in the pond ------------------------------------------
@@ -245,7 +371,7 @@ function renderCensus() {
         b.type = 'button';
         b.title = 'Follow';
         b.append(el('b', null, c.life.name), el('span', 'sub', `${d.label === SPECIES[kind]?.label ? '' : `${d.label} · `}${d.stage} · gen ${d.gen} · ${ageLabel(d.age)}`),
-          energyBar(d.energy), el('span', 'mood', [d.traits.length && `✦ ${d.traits.join(' ')}`, d.mood].filter(Boolean).join(' · ')));
+          energyBar(d.energy), el('span', 'mood', [d.traits.length && `✦ ${TIERS[d.tier]} ${d.traits.join(' ')}`, d.mood, comfortWord(d.comfort), d.fed && 'well fed'].filter(Boolean).join(' · ')));
         b.addEventListener('click', () => { if (alive(c)) follow(c); });
         m.append(b);
         ul.append(m);
@@ -447,6 +573,7 @@ function drawSkyIcon(cv, kind, age, rain) {
 }
 
 function setSky(open) {
+  if (open && scoreUi.open) setScore(false);
   skyUi.open = open;
   byId('sky-panel').hidden = !open;
   byId('sky-btn').setAttribute('aria-expanded', open);
@@ -489,6 +616,131 @@ function updateSkyPanel() {
   byId('surf-text').textContent = surfText;
 }
 
+// ---- score: points, pearls, the leaderboard and rare finds everywhere -----------------------------
+
+const scoreUi = { open: false, timer: 0, shown: '', boardAt: -1 };
+const fmt = (n) => Math.round(n).toLocaleString('en-US');
+const findLabel = (f) => `${f.traits.join(' ')} ${f.species === 'wild' ? 'wild fish' : SINGULAR[f.species] || f.species}`;
+
+function setScore(open) {
+  scoreUi.open = open;
+  byId('score-panel').hidden = !open;
+  byId('score-btn').setAttribute('aria-expanded', open);
+  if (open) {
+    setSky(false);
+    renderScorePanel(true);
+    if (!Net.board || Date.now() - (Net.board.at || 0) > 60000) refreshBoard();
+  }
+}
+
+function restartAnim(e, cls) {
+  e.classList.remove(cls);
+  void e.offsetWidth;
+  e.classList.add(cls);
+}
+const flashPearls = () => restartAnim(byId('score-btn'), 'poor');
+
+function updateScoreHud() {
+  const G = world.game;
+  if (!G) return;
+  const key = `${G.points}|${G.pearls}`;
+  if (key === scoreUi.shown) return;
+  const was = scoreUi.shown ? +scoreUi.shown.split('|')[0] : null;
+  scoreUi.shown = key;
+  byId('score-points').textContent = fmt(G.points);
+  byId('score-pearls').textContent = fmt(G.pearls);
+  if (was != null && G.points > was) restartAnim(byId('score-btn'), 'bump');
+}
+
+// "+15" drifting up from where the points were earned (or "−8" where pearls were spent).
+let floats = 0;
+function floatAward(x, y, text, kind = 'gain') {
+  if (floats >= 8 || document.hidden) return;
+  const sx = x * view.k + view.tx, sy = y * view.k + view.ty;
+  if (sx < 0 || sy < 0 || sx > innerWidth || sy > innerHeight) return;
+  const f = el('span', `float-pts ${kind}`, text);
+  f.style.left = `${Math.round(sx)}px`;
+  f.style.top = `${Math.round(sy - 12)}px`;
+  document.body.append(f);
+  floats++;
+  f.addEventListener('animationend', () => { f.remove(); floats--; });
+}
+
+function visitPond(id) {
+  if (world.link && id === world.link.id) return;
+  if (!confirm(`Visit the pond ${id}? You get your own copy of it to watch and breed from. Your pond stays saved in "Your ponds".`)) return;
+  saveNow();
+  world.noSave = true;
+  location.assign(`/${id}`);
+}
+
+function renderScorePanel(force = false) {
+  if (!scoreUi.open || !world.game) return;
+  const G = world.game, plan = fireflyPlan(world);
+  byId('sp-points').textContent = fmt(G.points);
+  byId('sp-pearls').textContent = fmt(G.pearls);
+  byId('sp-rank').textContent = world.link && G.board && Net.rank ? `#${Net.rank}` : '–';
+  byId('sp-rank-note').textContent = !Net.base ? 'offline' : !G.board ? 'not listed'
+    : world.link ? `rank${Net.board && Net.board.ponds ? ` of ${fmt(Net.board.ponds)}` : ''}` : `listed at ${BOARD_MIN} pts`;
+  byId('sp-flies').textContent = `Tonight: ${plan.yellow} of ${plan.full} fireflies${plan.blue ? ` and ${plan.blue} blue` : ''}. ` +
+    `A full swarm is the high-score range, ${fmt(plan.high)}+ points${plan.blue ? '.' : '; blue fireflies come once you reach it.'}`;
+  byId('sp-best').textContent = G.best ? `Best find: ${TIERS[G.best.tier]} ${findLabel(G.best)}${G.best.name ? `, ${G.best.name}` : ''}` : '';
+  byId('sp-recent').replaceChildren(...(G.recent.length ? G.recent.slice(0, 6).map((r) => {
+    const li = el('li');
+    li.append(el('b', null, `+${fmt(r.n)}`), el('span', null, r.why), el('time', null, `D${r.day} ${clockLabel(r.clock)}`));
+    return li;
+  }) : [el('li', 'empty', 'Nothing yet: births, rare animals and each dawn pay points.')]));
+  byId('sp-join').checked = !!G.board;
+
+  const b = Net.board;
+  if (!force && (!b || b.at === scoreUi.boardAt)) return;
+  scoreUi.boardAt = b ? b.at : -1;
+  const mine = world.link && world.link.id;
+  if (!b || !b.top) {
+    byId('sp-board').replaceChildren(el('li', 'empty', Net.base ? 'Loading the leaderboard…' : 'The leaderboard needs pond.nz; this copy runs offline.'));
+    byId('sp-finds').replaceChildren();
+    return;
+  }
+  const rows = b.top.map((p, i) => {
+    const li = el('li', p.id === mine ? 'me' : ''), btn = el('button', 'board-row');
+    btn.type = 'button';
+    btn.title = p.id === mine ? 'Your pond' : `Visit ${p.id}`;
+    btn.append(el('span', 'rk', `#${i + 1}`), el('b', null, p.id), el('span', 'pt', fmt(p.points)),
+      el('span', 'mt', [p.best && `${TIERS[p.best.tier]} ${findLabel(p.best)}`, `${p.animals} animals`, `day ${Math.floor(p.days) + 1}`].filter(Boolean).join(' · ')));
+    if (p.best) btn.querySelector('.mt').style.color = TIER_COLOR[p.best.tier];
+    btn.addEventListener('click', () => visitPond(p.id));
+    li.append(btn);
+    return li;
+  });
+  if (mine && Net.rank && !b.top.some((p) => p.id === mine)) {
+    const li = el('li', 'me'), row = el('div', 'board-row');
+    row.append(el('span', 'rk', `#${Net.rank}`), el('b', null, mine), el('span', 'pt', fmt(G.points)), el('span', 'mt', 'your pond'));
+    li.append(row);
+    rows.push(li);
+  }
+  byId('sp-board').replaceChildren(...(rows.length ? rows : [el('li', 'empty', 'No ponds yet. Yours could be first.')]));
+  if (!(b.finds || []).length) { byId('sp-finds').replaceChildren(el('li', 'empty', 'None yet. Rare, Epic and better animals from every pond show up here.')); return; }
+  // Repeats from one pond (a clutch of the same rare) fold into one line.
+  const finds = [];
+  for (const f of b.finds) {
+    const prev = finds[finds.length - 1];
+    if (prev && prev.pond === f.pond && prev.species === f.species && prev.how === f.how && prev.traits.join() === f.traits.join()) prev.n++;
+    else finds.push({ ...f, n: 1 });
+  }
+  byId('sp-finds').replaceChildren(...finds.slice(0, 10).map((f) => {
+    const li = el('li'), btn = el('button', 'find-row'), dot = el('i');
+    btn.type = 'button';
+    dot.style.background = TIER_COLOR[f.tier];
+    const what = el('b', null, `${TIERS[f.tier]} ${findLabel(f)}${f.n > 1 ? ` ×${f.n}` : ''}`);
+    what.style.color = TIER_COLOR[f.tier];
+    btn.append(dot, what, el('span', 'mt', `${f.how} in ${f.pond} · ${ago(Date.now() - f.at)}`));
+    btn.title = `Visit ${f.pond}`;
+    btn.addEventListener('click', () => visitPond(f.pond));
+    li.append(btn);
+    return li;
+  }));
+}
+
 // ---- wiring ------------------------------------------------------------------------------------
 
 function initHud() {
@@ -499,11 +751,19 @@ function initHud() {
   byId('sky-btn').addEventListener('click', () => setSky(!skyUi.open));
   byId('census-close').addEventListener('click', () => setCensus(false));
   byId('log-close').addEventListener('click', () => setJournal(false));
+  byId('score-btn').addEventListener('click', () => setScore(!scoreUi.open));
+  byId('score-close').addEventListener('click', () => setScore(false));
+  byId('sp-join').addEventListener('change', (e) => {
+    world.game.board = e.target.checked;
+    world.gameDirty = true;
+    showTicker(e.target.checked ? 'Your pond will show on the leaderboard' : 'Your pond is off the leaderboard');
+    syncPond(e.target.checked && world.game.points >= BOARD_MIN);
+  });
   addEventListener('keydown', (e) => {
     if (e.target.closest && e.target.closest('select, input')) return;
     if (e.key === 'j' || e.key === 'J') setJournal(!journalUi.open);
     else if (e.key === 'c' || e.key === 'C') setCensus(!census.open);
-    else if (e.key === 'Escape') { setJournal(false); setCensus(false); setSky(false); }
+    else if (e.key === 'Escape') { setJournal(false); setCensus(false); setSky(false); setScore(false); }
   });
 }
 
@@ -516,4 +776,8 @@ function hudTick(dt) {
   renderJournal();
   skyUi.timer -= dt;
   if (skyUi.open && skyUi.timer <= 0) { skyUi.timer = 0.25; updateSkyPanel(); }
+  scoreUi.timer -= dt;
+  if (scoreUi.timer <= 0) { scoreUi.timer = 0.4; updateScoreHud(); renderScorePanel(); }
+  lineUi.timer -= dt;
+  if (lineUi.kind && lineUi.timer <= 0) { lineUi.timer = 1; renderLineage(); }
 }

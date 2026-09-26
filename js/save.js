@@ -2,8 +2,10 @@
 // Saving and resuming ponds. A save holds the whole living pond: time, moon,
 // tide and weather; the scenery (rocks, pebbles, plants, where the beach is);
 // every animal (its build seed plus genes, name, age, energy and generation);
-// eggs, schools, discovered wild species, population targets and the journal.
-// Saves live in localStorage, one per pond seed; link.js packs the same pond into a URL.
+// eggs, schools, discovered wild species, population targets and the journal;
+// the score and family trees (game.js), and the pond's short link if it has one.
+// Saves live in localStorage, one per pond seed; link.js packs the same pond into
+// a URL, and net.js keeps a copy on the server behind a short link.
 // Ambient things (plankton, ripples, fireflies, gnats) simply regrow.
 
 const SAVE_VERSION = 1;
@@ -55,7 +57,7 @@ function storeSave(d) {
     }
   }
   list.unshift({
-    seed: d.seed, habitat: d.opts.habitat, days: d.days, savedAt: d.savedAt,
+    seed: d.seed, habitat: d.opts.habitat, days: d.days, savedAt: d.savedAt, points: d.game ? d.game.points : 0, link: d.link ? d.link.id : null,
     animals: d.creatures.length, rares: d.creatures.filter((c) => c.L.traits && c.L.traits.length).length,
   });
   localStorage.setItem(SAVE_INDEX, JSON.stringify(list));
@@ -98,6 +100,7 @@ function serializePond(world) {
     weather: { rain: r2(world.weather.rain), target: r2(world.weather.target), next: r2(world.weather.next) },
     currentBase: world.current.base, records: world.records, spawnNight: world.spawnNight,
     targets: world.targets, eco: { ...ECO }, journalSeq: world.journalSeq,
+    game: world.game, lineage: world.lineage ? [...world.lineage.values()] : [], link: world.link || null,
     wild: WILD_SPECIES,
     rocks: world.rocks.map((r) => ({ x: r2(r.x), y: r2(r.y), a: r2(r.a), b: r2(r.b), ang: r2(r.ang), h: r2(r.h), m: ROCK_MATS.indexOf(r.m), seed: r.seed, oi: r.oi })),
     pebbles: world.pebbles.map((p) => [r2(p.x), r2(p.y), r2(p.s), PEBBLE_MATS.indexOf(p.m)]),
@@ -106,7 +109,7 @@ function serializePond(world) {
       k: c.make, s: c.seed, sn: c.sn, x: r2(c.x), y: r2(c.y), h: r2(c.heading), z: r2(c.z || 0), a: args(c.args),
       st: c.state === 'sit' ? 'sit' : undefined,
       L: {
-        name: c.life.name, age: r2(c.life.age), energy: r2(c.life.energy), cooldown: r2(c.life.cooldown),
+        name: c.life.name, age: r2(c.life.age), energy: r2(c.life.energy), cooldown: r2(c.life.cooldown), fed: r2(c.life.fed || 0), comfort: r2(c.life.comfort ?? 0.5),
         lifespan: r2(c.life.lifespan), gen: c.life.gen, scale: c.life.scale, old: !!c.life.old,
         genome: c.life.genome, traits: c.life.traits, parents: c.life.parents,
       },
@@ -147,6 +150,8 @@ function restorePond(world, d) {
     t: d.t || 0, days: d.days, moon0: d.moon0, tide0: d.tide0, shoreSide: d.shoreSide,
     records: d.records || null, spawnNight: d.spawnNight ?? -1, targets: d.targets || {}, journalSeq: d.journalSeq || 0,
     inst: d.inst || newInst(), removed: d.removed || { plants: [], pads: [], rocks: [] },
+    game: { ...newGame(), ...(d.game || {}) }, link: d.link && d.link.id ? { ...d.link } : null,
+    lineage: new Map((d.lineage || []).filter((r) => r && r.s != null).map((r) => [r.s, r])),
   });
   world.clock = ((world.days % 1) + 1) % 1;
   Object.assign(world.weather, d.weather || {});
@@ -182,7 +187,10 @@ function restorePond(world, d) {
     const c = makeCreature(r.k, world, r.x, r.y, a, r.s);
     placeRestored(c, r);
     initLife(c, { genome: r.L.genome, gen: r.L.gen, scale: r.L.scale, age: r.L.age, alpha: 1 });
-    Object.assign(c.life, { name: r.L.name, energy: r.L.energy, cooldown: r.L.cooldown, lifespan: r.L.lifespan, old: r.L.old, parents: r.L.parents || null });
+    Object.assign(c.life, {
+      name: r.L.name, energy: r.L.energy, cooldown: r.L.cooldown, lifespan: r.L.lifespan, old: r.L.old, parents: r.L.parents || null,
+      fed: r.L.fed || 0, comfort: r.L.comfort ?? 0.5,
+    });
     c.sn = r.sn ?? null;
     return c;
   });
@@ -192,6 +200,7 @@ function restorePond(world, d) {
   });
   world.creatures = made.filter(Boolean);
   world.spawnCount = d.spawnCount ?? world.creatures.reduce((n, c) => Math.max(n, (c.sn ?? -1) + 1), 0);
+  seedLineage(world); // anyone missing from the family trees (older saves, links)
 
   world.eggs = [];
   for (const e of d.eggs || []) {

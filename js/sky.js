@@ -88,7 +88,8 @@ function updateCoralSpawning(world, dt, m) {
     if (corals.length) {
       world.spawnNight = night;
       world.spawning = 30;
-      logEvent(world, 'Under the full moon, the corals are spawning', null, { cat: 'life', pri: 2 });
+      const pts = award(world, 20, 'coral spawning');
+      logEvent(world, `Under the full moon, the corals are spawning${pts ? ` · +${pts}` : ''}`, null, { cat: 'life', pri: 2 });
     }
   }
   if (world.spawning > 0) {

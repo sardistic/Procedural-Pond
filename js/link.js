@@ -151,9 +151,11 @@ function packPond(world) {
     if (hasParents) { w.vu(i - par[0]); w.vu(i - par[1]); } else w.vu(L.gen);
     if (explicit) {
       for (const k of GENE_KEYS) w.u8(q8(g[k], ...GENE_LIMITS[k]));
-      w.u8((g.albino || 0) | ((g.melanistic || 0) << 2) | ((g.piebald || 0) << 4) | (g.shiny ? 64 : 0));
+      const g2 = (g.xanthic || 0) | ((g.axanthic || 0) << 2) | (g.glow ? 16 : 0) | (g.ghost ? 32 : 0);
+      w.u8((g.albino || 0) | ((g.melanistic || 0) << 2) | ((g.piebald || 0) << 4) | (g.shiny ? 64 : 0) | (g2 ? 128 : 0));
       if (g.shiny) w.u8(clamp(Math.round(g.shinyHue), 0, 255));
       if (g.piebald === 2) w.u16(g.seed || 0);
+      if (g2) w.u8(g2); // genes added later: xanthic, axanthic, glow, ghost
     }
     if (!numbered) w.vu(c.seed);
     if (hasName) w.str(L.name);
@@ -163,6 +165,9 @@ function packPond(world) {
   const lines = world.journal.slice(0, LINK_JOURNAL);
   w.u8(lines.length);
   for (const e of lines) { w.u8(Math.max(0, CAT_CODES.indexOf(e.cat))); w.vu(e.day); w.u8(q8(e.clock, 0, 1)); w.str(e.text.slice(0, 100)); }
+  // Added later, at the end so older links simply stop before it: the score.
+  const G = world.game;
+  if (G) { w.vu(G.points); w.vu(G.pearls); w.u8(G.board ? 1 : 0); }
   return w.bytes();
 }
 
@@ -229,6 +234,7 @@ function unpackV2(r) {
       Object.assign(g, { albino: t & 3, melanistic: (t >> 2) & 3, piebald: (t >> 4) & 3, shiny: !!(t & 64) });
       g.shinyHue = g.shiny ? r.u8() : rand(100, 240);
       g.seed = g.piebald === 2 ? r.u16() : randi(0, 9999);
+      if (t & 128) { const x = r.u8(); Object.assign(g, { xanthic: x & 3, axanthic: (x >> 2) & 3, glow: !!(x & 16), ghost: !!(x & 32) }); }
     }
     const seed = numbered ? seedFor(base, sn) : r.vu();
     if (extra & 2) L.name = r.str();
@@ -246,6 +252,7 @@ function unpackV2(r) {
   }
   s.journal = [];
   for (let n = r.u8(); n > 0; n--) s.journal.push({ cat: CAT_CODES[r.u8()] || 'pond', day: r.vu(), clock: r.u8() / 255, text: r.str() });
+  if (r.i < r.b.length) s.game = { points: r.vu(), pearls: r.vu(), board: !!r.u8() };
   return s;
 }
 
@@ -335,7 +342,7 @@ function linkToSave(s) {
     opts: { habitat: s.habitat, floor: s.floor, water: s.water, world: s.world },
     size: [s.W, s.H], shoreSide: tmp.shoreSide,
     t: s.t, days: s.days, moon0: s.moon0, tide0: s.tide0, weather: s.weather, currentBase: s.currentBase,
-    records: s.records, spawnNight: s.spawnNight, targets, eco: s.eco, journalSeq: s.journal.length, wild,
+    records: s.records, spawnNight: s.spawnNight, targets, eco: s.eco, journalSeq: s.journal.length, wild, game: s.game || null,
     rocks: [
       ...keep(tmp.rocks, 'rocks').map((r) => ({ x: r.x, y: r.y, a: r.a, b: r.b, ang: r.ang, h: r.h, m: ROCK_MATS.indexOf(r.m), seed: r.seed, oi: r.oi })),
       ...s.addedRocks,

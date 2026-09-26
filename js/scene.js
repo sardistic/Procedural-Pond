@@ -193,10 +193,15 @@ function makeDecor(r, outline) {
 
 // ---- food -------------------------------------------------------------------------
 
+// Food you drop (pellets, spirulina flakes, brine shrimp) sinks and waits on the
+// floor; plankton and coral spawn drift. See FOOD_FED in life.js for what each does.
+const FED_FOODS = new Set(['pellet', 'spirulina', 'brine']);
+
 class Food {
   constructor(x, y, z = 40, kind = 'pellet') {
     this.x = x; this.y = y; this.z = z; this.kind = kind;
-    this.life = kind === 'pellet' ? 25 : rand(40, 70);
+    this.fed = FED_FOODS.has(kind);
+    this.life = this.fed ? 25 : rand(40, 70);
     this.eaten = false;
     this.ph = rand(0, TAU);
   }
@@ -213,8 +218,12 @@ class Food {
       if (this.life <= 0) this.eaten = true;
       return;
     }
+    if (this.kind === 'brine') { // live brine shrimp swim in little jerks as they sink
+      this.x = clamp(this.x + Math.sin(world.t * 9 + this.ph * 5) * 2.5 * dt, 1, world.W - 1);
+      this.y = clamp(this.y + Math.cos(world.t * 7 + this.ph * 3) * 2.5 * dt, 1, world.H - 1);
+    }
     if (this.z > 0.8) {
-      this.z = Math.max(0.8, this.z - 5 * dt);
+      this.z = Math.max(0.8, this.z - (this.kind === 'spirulina' ? 3 : 5) * dt);
       this.x = clamp(this.x + (Math.sin(this.z * 0.7) * 1.5 + cur.x * 4) * dt, 1, world.W - 1);
       this.y = clamp(this.y + cur.y * 4 * dt, 1, world.H - 1);
     } else {
@@ -224,6 +233,8 @@ class Food {
   }
 
   draw(r) {
+    if (this.kind === 'spirulina') { r.ellipsoid(this.x, this.y, 1.1, 0.6, this.ph, this.z, 0.4, SPIRULINA_MAT, FOOD_ID); return; }
+    if (this.kind === 'brine') { r.ellipsoid(this.x, this.y, 0.9, 0.5, this.ph + Math.sin(this.life * 12), this.z, 0.6, BRINE_MAT, FOOD_ID); return; }
     if (this.kind !== 'pellet') {
       r.alpha = Math.min(1, this.life / 5, (70 - this.life) / 2 + 0.3);
       r.dot(this.x, this.y, this.z, this.kind === 'spawn' ? SPAWN_MAT : PLANKTON_MAT, PLANKTON_ID);
@@ -235,6 +246,8 @@ class Food {
 }
 
 const SPAWN_MAT = solid('#ffb8d8');
+const SPIRULINA_MAT = mat('#1e4a1a', '#2e7a2a', '#4aa83e', '#7ed066');
+const BRINE_MAT = mat('#8a3a1a', '#c8602a', '#f08a4a', '#ffc08a');
 
 // ---- motes: suspended particles that make the water feel like water -----------------
 

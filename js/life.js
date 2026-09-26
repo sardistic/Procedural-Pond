@@ -4,12 +4,15 @@
 
 // ---- genes ------------------------------------------------------------------
 // Continuous genes (size, colour, body shape, speed) blend between parents and
-// drift. Albino, melanistic and piebald are recessive: every animal carries 0, 1
-// or 2 copies, and only two copies show. Two carriers can surprise you with a
-// rare baby. Shiny is a rare mutation with its own palette and sparkles.
+// drift. Albino, melanistic, piebald, xanthic (golden) and axanthic (blue-grey)
+// are recessive: every animal carries 0, 1 or 2 copies, and only two copies
+// show. Two carriers can surprise you with a rare baby. Shiny, glow
+// (bioluminescent) and ghost (pale, see-through colours) are rare mutations that
+// often pass on; dwarfs and giants come from the size gene.
 
 const RECESSIVE = ['albino', 'melanistic', 'piebald'];
-const CARRIER_RATE = { albino: 0.1, melanistic: 0.08, piebald: 0.12 };
+const RECESSIVE2 = ['xanthic', 'axanthic'];
+const CARRIER_RATE = { albino: 0.1, melanistic: 0.08, piebald: 0.12, xanthic: 0.07, axanthic: 0.05 };
 const allele = (p) => (Math.random() < p ? 1 : 0) + (Math.random() < p ? 1 : 0);
 
 function makeGenome() {
@@ -20,6 +23,26 @@ function makeGenome() {
     shiny: Math.random() < 1 / 120, shinyHue: rand(100, 240), seed: randi(0, 9999),
   };
   for (const k of RECESSIVE) g[k] = allele(CARRIER_RATE[k]);
+  return g;
+}
+
+// Genes added later draw from their own random stream (see genomeFor), so every
+// seed's original genes stay exactly what they were.
+function makeGenome2() {
+  const g = { glow: Math.random() < 1 / 300, ghost: Math.random() < 1 / 400 };
+  for (const k of RECESSIVE2) g[k] = allele(CARRIER_RATE[k]);
+  if (Math.random() < 1 / 60) g.size = rand(0.7, 0.75); // a dwarf
+  return g;
+}
+
+function childGenome2(a, b) {
+  const g = {};
+  for (const k of RECESSIVE2) g[k] = Math.min(2, passOn(a[k] || 0) + passOn(b[k] || 0) + (Math.random() < 1 / 400 ? 1 : 0));
+  for (const [k, p] of [['glow', 1 / 500], ['ghost', 1 / 600]]) {
+    const n = (a[k] ? 1 : 0) + (b[k] ? 1 : 0);
+    g[k] = Math.random() < (n === 2 ? 0.4 : n === 1 ? 0.15 : p);
+  }
+  if (Math.random() < 1 / 250) g.size = rand(0.7, 0.75);
   return g;
 }
 
@@ -46,25 +69,46 @@ function childGenome(a, b) {
   return g;
 }
 
-// Visible rare traits, most striking first.
+// Visible rare traits, most striking first. Only one colour morph shows: albino
+// hides the others, then axanthic, xanthic, melanistic.
 function traitsOf(g) {
   const t = [];
   if (g.shiny) t.push('shiny');
+  if (g.glow) t.push('glow');
+  if (g.ghost) t.push('ghost');
   if (g.albino === 2) t.push('albino');
+  else if (g.axanthic === 2) t.push('axanthic');
+  else if (g.xanthic === 2) t.push('xanthic');
   else if (g.melanistic === 2) t.push('melanistic');
   if (g.piebald === 2) t.push('piebald');
   if (g.size > 1.3) t.push('giant');
+  else if (g.size < 0.76) t.push('dwarf');
   return t;
 }
-const carriesOf = (g) => RECESSIVE.filter((k) => g[k] === 1);
-const RARE_OUTLINE = { shiny: hexToInt('#ffd166'), albino: hexToInt('#ff9eb5'), melanistic: hexToInt('#a78bfa'), piebald: hexToInt('#7ee0c3') };
+const carriesOf = (g) => [...RECESSIVE, ...RECESSIVE2].filter((k) => g[k] === 1);
+
+// Rarity tiers: each trait adds its rarity, and the sum sets the tier.
+const TRAIT_RARITY = { piebald: 1, giant: 2, dwarf: 2, melanistic: 2, xanthic: 2, axanthic: 3, albino: 3, shiny: 4, ghost: 4, glow: 4 };
+const TIERS = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic'];
+const TIER_COLOR = ['#8fbcb8', '#7ee0c3', '#6fb7ef', '#c38bff', '#ffb347', '#ff6fae'];
+function tierOf(traits) {
+  const s = traits.reduce((a, t) => a + (TRAIT_RARITY[t] || 1), 0);
+  return s === 0 ? 0 : s === 1 ? 1 : s <= 3 ? 2 : s <= 5 ? 3 : s <= 7 ? 4 : 5;
+}
+
+const RARE_OUTLINE = {
+  shiny: hexToInt('#ffd166'), glow: hexToInt('#7dffb0'), ghost: hexToInt('#eaf6ff'), albino: hexToInt('#ff9eb5'),
+  axanthic: hexToInt('#8ecbff'), xanthic: hexToInt('#ffe45c'), melanistic: hexToInt('#a78bfa'), piebald: hexToInt('#7ee0c3'),
+  giant: hexToInt('#ffb86b'), dwarf: hexToInt('#c3a6ff'),
+};
 const RED_EYE = solid('#d8203a');
 const PIEBALD_WHITE = mat('#9aa0a6', '#d0d4d6', '#f0f0ec', '#ffffff');
 
 const isMat = (v) => Array.isArray(v) && v.length === 4 && typeof v[0] === 'number' && v[0] >= 0xff000000;
 
 function makeDye(g) {
-  const cache = new Map(), albino = g.albino === 2, melanistic = !albino && g.melanistic === 2;
+  const cache = new Map(), albino = g.albino === 2, axanthic = !albino && g.axanthic === 2;
+  const xanthic = !albino && !axanthic && g.xanthic === 2, melanistic = !albino && !axanthic && !xanthic && g.melanistic === 2;
   return (m) => {
     let d = cache.get(m);
     if (!d) {
@@ -73,7 +117,11 @@ function makeDye(g) {
         h += g.hue; s *= g.sat; l *= g.light;
         if (g.shiny) { h += g.shinyHue; s = Math.min(1, s * 1.2 + 0.12); }
         if (albino) { s *= 0.12; l = 0.62 + l * 0.38; h = 350; }
+        else if (axanthic) { h = 205; s *= 0.32; l = l * 0.9 + 0.06; } // no yellow or red pigment
+        else if (xanthic) { h = 46 + (((h - 46) % 360 + 540) % 360 - 180) * 0.2; s = Math.min(1, s * 1.15 + 0.12); l = Math.min(0.9, l * 1.08 + 0.05); }
         else if (melanistic) { l *= 0.38; s *= 0.45; }
+        if (g.ghost) { h = 190; s *= 0.22; l = 0.64 + l * 0.36; }
+        if (g.glow) { s = Math.min(1, s * 1.1 + 0.1); l = Math.min(0.92, l * 1.06 + 0.04); }
         return hsl(h, s, l);
       });
       cache.set(m, d);
@@ -106,6 +154,7 @@ function dyeCreature(c, g) {
     }
   }
   if (g.albino === 2) c.eyeMat = RED_EYE;
+  if (g.glow && c.id && !EMISSIVE[c.id]) EMISSIVE[c.id] = 1; // bioluminescent: stays bright at night
   // Rare animals are marked with a thick outline in their trait's colour.
   const rare = traitsOf(g).find((t) => RARE_OUTLINE[t]);
   if (rare && c.id) { OUTLINE[c.id] = RARE_OUTLINE[rare]; THICK[c.id] = 1; }
@@ -221,21 +270,33 @@ function lifespanFor(species, seed) {
 // Genes follow from seeds: a founder's or newcomer's from its own seed, a baby's
 // from its parents' genes plus its seed. A link can then store "parents #12 and
 // #15" (or nothing) instead of the genes themselves.
-const genomeFor = (seed) => withSeed(`genome/${seed}`, makeGenome);
-const childGenomeFor = (seed, a, b) => withSeed(`genome/${seed}`, () => childGenome(a, b));
-const GENOME_KEYS = [...Object.keys(GENE_LIMITS), 'shiny', 'shinyHue', 'seed', ...RECESSIVE];
-const sameGenome = (a, b) => GENOME_KEYS.every((k) => a[k] === b[k]);
+const genomeFor = (seed) => ({ ...withSeed(`genome/${seed}`, makeGenome), ...withSeed(`genome2/${seed}`, makeGenome2) });
+const childGenomeFor = (seed, a, b) => ({ ...withSeed(`genome/${seed}`, () => childGenome(a, b)), ...withSeed(`genome2/${seed}`, () => childGenome2(a, b)) });
+const GENOME_KEYS = [...Object.keys(GENE_LIMITS), 'shiny', 'shinyHue', 'seed', ...RECESSIVE, ...RECESSIVE2, 'glow', 'ghost'];
+const sameGenome = (a, b) => GENOME_KEYS.every((k) => (a[k] || 0) === (b[k] || 0));
+// Genomes saved before a gene existed read as not having it.
+function fillGenome(g) {
+  for (const k of RECESSIVE2) g[k] = g[k] || 0;
+  g.glow = !!g.glow; g.ghost = !!g.ghost;
+  return g;
+}
+
+// Temperament is rolled at birth from the seed: vigor (how slowly it ages) and
+// wanderlust (how readily it leaves). Good care softens both; see updateLife.
+const temperFor = (seed) => withSeed(`temper/${seed}`, () => ({ vigor: rand(0.8, 1.25), wander: Math.random() ** 1.5 }));
 
 function initLife(c, { genome, gen = 0, scale = 1, age, alpha = 1, parents = null } = {}) {
   c.alpha = alpha;
   if (NO_LIFE.has(c.species)) return c;
-  if (!genome) genome = c.seed != null ? genomeFor(c.seed) : makeGenome();
+  if (!genome) genome = c.seed != null ? genomeFor(c.seed) : { ...makeGenome(), ...makeGenome2() };
+  fillGenome(genome);
   const [a, b] = LIFESPAN[c.species] || [450, 800];
   const lifespan = c.seed != null ? lifespanFor(c.species, c.seed) : rand(a, b);
+  const temper = c.seed != null ? temperFor(c.seed) : { vigor: rand(0.8, 1.25), wander: Math.random() ** 1.5 };
   c.life = {
     genome, gen, lifespan, scale, name: c.seed != null ? nameFor(c.seed) : personName(),
     age: age ?? rand(0.05, 0.5) * lifespan,
-    energy: rand(0.6, 0.9), cooldown: rand(40, 100), parents,
+    energy: rand(0.6, 0.9), cooldown: rand(40, 100), parents, ...temper, comfort: 0.5, fed: 0,
   };
   dyeCreature(c, genome);
   if (SCALABLE.has(c.species)) { captureBase(c); applyScale(c, scale * genome.size); }
@@ -251,6 +312,7 @@ function eat(world, c, f) {
   let gain;
   if (f instanceof Creature) {
     f.caught = true;
+    noteGone(world, f, 'eaten');
     gain = 0.55;
     ECO.eaten++;
     addBubbles(world, f.x, f.y, f.z, 3);
@@ -262,11 +324,21 @@ function eat(world, c, f) {
     }
   } else {
     f.eaten = true;
-    gain = f.kind === 'plankton' ? 0.1 : 0.3;
+    gain = FOOD_GAIN[f.kind] ?? 0.3;
   }
-  if (c.life) c.life.energy = Math.min(1, c.life.energy + gain);
+  if (c.life) {
+    const L = c.life;
+    L.energy = Math.min(1, L.energy + gain);
+    // A good meal keeps an animal well fed for a while: it ages slower, stays put
+    // and is readier to breed. Brine shrimp brings animals into breeding condition.
+    L.fed = Math.max(L.fed || 0, FOOD_FED[f.kind] || (f instanceof Creature ? 60 : 0));
+    if (f.kind === 'brine') L.cooldown = Math.min(L.cooldown, 5);
+  }
   if ((f.z ?? 0) > 32) addRipple(world, f.x, f.y, 0.6);
 }
+
+const FOOD_GAIN = { plankton: 0.1, pellet: 0.3, spawn: 0.3, brine: 0.5, spirulina: 0.35 };
+const FOOD_FED = { pellet: 45, spawn: 45, brine: 90, spirulina: 240 };
 
 const isPredator = (c) => c.species === 'eel' || c.species === 'snake' || c.species === 'octopus' || (c.species === 'wild' && c.sp.predator);
 const isPrey = (c) => c.species === 'tetra' || c.species === 'shrimp' || c.species === 'tadpole' ||
@@ -374,7 +446,7 @@ class Eggs {
     const babies = [];
     for (const cell of this.cells) {
       const baby = makeBaby(world, this.parent, this.mate, this.x + cell.ox, this.y + cell.oy);
-      if (baby) { world.creatures.push(baby); ECO.births++; babies.push(baby); }
+      if (baby) { world.creatures.push(baby); ECO.births++; babies.push(baby); noteBorn(world, baby, 'born'); }
     }
     if (babies.length) {
       const first = babies[0], n = babies.length, label = describe(first).label, gen = first.life.gen;
@@ -389,11 +461,10 @@ class Eggs {
       const record = world.records || (world.records = { gen: 2 });
       if (gen > record.gen) {
         record.gen = gen;
-        logEvent(world, `A new record: ${label} lineage reaches generation ${gen}`, first, { cat: 'rare' });
+        const pts = award(world, 5 * gen, 'record', first);
+        logEvent(world, `A new record: ${label} lineage reaches generation ${gen}${pts ? ` · +${pts}` : ''}`, first, { cat: 'rare' });
       }
-      for (const b of babies) {
-        if (b.life.traits.length) logEvent(world, `✦ A rare ${b.life.traits.join(' ')} ${describe(b).label} hatched: ${b.life.name}!`, b, { cat: 'rare' });
-      }
+      scoreBirths(world, babies);
     }
     if (this.z > 30) addRipple(world, this.x, this.y, 0.8);
     return false;
@@ -461,8 +532,9 @@ function metamorphose(world, t) {
   f.pad = null; f.targetPad = null; f.state = 'swim';
   f.x = t.x; f.y = t.y; f.heading = t.heading;
   f.body.place(f.x, f.y, f.heading);
-  initLife(f, { genome: t.life.genome, gen: t.life.gen, scale: 0.6, age: 0, alpha: 0.2 });
+  initLife(f, { genome: t.life.genome, gen: t.life.gen, scale: 0.6, age: 0, alpha: 0.2, parents: t.life.parents });
   f.life.name = t.life.name;
+  rekeyLineage(world, t, f);
   t.gone = true;
   addBubbles(world, t.x, t.y, t.z, 3);
   world.creatures.push(f);
@@ -575,6 +647,8 @@ function updateLife(world, dt) {
         if (c.alpha <= 0) {
           c.gone = true;
           ECO.departures++;
+          noteGone(world, c, c.leaveWhy || 'restless');
+          if (c.leaveWhy === 'of old age' && c.life) award(world, 1, 'full lives', c, { quiet: true });
           if (c.life && c.species !== 'tadpole') {
             const m = Math.floor(c.life.age / 60), label = describe(c).label;
             const why = c.leaveWhy || 'restless';
@@ -616,7 +690,9 @@ function updateLife(world, dt) {
 
     const L = c.life;
     if (!L || !on) continue;
-    L.age += dt;
+    // Hardy animals age slower, and so do comfortable, well-fed ones.
+    L.age += dt * ageRate(L);
+    if (L.fed > 0) L.fed = Math.max(0, L.fed - dt);
     if (EATS.has(c.species)) L.energy = Math.max(0, L.energy - dt / (METABOLISM[c.species] || (c.body.w[0] > 2.5 ? 420 : 260)));
     L.cooldown -= dt;
     if (L.scale < 1) {
@@ -756,6 +832,12 @@ function migrate(world) {
     // Groups arrive together, so wait until a group's worth is missing.
     if (n < target && (!GROUPS.has(kind) || n <= target * 0.6) && Math.random() < 0.5) arrive(world, kind);
   }
+  // Restless animals wander off now and then, far less when they are comfortable and well fed.
+  for (const c of world.creatures) {
+    const L = c.life;
+    if (!L || c.leaving || c.grabbed || L.scale < 0.9 || c.species === 'tadpole') continue;
+    if (Math.random() < leaveChance(L)) { c.leaving = true; c.leaveWhy = 'restless'; }
+  }
   const activeWild = new Set(world.creatures.filter((c) => c.species === 'wild').map((c) => c.sp)).size;
   if (activeWild < 4 && Math.random() < 0.025) arrive(world, 'wild', true);
 }
@@ -784,13 +866,15 @@ function arrive(world, kind, discover = false) {
     c.timer = 4;
     if ('mode' in c) c.mode = 'walk';
     initLife(c, { alpha: 0 });
+    noteBorn(world, c, 'arrived');
   }
   world.creatures.push(...group);
   ECO.arrivals += group.length;
   const c = group[0], label = describe(c).label;
   if (discover) {
     const sp = c.sp, habits = [sp.schooling && 'schools', sp.predator && 'hunts smaller fish', sp.habitat === 'salt' ? 'reef fish' : 'freshwater'].filter(Boolean);
-    logEvent(world, `✦ New species spotted: ${sp.name}${group.length > 1 ? `, a school of ${group.length}` : ''} (${habits.join(', ')})`, c, { cat: 'rare' });
+    const pts = award(world, 10, 'new species', c);
+    logEvent(world, `✦ New species spotted: ${sp.name}${group.length > 1 ? `, a school of ${group.length}` : ''} (${habits.join(', ')})${pts ? ` · +${pts}` : ''}`, c, { cat: 'rare' });
   } else if (kind === 'duck') {
     logEvent(world, `A duck family paddled in: ${group.length} ducks`, c, { cat: 'come', pri: 1 });
   } else {
@@ -800,9 +884,7 @@ function arrive(world, kind, discover = false) {
       merge: (e) => `${e.data.reduce((a, b) => a + b, 0)} ${plural(label, 2)} arrived`,
     });
   }
-  for (const r of group) {
-    if (r.life && r.life.traits.length) logEvent(world, `✦ A rare ${r.life.traits.join(' ')} ${describe(r).label} arrived: ${r.life.name}`, r, { cat: 'rare' });
-  }
+  for (const r of group) if (r.life && r.life.traits.length) scoreArrival(world, r);
 }
 
 // ---- inspector ----------------------------------------------------------------
@@ -819,8 +901,10 @@ function describe(c) {
   else if (L && L.energy < 0.35) mood = 'hungry';
   else if (L && L.scale < 0.9) mood = 'growing';
   const stage = !L ? '' : L.scale < 0.6 ? 'young' : L.age > L.lifespan * 0.8 ? 'elder' : 'adult';
+  const temper = !L ? [] : [L.vigor > 1.12 ? 'hardy' : L.vigor < 0.9 ? 'frail' : '', L.wander > 0.6 ? 'restless' : L.wander < 0.15 ? 'homebody' : ''].filter(Boolean);
   return {
     name: L ? L.name : '', label, stage, mood, gen: L ? L.gen : null, age: L ? L.age : null, energy: L ? L.energy : null,
-    traits: L ? L.traits : [], carries: L ? carriesOf(L.genome) : [],
+    traits: L ? L.traits : [], carries: L ? carriesOf(L.genome) : [], tier: L ? tierOf(L.traits) : 0,
+    comfort: L ? L.comfort : null, fed: L ? L.fed > 0 : false, temper,
   };
 }

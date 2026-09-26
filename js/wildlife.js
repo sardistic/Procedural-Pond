@@ -27,6 +27,7 @@ const WILD = {
   ripple: mat('#a8d8e0', '#c8ecf0', '#e4f8fa', '#ffffff'),
   wingGlass: mat('#8aa0b4', '#b0c4d4', '#d6e4ee', '#f4faff'),
   fireflyLight: mat('#b8e03a', '#d8f45a', '#f0ff8a', '#ffffd0'),
+  fireflyBlue: mat('#2a6ae0', '#4a98ff', '#8cc8ff', '#e0f4ff'),
   fireflyBody: solid('#1a140c'),
 };
 
@@ -570,14 +571,17 @@ class Dragonfly extends Creature {
 }
 
 // ---- firefly: ambient, appears at night -----------------------------------------------
+// How many come out shows your score (fireflyPlan in game.js); blue ones only
+// come to ponds in the high-score range.
 
 class Firefly extends Creature {
-  constructor(world, x, y) {
+  constructor(world, x, y, blue = false) {
     super(world, x, y);
     this.species = 'firefly';
+    this.blue = blue;
     this.z = rand(55, 78);
-    this.speed = rand(4, 8);
-    this.freq = rand(0.4, 0.9);
+    this.speed = blue ? rand(3, 6) : rand(4, 8);
+    this.freq = blue ? rand(0.25, 0.5) : rand(0.4, 0.9);
     this.body = new Chain(x, y, this.heading, [0.8], [0.5, 0.4], PI);
     this.id = newId(hexToInt('#0a0a04'));
     EMISSIVE[this.id] = 2;
@@ -608,8 +612,8 @@ class Firefly extends Creature {
   }
 
   draw(r) {
-    const on = Math.sin(this.phase) > 0.3;
-    if (on) r.ellipsoid(this.x, this.y, 1.4, 1.4, 0, this.z, 1.2, WILD.fireflyLight, this.id);
+    const on = Math.sin(this.phase) > (this.blue ? 0 : 0.3);
+    if (on) r.ellipsoid(this.x, this.y, this.blue ? 1.7 : 1.4, this.blue ? 1.7 : 1.4, 0, this.z, 1.2, this.blue ? WILD.fireflyBlue : WILD.fireflyLight, this.id);
     r.dot(this.x + Math.cos(this.heading) * 0.8, this.y + Math.sin(this.heading) * 0.8, this.z + 1.5, WILD.fireflyBody, this.id);
   }
 }
@@ -679,7 +683,7 @@ class Starfish extends Creature {
       [gx, gy, want] = this.pointerGoal(world);
     } else {
       const hungry = !this.life || this.life.energy < 0.8;
-      const f = world.nearestFood(this.x, this.y, this.sight, (fd) => fd.z < 3 && (hungry || fd.kind === 'pellet'));
+      const f = world.nearestFood(this.x, this.y, this.sight, (fd) => fd.z < 3 && (hungry || fd.fed));
       if (f) {
         gx = f.x - this.x; gy = f.y - this.y; want = this.cruise;
         if (Math.hypot(gx, gy) < 2.5) eat(world, this, f);

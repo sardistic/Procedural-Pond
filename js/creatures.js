@@ -210,7 +210,7 @@ class Fish extends Creature {
       const hungry = !this.life || this.life.energy < 0.8;
       const prey = this.prey && !this.prey.caught && !this.prey.gone ? this.prey : null;
       const f = prey || world.nearestFood(this.x, this.y, this.sight * (hungry ? 1.4 : 1),
-        (fd) => (hungry || fd.kind === 'pellet') && (!this.foodFilter || this.foodFilter(fd)));
+        (fd) => (hungry || fd.fed) && (!this.foodFilter || this.foodFilter(fd)));
       if (f) {
         gx = f.x - this.x; gy = f.y - this.y;
         want = this.maxSpeed * (prey ? 1.25 : 1);
@@ -455,7 +455,7 @@ class Walker extends Creature {
       [gx, gy, want] = this.pointerGoal(world);
     } else {
       const hungry = !this.life || this.life.energy < 0.8;
-      const f = world.nearestFood(this.x, this.y, this.sight, (fd) => fd.z < 3 && (hungry || fd.kind === 'pellet'));
+      const f = world.nearestFood(this.x, this.y, this.sight, (fd) => fd.z < 3 && (hungry || fd.fed));
       if (f) {
         gx = f.x - this.x; gy = f.y - this.y;
         want = this.maxSpeed;
