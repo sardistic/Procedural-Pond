@@ -4,7 +4,7 @@ A live top-down aquarium of procedurally animated animals, drawn in a chunky
 voxel / pixel-art style. It is inspired by
 [argonautcode/animal-proc-anim](https://github.com/argonautcode/animal-proc-anim).
 
-**Live at [pond.sardistic.com](https://pond.sardistic.com/).**
+**Live at [pond.nz](https://pond.nz/).**
 
 To run it locally, open `index.html` in a browser. There is no build step and no server needed.
 The pixel font loads from Google Fonts and falls back to monospace when offline.
@@ -90,7 +90,7 @@ With **Life** on (Scene section), the pond runs itself:
 ## Hosting
 
 The `Dockerfile` builds a small nginx image that serves the site files. Configuration is in
-`deploy/nginx.conf`: caching, gzip, security headers and a Content-Security-Policy.
+`deploy/nginx.conf`: caching, gzip, security headers, a Content-Security-Policy, and 301 redirects from `www.pond.nz` and `pond.sardistic.com` to the canonical `pond.nz`.
 
 ```sh
 docker build -t procedural-pond .

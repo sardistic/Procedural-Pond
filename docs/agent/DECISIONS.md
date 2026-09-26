@@ -108,3 +108,11 @@ same key newer than `MERGE_WINDOW` (40 sim-seconds) is updated in place. Its
 count grows, `data` accumulates, `merge(entry)` rewrites the text, and it
 moves back to the top. Rare births, new species and sky events use no key,
 so they are never merged.
+
+## pond.nz is the canonical domain
+The canonical URL, Open Graph and Twitter tags, JSON-LD, sitemap and robots all
+point at `https://pond.nz/`. nginx serves pond.nz (and any other host, so the
+127.0.0.1 health check works) and permanently redirects `www.pond.nz` and the
+legacy `pond.sardistic.com` to `https://pond.nz$request_uri`, so seed links keep
+working. Keep the legacy hostname routed in the tunnel so old links still
+redirect.
