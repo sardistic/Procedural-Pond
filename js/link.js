@@ -236,6 +236,9 @@ function packPond(world) {
   // And the artifacts found in relics.
   const arts = (world.game && world.game.artifacts) || {};
   w.u8(ARTIFACT_CODES.reduce((a, k, i) => a | (arts[k] ? 1 << i : 0), 0));
+  // And each structure's full stack (islands go to ten; the old field holds eight).
+  w.u8(st.length);
+  for (const s of st) w.u8(s.stack || 1);
   return w.bytes();
 }
 
@@ -388,6 +391,7 @@ function unpackV2(r, v = 2) {
               const ns2 = r.u8();
               for (let i = 0; i < ns2; i++) { const a = r.u8(), b = r.u8(), t = s.structures[i]; if (t) t.lv = { reach: a, strength: b }; }
               if (r.i < r.b.length && s.game) { const bits = r.u8(); s.game.artifacts = Object.fromEntries(ARTIFACT_CODES.filter((k, i) => bits & (1 << i)).map((k) => [k, true])); }
+              if (r.i < r.b.length) { const n3 = r.u8(); for (let i = 0; i < n3; i++) { const v = r.u8(), t = s.structures[i]; if (t && v > 1) t.stack = v; } }
             }
           }
         }

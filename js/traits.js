@@ -102,8 +102,11 @@ function buyStructTrait(world, s, key) {
   return true;
 }
 
-const ISLAND_MAX = 5;
-const raiseCost = (s) => ({ pearls: Math.round(STRUCTURES.island.pearls * 0.6 * (s.stack || 1)), essence: 10 * (s.stack || 1) });
+// An island can be raised ten times over, each level a terrace higher and wider, and dearer
+// than the last; its branch (from level 3) can grow a step for each level above the second, to six.
+const ISLAND_MAX = 10, ISLAND_BRANCH_MAX = 6;
+const raiseCost = (s) => { const n = s.stack || 1; return { pearls: Math.round(STRUCTURES.island.pearls * 0.6 * n * 1.35 ** (n - 1)), essence: Math.round(10 * n * 1.25 ** (n - 1)) }; };
+const islandBranchMax = (s) => Math.min(ISLAND_BRANCH_MAX, (s.stack || 1) - 2);
 function raiseIsland(world, s) {
   if ((s.stack || 1) >= ISLAND_MAX) { if (typeof showTicker === 'function') showTicker('The island can’t be raised any higher'); return false; }
   const c = raiseCost(s);
@@ -114,16 +117,16 @@ function raiseIsland(world, s) {
   for (let k = 0; k < 30; k++) addBubbles(world, s.x + rand(-1, 1) * s.R * 1.3, s.y + rand(-1, 1) * s.R * 1.3, 1, 2);
   addRipple(world, s.x, s.y, 3);
   if (typeof structuresChanged === 'function') structuresChanged(true);
-  logEvent(world, `You raised the island (level ${s.stack}): it stands higher, wider and greener${s.stack === 3 ? '. It can go one of two ways now: lanterns of life, or the whispering stone' : ''}`, null, { cat: 'pond', pri: 2 });
+  logEvent(world, `You raised the island (level ${s.stack}): a new terrace, higher, wider and greener${s.stack === 3 ? '. It can go one of two ways now: lanterns of life, or the whispering stone' : s.stack > 3 && s.branch ? `, and room for the ${s.branch === 'life' ? 'lanterns' : 'stone'} to grow` : ''}`, null, { cat: 'pond', pri: 2 });
   return true;
 }
 
 const ISLAND_BRANCH = {
-  life: { label: 'Lanterns of life', cur: 'essence', cost: (lv) => 40 * (lv + 1), note: 'little lights among the palms; fireflies gather; animals nearby are comforted and breed more' },
-  dark: { label: 'The whispering stone', cur: 'corruption', cost: (lv) => 25 * (lv + 1), note: 'a black stone that hums: corruption spreads from it, animals nearby lose their minds, young born near it may wake touched' },
+  life: { label: 'Lanterns of life', cur: 'essence', cost: (lv) => Math.round(40 * (lv + 1) * 1.3 ** lv), note: 'little lights among the palms; fireflies gather; animals nearby are comforted and breed more' },
+  dark: { label: 'The whispering stone', cur: 'corruption', cost: (lv) => Math.round(25 * (lv + 1) * 1.3 ** lv), note: 'a black stone that hums: corruption spreads from it, animals nearby lose their minds, young born near it may wake touched' },
 };
 function growIsland(world, s, branch) {
-  if ((s.stack || 1) < 3 || (s.branch && s.branch !== branch) || (s.blv || 0) >= 3) return false;
+  if ((s.stack || 1) < 3 || (s.branch && s.branch !== branch) || (s.blv || 0) >= islandBranchMax(s)) return false;
   const B = ISLAND_BRANCH[branch], lv = s.blv || 0;
   if (!pay(world, B.cur, B.cost(lv))) { if (typeof notEnough === 'function') notEnough(B.cost(lv), B.cur); return false; }
   s.branch = branch;

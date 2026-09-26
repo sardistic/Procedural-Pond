@@ -1416,7 +1416,22 @@ function edgeHints() {
     el.classList.toggle('near', ends[dir]);
     if (ends[dir]) ensureBeyond(dir); // near the end: draw what's beyond it
   }
+  placeEdgeTabs();
 }
+// Keep the tabs clear of the menu: beside it when the beach runs across the screen, below it when it runs up and down.
+function placeEdgeTabs() {
+  const h = $('hud'), hr = h.classList.contains('hidden') ? null : h.getBoundingClientRect();
+  for (const dir of ['west', 'east']) {
+    const el = $(`edge-${dir}`);
+    el.style.left = el.style.top = el.style.bottom = '';
+    if (el.hidden || !hr || !hr.width) continue;
+    const r = el.getBoundingClientRect();
+    if (r.right < hr.left || r.left > hr.right || r.bottom < hr.top || r.top > hr.bottom) continue;
+    if (el.classList.contains('vertical')) { el.style.top = `${Math.round(hr.bottom + 8)}px`; el.style.bottom = 'auto'; }
+    else el.style.left = `${Math.round(hr.right + 10)}px`;
+  }
+}
+if (typeof ResizeObserver === 'function') new ResizeObserver(() => placeEdgeTabs()).observe(document.getElementById('hud'));
 
 function edgePull(over) {
   const dir = over > 0 ? 'west' : 'east';
@@ -1655,7 +1670,7 @@ const cycleLight = () => setLight(LIGHT_ORDER[(LIGHT_ORDER.indexOf(world.opts.li
 
 function setBones(on) { world.bones = on; $('bones').setAttribute('aria-pressed', on); }
 function setPaused(on) { world.paused = on; $('pause').setAttribute('aria-pressed', on); }
-function setHud(show) { hud.classList.toggle('hidden', !show); $('show-hud').hidden = show; }
+function setHud(show) { hud.classList.toggle('hidden', !show); $('show-hud').hidden = show; placeEdgeTabs(); }
 
 $('bones').addEventListener('click', () => setBones(!world.bones));
 $('pause').addEventListener('click', () => setPaused(!world.paused));

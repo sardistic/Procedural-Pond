@@ -189,7 +189,7 @@ class Raster {
     const w1x = sw[0] * 1024 / L1, w1y = sw[1] * 1024 / L1, w1t = t * (7 + 8 * swell) * 1024 / L1;
     const c2 = Math.cos(0.7), s2 = Math.sin(0.7), w2x = (sw[0] * c2 - sw[1] * s2) * 1024 / L2, w2y = (sw[0] * s2 + sw[1] * c2) * 1024 / L2, w2t = t * (5 + 5 * swell) * 1024 / L2;
     const clouds = s.clouds || null, sky = s.sky || 0xffe0d8c8, calm = clamp(1 - swell * 1.5, 0, 1) * (s.skyK ?? 1);
-    const skr = sky & 255, skg = (sky >> 8) & 255, skb = (sky >>> 16) & 255, cdx = t * 2.2, cdy = t * 0.7;
+    const skr = sky & 255, skg = (sky >> 8) & 255, skb = (sky >>> 16) & 255, cdx = t * 2.2, cdy = t * 0.7, mdx = t * 0.35;
     const [rx0, ry0, rx1, ry1] = rect;
     for (let y = ry0; y <= ry1; y++) {
       for (let x = rx0, p = rx0 + y * W; x <= rx1; x++, p++) {
@@ -255,10 +255,22 @@ class Raster {
                   }
                 }
               }
-              // Calm water holds the sky: slow clouds drifting across it.
+              // Calm water holds the sky the way rippled water does: in little facets. Short
+              // ripple dashes drift and twinkle across it, crowding and brightening under the
+              // bright parts of the clouds, so the sky shows as a field of glints (and the dark
+              // deep reads as a surface, not a haze).
               if (clouds && calm > 0.02) {
-                const cv = clouds[(((x * 0.3 + cdx) | 0) & 127) | ((((y * 0.45 + cdy) | 0) & 127) << 7)];
-                refl = calm * (0.05 + 0.26 * cv * cv);
+                const cv = clouds[(((x * 0.3 + cdx) | 0) & 127) | ((((y * 0.45 + cdy) | 0) & 127) << 7)], dens = (cv - 0.38) * 1.6;
+                if (dens > 0) {
+                  // Each 8 px stretch of each 4 px band may hold one dash, on a line of its own within the band.
+                  const row = y >> 2, sx = x + ((Math.imul(row, 0x9e3779b1) >>> 27) << 1) + ((t * 1.5) | 0), seg = sx >> 3;
+                  const h = Math.imul(Math.imul(row, 0x85ebca6b) ^ Math.imul(seg, 0xc2b2ae35) ^ (((t * 0.4 + (seg & 7) / 8) | 0) * 0x27d4eb2d), 0x9e3779b1) >>> 0;
+                  const len = 2 + ((h >>> 8) & 3), at = sx & 7;
+                  if ((h >>> 24) < dens * dens * 210 && (y & 3) === ((h >>> 4) & 3) && at < len) {
+                    const mid = at > 0 && at < len - 1; // lit in the middle, dimmer at the ends
+                    refl = calm * (mid ? 0.2 + 0.28 * cv : 0.1 + 0.12 * cv) * ((h & 1) ? 1 : 0.7);
+                  }
+                }
               }
               if (se) {
                 // Foam at the water's edge, and waves that roll in toward it.
@@ -305,7 +317,15 @@ class Raster {
         if (depthMap) {
           const dd = depthMap[p];
           if (dd && !(i && emissive[i] === 2)) {
-            const a = (dd * 230) >> 8, cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
+            let a = (dd * 230) >> 8;
+            // Over the floor, the dark comes in dithered steps with a slow murk moving through it
+            // (lighter and darker reaches), so the deep has a texture of its own, not a smooth smear.
+            if (!i) {
+              const murk = clouds ? clouds[(((x * 0.5 + mdx) | 0) & 127) | ((((y * 0.5 + 64) | 0) & 127) << 7)] - 0.5 : 0;
+              a += murk * 70 * (dd / 255);
+              a = Math.max(0, Math.min(240, ((a + 6 + BAYER4[(x & 3) | ((y & 3) << 2)] * 12) / 12 | 0) * 12));
+            }
+            const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
             c = (0xff000000 | ((cb + (((db - cb) * a) >> 8)) << 16) | ((cg + (((dg - cg) * a) >> 8)) << 8) | (cr + (((dr - cr) * a) >> 8))) >>> 0;
           }
         }
@@ -316,10 +336,15 @@ class Raster {
         else if (waveS || refl) {
           let cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
           if (refl > 0) { const a = (refl * 256) | 0; cr += ((skr - cr) * a) >> 8; cg += ((skg - cg) * a) >> 8; cb += ((skb - cb) * a) >> 8; }
+          // (Wave faces in dithered steps, like everything else, not smooth gradients.)
+          const bq = BAYER4[(x & 3) | ((y & 3) << 2)];
           if (waveS > 0.14) {
-            const a = Math.min(130, ((waveS - 0.14) * 140) | 0);
-            if (a > 22 || ((x ^ y) & 1)) { cr += ((0xe8 - cr) * a) >> 8; cg += ((0xf0 - cg) * a) >> 8; cb += ((0xf4 - cb) * a) >> 8; }
-          } else if (waveS < -0.14) { const f = 256 - Math.min(110, ((-waveS - 0.14) * 130) | 0); cr = (cr * f) >> 8; cg = (cg * f) >> 8; cb = (cb * f) >> 8; }
+            const a = Math.min(4, ((waveS - 0.14) * 4.2 + 0.5 + bq) | 0) * 30;
+            if (a) { cr += ((0xe8 - cr) * a) >> 8; cg += ((0xf0 - cg) * a) >> 8; cb += ((0xf4 - cb) * a) >> 8; }
+          } else if (waveS < -0.14) {
+            const f = 256 - Math.min(4, ((-waveS - 0.14) * 4 + 0.5 + bq) | 0) * 26;
+            cr = (cr * f) >> 8; cg = (cg * f) >> 8; cb = (cb * f) >> 8;
+          }
           c = (0xff000000 | (cb << 16) | (cg << 8) | cr) >>> 0;
         }
         if (tint) {

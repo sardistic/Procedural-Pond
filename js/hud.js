@@ -1561,12 +1561,13 @@ function renderObject() {
     }
     if (o.kind === 'island') {
       const st = o.stack || 1, rc = raiseCost(o);
-      tree.append(traitButton('Raise the island', 'pearls', st < ISLAND_MAX ? rc.pearls : null, `bigger, higher and lusher (and ${rc.essence} essence)`, st >= ISLAND_MAX, () => raiseIsland(world, o), pips(st, ISLAND_MAX), '#7cc44c', renderObject));
+      tree.append(traitButton('Raise the island', 'pearls', st < ISLAND_MAX ? rc.pearls : null, `a terrace higher: bigger, and lusher, with more palms (and ${rc.essence} essence)`, st >= ISLAND_MAX, () => raiseIsland(world, o), pips(st, ISLAND_MAX), '#7cc44c', renderObject));
       if (st >= 3) {
         for (const [k, B] of Object.entries(ISLAND_BRANCH)) {
           if (o.branch && o.branch !== k) continue;
           const lv = o.blv || 0;
-          tree.append(traitButton(B.label, B.cur, lv < 3 ? B.cost(lv) : null, B.note, lv >= 3, () => growIsland(world, o, k), pips(lv, 3), k === 'life' ? '#ffd870' : '#3aff9a', renderObject));
+          const cap = islandBranchMax(o), room = lv < cap;
+          tree.append(traitButton(B.label, B.cur, room ? B.cost(lv) : null, lv >= ISLAND_BRANCH_MAX ? B.note : room ? B.note : `${B.note} (raise the island to grow it further)`, !room, () => growIsland(world, o, k), pips(lv, ISLAND_BRANCH_MAX), k === 'life' ? '#ffd870' : '#3aff9a', renderObject));
         }
       } else parts.push(el('p', 'note', 'Raise it to level 3 and it can go one of two ways: lanterns of life, or the whispering stone.'));
     }

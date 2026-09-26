@@ -11,8 +11,9 @@
 //    waters), brings nutrients (plankton) and fresh plants, and fresh life likes it.
 //  - Islands sit low, so high tides cover their rim and low tides bare a wide
 //    beach. They swell and shrink over weeks of pond time (a slow cycle from
-//    the island's seed), and can be raised in stacks (up to five), each bigger,
-//    higher and lusher. From the third, an island can go one of two ways:
+//    the island's seed), and can be raised in stacks (up to ten), each a terrace
+//    higher, wider and lusher: a stepped mound. From the third, an island can go
+//    one of two ways, growing a step with each level above the second:
 //    lanterns of life (small lights, fireflies, comfort) or the whispering stone
 //    (corruption and madness spreading from it).
 //  - Litter: the more a pond is visited and the higher its score (and the
@@ -114,13 +115,36 @@ function islandSand(world, s) {
   const k = world.opts.habitat === 'fresh' ? 0.5 : 1;
   return 1 + k * (0.16 * Math.sin(TAU * d / 23 + p1) + 0.07 * Math.sin(TAU * d / 7.3 + p2));
 }
-const islandRadius = (world, s) => s.R * (1 + 0.16 * ((s.stack || 1) - 1)) * islandSand(world, s);
+// Each level widens it: a sixth for each of the first four, an eighth after.
+const islandGrow = (stack = 1) => 1 + 0.16 * Math.min(stack - 1, 4) + 0.12 * Math.max(0, stack - 5);
+const islandRadius = (world, s) => s.R * islandGrow(s.stack || 1) * islandSand(world, s);
+// The terraces of a raised island, one per level above the first, from the widest up:
+// [x offset, y offset, radius, tilt, height of its top]. Low steps (so what basks on
+// them still shows), each a little off-centre so the mound isn't a perfect cone.
+const TERRACE_STEP = 0.55;
+function islandTerraces(s) {
+  const n = (s.stack || 1) - 1;
+  if (s.terr && s.terr.n === n) return s.terr.list;
+  const G = islandGrow(n + 1), list = [];
+  for (let L = 1; L <= n; L++) {
+    const f = 1 - L / (n + 1.4), rr = s.R * G * 0.9 * f;
+    list.push([(hash2(L, s.seed % 97, 3) - 0.5) * rr * 0.25, (hash2(L, s.seed % 89, 7) - 0.5) * rr * 0.25, rr, hash2(L, 13, s.seed % 83) * PI, L * TERRACE_STEP]);
+  }
+  s.terr = { n, list };
+  return list;
+}
+// How high the ground stands at a point on the island (offsets from its centre).
+function islandTopAt(s, ox, oy) {
+  let z = 0;
+  for (const [tx, ty, rr, , top] of islandTerraces(s)) if ((ox - tx) ** 2 + (oy - ty) ** 2 < rr * rr * 0.9) z = top;
+  return z;
+}
 
 function applyIslands(world) {
   const shore = world.shore, { W, H } = world;
   for (const s of world.structures || []) {
     if (s.kind !== 'island' || s.anim) continue;
-    const R0 = islandRadius(world, s), R = R0 * 1.4, top = 0.97 + 0.06 * ((s.stack || 1) - 1);
+    const R0 = islandRadius(world, s), R = R0 * 1.4, top = Math.min(1.5, 0.97 + 0.06 * ((s.stack || 1) - 1));
     for (let y = Math.max(0, Math.floor(s.y - R)); y <= Math.min(H - 1, Math.ceil(s.y + R)); y++) {
       for (let x = Math.max(0, Math.floor(s.x - R)); x <= Math.min(W - 1, Math.ceil(s.x + R)); x++) {
         const d = Math.hypot(x - s.x, y - s.y) / R0;
@@ -143,13 +167,13 @@ function drawIslandLife(r, s, t, world) {
     for (let k = 0; k < n; k++) {
       const a = hash2(k, s.seed % 97, 11) * TAU, d = (0.35 + 0.6 * hash2(k, 5, s.seed % 89)) * R;
       if (!on && k % 2) continue;
-      const flick = on ? 0.5 + 0.5 * Math.sin(t * (2 + k * 0.3) + k) : 0;
-      r.dot(s.x + Math.cos(a) * d, s.y + Math.sin(a) * d, 3 + flick, on ? LANTERN : SM.egg, s.lampId);
+      const flick = on ? 0.5 + 0.5 * Math.sin(t * (2 + k * 0.3) + k) : 0, ox = Math.cos(a) * d, oy = Math.sin(a) * d;
+      r.dot(s.x + ox, s.y + oy, 3 + flick + islandTopAt(s, ox, oy), on ? LANTERN : SM.egg, s.lampId);
     }
   } else if (s.branch === 'dark') {
     if (s.runeId == null) { s.runeId = newId(hexToInt('#020806')); EMISSIVE[s.runeId] = 2; }
-    const pulse = 0.5 + 0.5 * Math.sin(t * 1.3), h = 14 + 4 * (s.blv || 1);
-    for (let k = 0; k < 5; k++) if (Math.sin(t * 2 + k * 1.7) > -0.3 * pulse) r.dot(s.x + (k % 2 ? 0.8 : -0.8), s.y - 0.5, 3 + k * h / 6, RUNE, s.runeId);
+    const pulse = 0.5 + 0.5 * Math.sin(t * 1.3), h = 14 + 4 * (s.blv || 1), z0 = islandTopAt(s, 0, -0.5);
+    for (let k = 0; k < 5; k++) if (Math.sin(t * 2 + k * 1.7) > -0.3 * pulse) r.dot(s.x + (k % 2 ? 0.8 : -0.8), s.y - 0.5, z0 + 3 + k * h / 6, RUNE, s.runeId);
     if (world.darkness > 0.35) {
       const R = islandRadius(world, s) * 1.5;
       for (let k = 0; k < 16; k++) {
@@ -383,7 +407,7 @@ function updateCoast(world, dt) {
   // Islands gone dark spread madness and corruption; islands of life keep fireflies about at night.
   for (const s of world.structures || []) {
     if (s.kind !== 'island' || !s.branch) continue;
-    const R2 = (islandRadius(world, s) * (1.6 + 0.3 * (s.blv || 1))) ** 2;
+    const R2 = (islandRadius(world, s) * (1.6 + 0.3 * Math.min(3, s.blv || 1) + 0.12 * Math.max(0, (s.blv || 1) - 3))) ** 2;
     if (s.branch === 'dark') {
       if (typeof gainCorruption === 'function') gainCorruption(world, 0.03 * (s.blv || 1) * step, null, { quiet: true });
       for (const c of world.creatures) {

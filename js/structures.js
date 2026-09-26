@@ -227,13 +227,24 @@ const BAKE = {
   },
   island(r, s, next) {
     const { x, y, R } = s;
+    const dark = s.branch === 'dark', zAt = (ox, oy) => (typeof islandTopAt === 'function' ? islandTopAt(s, ox, oy) : 0);
+    // A raised island stands in terraces, a step for each level: a ring of dark soil at
+    // each edge, sand low down, then grass (or, on the stone's island, dead black moss).
+    if (typeof islandTerraces === 'function') {
+      const T = islandTerraces(s);
+      T.forEach(([tx, ty, rr, ang, top], i) => {
+        const z0 = top - TERRACE_STEP, m = i < T.length / 3 ? SM.sand : dark && i >= T.length / 2 ? SM.moss2 : SM.grass;
+        r.ellipsoid(x + tx, y + ty, rr + 1.3, (rr + 1.3) * 0.92, ang, z0 - 0.2, TERRACE_STEP * 0.7, SM.soil, next(SM.soil));
+        r.ellipsoid(x + tx, y + ty, rr, rr * 0.92, ang, z0, TERRACE_STEP, m, next(m));
+      });
+    }
     const grassId = next(SM.grass);
-    for (const [ox, oy, a] of s.tufts) r.ellipsoid(x + ox, y + oy, a, a * 0.8, ox, 0, a * 0.9, SM.grass, grassId);
+    for (const [ox, oy, a] of s.tufts) r.ellipsoid(x + ox, y + oy, a, a * 0.8, ox, zAt(ox, oy), a * 0.9, SM.grass, grassId);
     const rockId = next(SM.stone);
-    for (const [ox, oy, a] of s.rocks) r.ellipsoid(x + ox, y + oy, a, a * 0.8, oy, 0, a * 0.7, SM.stone, rockId);
+    for (const [ox, oy, a] of s.rocks) r.ellipsoid(x + ox, y + oy, a, a * 0.8, oy, zAt(ox, oy), a * 0.7, SM.stone, rockId);
     // The palm: a leaning, ringed trunk, fronds drooping from the top, coconuts.
     const trunkId = next(SM.trunk);
-    let px = x + s.palm[0], py = y + s.palm[1], pz = 0;
+    let px = x + s.palm[0], py = y + s.palm[1], pz = zAt(s.palm[0], s.palm[1]);
     const la = s.lean, steps = 7, ring = (u) => ((u * 16) % 1 < 0.28 ? SM.trunkRing : SM.trunk);
     for (let i = 0; i < steps; i++) {
       const k = i / steps, lean = 1.4 * (1 - k * 0.5);
@@ -255,15 +266,17 @@ const BAKE = {
     }
     // Raised islands (traits.js) grow lusher: more grass, a second and third palm, flowers.
     // (Drawn after the rest, so the island's first shape never changes.)
-    const lush = (s.stack || 1) - 1, dark = s.branch === 'dark';
+    const lush = (s.stack || 1) - 1, G = typeof islandGrow === 'function' ? islandGrow(s.stack || 1) : 1;
     const gid = next(dark ? SM.smoke : SM.grass);
     for (let i = 0; i < lush * 12; i++) {
-      const a = rand(0, TAU), d = Math.sqrt(Math.random()) * R * (0.55 + 0.1 * lush), sz = rand(0.8, 1.6);
-      r.ellipsoid(x + Math.cos(a) * d, y + Math.sin(a) * d, sz, sz * 0.8, a, 0, sz, dark ? SM.smoke : SM.grass, gid);
+      const a = rand(0, TAU), d = Math.sqrt(Math.random()) * R * (0.55 + 0.1 * Math.min(lush, 4) + 0.06 * Math.max(0, lush - 4)), sz = rand(0.8, 1.6), ox = Math.cos(a) * d, oy = Math.sin(a) * d;
+      r.ellipsoid(x + ox, y + oy, sz, sz * 0.8, a, zAt(ox, oy), sz, dark ? SM.smoke : SM.grass, gid);
     }
-    for (let k = 1; k <= Math.min(2, lush); k++) {
-      const a = s.lean + k * 2.2, bx = x + Math.cos(a) * R * 0.35, by = y + Math.sin(a) * R * 0.35, h = s.h * (0.7 + 0.1 * k);
-      r.tube(bx, by, 1.5, 0, bx + Math.cos(a) * 3, by + Math.sin(a) * 3, 1, h, 0.9, ring, trunkId);
+    // More palms as it rises (up to eight), spread over the terraces, and taller on the higher ones.
+    for (let k = 1; k <= Math.min(7, lush); k++) {
+      const a = s.lean + k * 2.2, dd = R * G * (k <= 2 ? 0.35 : 0.2 + 0.08 * (k % 4)), bx = x + Math.cos(a) * dd, by = y + Math.sin(a) * dd;
+      const z0 = zAt(bx - x, by - y), h = z0 + s.h * (0.7 + 0.1 * (k % 3));
+      r.tube(bx, by, 1.5, z0, bx + Math.cos(a) * 3, by + Math.sin(a) * 3, 1, h, 0.9, ring, trunkId);
       for (let f = 0; f < 6; f++) {
         const fa = f / 6 * TAU + k, tx = bx + Math.cos(a) * 3, ty = by + Math.sin(a) * 3;
         r.ellipsoid(tx + Math.cos(fa) * 3.5, ty + Math.sin(fa) * 3.5, 2.6, 1, fa, h, 0.5, dark ? SM.moss2 : SM.frond, frondId);
@@ -271,12 +284,12 @@ const BAKE = {
     }
     if (lush >= 2 && !dark) {
       const fl = next(SM.plume);
-      for (let i = 0; i < lush * 6; i++) { const a = rand(0, TAU), d = rand(0.2, 0.7) * R; r.ellipsoid(x + Math.cos(a) * d, y + Math.sin(a) * d, 0.9, 0.9, 0, 1.5, 0.8, pick([SM.plume, SM.eggGlow, SM.crystal]), fl); }
+      for (let i = 0; i < lush * 6; i++) { const a = rand(0, TAU), d = rand(0.2, 0.7) * R * Math.min(G, 1.6), ox = Math.cos(a) * d, oy = Math.sin(a) * d; r.ellipsoid(x + ox, y + oy, 0.9, 0.9, 0, 1.5 + zAt(ox, oy), 0.8, pick([SM.plume, SM.eggGlow, SM.crystal]), fl); }
     }
-    // The whispering stone: a black standing stone, taller at each level.
+    // The whispering stone: a black standing stone on the summit, taller at each level.
     if (dark) {
-      const sid = next(SM.idol), h = 14 + 4 * (s.blv || 1);
-      r.tube(x - 0.8, y - 0.5, 2.4, 0, x + 0.8, y - 0.5, 1.2, h, 1, SM.idol, sid);
+      const sid = next(SM.idol), z0 = zAt(0, -0.5), h = z0 + 14 + 4 * (s.blv || 1);
+      r.tube(x - 0.8, y - 0.5, 2.4, z0, x + 0.8, y - 0.5, 1.2, h, 1, SM.idol, sid);
     }
   },
   vent(r, s, next) {
@@ -472,7 +485,7 @@ const DRAW = {
 // light (at night). Each structure's effect fades toward the edge of its radius.
 // Upgrades (see traits.js) widen a structure's reach and strengthen its effect;
 // raised islands reach further, and an island of life comforts and lights the night.
-const auraR = (world, s) => STRUCTURES[s.kind].r * (1 + 0.2 * ((s.lv && s.lv.reach) || 0)) * (s.kind === 'island' ? 1 + 0.16 * ((s.stack || 1) - 1) : 1);
+const auraR = (world, s) => STRUCTURES[s.kind].r * (1 + 0.2 * ((s.lv && s.lv.reach) || 0)) * (s.kind === 'island' ? islandGrow(s.stack || 1) : 1);
 const auraK = (s) => 1 + 0.25 * ((s.lv && s.lv.strength) || 0);
 
 function auraAt(world, x, y) {

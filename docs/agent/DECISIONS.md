@@ -464,3 +464,13 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
 ## The side view
 - The "two tone" the user saw was the side view: a flat tan block for the beach against charcoal rock. It now takes the floor's own colours (from `bg`) with depth shading and sediment.
 - Drawing the neighbour past the end of the beach fetches its save with `GET /api/ponds/:id?peek=1`, which counts no view and doesn't refresh `opened`. Otherwise just standing at the end of your beach would add views, and so litter, to the ponds either side and keep them from expiring. Walking in still counts, through the observer's normal re-fetch.
+
+## Deep water without the haze; islands in terraces; tabs clear of the menu
+- The first sky reflection mixed a smooth cloud tile toward the sky colour everywhere. Over the dark deep that read as a gray smear (the user: "gray/void space"). Now:
+  - Calm water shows the sky only as short ripple dashes on 4 px bands, each on its own line within the band. They drift, twinkle (reroll every ~2.5 s per segment) and crowd and brighten under bright cloud.
+  - The deep's darkening over the floor is quantized to dithered 12-level steps with a slow murk (cloud tile at half scale, drifting). Wave faces are quantized to four dithered steps. Nothing smooth is left to read as haze.
+- Islands go to 10 levels (`ISLAND_MAX`). Radius grows `islandGrow` = +16% per level to 5, then +12%, and the cost is ×1.35 pearls and ×1.25 essence per level.
+- Each level is a terrace: a low plate, 0.55 high, off-centre by hash, with a soil rim (`islandTerraces`, cached on the structure). They stay low so basking animals still show. Everything on the island stands on the terrace under it (`islandTopAt`): tufts, rocks, palms (up to 8), flowers, the stone and the lanterns.
+- The branch level caps at `min(6, stack − 2)` (so level 5 still allows 3, as before) and costs ×1.3 per level. The dark island's reach grows more slowly past branch level 3.
+- Links: the old stack field is 3 bits (max 8), so a new trailer block after the artifacts carries every structure's full stack.
+- The west edge tab (beach across the screen) sat over the open menu. `placeEdgeTabs` moves any tab that overlaps `#hud` beside it, or below it for a vertical beach, and runs from `edgeHints`, `setHud` and a ResizeObserver on `#hud`.
