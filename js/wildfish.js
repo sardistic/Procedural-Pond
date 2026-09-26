@@ -46,6 +46,7 @@ const SYLLABLES = ['ka', 'mi', 'no', 'ra', 'su', 'te', 'lo', 'fi', 'bu', 'zo', '
 function personName() {
   let s = '';
   for (let i = randi(2, 3); i > 0; i--) s += pick(SYLLABLES);
+  if (s === 'none' || s === 'nono') s += 'ka'; // not a name that reads like a missing one
   return s[0].toUpperCase() + s.slice(1);
 }
 

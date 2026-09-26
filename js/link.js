@@ -13,7 +13,7 @@
 // energy/growth, and parents or generation. The bytes are deflated and
 // written as base64url: "p2z.<data>". Version 1 links still open.
 
-const LINK_V = 2;
+const LINK_V = 3; // 3 added the working genes and loci; 2 still decodes
 // Append-only code tables: an index written into a link must keep its meaning.
 const KIND_CODES = ['koi', 'tetra', 'eel', 'axolotl', 'turtle', 'crab', 'ray', 'frog', 'snake', 'snail', 'jelly', 'clown',
   'puffer', 'octopus', 'duck', 'shrimp', 'dragonfly', 'wild', 'starfish', 'tadpole'];
@@ -141,7 +141,7 @@ function packPond(world) {
     if (extra) w.u8(extra);
     if (numbered) { w.vu(zig(c.sn - prevSn)); prevSn = c.sn; }
     w.u8(Math.min(15, Math.floor(c.x / W * 16)) | (Math.min(15, Math.floor(c.y / H * 16)) << 4));
-    w.u8(Math.min(255, Math.round(L.age / 4)));
+    w.vu(Math.round(L.age / 4)); // v3: a varint (lifespans now run past 255 × 4 s)
     w.u8(Math.round(clamp(L.energy, 0, 1) * 15) | ((L.scale >= 0.999 ? 15 : Math.min(14, Math.round(L.scale * 15))) << 4));
     const a = c.args || {};
     if (c.make === 'koi') w.u8(a.variety == null ? 0 : a.variety + 1);
@@ -151,11 +151,13 @@ function packPond(world) {
     if (hasParents) { w.vu(i - par[0]); w.vu(i - par[1]); } else w.vu(L.gen);
     if (explicit) {
       for (const k of GENE_KEYS) w.u8(q8(g[k], ...GENE_LIMITS[k]));
-      const g2 = (g.xanthic || 0) | ((g.axanthic || 0) << 2) | (g.glow ? 16 : 0) | (g.ghost ? 32 : 0);
-      w.u8((g.albino || 0) | ((g.melanistic || 0) << 2) | ((g.piebald || 0) << 4) | (g.shiny ? 64 : 0) | (g2 ? 128 : 0));
+      w.u8((g.albino || 0) | ((g.melanistic || 0) << 2) | ((g.piebald || 0) << 4) | (g.shiny ? 64 : 0));
       if (g.shiny) w.u8(clamp(Math.round(g.shinyHue), 0, 255));
-      if (g.piebald === 2) w.u16(g.seed || 0);
-      if (g2) w.u8(g2); // genes added later: xanthic, axanthic, glow, ghost
+      // v3: the later genes, then the pattern seed (piebald, marbled and chimera use it).
+      w.u8((g.xanthic || 0) | ((g.axanthic || 0) << 2) | (g.glow ? 16 : 0) | (g.ghost ? 32 : 0));
+      w.u8((g.leu || 0) | ((g.mar || 0) << 2) | ((g.mut || 0) << 4) | (g.chi ? 64 : 0));
+      for (const k of FGENES) w.u8(q8(g[k] ?? 0.5, 0, 1));
+      if (g.piebald === 2 || g.mar || g.chi) w.u16(g.seed || 0);
     }
     if (!numbered) w.vu(c.seed);
     if (hasName) w.str(L.name);
@@ -167,11 +169,11 @@ function packPond(world) {
   for (const e of lines) { w.u8(Math.max(0, CAT_CODES.indexOf(e.cat))); w.vu(e.day); w.u8(q8(e.clock, 0, 1)); w.str(e.text.slice(0, 100)); }
   // Added later, at the end so older links simply stop before it: the score.
   const G = world.game;
-  if (G) { w.vu(G.points); w.vu(G.pearls); w.u8(G.board ? 1 : 0); }
+  if (G) { w.vu(G.points); w.vu(G.pearls); w.u8(G.board ? 1 : 0); w.vu(G.essence || 0); }
   return w.bytes();
 }
 
-function unpackV2(r) {
+function unpackV2(r, v = 2) {
   const s = { seed: unpackSeed(r) };
   if (!/^[a-z0-9-]{1,40}$/.test(s.seed)) throw new Error('bad pond name');
   const o1 = r.u8(), o2 = r.u8();
@@ -217,7 +219,7 @@ function unpackV2(r) {
     if (numbered) { sn = prevSn + unzig(r.vu()); prevSn = sn; }
     const pos = r.u8(), cw = s.W / 16, ch = s.H / 16;
     const x = ((pos & 15) + rand(0.2, 0.8)) * cw, y = ((pos >> 4) + rand(0.2, 0.8)) * ch;
-    const age = r.u8() * 4, es = r.u8();
+    const age = (v >= 3 ? r.vu() : r.u8()) * 4, es = r.u8();
     const L = { age, energy: (es & 15) / 15, scale: (es >> 4) === 15 ? 1 : (es >> 4) / 15 };
     const a = {};
     if (k === 'koi') { const v = r.u8(); if (v) a.variety = v - 1; }
@@ -233,8 +235,16 @@ function unpackV2(r) {
       const t = r.u8();
       Object.assign(g, { albino: t & 3, melanistic: (t >> 2) & 3, piebald: (t >> 4) & 3, shiny: !!(t & 64) });
       g.shinyHue = g.shiny ? r.u8() : rand(100, 240);
-      g.seed = g.piebald === 2 ? r.u16() : randi(0, 9999);
-      if (t & 128) { const x = r.u8(); Object.assign(g, { xanthic: x & 3, axanthic: (x >> 2) & 3, glow: !!(x & 16), ghost: !!(x & 32) }); }
+      if (v >= 3) {
+        const x = r.u8(), l = r.u8();
+        Object.assign(g, { xanthic: x & 3, axanthic: (x >> 2) & 3, glow: !!(x & 16), ghost: !!(x & 32) });
+        Object.assign(g, { leu: l & 3, mar: (l >> 2) & 3, mut: (l >> 4) & 3, chi: !!(l & 64) });
+        for (const k of FGENES) g[k] = r.u8() / 255;
+        g.seed = g.piebald === 2 || g.mar || g.chi ? r.u16() : randi(0, 9999);
+      } else {
+        g.seed = g.piebald === 2 ? r.u16() : randi(0, 9999);
+        if (t & 128) { const x = r.u8(); Object.assign(g, { xanthic: x & 3, axanthic: (x >> 2) & 3, glow: !!(x & 16), ghost: !!(x & 32) }); }
+      }
     }
     const seed = numbered ? seedFor(base, sn) : r.vu();
     if (extra & 2) L.name = r.str();
@@ -252,7 +262,10 @@ function unpackV2(r) {
   }
   s.journal = [];
   for (let n = r.u8(); n > 0; n--) s.journal.push({ cat: CAT_CODES[r.u8()] || 'pond', day: r.vu(), clock: r.u8() / 255, text: r.str() });
-  if (r.i < r.b.length) s.game = { points: r.vu(), pearls: r.vu(), board: !!r.u8() };
+  if (r.i < r.b.length) {
+    s.game = { points: r.vu(), pearls: r.vu(), board: !!r.u8() };
+    if (r.i < r.b.length) s.game.essence = r.vu();
+  }
   return s;
 }
 
@@ -399,7 +412,7 @@ async function decodePond(text) {
     if (m[2] === 'z') bytes = await pipeBytes(bytes, new DecompressionStream('deflate-raw'));
     const r = new ByteReader(bytes), v = r.u8();
     if (v !== +m[1]) return null;
-    if (v === 2) return linkToSave(unpackV2(r));
+    if (v === 2 || v === 3) return linkToSave(unpackV2(r, v));
     if (v === 1) return linkToSave(unpackV1(r));
     return null;
   } catch {

@@ -30,7 +30,10 @@ const ID_RE = /^[a-z]{2,8}(?:-[a-z]{2,8}){3}$/;
 
 const SPECIES = new Set(['koi', 'tetra', 'eel', 'axolotl', 'turtle', 'crab', 'ray', 'frog', 'snake', 'snail', 'jelly', 'clown',
   'puffer', 'octopus', 'duck', 'shrimp', 'dragonfly', 'wild', 'starfish']);
-const TRAIT_RARITY = { piebald: 1, giant: 2, dwarf: 2, melanistic: 2, xanthic: 2, axanthic: 3, albino: 3, shiny: 4, ghost: 4, glow: 4 };
+const TRAIT_RARITY = {
+  pale: 1, piebald: 1, giant: 2, dwarf: 2, melanistic: 2, xanthic: 2, marbled: 2, axanthic: 3, albino: 3, leucistic: 3,
+  shiny: 4, ghost: 4, glow: 4, chimera: 5,
+};
 const HABITATS = new Set(['fresh', 'mixed', 'salt']);
 
 // ---- storage ----------------------------------------------------------------------

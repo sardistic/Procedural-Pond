@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 
   <script type="application/ld+json">
   {
@@ -129,7 +129,8 @@
         <li>Animals get hungry, grow up, lay eggs, pass their genes on, hunt, flee and eventually move on.</li>
         <li>A day/night cycle and a moon whose phases drive the tides and surf on the beach. Corals spawn under the full moon.</li>
         <li>Freshwater, saltwater or both: reef fish, corals and starfish, or koi, frogs and lily pads.</li>
-        <li>Genetics with rare albino, melanistic, xanthic, axanthic, piebald, shiny, glowing, ghostly, giant and dwarf animals, from Uncommon up to Mythic.</li>
+        <li>Genetics that inherit like real genes (recessive, dominant, incompletely dominant, hybrid vigour, inbreeding), with rare albino, leucistic, melanistic, xanthic, axanthic, piebald, marbled, shiny, glowing, ghostly, chimeric, giant and dwarf animals, from Uncommon up to Mythic. Genes set fertility, longevity, vitality, intellect, light and temper.</li>
+        <li>Fresh water is easy and calm, salt water hard, and both together difficult: fresh and salt life fight over the water, and aggressive water drives animals away.</li>
         <li>Points for every birth and rare find, pearls to spend on animals, plants and food, a shared leaderboard, and fireflies that show your score at night.</li>
         <li>Your pond saves itself and is waiting when you come back, and the address bar always holds its short four-word link.</li>
       </ul>
@@ -178,7 +179,8 @@
     <button type="button" id="score-btn" class="score-btn" aria-expanded="false" aria-controls="score-panel" title="This pond: points, pearls and the leaderboard (P)">
       <b id="bar-name" class="nm"></b>
       <span class="pts" title="Points"><i aria-hidden="true">★</i><b id="score-points">0</b></span>
-      <span class="prl" title="Pearls to spend"><i class="pearl" aria-hidden="true"></i><b id="score-pearls">0</b></span>
+      <span class="prl" title="Pearls: for plants, food and structures"><i class="pearl" aria-hidden="true"></i><b id="score-pearls">0</b></span>
+      <span class="ess" title="Essence: for new animals and gene boosts"><i class="essence" aria-hidden="true"></i><b id="score-essence">0</b></span>
       <span class="rk" id="bar-rank" title="Place on the leaderboard"></span>
       <span class="caret" aria-hidden="true">▾</span>
     </button>
@@ -187,8 +189,10 @@
       <div class="score-top">
         <div><b id="sp-points">0</b><span>points</span></div>
         <div><b id="sp-pearls">0</b><span>pearls</span></div>
+        <div><b id="sp-essence" class="ess">0</b><span>essence</span></div>
         <div><b id="sp-rank">–</b><span id="sp-rank-note">rank</span></div>
       </div>
+      <p class="note" id="sp-mode"></p>
       <p class="note" id="sp-flies"></p>
       <p class="note best" id="sp-best"></p>
       <h3>Lately</h3>
@@ -204,8 +208,9 @@
           <li>Breed the same rare again and each one is worth 25% more, up to 3×. The first of a kind in your pond adds 20.</li>
           <li>Rare animals arriving on their own: half their tier. A new wild species: 10. A generation record: 5 per generation. Coral spawning: 20. An animal that lives out its life: 1.</li>
           <li>Each dawn: a pearl per species in the pond, plus up to 5 for how comfortable they are.</li>
-          <li>Points are your score; every point also pays a pearl to spend on animals, plants and food.</li>
-          <li>Animals like certain plants and rocks nearby (hover one to see). Comfortable, well-fed animals age slower and rarely wander off. Spirulina keeps them fed for longer; brine shrimp brings them into breeding condition.</li>
+          <li>Points are your score, and harder water pays more of them: fresh ×1, salt ×1.3, both ×1.6. Every point also pays a pearl, for plants, food and structures.</li>
+          <li>Essence buys new animals (the dock) and gene boosts for them. It comes back when you recycle an animal with the Net (more for rarer ones), when an animal lives out its life, and a little each dawn.</li>
+          <li>Animals like certain plants and rocks nearby (hover one to see), calm water, and their own kind of water. Comfortable, well-fed animals age slower and rarely wander off; aggressive water drives them away and keeps newcomers out. Spirulina keeps them fed for longer; brine shrimp brings them into breeding condition.</li>
         </ul>
       </details>
       <label class="check"><input type="checkbox" id="sp-join" checked> Show my pond on the leaderboard</label>
@@ -222,6 +227,8 @@
     <span class="care"></span>
   </div>
   <div id="lineage" class="lineage" hidden aria-live="off"></div>
+  <section id="spawn-card" class="spawn-card" hidden aria-label="Spawn an animal"></section>
+  <section id="creature" class="pop creature" hidden aria-label="About this animal"></section>
   <div id="follow" class="follow" hidden>
     <span></span>
     <button type="button" id="follow-stop" title="Stop following (Esc)">Stop</button>
@@ -265,26 +272,30 @@
         <button type="button" id="zoom-level" title="Reset zoom (0)">2×</button>
         <button type="button" id="zoom-out" class="icon" aria-label="Zoom out" title="Zoom out (-)">−</button>
       </div>
-      <canvas id="minimap" class="minimap" width="192" height="108" aria-label="Map of the whole pond; click to jump"></canvas>
+      <div class="mini-wrap">
+        <canvas id="minimap" class="minimap" width="192" height="108" aria-label="Map of the whole pond; click to jump"></canvas>
+        <button type="button" id="map-layer" class="map-layer" title="Map layer: click to switch">Map</button>
+      </div>
     </div>
   </div>
 
-  <script src="js/core.js?v=9"></script>
-  <script src="js/raster.js?v=9"></script>
-  <script src="js/creatures.js?v=9"></script>
-  <script src="js/critters.js?v=9"></script>
-  <script src="js/wildlife.js?v=9"></script>
-  <script src="js/wildfish.js?v=9"></script>
-  <script src="js/sound.js?v=9"></script>
-  <script src="js/life.js?v=9"></script>
-  <script src="js/plants.js?v=9"></script>
-  <script src="js/scene.js?v=9"></script>
-  <script src="js/sky.js?v=9"></script>
-  <script src="js/game.js?v=9"></script>
-  <script src="js/save.js?v=9"></script>
-  <script src="js/link.js?v=9"></script>
-  <script src="js/net.js?v=10"></script>
-  <script src="js/hud.js?v=11"></script>
-  <script src="js/main.js?v=14"></script>
+  <script src="js/core.js?v=12"></script>
+  <script src="js/raster.js?v=12"></script>
+  <script src="js/creatures.js?v=12"></script>
+  <script src="js/critters.js?v=12"></script>
+  <script src="js/wildlife.js?v=12"></script>
+  <script src="js/wildfish.js?v=12"></script>
+  <script src="js/sound.js?v=12"></script>
+  <script src="js/life.js?v=12"></script>
+  <script src="js/plants.js?v=12"></script>
+  <script src="js/scene.js?v=12"></script>
+  <script src="js/sky.js?v=12"></script>
+  <script src="js/ecology.js?v=12"></script>
+  <script src="js/game.js?v=12"></script>
+  <script src="js/save.js?v=12"></script>
+  <script src="js/link.js?v=12"></script>
+  <script src="js/net.js?v=12"></script>
+  <script src="js/hud.js?v=12"></script>
+  <script src="js/main.js?v=16"></script>
 </body>
 </html>

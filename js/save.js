@@ -110,7 +110,7 @@ function serializePond(world) {
       st: c.state === 'sit' ? 'sit' : undefined,
       L: {
         name: c.life.name, age: r2(c.life.age), energy: r2(c.life.energy), cooldown: r2(c.life.cooldown), fed: r2(c.life.fed || 0), comfort: r2(c.life.comfort ?? 0.5),
-        lifespan: r2(c.life.lifespan), gen: c.life.gen, scale: c.life.scale, old: !!c.life.old,
+        lifespan: r2(c.life.lifespan), gen: c.life.gen, scale: c.life.scale, old: !!c.life.old, inbred: r2(c.life.inbred || 0),
         genome: c.life.genome, traits: c.life.traits, parents: c.life.parents,
       },
     })),
@@ -186,7 +186,7 @@ function restorePond(world, d) {
     if (!CREATE[r.k] || (r.k === 'wild' && !a.sp)) return null;
     const c = makeCreature(r.k, world, r.x, r.y, a, r.s);
     placeRestored(c, r);
-    initLife(c, { genome: r.L.genome, gen: r.L.gen, scale: r.L.scale, age: r.L.age, alpha: 1 });
+    initLife(c, { genome: r.L.genome, gen: r.L.gen, scale: r.L.scale, age: r.L.age, alpha: 1, inbred: r.L.inbred || 0 });
     Object.assign(c.life, {
       name: r.L.name, energy: r.L.energy, cooldown: r.L.cooldown, lifespan: r.L.lifespan, old: r.L.old, parents: r.L.parents || null,
       fed: r.L.fed || 0, comfort: r.L.comfort ?? 0.5,

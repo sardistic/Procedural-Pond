@@ -132,10 +132,16 @@ class Creature {
       if (this.y < margin) fy += (margin - this.y) / margin;
       if (this.y > H - margin) fy -= (this.y - (H - margin)) / margin;
     }
-    // The beach: water animals turn back before the waterline.
+    // The beach: water animals keep a margin of water between them and the
+    // waterline, looking ahead as well as where they are, so a falling tide
+    // turns them back before they're left in the shallows.
     if (world.shore && !AMPHIBIOUS.has(this.species)) {
-      const e = shoreAt(world, this.x, this.y), lim = world.tide.level - 0.08;
-      if (e > lim) { const f = (e - lim) * 14; fx -= world.shoreN[0] * f; fy -= world.shoreN[1] * f; }
+      const lim = world.tide.level - SHORE_MARGIN, ah = this.heading;
+      const e = Math.max(shoreAt(world, this.x, this.y), shoreAt(world, this.x + Math.cos(ah) * 12, this.y + Math.sin(ah) * 12));
+      if (e > lim) {
+        const f = Math.min(4, 0.6 + (e - lim) * 16);
+        fx -= world.shoreN[0] * f; fy -= world.shoreN[1] * f;
+      }
     }
     for (const r of world.rocks) {
       if (r.h + 2 < clearZ) continue;
@@ -150,13 +156,17 @@ class Creature {
   }
 
   newTarget(world, avoidRocks) {
-    const m = Math.min(28, world.W * 0.15, world.H * 0.15);
-    for (let tries = 0; tries < 10; tries++) {
-      this.tx = rand(m, world.W - m);
-      this.ty = rand(m, world.H - m);
-      if (world.shore && !AMPHIBIOUS.has(this.species) && shoreAt(world, this.tx, this.ty) > world.tide.level - 0.12) continue;
-      if (!avoidRocks || !world.rocks.some((r) => Math.hypot(r.x - this.tx, r.y - this.ty) < Math.max(r.a, r.b) + 6)) break;
+    const m = Math.min(28, world.W * 0.15, world.H * 0.15), wet = world.shore && !AMPHIBIOUS.has(this.species);
+    let best = null, be = Infinity;
+    for (let tries = 0; tries < 12; tries++) {
+      const x = rand(m, world.W - m), y = rand(m, world.H - m);
+      if (this.keepIn && !this.keepIn(world, x, y)) continue;
+      const e = wet ? shoreAt(world, x, y) : 0;
+      if (e < be) { be = e; best = [x, y]; }
+      if (wet && e > world.tide.level - SHORE_MARGIN - 0.06) continue;
+      if (!avoidRocks || !world.rocks.some((r) => Math.hypot(r.x - x, r.y - y) < Math.max(r.a, r.b) + 6)) { best = [x, y]; break; }
     }
+    if (best) [this.tx, this.ty] = best;
   }
 
   turnToward(angle, rate, dt) {
@@ -345,7 +355,7 @@ class Tetra extends Fish {
     const s = this.school;
     if (s.until <= world.t) {
       const m = Math.min(28, world.W * 0.15, world.H * 0.15);
-      [s.tx, s.ty] = wetPoint(world, m, Math.max(0, world.tide.level - 0.15));
+      [s.tx, s.ty] = wetPoint(world, m, Math.max(0, world.tide.level - SHORE_MARGIN - 0.06));
       s.tz = rand(this.zMin, this.zMax);
       s.until = world.t + rand(3, 7);
     }

@@ -153,19 +153,61 @@ function spawn(kind, x, y, how = 'founder') {
   return true;
 }
 
-// The dock's buttons buy animals with pearls.
-function buyAnimal(kind) {
-  const price = ANIMAL_PRICE[kind] ?? 10;
-  if (world.creatures.length >= world.maxPop + 60) { showTicker('The pond is full: no room for more'); return; }
-  if (!spend(world, price)) { notEnough(price); return; }
-  spawn(kind, undefined, undefined, 'bought');
+// Buying spawn with essence (the dock's spawn card). Each animal in it settles in
+// with its species' chance (lower in harder habitats, higher when hardy); those
+// that don't fade away and half their share comes back.
+function buyAnimal(kind, enh = []) {
+  const price = spawnPrice(kind, enh);
+  if (world.creatures.length >= world.maxPop + 60) { showTicker('The pond is full: no room for more'); return false; }
+  if (!spendEssence(world, price)) { notEnough(price, 'essence'); return false; }
+  const [x, y] = openSpot();
+  const group = SPECIES[kind].spawn(world, x, y);
+  const p = settleChance(world, kind, enh.includes('hardy') ? ENHANCE.hardy.settle : 0);
+  let failed = 0;
+  for (const c of group) {
+    initLife(c, { alpha: 0 });
+    applyEnhancements(c, enh);
+    noteBorn(world, c, 'bought');
+    if (Math.random() >= p) { c.unsettled = 3; failed++; }
+  }
+  world.creatures.push(...group);
+  const ok = group.length - failed, label = describe(group[0]).label;
+  world.targets[kind] = (world.targets[kind] || 0) + ok;
+  const back = failed ? gainEssence(world, price * failed / group.length * 0.5, 'unsettled spawn') : 0;
+  logEvent(world, !failed ? `${capFirst(aOrN(ok, label))} settled in` : ok ? `${capFirst(aOrN(ok, label))} settled in; ${failed} didn't take (+${back} essence back)`
+    : `The ${plural(label, group.length)} didn't take (+${back} essence back)`, ok ? group.find((c) => !c.unsettled) : null, { cat: 'come', pri: 1 });
+  updateCounts();
+  return true;
+}
+
+// Recycle an animal (the Net, or the creature card): it leaves, and its essence comes back.
+function recycle(c) {
+  if (!alive(c)) return 0;
+  const back = recycleValue(c), tier = c.life ? tierOf(c.life.traits) : 0;
+  world.creatures.splice(world.creatures.indexOf(c), 1);
+  noteGone(world, c, 'recycled');
+  if (world.targets[c.species]) world.targets[c.species]--;
+  addRipple(world, c.x, c.y, 0.8);
+  if (back) gainEssence(world, back, 'recycling', c);
+  if (c.life) {
+    logEvent(world, `Recycled ${who(c)}: +${back} essence${tier >= 2 ? ` (${TIERS[tier]})` : ''}`, null, {
+      cat: 'pond', pri: tier >= 2 ? 2 : 0, key: 'recycle', data: back,
+      merge: (e) => `Recycled ${e.n} animals: +${e.data.reduce((a, b) => a + b, 0)} essence`,
+    });
+  }
+  if (cam.follow === c) stopFollow();
+  updateCounts();
+  return back;
 }
 
 let poorAt = 0;
-function notEnough(price) {
+function notEnough(price, cur = 'pearls') {
   if (performance.now() - poorAt < 2500) return;
   poorAt = performance.now();
-  showTicker(`Not enough pearls: that costs ${price} and you have ${world.game.pearls}. Pearls come from births, rare animals and each dawn.`);
+  const have = cur === 'essence' ? world.game.essence : world.game.pearls;
+  const how = cur === 'essence' ? 'Essence comes back when you recycle animals with the Net, when animals live out their lives, and each dawn.'
+    : 'Pearls come from births, rare animals and each dawn.';
+  showTicker(`Not enough ${cur}: that costs ${price} and you have ${have}. ${how}`);
   flashPearls();
 }
 
@@ -200,6 +242,7 @@ function buildPond() {
     });
   }
   updateSky(world, 0);
+  initZones(world);
   $('seed-name').textContent = world.seed;
   const m = moonInfo(world.days, world.moon0);
   if (resume) {
@@ -255,6 +298,7 @@ function update(dt) {
   world.darkness = world.light.darkness;
   updateFireflies(dt);
   updateLife(world, dt);
+  updateZones(world, dt);
   updateGame(world, dt);
   for (const c of world.creatures) c.update(dt, world);
   if (world.creatures.some((c) => c.gone || c.caught)) {
@@ -474,14 +518,7 @@ function creatureAt(x, y) {
 
 function removeAt(x, y) {
   const c = creatureAt(x, y);
-  if (c) {
-    world.creatures.splice(world.creatures.indexOf(c), 1);
-    noteGone(world, c, 'netted');
-    if (world.targets[c.species]) world.targets[c.species]--;
-    addRipple(world, c.x, c.y, 0.8);
-    updateCounts();
-    return;
-  }
+  if (c) { recycle(c); return; }
   for (const [list, key] of [[world.pads, 'pads'], [world.plants, 'plants']]) {
     const i = list.findLastIndex((p) => p.hit(x, y));
     if (i < 0) continue;
@@ -588,6 +625,7 @@ canvas.addEventListener('pointerdown', (e) => {
     world.grab = c;
     c.grabbed = true;
     canvas.style.cursor = 'grabbing';
+    tap = { x: e.clientX, y: e.clientY, t: performance.now(), c };
   } else {
     press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x, y, panning: false };
   }
@@ -617,10 +655,14 @@ canvas.addEventListener('pointermove', (e) => {
   canvas.style.cursor = world.tool === 'net' ? (over ? 'pointer' : 'crosshair') : over ? 'grab' : world.tool === 'feed' ? 'crosshair' : 'copy';
 });
 
+let tap = null;
 function pointerEnd(e) {
   touches.delete(e.pointerId);
   if (touches.size < 2) pinch = null;
   if (press && !press.panning && e.type === 'pointerup') useTool(press.x, press.y);
+  // A quick click on an animal (not a drag) opens its card.
+  if (tap && e.type === 'pointerup' && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 6 && performance.now() - tap.t < 350 && tap.c.life) showCreature(tap.c);
+  tap = null;
   press = null;
   release();
 }
@@ -644,12 +686,14 @@ function follow(c) {
   cam.follow = c;
   if (c && view.k < defaultK() + 1) zoomTo(defaultK() + 1);
   cam.fx = view.tx; cam.fy = view.ty;
+  if (c && c.life) showCreature(c, true); // riding along (or touring) shows who it is
   updateChip();
 }
 
 function stopFollow() {
   cam.follow = null;
   cam.tour = false;
+  if (typeof creatureUi !== 'undefined' && creatureUi.auto) hideCreature();
   document.getElementById('tour')?.setAttribute('aria-pressed', false);
   updateChip();
 }
@@ -694,23 +738,74 @@ function updateChip() {
 
 const mini = document.getElementById('minimap'), mctx = mini.getContext('2d');
 const miniBg = document.createElement('canvas');
+// Layers: the pond, how tense the water is, and (with both waters) where it runs fresh or salt.
+const MINI_LAYERS = [['map', 'Map'], ['tension', 'Tension: red is aggressive water'], ['water', 'Water: green fresh, blue salt']];
+let miniLayer = 0, miniKey = '', miniCell = null, miniWet = null, miniDry = null;
+const TENSION = hexToInt('#ef3a3a'), FRESH_TINT = hexToInt('#5ad25a'), SALT_TINT = hexToInt('#3a8aff');
 
+// Each minimap pixel averages a 3x3 sample of its patch of pond, once as water and
+// once as dry sand; which one it shows follows the tide.
 function paintMinimapBackground() {
-  const src = document.createElement('canvas');
-  src.width = world.W; src.height = world.H;
-  src.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(world.bg.buffer.slice(0)), world.W, world.H), 0, 0);
-  miniBg.width = mini.width; miniBg.height = mini.height;
-  const g = miniBg.getContext('2d');
-  g.imageSmoothingEnabled = true;
-  g.drawImage(src, 0, 0, miniBg.width, miniBg.height);
-  g.globalAlpha = 0.45;
-  g.fillStyle = `#${[world.waterColor & 255, (world.waterColor >> 8) & 255, (world.waterColor >>> 16) & 255].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
-  g.fillRect(0, 0, miniBg.width, miniBg.height);
-  g.globalAlpha = 1;
+  const mw = mini.width, mh = mini.height, { W, H, bg, bgDry, shore } = world, water = world.waterColor;
+  miniCell = new Int32Array(mw * mh); miniWet = new Uint32Array(mw * mh); miniDry = new Uint32Array(mw * mh);
+  const avg = (cs) => {
+    let r = 0, g = 0, b = 0;
+    for (const c of cs) { r += c & 255; g += (c >> 8) & 255; b += (c >>> 16) & 255; }
+    const n = cs.length;
+    return (0xff000000 | (Math.round(b / n) << 16) | (Math.round(g / n) << 8) | Math.round(r / n)) >>> 0;
+  };
+  for (let j = 0, k = 0; j < mh; j++) {
+    for (let i = 0; i < mw; i++, k++) {
+      const wet = [], dry = [];
+      for (let sy = 0; sy < 3; sy++) {
+        for (let sx = 0; sx < 3; sx++) {
+          const p = Math.min(W - 1, Math.floor((i + (sx + 0.5) / 3) / mw * W)) + Math.min(H - 1, Math.floor((j + (sy + 0.5) / 3) / mh * H)) * W;
+          wet.push(bg[p]);
+          dry.push(bgDry && shore && shore[p] ? bgDry[p] : bg[p]);
+        }
+      }
+      miniCell[k] = Math.min(W - 1, Math.floor((i + 0.5) / mw * W)) + Math.min(H - 1, Math.floor((j + 0.5) / mh * H)) * W;
+      miniWet[k] = mixColor(avg(wet), water, 0.45);
+      miniDry[k] = avg(dry);
+    }
+  }
+  miniKey = '';
+}
+
+function refreshMinimapBackground() {
+  if (!miniCell) return;
+  const layer = MINI_LAYERS[miniLayer][0], shore = world.shore, tideL = shore ? Math.round(world.tide.level * 255) : 999;
+  const key = `${tideL}|${layer}|${layer === 'map' ? 0 : Math.floor(world.t)}`;
+  if (key === miniKey) return;
+  miniKey = key;
+  const mw = mini.width, mh = mini.height, img = new ImageData(mw, mh), px = new Uint32Array(img.data.buffer);
+  for (let k = 0; k < px.length; k++) {
+    const p = miniCell[k], dry = shore && shore[p] > tideL;
+    let c = dry ? miniDry[k] : miniWet[k];
+    if (!dry && layer !== 'map') {
+      const x = p % world.W, y = (p / world.W) | 0;
+      if (layer === 'tension') c = mixColor(c, TENSION, Math.min(1, aggressionAt(world, x, y)) * 0.7);
+      else { const s = saltAt(world, x, y); c = mixColor(c, s < 0 ? FRESH_TINT : SALT_TINT, Math.min(1, Math.abs(s)) * 0.55); }
+    }
+    px[k] = c;
+  }
+  miniBg.width = mw; miniBg.height = mh;
+  miniBg.getContext('2d').putImageData(img, 0, 0);
+}
+
+function setMiniLayer(i) {
+  const layers = MINI_LAYERS.filter(([k]) => k !== 'water' || world.opts.habitat === 'mixed');
+  miniLayer = MINI_LAYERS.indexOf(layers[i % layers.length]);
+  const [, label] = MINI_LAYERS[miniLayer];
+  $('map-layer').textContent = label.split(':')[0];
+  $('map-layer').title = `Map layer: ${label}. Click to switch.`;
+  miniKey = '';
+  drawMinimap();
 }
 
 function drawMinimap() {
   const mw = mini.width, mh = mini.height, sx = mw / world.W, sy = mh / world.H;
+  refreshMinimapBackground();
   mctx.drawImage(miniBg, 0, 0);
   for (const c of world.creatures) {
     if (c.species === 'gnat' || c.species === 'firefly') continue;
@@ -733,6 +828,10 @@ function miniJump(e) {
 }
 mini.addEventListener('pointerdown', (e) => { mini.setPointerCapture(e.pointerId); miniJump(e); });
 mini.addEventListener('pointermove', (e) => { if (e.buttons) miniJump(e); });
+document.getElementById('map-layer').addEventListener('click', () => {
+  const layers = MINI_LAYERS.filter(([k]) => k !== 'water' || world.opts.habitat === 'mixed');
+  setMiniLayer(layers.indexOf(MINI_LAYERS[miniLayer]) + 1);
+});
 
 // ---- HUD ----------------------------------------------------------------------
 
@@ -813,7 +912,12 @@ function refreshSpeciesButtons() {
     const salt = ['anemone', 'coral', 'urchin'].includes(b.dataset.tool), fresh = ['marimo', 'duckweed', 'lily'].includes(b.dataset.tool);
     b.hidden = (salt && !fitsHabitat(world, 'salt')) || (fresh && !fitsHabitat(world, 'fresh'));
   }
-  for (const b of document.querySelectorAll('[data-hab]')) b.setAttribute('aria-pressed', b.dataset.hab === world.opts.habitat);
+  for (const b of document.querySelectorAll('[data-hab]')) {
+    b.setAttribute('aria-pressed', b.dataset.hab === world.opts.habitat);
+    const D = DIFFICULTY[b.dataset.hab];
+    b.title = `${HABITATS[b.dataset.hab]} water: ${D.label.toLowerCase()} (${D.note}). Points ×${D.points}.`;
+  }
+  if (MINI_LAYERS[miniLayer][0] === 'water' && world.opts.habitat !== 'mixed') setMiniLayer(0);
 }
 
 function fillSelect(el, entries, value) {

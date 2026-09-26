@@ -213,3 +213,36 @@ Every pond gets a short link 8 s after it opens (2 s for an adopted copy), not o
 
 ## Pond bar
 The top-centre bar shows the pond's seed name, points, pearls and leaderboard place, and opens the score panel. The follow chip moved to `top: 64px`. On phones the bar is placed with `left`/`right` rather than a transform, because a transformed ancestor would become the containing block of the fixed score panel.
+
+## Essence, the third currency
+Essence buys animals and gene boosts; pearls now buy only plants, food and (later) structures.
+- **Spawn cost:** `0.5 × (1 + size^1.5 × 1.6) × (1 + 0.8 × rarity) × years^0.3 × (0.55 + 0.45 × settle) × group^0.55`, minimum 2, from `SPECIES_STATS` in life.js.
+- **Settling:** each animal in a purchase settles with `settle × difficulty.settle`, +0.1 if hardy. The ones that don't fade out (`c.unsettled`) and refund half their share.
+- **Boosts:** each nudges one working gene of every animal bought (the carrier boost adds a copy of a random rare colour gene). They cost `2 + 0.2 × base`, or `6 + 0.45 × base` for the carrier.
+- **Recycling:** `recycleValue` is 40% of one animal's share, scaled by growth, plus `TIER_ESSENCE[tier]`. Natural deaths return `1 + TIER_ESSENCE / 2`, and dawn gives `2 + species / 4`.
+- Starting essence is 30. The Net tool now recycles.
+
+## Ecology grid (ecology.js)
+The grid uses 32 px cells and is recomputed every second, easing toward its target.
+- **Aggression:** the difficulty base (fresh 0.06, salt 0.2, mixed 0.26), plus predators (0.16, or 0.32 while hunting, × the aggression buff), clownfish and puffers, and decaying hunt heat (+0.5 per catch, ×0.9 each second). Crowds of more than 8 per cell add to it, and surf adds near the waterline. Plant cover and calming buffs lower it, and animals in the wrong water raise it.
+- **Salt (mixed only):** `tanh((beach proximity × 2 − 1) × 1.1 + 0.3 × influence)`. Influence is creatures ±1 × territory, plus fresh plants (marimo, duckweed, lily) or salt plants (anemone, coral, urchin). It eases at 0.04 a second.
+- **Effects:** breeding needs local aggression below 0.75. Eggs are lost at `min(0.6, aggression / 2)`. Arrivals are scaled by `1 − min(0.7, avg)` and come in by the calmer of two edges. `leaveChance = 0.004 × (wander × (1 − comfort)² + 0.75 × aggression × (1 − resilience) + 0.45 × mismatch × (1 − tolerance))`, halved when fed. Comfort also drops with aggression and with mismatch × (1 − tolerance).
+- **Points multiplier:** fresh 1, salt 1.3, mixed 1.6, applied in `award`.
+
+## Genetics 2.0
+A third random stream (`genome3/<seed>`) adds:
+- the working genes `fert lon vit iq lum agg tol ter res`, each 0–1 from a bell draw, blending with drift 0.06 × √(mutation factor);
+- `leu` (incomplete dominance), `mar` (dominant; homozygous ×0.7 longevity), `mut` (recessive mutator), and `chi` (chimera, not inherited, 1/500).
+
+The other rules:
+- **Mutation factor:** `(1 + 1.5 × homozygous mutator parents) × (1.5 if a parent is shiny)` scales every mutation chance in all three streams. With a factor of 1 the draws are unchanged, so old seeds keep their genes.
+- **Buffs:** `computeBuffs` turns genes into buffs, and `TRAIT_BUFFS` adds per-trait buffs (pleiotropy). Hybrid vigour is +3% per heterozygous locus.
+- **Inbreeding:** `inbreedingOf` is Wright's F over the nearest common ancestors, up to 4 generations back through `world.lineage`. It is stored as `L.inbred`.
+- **New traits:** chimera 5, leucistic 3, marbled 2, pale 1. Pale gets no thick outline.
+- **Links v3:** explicit genomes write the later gene block and the loci before the pattern seed (used by piebald, marbled and chimera), and age is now a varint. v2 links decode as before. The link trailer also carries essence.
+
+## Lifespans from real ones
+`SPECIES_STATS.years` sets lifespans as `300 × years^0.55` seconds, ±15%, from `life/<seed>`. For example: tetra 5 y ≈ 12 min, koi 30 y ≈ 33 min, octopus 1.5 y ≈ 6 min. Maturity is 12% of lifespan (at least 30 s), and the breeding rest is `lifespan × 0.1 / fertility` (at least 40 s). Clutches scale with the parents' average fertility × (1 − 0.4 × aggression).
+
+## Beach margin
+Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, sampled here and 12 px ahead, with a force up to 4. Targets and school points need `tide − margin − 0.06`, or the lowest elevation tried. In a 20-minute mixed sim, swimmers were near the waterline 0.04% of the time.

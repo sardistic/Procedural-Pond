@@ -148,9 +148,9 @@ function buildDock() {
     b.type = 'button';
     b.className = 'ani';
     b.dataset.spawn = kind;
-    b.setAttribute('aria-label', `Add ${SPECIES[kind].label.toLowerCase()} for ${ANIMAL_PRICE[kind]} pearls`);
+    b.setAttribute('aria-label', `Spawn ${SPECIES[kind].label.toLowerCase()}`);
     b.append(iconImg(speciesIcon(kind)), Object.assign(document.createElement('b'), { textContent: '0' }));
-    b.addEventListener('click', () => { buyAnimal(kind); if (lineUi.kind === kind) renderLineage(); });
+    b.addEventListener('click', () => openSpawnCard(kind, b));
     b.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') showLineage(kind, b); });
     b.addEventListener('pointerleave', hideLineage);
     b.addEventListener('focus', () => showLineage(kind, b));
@@ -160,19 +160,19 @@ function buildDock() {
 }
 
 function updateCounts() {
-  const n = {}, pearls = world.game ? world.game.pearls : 0;
+  const n = {}, essence = world.game ? world.game.essence || 0 : 0;
   let total = 0;
   for (const c of world.creatures) {
     n[c.species] = (n[c.species] || 0) + 1;
     if (c.life) total++;
   }
   for (const b of document.querySelectorAll('#animals [data-spawn]')) {
-    const kind = b.dataset.spawn, k = n[kind] || 0, el = b.lastChild, price = ANIMAL_PRICE[kind];
-    b.classList.toggle('poor', pearls < price);
+    const kind = b.dataset.spawn, k = n[kind] || 0, el = b.lastChild, price = spawnCost(kind);
+    b.classList.toggle('poor', essence < price);
     if (el.textContent === String(k)) continue;
     el.textContent = k;
     b.classList.toggle('none', !k);
-    b.title = `${SPECIES[kind].label}: ${k} in the pond. Click to add more for ${price} pearls.`;
+    b.title = `${SPECIES[kind].label}: ${k} in the pond. Click to spawn more (${price} essence).`;
   }
   byId('census-count').textContent = total;
 }
@@ -241,7 +241,7 @@ function lineageTree(nodes, isHere) {
 
 function renderLineage() {
   const kind = lineUi.kind, box = byId('lineage');
-  if (!kind || census.open || !world.lineage) { box.hidden = true; return; }
+  if (!kind || census.open || spawnUi.kind || !world.lineage) { box.hidden = true; return; }
   const inKind = (r) => r.k === kind || (kind === 'frog' && r.k === 'tadpole');
   const recs = [...world.lineage.values()].filter(inKind);
   const here = new Set(world.creatures.filter((c) => c.life && !c.leaving).map((c) => c.seed));
@@ -249,11 +249,11 @@ function renderLineage() {
   const alive = recs.filter(isHere).sort((a, b) => b.pts - a.pts || (a.b ?? 0) - (b.b ?? 0));
   const gone = recs.filter((r) => !isHere(r)).sort((a, b) => (b.d ?? 0) - (a.d ?? 0));
   const best = recs.reduce((m, r) => Math.max(m, tierOf(r.t || [])), 0);
-  const likes = LIKES[kind], price = ANIMAL_PRICE[kind];
+  const likes = LIKES[kind], price = spawnCost(kind);
 
   const head = el('div', 'line-head');
   head.append(el('b', null, SPECIES[kind].label), el('span', null, [`${alive.length} here`, `${recs.length} known`, best && `best ${TIERS[best]}`].filter(Boolean).join(' · ')));
-  const sub = el('p', 'note', [`Click to add: ${price} pearls`, likes && `likes ${likes.map((k) => LIKE_LABEL[k]).join(', ')}`].filter(Boolean).join(' · '));
+  const sub = colored('p', 'note', [`Click to spawn: ${price} essence`, likes && `likes ${likes.map((k) => LIKE_LABEL[k]).join(', ')}`].filter(Boolean).join(' · '));
   const parts = [head, sub];
 
   if (recs.length) {
@@ -371,8 +371,8 @@ function renderCensus() {
         b.type = 'button';
         b.title = 'Follow';
         b.append(el('b', null, c.life.name), el('span', 'sub', `${d.label === SPECIES[kind]?.label ? '' : `${d.label} · `}${d.stage} · gen ${d.gen} · ${ageLabel(d.age)}`),
-          energyBar(d.energy), el('span', 'mood', [d.traits.length && `✦ ${TIERS[d.tier]} ${d.traits.join(' ')}`, d.mood, comfortWord(d.comfort), d.fed && 'well fed'].filter(Boolean).join(' · ')));
-        b.addEventListener('click', () => { if (alive(c)) follow(c); });
+          energyBar(d.energy), colored('span', 'mood', [d.traits.length && `✦ ${TIERS[d.tier]} ${d.traits.join(' ')}`, d.mood, comfortWord(d.comfort), d.fed && 'well fed'].filter(Boolean).join(' · ')));
+        b.addEventListener('click', () => { if (alive(c)) { follow(c); showCreature(c); } });
         m.append(b);
         ul.append(m);
       }
@@ -458,7 +458,7 @@ function renderJournal() {
   const line = byId('log-line'), e = journalUi.current;
   if (e && e.text !== journalUi.shownText) {
     journalUi.shownText = e.text;
-    line.querySelector('.txt').textContent = e.text;
+    line.querySelector('.txt').replaceChildren(colorize(e.text));
     line.querySelector('time').textContent = e.clock == null ? '' : clockLabel(e.clock);
     line.querySelector('.dot').className = `dot cat-${e.cat}`;
     line.title = `${e.text}\nClick for the journal (J)`;
@@ -470,7 +470,7 @@ function renderJournal() {
   const list = world.journal.filter((e) => journalUi.filter === 'all' || e.cat === journalUi.filter).slice(0, 80);
   byId('journal').replaceChildren(...list.map((e) => {
     const li = el('li', `cat-${e.cat}`);
-    li.append(el('i', 'dot'), el('time', null, entryTime(e)), el('span', null, e.text));
+    li.append(el('i', 'dot'), el('time', null, entryTime(e)), colored('span', null, e.text));
     if (e.subject) {
       li.classList.add('link');
       li.title = 'Follow';
@@ -616,6 +616,285 @@ function updateSkyPanel() {
   byId('surf-text').textContent = surfText;
 }
 
+
+// ---- colour-coded words ------------------------------------------------------------------
+// Every classifier has one colour wherever it's mentioned: rarity tiers, rare
+// traits, working genes, the two waters and the three currencies.
+
+const GENE_INFO = {
+  fertility: { label: 'Fertility', color: '#ff7eb6' }, longevity: { label: 'Longevity', color: '#5fd4c4' },
+  vitality: { label: 'Vitality', color: '#7ed07a' }, intellect: { label: 'Intellect', color: '#b49cf0' },
+  light: { label: 'Light', color: '#ffe45c' }, aggression: { label: 'Aggression', color: '#ef6f6c' },
+  tolerance: { label: 'Tolerance', color: '#6fb7ef' }, territory: { label: 'Territory', color: '#f0a15c' },
+  resilience: { label: 'Resilience', color: '#9ab0c8' }, stealth: { label: 'Stealth', color: '#c8d4dc' },
+  speed: { label: 'Speed', color: '#8ef0f0' }, luck: { label: 'Luck', color: '#ffd166' },
+};
+const CLASS_COLOR = {
+  ...Object.fromEntries(Object.entries(RARE_OUTLINE).map(([k, v]) => [k, hex6(v)])), pale: '#e8e2d2',
+  ...Object.fromEntries(TIERS.map((t, i) => [t, TIER_COLOR[i]])),
+  ...Object.fromEntries(Object.entries(GENE_INFO).map(([k, v]) => [k, v.color])),
+  fresh: '#7ed07a', salt: '#4ab4ff', points: '#ffd166', pearls: '#e8f4f8', essence: '#c38bff',
+  hostile: '#ef6f6c', tense: '#f0a15c', calm: '#7ed07a',
+};
+const CLASS_WORDS = new Map();
+for (const [k, col] of Object.entries(CLASS_COLOR)) {
+  CLASS_WORDS.set(k, col);
+  if (!TIERS.includes(k)) CLASS_WORDS.set(k[0].toUpperCase() + k.slice(1), col);
+}
+const CLASS_RE = new RegExp(`\\b(${[...CLASS_WORDS.keys()].sort((a, b) => b.length - a.length).join('|')})\\b`, 'g');
+
+// Text with its classifier words wrapped in coloured spans (as a fragment, never HTML).
+function colorize(text) {
+  const frag = document.createDocumentFragment();
+  let last = 0;
+  for (const m of text.matchAll(CLASS_RE)) {
+    if (m.index > last) frag.append(text.slice(last, m.index));
+    const s = el('span', 'cls', m[1]);
+    s.style.color = CLASS_WORDS.get(m[1]);
+    frag.append(s);
+    last = m.index + m[1].length;
+  }
+  if (last < text.length) frag.append(text.slice(last));
+  return frag;
+}
+const colored = (tag, cls, text) => { const e = el(tag, cls); e.append(colorize(text)); return e; };
+const chip = (word, color) => { const e = el('span', 'tchip', word); e.style.color = color; e.style.borderColor = color; return e; };
+
+// ---- spawn card: click a dock icon to buy that animal with essence --------------------------
+
+const spawnUi = { kind: null, anchor: null, enh: new Set(), timer: 0 };
+const RARITY_WORDS = ['a common species', 'an uncommon species', 'a scarce species', 'an exotic species', 'a legendary species'];
+const yearsLabel = (y) => (y < 1 ? `${Math.round(y * 12)} months` : `${y} years`);
+
+function openSpawnCard(kind, anchor) {
+  if (spawnUi.kind === kind) { closeSpawnCard(); return; }
+  spawnUi.kind = kind;
+  spawnUi.anchor = anchor;
+  spawnUi.enh = new Set();
+  hideLineage();
+  setCensus(false);
+  renderSpawnCard();
+}
+
+function closeSpawnCard() {
+  spawnUi.kind = null;
+  byId('spawn-card').hidden = true;
+}
+
+function renderSpawnCard() {
+  const kind = spawnUi.kind, box = byId('spawn-card');
+  if (!kind) return;
+  const s = SPECIES_STATS[kind], G = world.game, enh = [...spawnUi.enh], price = spawnPrice(kind, enh);
+  const settle = settleChance(world, kind, enh.includes('hardy') ? ENHANCE.hardy.settle : 0), likes = LIKES[kind];
+  const head = el('div', 'sc-head'), ic = el('span', 'ic');
+  ic.append(iconImg(speciesIcon(kind), 32));
+  const water = SPECIES_HABITAT[kind] === 'both' ? 'fresh or salt' : SPECIES_HABITAT[kind];
+  const title = el('div');
+  title.append(el('b', null, SPECIES[kind].label), colored('span', null, `${water} water · ${RARITY_WORDS[s.rarity]}`));
+  const cost = el('span', 'sc-cost');
+  cost.append(el('i', 'essence'), document.createTextNode(fmt(price)));
+  head.append(ic, title, cost);
+  const facts = el('ul', 'sc-facts');
+  facts.append(
+    el('li', null, `Size ${'▮'.repeat(s.size)}${'▯'.repeat(5 - s.size)}${s.group ? ` · comes as ${s.group}` : ''}`),
+    el('li', null, `Settles in ${Math.round(settle * 100)}% of the time (the rest return half their price)`),
+    el('li', null, `Lives ~${yearsLabel(s.years)}, about ${Math.round(lifeSeconds(s.years) / 60)} minutes here · ${Math.min(100, Math.round(100 / s.years))}% die a year`),
+  );
+  if (likes) facts.append(el('li', null, `Likes ${likes.map((k) => LIKE_LABEL[k]).join(', ')}`));
+  const boosts = el('div', 'sc-boosts');
+  boosts.append(el('span', 'sc-sub', 'Gene boosts (hover for what each does)'));
+  for (const [key, e] of Object.entries(ENHANCE)) {
+    const b = el('button', 'boost');
+    b.type = 'button';
+    b.setAttribute('aria-pressed', spawnUi.enh.has(key));
+    const info = GENE_INFO[e.buff] || GENE_INFO.luck;
+    const name = el('b', null, e.label);
+    name.style.color = info.color;
+    const c = el('span', 'bc');
+    c.append(el('i', 'essence'), document.createTextNode(`+${enhanceCost(kind, key)}`));
+    b.append(name, c);
+    b.title = `${e.label}: ${e.note}`;
+    b.addEventListener('click', () => { if (spawnUi.enh.has(key)) spawnUi.enh.delete(key); else spawnUi.enh.add(key); renderSpawnCard(); });
+    boosts.append(b);
+  }
+  const buy = el('button', 'sc-buy');
+  buy.type = 'button';
+  buy.disabled = (G.essence || 0) < price;
+  buy.append(document.createTextNode(`Spawn ${SPECIES[kind].label.toLowerCase()} for `), el('i', 'essence'), document.createTextNode(fmt(price)));
+  buy.title = buy.disabled ? `You have ${fmt(G.essence || 0)} essence. Recycle animals with the Net for more.` : '';
+  buy.addEventListener('click', () => { if (buyAnimal(kind, [...spawnUi.enh])) renderSpawnCard(); });
+  box.replaceChildren(head, facts, boosts, buy);
+  box.hidden = false;
+  const bar = byId('animals').getBoundingClientRect(), a = spawnUi.anchor.getBoundingClientRect(), w = box.offsetWidth;
+  box.style.left = `${Math.round(clamp(a.left + a.width / 2 - w / 2, 8, innerWidth - w - 8))}px`;
+  box.style.bottom = `${Math.round(innerHeight - bar.top + 14)}px`;
+}
+
+// ---- creature card: everything about one animal ------------------------------------------------
+// Opened by clicking an animal, and shown automatically while following or touring.
+
+const creatureUi = { c: null, auto: false, timer: 0, rec: null };
+const LOCUS_INFO = {
+  albino: ['albino', 'recessive'], melanistic: ['melanistic', 'recessive'], piebald: ['piebald', 'recessive'],
+  xanthic: ['xanthic', 'recessive'], axanthic: ['axanthic', 'recessive'], leu: ['leucistic', 'incomplete'],
+  mar: ['marbled', 'dominant'], mut: ['mutator', 'recessive'],
+};
+const BUFF_ROWS = ['fertility', 'longevity', 'vitality', 'intellect', 'aggression', 'territory', 'speed', 'tolerance', 'resilience', 'stealth', 'light', 'luck'];
+
+function showCreature(c, auto = false) {
+  if (!c || !c.life) return;
+  if (auto && creatureUi.c && !creatureUi.auto && alive(creatureUi.c)) return; // don't replace one you opened
+  creatureUi.c = c;
+  creatureUi.auto = auto;
+  creatureUi.rec = world.lineage && world.lineage.get(c.seed);
+  byId('creature').hidden = false;
+  renderCreature();
+}
+
+function hideCreature() {
+  creatureUi.c = null;
+  creatureUi.auto = false;
+  byId('creature').hidden = true;
+}
+
+function geneBar(key, v) {
+  const info = GENE_INFO[key], mult = MULT_BUFFS.has(key);
+  const row = el('li', 'gene'), bar = el('span', 'gbar'), fill = el('i');
+  const k = mult ? clamp((v - 0.5) / 1, 0, 1) : clamp(v, 0, 1);
+  fill.style.width = `${Math.round(k * 100)}%`;
+  fill.style.background = info.color;
+  bar.append(fill);
+  const name = el('b', null, info.label);
+  name.style.color = info.color;
+  row.append(name, bar, el('span', 'gv', mult ? `×${v.toFixed(2)}` : v > 0 ? `${Math.round(v * 100)}%` : '–'));
+  return row;
+}
+
+// Grandparents, parents, the animal, its young: squares in each one's colour, outlined by tier.
+function familyTree(rec) {
+  const L = world.lineage, get = (s) => L.get(s);
+  const parents = (rec.p || []).map(get).filter(Boolean);
+  const grand = parents.flatMap((p) => (p.p || []).map(get).filter(Boolean)).slice(0, 4);
+  const kids = [...L.values()].filter((r) => r.p && r.p.includes(rec.s));
+  const rows = [grand, parents, [rec], kids.slice(0, 12)].filter((r, i) => r.length || i === 2);
+  const W = 272, H = rows.length * 24 + 6, pos = new Map();
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, 'shape-rendering': 'crispEdges' });
+  rows.forEach((row, j) => {
+    const step = Math.min(22, (W - 20) / Math.max(1, row.length - 1));
+    row.forEach((r, i) => pos.set(r.s, [Math.round(W / 2 + (i - (row.length - 1) / 2) * step), 12 + j * 24]));
+  });
+  for (const r of rows.flat()) {
+    const b = pos.get(r.s);
+    for (const p of r.p || []) {
+      const a = pos.get(p);
+      if (!a) continue;
+      const mid = Math.round((a[1] + b[1]) / 2) + 0.5;
+      svg.append(svgEl('path', { d: `M${a[0] + 0.5} ${a[1] + 5}V${mid}H${b[0] + 0.5}V${b[1] - 5}`, class: 'edge' }));
+    }
+  }
+  const here = new Set(world.creatures.filter((c) => c.life && !c.leaving).map((c) => c.seed));
+  for (const r of rows.flat()) {
+    const [x, y] = pos.get(r.s), tier = tierOf(r.t || []), me = r === rec, s = me ? 11 : 8;
+    const sq = svgEl('rect', {
+      x: x - s / 2, y: y - s / 2, width: s, height: s, fill: r.c, stroke: me ? '#ffd166' : tier ? TIER_COLOR[tier] : '#0b1a22',
+      'stroke-width': me || tier ? 2 : 1, opacity: r.d == null && here.has(r.s) ? 1 : 0.45,
+    });
+    const t = svgEl('title', {});
+    t.textContent = `${r.n} · gen ${r.g}${tier ? ` · ${TIERS[tier]} ${r.t.join(' ')}` : ''}${r.d != null ? ` · left day ${Math.floor(r.d) + 1}` : ''}`;
+    sq.append(t);
+    svg.append(sq);
+  }
+  if (kids.length > 12) {
+    const t = svgEl('text', { x: W - 2, y: H - 6, class: 'gen', 'text-anchor': 'end' });
+    t.textContent = `+${kids.length - 12}`;
+    svg.append(t);
+  }
+  return { svg, parents, kids };
+}
+
+function renderCreature() {
+  const c = creatureUi.c, box = byId('creature');
+  if (!c) return;
+  const here = alive(c), L = c.life, d = describe(c), rec = creatureUi.rec || (world.lineage && world.lineage.get(c.seed));
+  const parts = [];
+  const head = el('header', 'cr-head'), nm = el('b', null, d.name);
+  nm.style.color = d.tier ? TIER_COLOR[d.tier] : 'var(--hot)';
+  const close = el('button', 'icon', '×');
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Close');
+  close.addEventListener('click', hideCreature);
+  head.append(nm, d.tier ? chip(TIERS[d.tier], TIER_COLOR[d.tier]) : el('span'), close);
+  parts.push(head);
+  const water = waterOf(c), mm = mismatch(world, c), a = aggressionAt(world, c.x, c.y);
+  parts.push(colored('p', 'cr-sub', `${d.label} · ${d.stage} · gen ${d.gen} · ${ageLabel(L.age)} of ~${Math.round(L.lifespan / 60)}m`));
+  if (!here) {
+    parts.push(colored('p', 'cr-gone', rec && rec.d != null ? `No longer in the pond: left on day ${Math.floor(rec.d) + 1}${rec.why ? ` (${rec.why})` : ''}` : 'No longer in the pond'));
+  } else {
+    const bar = el('div', 'bar'), fill = el('i');
+    fill.style.width = `${Math.round(L.energy * 100)}%`;
+    bar.append(fill);
+    parts.push(bar, colored('p', 'cr-sub', [d.mood, comfortWord(L.comfort), aggressionWord(a), water && (mm > 0.3 ? `out of place in ${water === 'fresh' ? 'salt' : 'fresh'} water` : `in ${water} water`), d.fed && 'well fed', ...d.temper].filter(Boolean).join(' · ')));
+  }
+  if (d.traits.length || d.carries.length) {
+    const t = el('div', 'chips');
+    for (const tr of d.traits) t.append(chip(tr, CLASS_COLOR[tr] || '#ffd166'));
+    for (const k of d.carries) { const ch = chip(`carries ${k}`, CLASS_COLOR[k] || '#8fbcb8'); ch.classList.add('carrier'); t.append(ch); }
+    parts.push(t);
+  }
+  parts.push(el('h4', null, 'Genes'));
+  const genes = el('ul', 'genes');
+  for (const k of BUFF_ROWS) genes.append(geneBar(k, L.buffs[k]));
+  parts.push(genes);
+  const g = L.genome, geno = el('ul', 'geno');
+  for (const [k, [word, mode]] of Object.entries(LOCUS_INFO)) {
+    const n = g[k] || 0;
+    if (!n) continue;
+    const shows = mode === 'dominant' ? true : mode === 'incomplete' ? true : n === 2;
+    const what = k === 'leu' ? (n === 2 ? 'leucistic' : 'pale (one copy shows partly)') : k === 'mar' ? (n === 2 ? 'shows, and frail' : 'shows')
+      : k === 'mut' ? (n === 2 ? 'hypermutable young' : 'carrier') : shows ? 'shows' : 'carrier';
+    const li = el('li'), name = el('b', null, word);
+    name.style.color = CLASS_COLOR[word] || '#b49cf0';
+    li.append(name, el('span', 'al', n === 2 ? '●●' : '●○'), colored('span', null, `${what} · ${mode}`));
+    geno.append(li);
+  }
+  if (g.chi) geno.append(colored('li', null, 'chimera: two lineages in one body (not inherited)'));
+  parts.push(el('h4', null, 'Genotype'));
+  parts.push(geno.children.length ? geno : el('p', 'note', 'No variant alleles: a wild-type animal.'));
+  parts.push(el('p', 'note', `Inbreeding ${Math.round((L.inbred || 0) * 100)}% · hybrid vigour +${Math.round((L.buffs.vigor - 1) * 100)}%`));
+  if (rec) {
+    parts.push(el('h4', null, 'Family'));
+    const { svg, parents, kids } = familyTree(rec);
+    parts.push(svg);
+    const pn = parents.length ? parents.map((p) => p.n).join(' & ') : rec.how === 'arrived' ? 'arrived from outside' : rec.how === 'bought' ? 'spawned by you' : 'a founder';
+    parts.push(colored('p', 'note', `Parents: ${pn} · ${kids.length} young · +${rec.pts} points · ${rec.how} on day ${Math.floor(rec.b || 0) + 1}`));
+  }
+  const story = world.journal.filter((e) => e.subject === c).slice(0, 4);
+  if (story.length) {
+    parts.push(el('h4', null, 'Story'));
+    const ul = el('ul', 'story');
+    for (const e of story) { const li = colored('li', null, e.text); li.prepend(el('time', null, entryTime(e))); ul.append(li); }
+    parts.push(ul);
+  }
+  const acts = el('div', 'cr-acts');
+  if (here) {
+    const f = el('button', null, cam.follow === c ? 'Following' : 'Follow');
+    f.type = 'button';
+    f.addEventListener('click', () => { cam.tour = false; byId('tour').setAttribute('aria-pressed', false); follow(c); });
+    const r = el('button', 'recycle');
+    r.type = 'button';
+    r.append(document.createTextNode('Recycle +'), el('i', 'essence'), document.createTextNode(String(recycleValue(c))));
+    r.title = 'Return this animal to the pond for essence';
+    r.addEventListener('click', () => {
+      if (d.tier >= 3 && !confirm(`Recycle ${d.name}, a ${TIERS[d.tier]} ${d.label}? It will be gone for good.`)) return;
+      recycle(c);
+      renderCreature();
+    });
+    acts.append(f, r);
+  }
+  parts.push(acts);
+  box.replaceChildren(...parts);
+}
+
 // ---- score: points, pearls, the leaderboard and rare finds everywhere -----------------------------
 
 const scoreUi = { open: false, timer: 0, shown: '', boardAt: -1 };
@@ -639,20 +918,22 @@ function restartAnim(e, cls) {
   e.classList.add(cls);
 }
 const flashPearls = () => restartAnim(byId('score-btn'), 'poor');
+const fmtShort = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `${Math.round(n / 1000)}k` : fmt(n));
 
 // The pond bar at the top: this pond's name, points, pearls and leaderboard place.
 function updateScoreHud() {
   const G = world.game;
   if (!G) return;
   const rank = world.link && G.board && G.points >= BOARD_MIN && Net.rank ? `#${Net.rank}` : '';
-  const key = `${G.points}|${G.pearls}|${world.seed}|${rank}`;
+  const key = `${G.points}|${G.pearls}|${G.essence}|${world.seed}|${rank}`;
   if (key === scoreUi.shown) return;
   const was = scoreUi.shown ? +scoreUi.shown.split('|')[0] : null;
   scoreUi.shown = key;
   byId('bar-name').textContent = world.seed;
   byId('bar-rank').textContent = rank;
-  byId('score-points').textContent = fmt(G.points);
-  byId('score-pearls').textContent = fmt(G.pearls);
+  byId('score-points').textContent = fmtShort(G.points);
+  byId('score-pearls').textContent = fmtShort(G.pearls);
+  byId('score-essence').textContent = fmtShort(G.essence || 0);
   if (was != null && G.points > was) restartAnim(byId('score-btn'), 'bump');
 }
 
@@ -683,6 +964,8 @@ function renderScorePanel(force = false) {
   const G = world.game, plan = fireflyPlan(world);
   byId('sp-points').textContent = fmt(G.points);
   byId('sp-pearls').textContent = fmt(G.pearls);
+  byId('sp-essence').textContent = fmt(G.essence || 0);
+  byId('sp-mode').replaceChildren(colorize(`${HABITATS[world.opts.habitat]} water is ${difficulty(world).label.toLowerCase()}: ${difficulty(world).note}. Points ×${difficulty(world).points}.`));
   byId('sp-rank').textContent = world.link && G.board && Net.rank ? `#${Net.rank}` : '–';
   byId('sp-rank-note').textContent = !Net.base ? 'offline' : !G.board ? 'not listed'
     : G.points < BOARD_MIN || !Net.rank ? `listed at ${BOARD_MIN} pts` : `rank${Net.board && Net.board.ponds ? ` of ${fmt(Net.board.ponds)}` : ''}`;
@@ -691,7 +974,9 @@ function renderScorePanel(force = false) {
   byId('sp-best').textContent = G.best ? `Best find: ${TIERS[G.best.tier]} ${findLabel(G.best)}${G.best.name ? `, ${G.best.name}` : ''}` : '';
   byId('sp-recent').replaceChildren(...(G.recent.length ? G.recent.slice(0, 6).map((r) => {
     const li = el('li');
-    li.append(el('b', null, `+${fmt(r.n)}`), el('span', null, r.why), el('time', null, `D${r.day} ${clockLabel(r.clock)}`));
+    const amount = el('b', r.ess ? 'ess' : null, `+${fmt(r.n)}`);
+    if (r.ess) amount.append(el('i', 'essence'));
+    li.append(amount, colored('span', null, r.why), el('time', null, `D${r.day} ${clockLabel(r.clock)}`));
     return li;
   }) : [el('li', 'empty', 'Nothing yet: births, rare animals and each dawn pay points.')]));
   byId('sp-join').checked = !!G.board;
@@ -756,6 +1041,10 @@ function initHud() {
   byId('census-close').addEventListener('click', () => setCensus(false));
   byId('log-close').addEventListener('click', () => setJournal(false));
   byId('score-btn').addEventListener('click', () => setScore(!scoreUi.open));
+  // The spawn card closes when you click anywhere but the card or the dock.
+  addEventListener('pointerdown', (e) => {
+    if (spawnUi.kind && !e.target.closest('#spawn-card, #animals')) closeSpawnCard();
+  });
   byId('score-close').addEventListener('click', () => setScore(false));
   byId('sp-join').addEventListener('change', (e) => {
     world.game.board = e.target.checked;
@@ -767,7 +1056,7 @@ function initHud() {
     if (e.target.closest && e.target.closest('select, input')) return;
     if (e.key === 'j' || e.key === 'J') setJournal(!journalUi.open);
     else if (e.key === 'c' || e.key === 'C') setCensus(!census.open);
-    else if (e.key === 'Escape') { setJournal(false); setCensus(false); setSky(false); setScore(false); }
+    else if (e.key === 'Escape') { setJournal(false); setCensus(false); setSky(false); setScore(false); closeSpawnCard(); hideCreature(); }
   });
 }
 
@@ -784,4 +1073,8 @@ function hudTick(dt) {
   if (scoreUi.timer <= 0) { scoreUi.timer = 0.4; updateScoreHud(); renderScorePanel(); }
   lineUi.timer -= dt;
   if (lineUi.kind && lineUi.timer <= 0) { lineUi.timer = 1; renderLineage(); }
+  spawnUi.timer -= dt;
+  if (spawnUi.kind && spawnUi.timer <= 0) { spawnUi.timer = 1; renderSpawnCard(); }
+  creatureUi.timer -= dt;
+  if (creatureUi.c && creatureUi.timer <= 0) { creatureUi.timer = 0.5; renderCreature(); }
 }

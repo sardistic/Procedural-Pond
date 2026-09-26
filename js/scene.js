@@ -292,6 +292,7 @@ class Motes {
 
 const SHORE_SIDES = [[-1, 0], [1, 0], [0, -1], [0, 1]]; // left, right, top, bottom: direction toward the beach
 const AMPHIBIOUS = new Set(['crab', 'turtle', 'snail', 'starfish', 'frog', 'firefly', 'gnat', 'dragonfly']);
+const SHORE_MARGIN = 0.2; // how much beach elevation of water swimmers keep below the tide
 
 function makeShore(world) {
   const { W, H } = world, side = world.shoreSide, band = Math.min(W, H) * 0.22;
