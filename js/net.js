@@ -83,9 +83,10 @@ async function pushPond(world) {
 }
 
 // A shared pond by its short link: { id, save, meta } or null.
-async function fetchPond(id) {
+// (A peek, for drawing a neighbour past the end of the beach, doesn't count as a visit.)
+async function fetchPond(id, peek = false) {
   try {
-    const res = await api('GET', `/ponds/${id}`);
+    const res = await api('GET', `/ponds/${id}${peek ? '?peek=1' : ''}`);
     return res && isSave(res.save) ? res : null;
   } catch {
     return null;

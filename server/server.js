@@ -245,14 +245,18 @@ function countView(ip, id, now) {
   q.view.run(id);
 }
 
-function getPond(req, id) {
+// A peek (the neighbour drawn past the end of someone's beach) is not a visit: it neither
+// counts a view nor keeps the pond from expiring.
+function getPond(req, id, peek) {
   const row = q.get.get(id);
   if (!row) throw new HttpError(404, 'no such pond');
   const now = Date.now();
-  if (now - row.opened > 36e5) q.opened.run(now, id);
-  countView(req.ip, id, now);
+  if (!peek) {
+    if (now - row.opened > 36e5) q.opened.run(now, id);
+    countView(req.ip, id, now);
+  }
   const save = JSON.parse(zlib.inflateRawSync(row.save).toString('utf8'));
-  return [200, { id, save, meta: JSON.parse(row.meta), updated: row.updated, views: (row.views || 0) + 1 }];
+  return [200, { id, save, meta: JSON.parse(row.meta), updated: row.updated, views: (row.views || 0) + (peek ? 0 : 1) }];
 }
 
 // The shared beach: every pond active in the last month, in the order they were
@@ -297,7 +301,7 @@ async function route(req) {
   if (path === '/api/ponds' && req.method === 'POST') return createPond(req);
   const m = /^\/api\/ponds\/([a-z-]{11,35})$/.exec(path);
   if (m && ID_RE.test(m[1])) {
-    if (req.method === 'GET') return getPond(req, m[1]);
+    if (req.method === 'GET') return getPond(req, m[1], url.searchParams.get('peek') === '1');
     if (req.method === 'PUT') return updatePond(req, m[1]);
     throw new HttpError(405, 'method not allowed');
   }

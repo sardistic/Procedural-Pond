@@ -1298,7 +1298,7 @@ async function ensureBeyond(side) {
   if (!B || B.snap || B.loading) return;
   B.loading = true;
   try {
-    const got = B.home ? null : await fetchPond(B.id), save = B.home ? loadSave(homeInfo.seed) : got && got.save;
+    const got = B.home ? null : await fetchPond(B.id, true), save = B.home ? loadSave(homeInfo.seed) : got && got.save;
     if (!save || !isSave(save)) return;
     if (got) B.updated = got.updated;
     await new Promise((res) => setTimeout(res, 0)); // (let the frame finish before the heavy drawing)

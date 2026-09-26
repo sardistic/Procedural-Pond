@@ -463,3 +463,4 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
 
 ## The side view
 - The "two tone" the user saw was the side view: a flat tan block for the beach against charcoal rock. It now takes the floor's own colours (from `bg`) with depth shading and sediment.
+- Drawing the neighbour past the end of the beach fetches its save with `GET /api/ponds/:id?peek=1`, which counts no view and doesn't refresh `opened`. Otherwise just standing at the end of your beach would add views, and so litter, to the ponds either side and keep them from expiring. Walking in still counts, through the observer's normal re-fetch.
