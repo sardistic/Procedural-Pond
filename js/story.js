@@ -175,6 +175,20 @@ const STORY = {
     ['{name} has come from {from} to feed. The pond made room for it. The pond always makes room.'],
     ['it came from {from} it came for us it came for us'],
   ],
+  alien: [
+    ['Something landed in the deep. It is not a rock. I have looked at a great many rocks.'],
+    ['A {thing} lies on the floor of the deep. The water near it tastes of metal and of nothing.'],
+    ['The {thing} is not from here. Neither, I am beginning to think, am I.'],
+    ['It came from very far away, the {thing}, and it came here on purpose.'],
+    ['the {thing} is listening to the pond the way the pond listens to it'],
+  ],
+  evolved: [
+    ['Something new was born today. {name}. I have no name for what it is. It is {trait}.'],
+    ['{name} is {trait}. Its parents were not. The thing that rode them was.'],
+    ['The pond has taken the stranger in, and made {name} of it: {trait}.'],
+    ['{name}, {trait}. It will have young. They will be like it.'],
+    ['{name} is what we become'],
+  ],
   bloodrain: [
     ['Red rain. Dust from somewhere far away, I expect.'],
     ['It rained red. The pond drank it all.'],

@@ -292,7 +292,7 @@ function buildPond() {
     creatures: [], food: [], eggs: [], effects: [], swarms: [], targets: {}, journal: [], glints: [], structures: [], hatchery: null, remains: [], fossils: [],
     litter: [], blight: null, riverW: 0, islandKey: null, scourKey: null, deepPlaced: 0, maxPopBonus: 0, pollution: 0,
     // (A new pond starts clean of the last one's oil, sky, blood, fights, story and weather; a saved one restores its own.)
-    slicks: [], tar: null, heavens: null, bloodSpots: [], natureDay: null, story: null, darkAvg: null, meta: null,
+    slicks: [], tar: null, heavens: null, bloodSpots: [], natureDay: null, story: null, darkAvg: null, meta: null, xeno: [], parasites: [], xenoShards: [],
     weather: { rain: 0, target: 0, next: 30, gust: 0 },
     days: 0.4, clock: 0.4, spawning: 0, spawnNight: -1, records: null, moon: null,
     tide: { level: 0.5, range: 0, rising: true, flow: 0, surf: 0, wave: 0 },
@@ -437,6 +437,7 @@ function update(dt) {
   updateHeavens(world, dt);
   updateNature(world, dt);
   updatePollution(world, dt);
+  updateAlien(world, dt);
   updateDark(world, dt);
   updateStory(world, dt);
   updateZones(world, dt);
@@ -531,6 +532,7 @@ function render(full = false) {
   for (const l of world.litter) l.draw(r, t, world);
   drawSlicks(r, world, t, rect);
   drawTar(r, world, t);
+  drawXeno(r, world, t, rect);
   for (const rm of world.remains) rm.draw(r, t);
   for (const f of world.fossils) f.draw(r, t);
   for (const p of world.pads) if (near(p.x, p.y, 30)) drawGrown(r, p, t);
@@ -840,6 +842,7 @@ function build(kind, x, y) {
   growWreck(made);
   startBuildAnim(made); // it arrives in its own way, then settles into the floor
   world.structures.push(made);
+  markBuilt();
   if (kind === 'hatchery' && !world.hatchery) world.hatchery = newHatchery();
   logEvent(world, kind === 'ship' ? `You sank ${wreckName(made)}${k > 1.05 ? ` out over the deep (×${k.toFixed(1)})` : ''}: ${def.desc}` : `You built ${withArticle(def.label.toLowerCase())}${k > 1.05 ? ` out over the deep (×${k.toFixed(1)})` : ''}: ${def.desc}`, null, { cat: 'pond', pri: 2 });
   if (def.tier >= 3 && typeof narrate === 'function') narrate(world, 'build', { what: capFirst(withArticle(def.label.toLowerCase())) });
@@ -855,6 +858,7 @@ function demolish(s) {
   }
   world.structures.splice(world.structures.indexOf(s), 1);
   divest(world, 'build', s.worth || def.pearls);
+  setTimeout(markBuilt, 0);
   world.game.pearls += Math.round(def.pearls / 2);
   world.gameDirty = true;
   structuresChanged(!!def.shore);
@@ -893,6 +897,8 @@ function creatureAt(x, y) {
 function removeAt(x, y) {
   const li = litterAt(world, x, y);
   if (li) { haulLitter(world, li); return; }
+  const xa = xenoAt(world, x, y);
+  if (xa) { breakXeno(world, xa); return; }
   const c = creatureAt(x, y);
   if (c) { recycle(c); return; }
   const st = structureAt(world, x, y);
@@ -1856,6 +1862,7 @@ function renderQuickBar() {
       return b;
     }));
     for (const k of keys) if (!k.startsWith('life:')) setToolIcon(k);
+    if (typeof markBuilt === 'function') markBuilt();
   }
   for (const b of bar.children) b.setAttribute('aria-pressed', b.dataset.tool === world.tool);
   markPins();
@@ -1908,6 +1915,56 @@ function buildLifeTiles() {
   $('actions-close').addEventListener('click', () => setActions(false));
 }
 
+// ---- what's new, and what's built -------------------------------------------------------------------
+// Anything that has become available since the pond last showed it to you (a new build, food or
+// plant as it deepens, a species unlocked) is marked NEW until you point at it or use it; the pond
+// keeps what it has shown you (G.seenAct), and its first look marks nothing. A one-of-a-kind build
+// already in the pond is greyed out.
+const newKey = (b) => b.dataset.tool || (b.dataset.spawn ? `life:${b.dataset.spawn}` : null);
+function markNew() {
+  const G = world.game;
+  if (!G || world.observe) return;
+  const tiles = [...document.querySelectorAll('#actions [data-tool], #act-life [data-spawn], #animals [data-spawn]')];
+  const avail = tiles.filter((b) => !b.hidden).map(newKey);
+  if (!G.seenAct) { G.seenAct = [...new Set(avail)]; world.gameDirty = true; }
+  const seen = new Set(G.seenAct), fresh = new Set();
+  for (const b of tiles) {
+    const k = newKey(b), isNew = !b.hidden && !seen.has(k);
+    b.classList.toggle('is-new', isNew);
+    if (isNew && !b.closest('#animals')) fresh.add(k);
+  }
+  const more = $('rail-more');
+  more.dataset.new = fresh.size ? String(fresh.size) : '';
+  more.classList.toggle('has-new', fresh.size > 0);
+}
+function seeAct(k) {
+  const G = world.game;
+  if (!k || !G || !G.seenAct || G.seenAct.includes(k)) return;
+  G.seenAct.push(k);
+  world.gameDirty = true;
+  markNew();
+}
+// Seen once you've pointed at it and moved on, or used it.
+for (const box of [$('actions'), $('animals')]) {
+  box.addEventListener('pointerout', (e) => { const b = e.target.closest('[data-tool], [data-spawn]'); if (b && b.classList.contains('is-new') && !b.contains(e.relatedTarget)) seeAct(newKey(b)); });
+  box.addEventListener('click', (e) => { const b = e.target.closest('[data-tool], [data-spawn]'); if (b) seeAct(newKey(b)); }, true);
+}
+function markBuilt() {
+  for (const b of document.querySelectorAll('button[data-tool^="build-"]')) {
+    const kind = TOOLS[b.dataset.tool].build, def = STRUCTURES[kind], done = !!def.unique && (world.structures || []).some((s) => s.kind === kind);
+    b.classList.toggle('done', done);
+    b.setAttribute('aria-disabled', done);
+  }
+}
+// A one-of-a-kind already built can't be picked again.
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('button.done[data-tool^="build-"]');
+  if (!b || e.target.closest('.pin')) return;
+  e.stopImmediatePropagation();
+  e.preventDefault();
+  showTicker(`There can only be one ${STRUCTURES[TOOLS[b.dataset.tool].build].label.toLowerCase()}, and it's already in the pond`);
+}, true);
+
 // Only offer animals and plants that live in this habitat.
 function refreshSpeciesButtons() {
   // Deep species show once their zone exists and they're unlocked on the evolution tree.
@@ -1929,6 +1986,7 @@ function refreshSpeciesButtons() {
   }
   if (MINI_LAYERS[miniLayer][0] === 'water' && world.opts.habitat !== 'mixed') setMiniLayer(0);
   if (typeof renderQuickBar === 'function' && $('quickbar')) renderQuickBar();
+  if (typeof markBuilt === 'function') { markBuilt(); markNew(); }
 }
 
 function fillSelect(el, entries, value) {

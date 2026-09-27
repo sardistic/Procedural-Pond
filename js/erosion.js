@@ -19,7 +19,7 @@ const DEPTH_TIERS = [
   { erosion: 22, salt: 'The abyss', fresh: 'The drowned cathedral', depth: 1, expand: 0.22 },
 ];
 // How far out the pond may grow along the deep, all told: past this the tiers go on in the dark, with no more room.
-const MAX_DEEP_PX = 2800;
+const MAX_DEEP_PX = 4200;
 const DEEP_COLOR = { salt: hexToInt('#02040e'), fresh: hexToInt('#050806'), mixed: hexToInt('#03050c') };
 
 // ---- depth is the score -------------------------------------------------------------------------

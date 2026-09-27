@@ -115,6 +115,7 @@ function buildLights(world, rect) {
     if (s.kind === 'island' && s.branch === 'dark') splat(M, s.x, s.y, islandRadius(world, s) * 1.1, 0xff8aff3a, 0.2 + 0.06 * (s.blv || 1), 0, 0, big);
   }
   for (const f of world.fossils || []) if (f.kind === 'relic') splat(M, f.x, f.y, 14, 0xff8ad03a, 0.8, 0, 0, big);
+  if (typeof xenoLights === 'function') xenoLights(M, world, big);
   return M.any ? M : null;
 }
 

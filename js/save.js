@@ -100,6 +100,7 @@ function serializePond(world) {
     t: r2(world.t), days: world.days, moon0: world.moon0, tide0: world.tide0,
     weather: { rain: r2(world.weather.rain), target: r2(world.weather.target), next: r2(world.weather.next), blood: world.weather.blood || undefined },
     heavens: world.heavens || null,
+    xeno: world.xeno || [], parasites: (world.parasites || []).map((p) => ({ x: r2(p.x), y: r2(p.y), z: r2(p.z), kind: p.kind, gen: p.gen, t: r2(p.t) })), xenoShards: world.xenoShards || [],
     slicks: (world.slicks || []).map((s) => ({ x: r2(s.x), y: r2(s.y), r: r2(s.r), oil: r2(s.oil), seed: s.seed, t: s.fromTar ? 1 : undefined })), tar: world.tar || null,
     currentBase: world.current.base, records: world.records, spawnNight: world.spawnNight,
     targets: world.targets, eco: { ...ECO }, journalSeq: world.journalSeq,
@@ -153,7 +154,7 @@ function creatureRecord(c, a = {}) {
       quirks: L.quirks && L.quirks.length ? L.quirks : undefined, ill: L.ill && L.ill.length ? L.ill : undefined,
       hunt: L.hunt || undefined, hunter: L.hunter || undefined, madCount: L.madCount || undefined,
       safe: L.safe || undefined, paragon: L.paragon || undefined, warps: L.warps && L.warps.length ? L.warps : undefined,
-      wanderer: L.wanderer || undefined,
+      wanderer: L.wanderer || undefined, para: L.para || undefined,
       lifespan: r2(L.lifespan), gen: L.gen, scale: L.scale, old: !!L.old, inbred: r2(L.inbred || 0),
       genome: L.genome, traits: L.traits, parents: L.parents,
     },
@@ -170,6 +171,7 @@ function restoreCreature(world, r, a = {}) {
     absorbed: r.L.absorbed || 0, ascended: !!r.L.ascended, boosts: r.L.boosts || null,
     quirks: r.L.quirks || [], ill: r.L.ill || [], hunt: r.L.hunt || null, hunter: !!r.L.hunter, madCount: r.L.madCount || 0,
     safe: !!r.L.safe, paragon: !!r.L.paragon, warps: r.L.warps && r.L.warps.length ? r.L.warps : null, wanderer: r.L.wanderer || null,
+    para: r.L.para && typeof PARASITES !== 'undefined' && PARASITES[r.L.para.k] ? r.L.para : null,
   });
   if (r.L.paragon && c.id) { OUTLINE[c.id] = RARE_OUTLINE.paragon; THICK[c.id] = 1; }
   if (r.L.wanderer && c.id) { OUTLINE[c.id] = WANDER_OUTLINE; THICK[c.id] = 1; } // (a wanderer, still here: red-edged)
@@ -231,6 +233,9 @@ function restorePond(world, d) {
   world.heavens = d.heavens || null;
   world.slicks = (d.slicks || []).map(({ t, ...s }) => (t ? { ...s, fromTar: true } : { ...s }));
   world.tar = d.tar || null;
+  world.xeno = (d.xeno || []).filter((a) => a && PARASITES[a.kind]);
+  world.parasites = (d.parasites || []).filter((p) => p && PARASITES[p.kind]).map((p) => ({ ...p, h: rand(-PI, PI), ph: rand(0, TAU) }));
+  world.xenoShards = (d.xenoShards || []).filter((s) => s && PARASITES[s.kind]);
   world.darkAvg = d.darkAvg ?? undefined;
   world.litter = (d.litter || []).filter((l) => LITTER[l.k]).map((l) => new Litter(l.k, l.x, l.y, l.b ?? world.days, l.hp, l.s));
   world.blight = d.blight || null;

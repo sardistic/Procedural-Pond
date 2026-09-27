@@ -135,6 +135,7 @@ function traitsOf(g) {
   else if (g.size < 0.76) t.push('dwarf');
   if (g.leu === 1 && !morph) t.push('pale');
   if (typeof quirkTraits === 'function') quirkTraits(g, t); // gifts and curses (quirks.js)
+  if (g.xeno && typeof XENO_TRAITS !== 'undefined' && XENO_TRAITS[g.xeno - 1]) t.push(XENO_TRAITS[g.xeno - 1]); // the evolved (alien.js)
   return t;
 }
 const carriesOf = (g) => [...RECESSIVE, ...RECESSIVE2].filter((k) => g[k] === 1);
@@ -379,6 +380,7 @@ function childGenomeFor(seed, a, b) {
     ...withSeed(`genome/${seed}`, () => childGenome(a, b, m)), ...withSeed(`genome2/${seed}`, () => childGenome2(a, b, m)),
     ...withSeed(`genome3/${seed}`, () => childGenome3(a, b, m)), ...withSeed(`genome4/${seed}`, () => childGenome4(a, b, m)),
     ...(typeof childGenome5 === 'function' ? withSeed(`genome5/${seed}`, () => childGenome5(a, b, m)) : {}),
+    ...(typeof childXeno === 'function' ? withSeed(`genome6/${seed}`, () => childXeno(a, b)) : {}),
   };
 }
 const GENOME_KEYS = [...Object.keys(GENE_LIMITS), 'shiny', 'shinyHue', 'seed', ...RECESSIVE, ...RECESSIVE2, 'glow', 'ghost', ...FGENES, 'leu', 'mar', 'mut', 'chi', 'eld'];
@@ -387,7 +389,7 @@ const sameGenome = (a, b) => GENOME_KEYS.every((k) => (a[k] || 0) === (b[k] || 0
 function fillGenome(g) {
   for (const k of [...RECESSIVE2, 'leu', 'mar', 'mut']) g[k] = g[k] || 0;
   for (const k of FGENES) if (typeof g[k] !== 'number') g[k] = 0.5;
-  g.glow = !!g.glow; g.ghost = !!g.ghost; g.chi = !!g.chi; g.eld = !!g.eld;
+  g.glow = !!g.glow; g.ghost = !!g.ghost; g.chi = !!g.chi; g.eld = !!g.eld; g.xeno = g.xeno || 0;
   if (typeof G5_KEYS !== 'undefined') for (const k of G5_KEYS) g[k] = !!g[k];
   return g;
 }
@@ -515,6 +517,7 @@ function eat(world, c, f) {
     if (c.life) { c.life.satedUntil = world.t + (18 + 70 * ratio) * (c.life.genome.ravenous ? 0.4 : 1); c.prey = null; }
     ECO.eaten++;
     if (c.life && c.life.wanderer) c.life.wanderer.kills++;
+    if (typeof paraEaten === 'function') paraEaten(world, c, f);
     addBubbles(world, f.x, f.y, f.z, 3);
     if (typeof onKill === 'function') onKill(world, c, f); // a hunter's devour and contagion
     if (f.life) {

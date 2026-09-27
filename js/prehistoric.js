@@ -12,9 +12,10 @@
 
 // ---- the tiers ------------------------------------------------------------------------------------------
 const PRE_NAMES = {
-  salt: ['The Cambrian sea', 'The Devonian dark', 'The Permian deep'],
-  fresh: ['The Carboniferous swamps', 'The Devonian lakes', 'The primordial mire'],
+  salt: ['The Cambrian sea', 'The Devonian dark', 'The Permian deep', 'The Starfall trench', 'The Glass garden', 'The Other sea'],
+  fresh: ['The Carboniferous swamps', 'The Devonian lakes', 'The primordial mire', 'The Fallen-star mire', 'The Grey fen', 'The Other water'],
 };
+const NAMED = PRE_NAMES.salt.length; // (past these, the names are made up)
 const DEEP_ADJ = ['Nameless', 'Sunless', 'Unmade', 'Older', 'Hollow', 'Endless', 'Starless', 'Forgotten', 'Silent', 'Ancestral'];
 const DEEP_NOUN = { salt: ['Deep', 'Gulf', 'Abyss', 'Dark', 'Sea'], fresh: ['Mire', 'Waters', 'Well', 'Dark', 'Fen'] };
 // Make sure the tiers exist up to index n (the pond asks as it deepens).
@@ -22,8 +23,8 @@ function ensureTiers(n) {
   while (DEPTH_TIERS.length <= n) {
     const i = DEPTH_TIERS.length, j = i - 9; // (tiers 0..8 are fixed; 9, 10, 11 are the deep past)
     const erosion = Math.round(200 * 1.5 ** (i - 8) / 10) * 10; // (300, 450, 680, 1010, ...)
-    const name = (b) => (j < 3 ? PRE_NAMES[b][j] : `The ${DEEP_ADJ[(j * 7) % DEEP_ADJ.length]} ${DEEP_NOUN[b][(j * 3) % DEEP_NOUN[b].length]}${j >= 3 + DEEP_ADJ.length ? ` ${['II', 'III', 'IV', 'V'][Math.min(3, Math.floor((j - 3) / DEEP_ADJ.length) - 1)]}` : ''}`);
-    DEPTH_TIERS.push({ erosion, salt: name('salt'), fresh: name('fresh'), depth: 1, expand: j < 3 ? 0.3 : 0.2, dark: true });
+    const name = (b) => (j < NAMED ? PRE_NAMES[b][j] : `The ${DEEP_ADJ[(j * 7) % DEEP_ADJ.length]} ${DEEP_NOUN[b][(j * 3) % DEEP_NOUN[b].length]}${j >= NAMED + DEEP_ADJ.length ? ` ${['II', 'III', 'IV', 'V'][Math.min(3, Math.floor((j - NAMED) / DEEP_ADJ.length) - 1)]}` : ''}`);
+    DEPTH_TIERS.push({ erosion, salt: name('salt'), fresh: name('fresh'), depth: 1, expand: j < NAMED ? 0.3 : 0.2, dark: true });
   }
 }
 ensureTiers(40); // (far past anything a pond will reach: tier 40 needs erosion in the tens of millions)

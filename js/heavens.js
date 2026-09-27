@@ -128,6 +128,8 @@ function updateHeavens(world, dt) {
         logEvent(world, '✦ A falling star came down on the beach: something is lying in the sand where it struck', null, { cat: 'rare', pri: 3 });
         if (typeof narrate === 'function') narrate(world, 'fallen');
         addRipple(world, x, y, 3);
+        // (From the deep past on, something else sometimes comes down with them, into the deep.)
+        if ((world.erosion && world.erosion.tier) >= 9 && Math.random() < 0.3 && typeof landXeno === 'function') landXeno(world, null, null, 'it came down with the falling stars');
         break;
       }
     }

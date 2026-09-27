@@ -57,8 +57,12 @@ const QUIRKS = {
   'hollow-eyed': { color: '#3a3a6a', buffs: { intellect: 0.3 }, note: 'it sees in the dark' },
 };
 const ILLS = {
-  rot: { color: '#4a5a1a', buffs: { longevity: -0.4, vitality: -0.2 }, note: 'the rot: it ages fast, and passes to its kind by touch' },
-  madness: { color: '#c04ac0', buffs: { aggression: 0.4, intellect: -0.2 }, note: 'the madness: it twitches and snaps, and it spreads at night' },
+  rot: { name: 'the rot', color: '#4a5a1a', buffs: { longevity: -0.4, vitality: -0.2 }, note: 'the rot: it ages fast, and passes to its kind by touch' },
+  madness: { name: 'the madness', color: '#c04ac0', buffs: { aggression: 0.4, intellect: -0.2 }, note: 'the madness: it twitches and snaps, and it spreads at night' },
+  // The alien contagions (alien.js spreads them).
+  glassing: { name: 'glassing', color: '#e08ad8', buffs: { vitality: 0.15, longevity: -0.3 }, note: 'glassing: its skin crystallizes where the latcher hooked it, hard but brittle; it passes to its kind by touch' },
+  xenofever: { name: 'xenofever', color: '#4ac8e0', buffs: { aggression: 0.2, tolerance: -0.2 }, note: 'xenofever: restless and burning, it may leave the pond; it passes to its kind' },
+  spore: { name: 'the spore', color: '#8ad03a', buffs: { speed: -0.15, vitality: -0.2 }, note: 'the spore: slow and sickening, it passes to any kind by touch, and can kill the weak' },
 };
 const GIFT_KEYS = Object.keys(GIFTS), CURSE_KEYS = Object.keys(CURSES), G5_KEYS = [...GIFT_KEYS, ...CURSE_KEYS];
 
@@ -149,8 +153,9 @@ function infect(world, c, ill, why) {
   L.ill = [...(L.ill || []), ill];
   L.traits = eldTraits(L);
   refreshBuffs(c);
-  logEvent(world, `${who(c)} has ${ill === 'rot' ? 'the rot' : 'the madness'}${why ? ` (${why})` : ''}`, c, {
-    cat: 'life', pri: 1, key: `ill:${ill}`, data: 1, merge: (e) => `${e.n} animals have ${ill === 'rot' ? 'the rot' : 'the madness'}`,
+  const name = (ILLS[ill] && ILLS[ill].name) || ill;
+  logEvent(world, `${who(c)} has ${name}${why ? ` (${why})` : ''}`, c, {
+    cat: 'life', pri: 1, key: `ill:${ill}`, data: 1, merge: (e) => `${e.n} animals have ${name}`,
   });
   return true;
 }
@@ -206,7 +211,7 @@ function dawnQuirks(world) {
     if (!L || !L.ill || !L.ill.length) continue;
     const r = L.buffs.resilience || 0;
     // (Daylight helps the mad come back to themselves; an endless dark keeps them.)
-    const keep = L.ill.filter((k) => !(k === 'rot' ? Math.random() < 0.15 + 0.4 * r : Math.random() < (0.08 + 0.2 * r) * (2.2 - lightMadness(world))));
+    const keep = L.ill.filter((k) => !(k === 'rot' ? Math.random() < 0.15 + 0.4 * r : k === 'madness' ? Math.random() < (0.08 + 0.2 * r) * (2.2 - lightMadness(world)) : Math.random() < 0.25 + 0.4 * r));
     if (keep.length !== L.ill.length) { L.ill = keep; L.traits = eldTraits(L); refreshBuffs(c); }
   }
 }
@@ -217,6 +222,7 @@ function drawQuirks(r, c, t) {
   const L = c.life, b = c.body;
   if (!L || !b) return;
   if (L.paragon && typeof drawParagon === 'function') drawParagon(r, c, t);
+  if ((L.para || L.genome.xeno) && typeof drawPara === 'function') drawPara(r, c, t); // parasites, and the evolved (alien.js)
   const z = (c.zBody ?? c.z ?? 1) + 1;
   if (L.genome.starry) {
     if (c.starId == null) { c.starId = newId(hexToInt('#04101a')); EMISSIVE[c.starId] = 2; }

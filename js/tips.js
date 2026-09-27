@@ -126,6 +126,8 @@ function worldTipAt(x, y) {
   if (world.hover) return null; // animals have their own card
   const fo = typeof fossilAt === 'function' && fossilAt(world, x, y);
   if (fo) return `${capFirst(FOSSIL_KINDS[fo.kind] || 'a fossil')}\nUncovered by the tide. Click to dig it up: essence, points and an ancient ${fo.gene} gene for a new spawn or a brood.${fo.kind === 'relic' ? ' Relics hold artifacts.' : ''}`;
+  const xt = typeof xenoTipAt === 'function' && xenoTipAt(world, x, y);
+  if (xt) return xt;
   const TA = world.tar;
   if (TA && Math.hypot(TA.x - x, TA.y - y) < TA.size) return 'The tar\nOil that woke up. It crawls toward whatever grows, swallowing slicks to grow, withering plants and poisoning (and marking) what swims near. It starves without oil: take the rigs down and skim the slicks.';
   const sl = typeof slickAt === 'function' && slickAt(world, x, y);

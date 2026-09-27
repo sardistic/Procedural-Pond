@@ -53,6 +53,7 @@ function eldTraits(L) {
   if (L.hunter) t.push('awakened');
   if (L.paragon) t.push('paragon');
   for (const w of L.warps || []) t.push(w);
+  if (L.para && typeof PARASITES !== 'undefined' && PARASITES[L.para.k]) t.push(PARASITES[L.para.k].trait); // ridden (alien.js)
   return t;
 }
 

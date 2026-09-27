@@ -1117,3 +1117,10 @@ button:hover > .pin, button:focus-visible > .pin { display: flex; }
   #hud { left: 60px; }
   .actions { top: 60px; left: 60px; width: calc(100vw - 72px); max-height: calc(100vh - 230px); }
 }
+
+/* ---- new since you last looked, and one-of-a-kind builds already built ---- */
+.act-grid > button.is-new::after, .ani.is-new::after { content: 'NEW'; position: absolute; top: -6px; left: -6px; z-index: 1; padding: 1px 3px; font-size: 7px; line-height: 1; letter-spacing: 0.5px; color: #1a1400; background: #ffd166; border: 1px solid #7a5a10; box-shadow: 1px 1px 0 var(--ink); pointer-events: none; }
+.ani.is-new { position: relative; }
+.rail-btn.more.has-new::after { content: attr(data-new); position: absolute; top: -6px; right: -6px; min-width: 14px; padding: 1px 3px; font-size: 8px; line-height: 12px; text-align: center; color: #1a1400; background: #ffd166; border: 1px solid #7a5a10; box-shadow: 1px 1px 0 var(--ink); pointer-events: none; }
+button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowed; }
+.act-grid > button.done::after { content: 'BUILT'; position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); padding: 0 2px; font-size: 7px; line-height: 1.2; color: var(--text); background: var(--ink); pointer-events: none; }

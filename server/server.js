@@ -63,6 +63,8 @@ const SPECIES = new Set(['koi', 'tetra', 'eel', 'axolotl', 'turtle', 'crab', 'ra
 const TRAIT_RARITY = {
   pale: 1, piebald: 1, giant: 2, dwarf: 2, melanistic: 2, xanthic: 2, marbled: 2, axanthic: 3, albino: 3, leucistic: 3,
   shiny: 4, ghost: 4, glow: 4, chimera: 5, touched: 4, changed: 5, eldritch: 7,
+  // the evolved (alien.js): each alone makes a find Mythic
+  chitinous: 8, frenzied: 8, luminous: 8, longcoiled: 8, bloomborn: 8, sporebearing: 8,
 };
 const HABITATS = new Set(['fresh', 'mixed', 'salt']);
 
