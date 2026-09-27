@@ -399,12 +399,18 @@ function dawnDeep(world) {
   // Deep species come within reach on their own once enough is built deep enough for them.
   const G = world.game, E = world.erosion;
   if (!G || !E) return;
+  const drawn = [];
   for (const [k, D] of Object.entries(DEEP)) {
     if ((G.unlocked || []).includes(k) || D.tier > E.tier || !fitsHabitat(world, D.branch)) continue;
+    if (typeof DESIGNS !== 'undefined' && DESIGNS[k] && !D.deepMin) continue; // (the reef's and the pond's own aren't drawn by the deep)
     const need = D.mythic ? 5 : 0.8 + 0.7 * (D.tier - 1);
     if (deepPlacedAt(world, Math.max(0.15, D.deepMin)) < need) continue;
     G.unlocked = [...(G.unlocked || []), k];
-    logEvent(world, `✦ What you've built in the deep has drawn ${plural(SINGULAR[k] || k, 2).toLowerCase()} closer: you can spawn them now, free of the unlock`, null, { cat: 'rare', pri: 3 });
+    drawn.push(plural(SINGULAR[k] || k, 2).toLowerCase());
+  }
+  if (drawn.length) {
+    const who = drawn.length > 1 ? `${drawn.slice(0, -1).join(', ')} and ${drawn[drawn.length - 1]}` : drawn[0];
+    logEvent(world, `✦ What you've built in the deep has drawn ${who} closer: you can spawn them now, free of the unlock`, null, { cat: 'rare', pri: 3 });
   }
 }
 

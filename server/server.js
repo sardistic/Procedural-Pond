@@ -59,7 +59,9 @@ const SPECIES = new Set(['koi', 'tetra', 'eel', 'axolotl', 'turtle', 'crab', 'ra
   'puffer', 'octopus', 'duck', 'shrimp', 'dragonfly', 'wild', 'starfish',
   'shark', 'sandshark', 'angler', 'gulper', 'vampire', 'isopod', 'catfish', 'cavefish', 'olm', 'kraken', 'leviathan', 'watcher',
   'snailfish', 'frilled', 'boneeel', 'siphon', 'squid', 'deepone', 'sleeper',
-  'trilobite', 'anomalocaris', 'ammonite', 'eurypterid', 'lungfish', 'dunkleosteus', 'coelacanth', 'placoderm', 'temnospondyl', 'plesiosaur', 'mosasaur', 'hyneria']);
+  'trilobite', 'anomalocaris', 'ammonite', 'eurypterid', 'lungfish', 'dunkleosteus', 'coelacanth', 'placoderm', 'temnospondyl', 'plesiosaur', 'mosasaur', 'hyneria',
+  // the bestiary (js/bestiary.js)
+  'mandarin', 'tang', 'lionfish', 'seahorse', 'moray', 'hermit', 'cleaner', 'nudibranch', 'goldfish', 'guppy', 'betta', 'loach', 'crayfish', 'newt', 'pleco', 'pike', 'lanternfish', 'hatchetfish', 'combjelly', 'sturgeon', 'burbot', 'paddlefish', 'viperfish', 'dragonfish', 'oarfish', 'cavecrab', 'glassfish', 'cavesalamander', 'barreleye', 'tripodfish', 'seaspider', 'wraithcarp', 'belljelly', 'choirfish', 'amphipod', 'cuskeel', 'cryptcrab', 'shroudfish', 'firesquid', 'swallower', 'rootcrawler', 'lampeel', 'gargoyle', 'lanternjelly', 'bellwarden', 'runefish', 'dreamer', 'thoughtfish', 'opabinia', 'helicoprion', 'arandaspis', 'tiktaalik', 'glasseel', 'voidmanta', 'lattice', 'starfin', 'hollowwalker', 'mirrorfish']);
 const TRAIT_RARITY = {
   pale: 1, piebald: 1, giant: 2, dwarf: 2, melanistic: 2, xanthic: 2, marbled: 2, axanthic: 3, albino: 3, leucistic: 3,
   shiny: 4, ghost: 4, glow: 4, chimera: 5, touched: 4, changed: 5, eldritch: 7,

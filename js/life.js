@@ -331,7 +331,8 @@ function logEvent(world, text, subject = null, opts = {}) {
 }
 
 const who = (c) => (c.life ? `${c.life.name} the ${describe(c).label}` : `a ${describe(c).label.toLowerCase()}`);
-const plural = (label, n) => (n === 1 || /fish|shrimp|koi|sh$/i.test(label) ? label : /[^aeiou]y$/i.test(label) ? label.slice(0, -1) + 'ies' : label + 's');
+const plural = (label, n) => (n === 1 || /fish|shrimp|koi|sh$|is$/i.test(label) ? label : /[^aeiou]y$/i.test(label) ? label.slice(0, -1) + 'ies'
+  : /(ch|x|ss|us)$/i.test(label) && !/branch$/i.test(label) ? label + 'es' : label + 's');
 const aOrN = (n, label) => (n === 1 ? `${/^[aeiou]/i.test(label) ? 'an' : 'a'} ${label}` : `${n} ${plural(label, n)}`);
 const capFirst = (s) => s[0].toUpperCase() + s.slice(1);
 // "3 Tetras and a Shrimp" from a list of labels.
@@ -594,11 +595,11 @@ function desperateFor(p, q) {
   if (q.species === p.species && q.life.scale >= 0.7) return false;
   return Math.max(...q.body.w) < Math.max(...p.body.w) * 0.6;
 }
-const isPredator = (c) => c.species === 'eel' || c.species === 'snake' || c.species === 'octopus' || (c.species === 'wild' && c.sp.predator) ||
+const isPredator = (c) => c.species === 'eel' || c.species === 'snake' || c.species === 'octopus' || (!!c.sp && c.sp.predator) ||
   (typeof DEEP_PREDATORS !== 'undefined' && DEEP_PREDATORS.has(c.species)) ||
   (!!c.life && c instanceof Fish && (!!c.life.hunter || !!c.life.genome.cannibal || !!(c.life.quirks && c.life.quirks.includes('hungering')))); // woken, cursed or changed
 const isPrey = (c) => c.species === 'tetra' || c.species === 'shrimp' || c.species === 'tadpole' || c.species === 'cavefish' ||
-  (c.species === 'wild' && c.sp.small) || (c.life && c.life.scale < 0.55);
+  (!!c.sp && c.sp.small) || (c.life && c.life.scale < 0.55); // (wild and designed fish alike)
 
 // ---- effects: ripples and bubbles --------------------------------------------
 
@@ -761,6 +762,8 @@ function makeBaby(world, p, m, x, y) {
     case 'frog': c = makeCreature('tadpole', world, x, y); break;
     case 'snailfish': c = makeCreature('snailfish', world, x, y, { school: p.school }); break;
     default:
+      // The designed (bestiary.js): one of their own kind, in their parent's school.
+      if (typeof DESIGNS !== 'undefined' && DESIGNS[p.species]) { c = makeCreature(p.species, world, x, y, p.school ? { school: p.school } : {}); break; }
       // Those that breed only at a habitat (see habitats.js): one of their own kind.
       if (BREED[p.species] && BREED[p.species].needs && CREATE[p.species]) { c = makeCreature(p.species, world, x, y); break; }
       return null;

@@ -1447,7 +1447,7 @@ function renderEvo() {
   const counts = [0, 0, 0];
   for (const c of world.creatures) { const s = c.life ? eldStage(c.life) : -1; if (s >= 0) counts[s]++; }
   const ELD_NOTES = [
-    'A mark that comes from nowhere (1 in 1,500 births), from fossils, or from being born near the drowned idol or in the abyss. It passes to young: 15% from one marked parent, 35% from two. The pond resists it: once about one animal in twelve is marked, the dreams stop spreading it.',
+    'A mark that comes from nowhere (1 in 3,000 births), from fossils, or from being born near the drowned idol or in the abyss. It passes to young: 15% from one marked parent, 35% from two. The pond resists it: once about one animal in twelve is marked, the dreams stop spreading it.',
     'The change comes on over a lifetime, faster at night, in deep water, near the idol or the whale fall, and near the mythic; in the shallows most die before it’s done. New eyes open; the water nearby feels wrong.',
     'Transcended: a crown of tentacles and a sigil that glows at night. It draws small animals into circling it, drives the closest mad, and dreams its mark into its neighbours. Each one wears the pond deeper.',
   ];

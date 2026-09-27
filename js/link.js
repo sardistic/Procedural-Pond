@@ -15,6 +15,8 @@
 
 const LINK_V = 3; // 3 added the working genes and loci; 2 still decodes
 // Append-only code tables: an index written into a link must keep its meaning.
+// Kinds that school: a link records which school each belongs to (bestiary.js adds its schoolers).
+const SCHOOL_KINDS = new Set(['tetra', 'cavefish', 'snailfish']);
 const KIND_CODES = ['koi', 'tetra', 'eel', 'axolotl', 'turtle', 'crab', 'ray', 'frog', 'snake', 'snail', 'jelly', 'clown',
   'puffer', 'octopus', 'duck', 'shrimp', 'dragonfly', 'wild', 'starfish', 'tadpole',
   'shark', 'sandshark', 'angler', 'gulper', 'vampire', 'isopod', 'catfish', 'cavefish', 'olm', 'kraken', 'leviathan', 'watcher',
@@ -139,7 +141,8 @@ function packPond(world) {
     const explicit = !hasParents && !sameGenome(g, genomeFor(c.seed));
     const hasName = L.name !== nameFor(c.seed), hasLife = Math.abs(L.lifespan - lifespanFor(c.species, c.seed)) > 1;
     // (Kinds past the first 32 set bit 16 of the extra byte: the code is then 32 more.)
-    const code = KIND_CODES.indexOf(c.make), extra = (c.state === 'sit' ? 1 : 0) | (hasName ? 2 : 0) | (hasLife ? 4 : 0) | (numbered ? 0 : 8) | (code >= 32 ? 16 : 0);
+    // (The kind's code: its low five bits here, bit 5 as extra's 16 and bit 6 as extra's 32, so up to 128 kinds.)
+    const code = KIND_CODES.indexOf(c.make), extra = (c.state === 'sit' ? 1 : 0) | (hasName ? 2 : 0) | (hasLife ? 4 : 0) | (numbered ? 0 : 8) | (code & 32 ? 16 : 0) | (code & 64 ? 32 : 0);
     w.u8((code & 31) | (hasParents ? 32 : 0) | (explicit ? 64 : 0) | (extra ? 128 : 0));
     if (extra) w.u8(extra);
     if (numbered) { w.vu(zig(c.sn - prevSn)); prevSn = c.sn; }
@@ -148,7 +151,7 @@ function packPond(world) {
     w.u8(Math.round(clamp(L.energy, 0, 1) * 15) | ((L.scale >= 0.999 ? 15 : Math.min(14, Math.round(L.scale * 15))) << 4));
     const a = c.args || {};
     if (c.make === 'koi') w.u8(a.variety == null ? 0 : a.variety + 1);
-    else if (c.make === 'tetra' || c.make === 'cavefish' || c.make === 'snailfish') w.u8(a.school ? schoolIdx.get(a.school) + 1 : 0);
+    else if (SCHOOL_KINDS.has(c.make)) w.u8(a.school ? schoolIdx.get(a.school) + 1 : 0);
     else if (c.make === 'wild') { w.vu(a.sp ? a.sp.id : 0); w.u8(a.school ? schoolIdx.get(a.school) + 1 : 0); }
     else if (c.make === 'duck') w.vu(Math.max(0, DUCK_CODES.indexOf(a.kind)) | ((index.has(c.leader) ? index.get(c.leader) + 1 : 0) << 2));
     if (hasParents) { w.vu(i - par[0]); w.vu(i - par[1]); } else w.vu(L.gen);
@@ -302,7 +305,7 @@ function unpackV2(r, v = 2) {
   s.creatures = [];
   let prevSn = 0;
   for (let i = 0, n = r.vu(); i < n; i++) {
-    const b = r.u8(), extra = b & 128 ? r.u8() : 0, k = KIND_CODES[(b & 31) + (extra & 16 ? 32 : 0)];
+    const b = r.u8(), extra = b & 128 ? r.u8() : 0, k = KIND_CODES[(b & 31) + (extra & 16 ? 32 : 0) + (extra & 32 ? 64 : 0)];
     const numbered = !(extra & 8);
     let sn = null;
     if (numbered) { sn = prevSn + unzig(r.vu()); prevSn = sn; }
@@ -312,7 +315,7 @@ function unpackV2(r, v = 2) {
     const L = { age, energy: (es & 15) / 15, scale: (es >> 4) === 15 ? 1 : (es >> 4) / 15 };
     const a = {};
     if (k === 'koi') { const v = r.u8(); if (v) a.variety = v - 1; }
-    else if (k === 'tetra' || k === 'cavefish' || k === 'snailfish') { const j = r.u8(); a.school = j ? j - 1 : null; }
+    else if (SCHOOL_KINDS.has(k)) { const j = r.u8(); a.school = j ? j - 1 : null; }
     else if (k === 'wild') { a.sp = r.vu(); const j = r.u8(); a.school = j ? j - 1 : null; }
     else if (k === 'duck') { const v = r.vu(); a.kind = DUCK_CODES[v & 3] || 'hen'; a.leader = v >> 2 ? (v >> 2) - 1 : null; }
     let pi = -1, mi = -1;

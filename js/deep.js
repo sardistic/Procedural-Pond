@@ -651,7 +651,10 @@ function arriveDeep(world) {
   const G = world.game, first = G && !G.seen.includes(`species:${kind}`);
   if (first) { G.seen.push(`species:${kind}`); deepenBy(world, 0.1); }
   const pts = award(world, (DEEP[kind].mythic ? 150 : 20) + (first ? 30 : 0), DEEP[kind].mythic ? 'mythic sightings' : 'deep sightings', group[0]);
-  const text = DEEP[kind].mythic ? `✦ ${MYTHIC_ARRIVAL[kind]} · +${pts}` : `✦ From the deep: ${withArticle(SINGULAR[kind].toLowerCase())}${group.length > 1 ? ` school of ${group.length}` : ''} came up out of the dark${first ? ', a first for this pond' : ''} · +${pts}`;
+  const shallow = !DEEP[kind].deepMin && DEEP[kind].tier <= 1; // (the reef's and the pond's own find their way in; the deep's come up)
+  const text = DEEP[kind].mythic ? `✦ ${MYTHIC_ARRIVAL[kind]} · +${pts}`
+    : shallow ? `✦ New to the pond: ${withArticle(SINGULAR[kind].toLowerCase())}${group.length > 1 ? ` group of ${group.length}` : ''} found its way in${first ? ', a first for this pond' : ''} · +${pts}`
+    : `✦ From the deep: ${withArticle(SINGULAR[kind].toLowerCase())}${group.length > 1 ? ` school of ${group.length}` : ''} came up out of the dark${first ? ', a first for this pond' : ''} · +${pts}`;
   logEvent(world, text, group[0], { cat: 'rare', pri: 3 });
   if (typeof narrate === 'function') narrate(world, DEEP[kind].mythic ? 'mythic' : 'deep', { what: capFirst(withArticle(SINGULAR[kind].toLowerCase())), subject: group[0] }, first);
   for (const c of group) if (c.life && c.life.traits.length) scoreArrival(world, c);

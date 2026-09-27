@@ -690,7 +690,7 @@ const plantTool = (kind, label, list = 'plants') => ({
 });
 const TOOLS = {
   feed: { label: 'Pellets', food: 'pellet', price: 0, hint: 'click to feed (free) · drag animals · scroll to zoom · drag water to pan' },
-  spirulina: { label: 'Spirulina', food: 'spirulina', price: FOOD_PRICE.spirulina, hint: 'spirulina keeps animals well fed 5× longer: they age slower and stay' },
+  spirulina: { label: 'Spirulina', food: 'spirulina', price: FOOD_PRICE.spirulina, hint: 'spirulina: keeps animals well fed five times longer, so they age slower and stay' },
   brine: { label: 'Brine', food: 'brine', price: FOOD_PRICE.brine, hint: 'live brine shrimp: a big meal that brings animals straight into breeding condition' },
   net: { label: 'Net', hint: 'click an animal, plant or rock to remove it' },
   weed: plantTool('weed', 'Weed'),
@@ -1591,7 +1591,7 @@ function edgeHints() {
 }
 // Keep the tabs clear of the menu and any open card or panel: the west tab steps out beside
 // (or below) whatever covers it, the east tab beside (or above); where there's no room, it hides.
-const TAB_AVOID = ['hud', 'rail', 'actions', 'creature', 'object', 'spawn-card', 'score-panel', 'sky-panel', 'census', 'hatchery', 'evo', 'log-panel', 'nb-ask', 'lineage'];
+const TAB_AVOID = ['hud', 'rail', 'actions', 'creature', 'object', 'spawn-card', 'score-panel', 'sky-panel', 'census', 'hatchery', 'evo', 'guide', 'log-panel', 'nb-ask', 'lineage'];
 function placeEdgeTabs() {
   // (Fixed panels have no offsetParent, so shown is judged by the hidden flag and a real size.)
   const boxes = TAB_AVOID.map((id) => document.getElementById(id)).filter((e) => e && !e.hidden && !e.classList.contains('hidden')).map((e) => e.getBoundingClientRect()).filter((r) => r.width > 2 && r.height > 2);
