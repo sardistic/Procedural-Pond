@@ -308,8 +308,9 @@ function drawEldritch(r, c, t, world) {
   const z = (c.zBody ?? c.z ?? 1) + 1.2, id = c.eldId, n = b.n, extra = Math.min(6, L.absorbed || 0) + (L.ascended ? 3 : 0);
   const pulse = 0.5 + 0.5 * Math.sin(t * 2.4 + c.phase);
   for (const s of [-1, 1]) r.dot(b.px(0, s * 0.9, -0.4), b.py(0, s * 0.9, -0.4), z + b.w[0] * 0.6, ELD_EYE, id);
+  const lod = r.lod; // (in a crowd: fewer, shorter tentacles, no lumps, no rune ring)
   // Lumps where the others went in.
-  for (let k = 0; k < extra && n > 2; k++) {
+  for (let k = 0; k < extra && n > 2 && !lod; k++) {
     const j = 1 + ((k * 2 + 1) % Math.max(1, n - 2)), s = k % 2 ? 1 : -1, w = b.w[j] * (0.5 + 0.12 * (k % 3));
     r.ellipsoid(b.px(j, s * PI / 2.3, -w * 0.3), b.py(j, s * PI / 2.3, -w * 0.3), w, w * 0.8, b.a[j], z - 1.5, w * 0.9, ELD_FLESH, c.id);
   }
@@ -319,11 +320,12 @@ function drawEldritch(r, c, t, world) {
       const j = Math.min(n - 1, 1 + Math.floor((i + 1) * (n - 2) / (k + 1))), s = i % 2 ? 1 : -1;
       if (Math.sin(t * 1.7 + i * 2.1 + c.phase) > -0.5) r.dot(b.px(j, s * PI / 2.2, 0), b.py(j, s * PI / 2.2, 0), z + b.w[j] * 0.7, ELD_EYE, id);
     }
-    const tentacles = (st === 2 ? 6 : 2) + Math.floor(extra / 2), h = b.a[0];
+    const tentacles = lod ? Math.min(2, st === 2 ? 3 : 1) : (st === 2 ? 6 : 2) + Math.floor(extra / 2), h = b.a[0];
     for (let i = 0; i < tentacles; i++) {
       const a = h + PI + (i - (tentacles - 1) / 2) * 0.5 + Math.sin(t * 2 + i) * 0.35, L1 = (st === 2 ? 7 : 3.5) * (0.8 + 0.2 * pulse) * (1 + extra * 0.08);
       const x0 = b.x[0], y0 = b.y[0], x1 = x0 + Math.cos(a) * L1 * 0.55, y1 = y0 + Math.sin(a) * L1 * 0.55;
       r.tube(x0, y0, 0.55, z, x1, y1, 0.45, z - 0.5, 0.8, ELD_TENDRIL, c.id);
+      if (lod) continue;
       r.tube(x1, y1, 0.45, z - 0.5, x1 + Math.cos(a + 0.4) * L1 * 0.45, y1 + Math.sin(a + 0.4) * L1 * 0.45, 0.35, z - 1, 0.8, ELD_TENDRIL, c.id);
     }
   }
@@ -336,7 +338,7 @@ function drawEldritch(r, c, t, world) {
       r.tube(lerp(hx, v.x, u0) + wob(u0), lerp(hy, v.y, u0) - wob(u0), 0.7 - u0 * 0.3, z, lerp(hx, v.x, u1) + wob(u1), lerp(hy, v.y, u1) - wob(u1), 0.7 - u1 * 0.3, z, 0.8, ELD_TENDRIL, c.id);
     }
   }
-  if (st === 2 && world.darkness > 0.35) {
+  if (st === 2 && world.darkness > 0.35 && !lod) {
     const R = b.w[1] * 2 + 5 + extra;
     for (let k = 0; k < 12; k++) {
       if ((k + Math.floor(t * 3)) % 4 === 0) continue;

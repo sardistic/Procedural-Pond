@@ -179,6 +179,7 @@ class WildFish extends Fish {
       }
     }
     const pj = Math.max(1, Math.round(nb * 0.25)), fin = sp.W * sp.fins * k;
+    if (r.lod) { this.drawEyes(r, 1.1, w[0] * 0.3, z + w[0] * sp.hs + 0.6, false); return; } // (in a crowd: no small fins)
     for (const s of [-1, 1]) {
       r.ellipsoid(b.px(pj, s * PI / 3, 0), b.py(pj, s * PI / 3, 0), fin, fin * 0.4, b.a[pj] - s * PI / 4, z + 0.3, 0.4, this.fin, id);
       if (sp.fins > 0.7) {

@@ -36,10 +36,14 @@ class Raster {
     this.clip = [Math.max(0, x0 | 0), Math.max(0, y0 | 0), Math.min(this.W - 1, x1 | 0), Math.min(this.H - 1, y1 | 0)];
   }
 
+  // Clear the frame, only as far as the clip (compose only reads inside it; a big pond needn't wipe it all).
   begin() {
-    this.z.set(this.zBase);
-    this.id.fill(0);
-    this.sh.fill(0);
+    const [x0, y0, x1, y1] = this.clip, W = this.W;
+    if (x0 === 0 && y0 === 0 && x1 === W - 1 && y1 === this.H - 1) { this.z.set(this.zBase); this.id.fill(0); this.sh.fill(0); return; }
+    for (let y = y0; y <= y1; y++) {
+      const a = x0 + y * W, b = x1 + 1 + y * W;
+      this.z.set(this.zBase.subarray(a, b), a); this.id.fill(0, a, b); this.sh.fill(0, a, b);
+    }
   }
 
   put(x, y, h, m, nx, ny, nz, id) {
@@ -101,6 +105,58 @@ class Raster {
         const nx = ox / r, ny = oy / r, nzz = nz * ihs;
         const k = 1 / Math.sqrt(nx * nx + ny * ny + nzz * nzz);
         this.put(x, y, h, m, nx * k, ny * k, nzz * k, id);
+      }
+    }
+  }
+
+  // A whole spine at once: the same picture as a tube per link (same z and hs along it),
+  // but each pixel is worked out once. Every link that covers a pixel is a candidate, and
+  // the one standing highest there (the most inside it) wins, just as the z-test would.
+  // Rows only look at the links whose extent reaches them.
+  strip(xs, ys, ws, from, to, z, hs, shader, id) {
+    if (this.scaled || to - from < 2) { for (let i = from; i < to; i++) this.tube(xs[i], ys[i], ws[i], z, xs[i + 1], ys[i + 1], ws[i + 1], z, hs, shader, id, (i - from) / (to - from), (i + 1 - from) / (to - from)); return; }
+    const n = to - from, S = STRIP;
+    if (S.ax.length < n) { for (const k of Object.keys(S)) S[k] = new Float64Array(n * 2); STRIP_ACT = new Int32Array(n * 2); }
+    const [cx0, cy0, cx1, cy1] = this.clip;
+    let X0 = Infinity, X1 = -Infinity, Y0 = Infinity, Y1 = -Infinity;
+    for (let k = 0; k < n; k++) {
+      const i = from + k, ax = xs[i], ay = ys[i], bx = xs[i + 1], by = ys[i + 1];
+      const ar = ws[i] < 0.72 ? 0.72 : ws[i], br = ws[i + 1] < 0.72 ? 0.72 : ws[i + 1], dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+      S.ax[k] = ax; S.ay[k] = ay; S.dx[k] = dx; S.dy[k] = dy; S.ar[k] = ar; S.br[k] = br;
+      S.iL2[k] = L2 > 1e-9 ? 1 / L2 : 0; S.iL[k] = L2 > 1e-9 ? 1 / Math.sqrt(L2) : 0;
+      S.x0[k] = Math.floor(Math.min(ax - ar, bx - br)); S.x1[k] = Math.ceil(Math.max(ax + ar, bx + br));
+      S.y0[k] = Math.floor(Math.min(ay - ar, by - br)); S.y1[k] = Math.ceil(Math.max(ay + ar, by + br));
+      if (S.x0[k] < X0) X0 = S.x0[k]; if (S.x1[k] > X1) X1 = S.x1[k]; if (S.y0[k] < Y0) Y0 = S.y0[k]; if (S.y1[k] > Y1) Y1 = S.y1[k];
+    }
+    const x0 = Math.max(cx0, X0), x1 = Math.min(cx1, X1), y0 = Math.max(cy0, Y0), y1 = Math.min(cy1, Y1);
+    if (x0 > x1 || y0 > y1) return;
+    const fn = typeof shader === 'function', ihs = 1 / (hs > 0.05 ? hs : 0.05), act = STRIP_ACT;
+    for (let y = y0; y <= y1; y++) {
+      let na = 0, rx0 = Infinity, rx1 = -Infinity;
+      for (let k = 0; k < n; k++) if (y >= S.y0[k] && y <= S.y1[k]) { act[na++] = k; if (S.x0[k] < rx0) rx0 = S.x0[k]; if (S.x1[k] > rx1) rx1 = S.x1[k]; }
+      if (!na) continue;
+      const xa = Math.max(x0, rx0), xb = Math.min(x1, rx1);
+      for (let x = xa; x <= xb; x++) {
+        let best = 0, bk = -1, bt = 0, box = 0, boy = 0, brr = 0;
+        for (let j = 0; j < na; j++) {
+          const k = act[j];
+          if (x < S.x0[k] || x > S.x1[k]) continue;
+          const px = x + 0.5 - S.ax[k], py = y + 0.5 - S.ay[k], dx = S.dx[k], dy = S.dy[k];
+          let t = (px * dx + py * dy) * S.iL2[k];
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const ox = px - dx * t, oy = py - dy * t, r = S.ar[k] + (S.br[k] - S.ar[k]) * t, q = r * r - (ox * ox + oy * oy);
+          if (q > best) { best = q; bk = k; bt = t; box = ox; boy = oy; brr = r; }
+        }
+        if (bk < 0) continue;
+        const r = brr, nz = Math.sqrt(best) / r, h = z + nz * r * hs;
+        let m = shader;
+        if (fn) {
+          m = shader((bk + bt) / n, (S.dx[bk] * boy - S.dy[bk] * box) * S.iL[bk] / r, x, y);
+          if (!m) continue;
+        }
+        const nx = box / r, ny = boy / r, nzz = nz * ihs;
+        const kk = 1 / Math.sqrt(nx * nx + ny * ny + nzz * nzz);
+        this.put(x, y, h, m, nx * kk, ny * kk, nzz * kk, id);
       }
     }
   }
@@ -413,24 +469,18 @@ class Raster {
         }
         // Light cast by glowing things: pools, in dithered steps, seen at night and in the deep.
         if (LD) {
-          const fx = x / 4 - 0.5, fy = y / 4 - 0.5, gx = fx < 0 ? 0 : fx | 0, gy = fy < 0 ? 0 : fy | 0;
-          if (gx < lw && gy < lh) {
-            const gx1 = gx + 1 < lw ? gx + 1 : gx, gy1 = gy + 1 < lh ? gy + 1 : gy, ax = fx - gx, ay = fy - gy;
-            const i00 = (gx + gy * lw) * 3, i10 = (gx1 + gy * lw) * 3, i01 = (gx + gy1 * lw) * 3, i11 = (gx1 + gy1 * lw) * 3;
-            const w00 = (1 - ax) * (1 - ay), w10 = ax * (1 - ay), w01 = (1 - ax) * ay, w11 = ax * ay;
-            let lr = LD[i00] * w00 + LD[i10] * w10 + LD[i01] * w01 + LD[i11] * w11;
-            if (lr + LD[i00 + 1] + LD[i00 + 2] + LD[i11 + 1] > 0.004) {
-              let lg = LD[i00 + 1] * w00 + LD[i10 + 1] * w10 + LD[i01 + 1] * w01 + LD[i11 + 1] * w11;
-              let lb = LD[i00 + 2] * w00 + LD[i10 + 2] * w10 + LD[i01 + 2] * w01 + LD[i11 + 2] * w11;
-              const dd = depthMap ? depthMap[p] : 0, vis = Math.max(lvis, dd / 255 * 0.45, 0.06);
-              const m0 = Math.max(lr, lg, lb), mt = m0 / (1 + m0); // overlapping lights saturate softly
-              const q = Math.min(4, (mt * vis * 5 + 0.5 + BAYER4[(x & 3) | ((y & 3) << 2)]) | 0) / 4;
-              if (q > 0) {
-                const s = q / Math.max(m0, 0.001), cr0 = c & 255, cg0 = (c >> 8) & 255, cb0 = (c >>> 16) & 255;
-                // Lit: the floor brightened in the light's colour, plus a little of the colour itself.
-                const cr = Math.min(255, cr0 + ((cr0 * lr * s * 1.6 + lr * s * 46) | 0)), cg = Math.min(255, cg0 + ((cg0 * lg * s * 1.6 + lg * s * 46) | 0)), cb = Math.min(255, cb0 + ((cb0 * lb * s * 1.6 + lb * s * 46) | 0));
-                c = (0xff000000 | (cb << 16) | (cg << 8) | cr) >>> 0;
-              }
+          // (One cell per pixel, the cell picked with an ordered dither near its edges: soft pools for a single read.)
+          const bq = BAYER4[(x & 3) | ((y & 3) << 2)], gx = ((x + 2 + bq * 3.6) >> 2), gy = ((y + 2 - bq * 3.6) >> 2);
+          const li = ((gx < lw ? gx : lw - 1) + (gy < lh ? gy : lh - 1) * lw) * 3, lr = LD[li], lg = LD[li + 1], lb = LD[li + 2];
+          if (lr + lg + lb > 0.004) {
+            const dd = depthMap ? depthMap[p] : 0, vis = Math.max(lvis, dd / 255 * 0.45, 0.06);
+            const m0 = lr > lg ? (lr > lb ? lr : lb) : (lg > lb ? lg : lb), mt = m0 / (1 + m0); // overlapping lights saturate softly
+            const q = Math.min(4, (mt * vis * 5 + 0.5 + bq) | 0) / 4;
+            if (q > 0) {
+              const s = q / Math.max(m0, 0.001), cr0 = c & 255, cg0 = (c >> 8) & 255, cb0 = (c >>> 16) & 255;
+              // Lit: the floor brightened in the light's colour, plus a little of the colour itself.
+              const cr = Math.min(255, cr0 + ((cr0 * lr * s * 1.6 + lr * s * 46) | 0)), cg = Math.min(255, cg0 + ((cg0 * lg * s * 1.6 + lg * s * 46) | 0)), cb = Math.min(255, cb0 + ((cb0 * lb * s * 1.6 + lb * s * 46) | 0));
+              c = (0xff000000 | (cb << 16) | (cg << 8) | cr) >>> 0;
             }
           }
         }
@@ -443,6 +493,10 @@ class Raster {
 // The chop's direction: across the swell, a little skewed.
 const sw0x = (s) => { const sw = s.swellDir || [0, 1]; return sw[0] * 0.6 - sw[1] * 0.8; };
 const sw0y = (s) => { const sw = s.swellDir || [0, 1]; return sw[1] * 0.6 + sw[0] * 0.8; };
+
+// Scratch space for Raster.strip (the links of one spine, and which reach the current row).
+const STRIP = Object.fromEntries(['ax', 'ay', 'dx', 'dy', 'ar', 'br', 'iL2', 'iL', 'x0', 'x1', 'y0', 'y1'].map((k) => [k, new Float64Array(64)]));
+let STRIP_ACT = new Int32Array(64);
 
 // Swell across the surface: one wavelength of a sharp-crested wave (see compose).
 const WAVE_TAB = new Float32Array(1024);

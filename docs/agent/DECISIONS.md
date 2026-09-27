@@ -520,3 +520,24 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
   - Visibility is `max(darkness, depth·0.45, 0.06)`, so it's faint by day even over the deep.
 - **Deep waves.** Crest strokes were tried and dropped: straight ones looked like ruled paper, and phase-warped ones scattered into noise. Now wave marks: level arcs on a staggered 18×11 grid, drifting with the swell, each with its own life cycle (swell, break, gone), density and strength by swell and depth (depth > 50). Ripple glints thin out over the deep (×(1 − 0.65·depth)); murk is halved; the tier tint goes halfway.
 - **Culling.** Plants, pads, structures and creatures well outside the visible rect aren't drawn (margins 30–220 px). On the user's pond at 2× in a 1400×900 window: about 72 → 68 ms in the horde view (it's mostly the ~500 koi on screen), and off-screen plants are free now. Compose is about 28 ms for 280k px (bare 9 ms).
+
+## Cheaper crowds, pixel tooltips, hunger-driven hunting
+- **Crowds, measured on the user's pond** (a 570-koi horde, about 470 on screen at 2×):
+  - Drawing the koi took 22 ms, about 90% of it the spine: 9 tubes each, with each pixel tested by up to three overlapping capsules.
+  - `Raster.strip` draws a whole spine in one pass: each pixel takes the link it's deepest inside (the highest point, as the z-test would), with a per-row active list. Buffers compared pixel for pixel against the tube-per-link version: 0 depth or id differences, 35 colour differences out of 122k painted pixels (texture seams at link joins), and shadow-caster differences where overlaps used to over-cast. At 10× the two are visually identical.
+  - Crowd LOD: `r.lod` is 1 over 140 animals on screen and 2 over 280. It drops small fins (koi, wild fish), then the tail joint and eyes; the eldritch extras lose lumps and rune rings and keep 1–3 short tentacles. What you follow, hover or hold, and mythics, stay whole.
+  - `Raster.begin` clears only the clip (a 1160×1920 pond was wiping 2.2M pixels a frame).
+  - The light lookup is a single dithered cell instead of bilinear.
+  - Adaptive `QUALITY`: an EMA of render ms. Above 38 ms it steps down (1 drops clouds, chop and spindrift; 2 also drops lights and caustics). Below 18 ms it steps back up, with 2 s and 5 s hysteresis.
+  - Horde view: 68 → about 55 ms in the 1400×900 test window (compose, the per-pixel surface work, is still about 25 ms of it).
+- **Tooltips (js/tips.js).** The `HTMLElement.prototype.title` setter is rerouted to `data-tip` (and existing title attributes are converted on load), so every title in the codebase, including ones set later, becomes the pixel tooltip, with no native ones left.
+  - Format: "Head\nbody", or a short "Head: body".
+  - It shows after 280 ms, follows the pointer and flips at the edges.
+  - Icon buttons fall back to their aria-label.
+  - Tools, builds and plants get written descriptions (`PLANT_TIPS`, `toolTip`).
+  - In the pond, `worldTipAt` covers fossils, litter, remains, structures, eggs, plants, rocks and trenches (not animals: they have the hover card).
+- **Hunger.**
+  - Eating an animal gives energy 0.2–0.8 by the prey-to-hunter width ratio (was a flat 0.55), and sets `satedUntil` = t + 18–88 s (×0.4 if ravenous). Sated predators don't hunt.
+  - Search radius ×(0.55 + 1.1·hunger); pursuit is kept up to 60 + 110·hunger px; chase speed ×(1.05 + 0.4·hunger) (was 1.25).
+  - Starving (hunger > 0.75): `desperateFor` also allows prey under 0.6× its width that isn't a deep predator or mythic, including its own kind's young.
+  - Moods "starving, hunting" and "sated after a kill".

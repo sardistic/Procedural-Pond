@@ -392,6 +392,12 @@ output {
 .cat-sky .dot, .dot.cat-sky { background: #b49cf0; }
 .cat-pond .dot, .dot.cat-pond { background: #dff6f0; }
 .cat-story .dot, .dot.cat-story { background: #c8a0ff; }
+
+/* Little pixel-art tooltips: a panel with a hard shadow and a stepped notch. */
+.tip { position: fixed; z-index: 30; max-width: 250px; padding: 6px 8px 7px; font-size: 9px; line-height: 1.6; color: var(--text); background: var(--panel); border: 2px solid var(--edge); box-shadow: 3px 3px 0 var(--ink); pointer-events: none; }
+.tip::before { content: ''; position: absolute; top: -6px; left: 6px; width: 4px; height: 4px; background: var(--edge); box-shadow: 2px 2px 0 var(--edge), 4px 0 0 var(--edge), 2px 4px 0 var(--panel); }
+.tip b { display: block; margin-bottom: 2px; font-weight: 400; font-size: 10px; color: var(--hot); }
+.tip > span { display: block; overflow-wrap: anywhere; }
 .journal .cat-story span { font-style: italic; color: #d8c8f0; }
 
 /* The big news, and the narrator, under the pond bar. */

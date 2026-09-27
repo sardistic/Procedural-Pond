@@ -508,7 +508,10 @@ function eat(world, c, f) {
     f.caught = true;
     noteGone(world, f, 'eaten');
     addHeat(world, f.x, f.y, 0.5);
-    gain = 0.55;
+    // A meal the size of the prey; afterwards the hunter is sated for a while (longer after a big one).
+    const ratio = c.body && f.body ? clamp(Math.max(...f.body.w) / Math.max(0.5, ...c.body.w), 0.15, 1.2) : 0.5;
+    gain = clamp(0.2 + 0.55 * ratio, 0.2, 0.8);
+    if (c.life) { c.life.satedUntil = world.t + (18 + 70 * ratio) * (c.life.genome.ravenous ? 0.4 : 1); c.prey = null; }
     ECO.eaten++;
     addBubbles(world, f.x, f.y, f.z, 3);
     if (typeof onKill === 'function') onKill(world, c, f); // a hunter's devour and contagion
@@ -542,6 +545,15 @@ const FOOD_GAIN = { plankton: 0.1, pellet: 0.3, spawn: 0.3, brine: 0.5, spirulin
 const FOOD_FED = { pellet: 45, spawn: 45, brine: 90, spirulina: 240, krill: 120, bloodworm: 120, snow: 200 };
 const CONDITIONING = new Set(['brine', 'krill', 'bloodworm']); // foods that bring animals into breeding condition
 
+// How hungry: 0 full, 1 starving.
+const hungerOf = (c) => (c.life ? clamp(1 - c.life.energy, 0, 1) : 0);
+// Starving, a hunter takes what it would usually leave: anything well smaller than itself that
+// isn't one of the big ones, even its own kind's young (though not its own grown kin).
+function desperateFor(p, q) {
+  if (q === p || !q.life || !p.body || !q.body || DEEP_PREDATORS.has(q.species) || (DEEP[q.species] && DEEP[q.species].mythic)) return false;
+  if (q.species === p.species && q.life.scale >= 0.7) return false;
+  return Math.max(...q.body.w) < Math.max(...p.body.w) * 0.6;
+}
 const isPredator = (c) => c.species === 'eel' || c.species === 'snake' || c.species === 'octopus' || (c.species === 'wild' && c.sp.predator) ||
   (typeof DEEP_PREDATORS !== 'undefined' && DEEP_PREDATORS.has(c.species)) ||
   (!!c.life && c instanceof Fish && (!!c.life.hunter || !!c.life.genome.cannibal || !!(c.life.quirks && c.life.quirks.includes('hungering')))); // woken, cursed or changed
@@ -987,13 +999,18 @@ function assignHunts(world) {
   const night = world.darkness > 0.5;
   for (const p of preds) {
     const P = geneBuffs(p);
-    // Aggressive predators hunt before they're really hungry.
-    if (!p.life || p.life.energy > huntThreshold(p, Math.min(0.85, 0.6 * P.aggression * (0.4 + 0.6 * activity(world, p))))) { p.prey = null; continue; }
+    // Hunger drives the hunt. Just fed, a predator is sated and lets prey be (longer after a
+    // bigger meal). Past its threshold (aggressive ones sooner) it hunts, and the hungrier it
+    // is the further it looks and the longer it keeps after one quarry; starving, it will take
+    // bigger prey than usual, even its own kind's young.
+    const h = p.life ? hungerOf(p) : 0;
+    if (!p.life || p.life.satedUntil > world.t || p.life.energy > huntThreshold(p, Math.min(0.85, 0.6 * P.aggression * (0.4 + 0.6 * activity(world, p))))) { p.prey = null; continue; }
     const cur = p.prey;
-    if (cur && !cur.caught && !cur.gone && Math.hypot(cur.x - p.x, cur.y - p.y) < 90) continue;
+    if (cur && !cur.caught && !cur.gone && Math.hypot(cur.x - p.x, cur.y - p.y) < 60 + 110 * h) continue;
     let best = null, bd = Infinity;
-    const R = 60 * P.intellect * huntRange(p), extra = !!p.life.hunter || huntLv(p, 'maw') > 0 || !!p.life.genome.cannibal;
-    for (const q of extra ? world.creatures.filter((q) => q.life && !q.grabbed && !q.leaving && !q.gone && !q.caught && !q.dying && (isPrey(q) || huntExtra(p, q))) : prey) {
+    const starving = h > 0.75;
+    const R = 60 * P.intellect * huntRange(p) * (0.55 + 1.1 * h), extra = starving || !!p.life.hunter || huntLv(p, 'maw') > 0 || !!p.life.genome.cannibal;
+    for (const q of extra ? world.creatures.filter((q) => q.life && !q.grabbed && !q.leaving && !q.gone && !q.caught && !q.dying && (isPrey(q) || huntExtra(p, q) || (starving && desperateFor(p, q)))) : prey) {
       if (Math.abs(q.z - p.z) > 14 || q === p) continue;
       const Q = geneBuffs(q);
       // Ghostly prey is hard to see; glowing prey stands out at night.
@@ -1159,8 +1176,9 @@ function describe(c) {
   let mood = 'content';
   if (c.grabbed) mood = 'being held';
   else if (c.leaving) mood = 'moving on';
-  else if (c.prey) mood = 'hunting';
+  else if (c.prey) mood = L && L.energy < 0.25 ? 'starving, hunting' : 'hunting';
   else if (c.threat) mood = 'fleeing';
+  else if (L && L.satedUntil && typeof world !== 'undefined' && L.satedUntil > world.t && isPredator(c)) mood = 'sated after a kill';
   else if (c.inflate > 0.3) mood = 'puffed up';
   else if (L && L.energy < 0.35) mood = 'hungry';
   else if (L && L.scale < 0.9) mood = 'growing';

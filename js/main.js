@@ -466,8 +466,12 @@ function visibleRect() {
   ];
 }
 
+// If frames run slow (a huge pond, a big window), the costliest surface touches step down (the
+// sky's glints, the murk, the chop and spindrift; then the light pools and caustics), and come
+// back when there's room again.
+const QUALITY = { level: 0, ema: 12, at: 0 };
 function render(full = false) {
-  const r = world.raster, t = world.t, o = world.opts;
+  const r = world.raster, t = world.t, o = world.opts, t0 = performance.now(), q = QUALITY.level;
   const light = world.light || (world.light = lighting());
   const rect = full ? [0, 0, world.W - 1, world.H - 1] : visibleRect();
   // Rasterize a margin above/left of the view: shadows of things just off-screen still land on it.
@@ -484,8 +488,14 @@ function render(full = false) {
   for (const p of world.pads) if (near(p.x, p.y, 30)) drawGrown(r, p, t);
   for (const f of world.food) f.draw(r, t, world);
   let anyThick = false;
+  // A dense crowd (more than about 140 animals on screen) is drawn coarser: half the spine
+  // segments, no small fins, fewer tentacles. What you follow or point at stays whole.
+  let onScreen = 0;
+  for (const c of world.creatures) if (near(c.x, c.y, 20)) onScreen++;
+  const crowd = onScreen > CROWD_LOD ? (onScreen > CROWD_LOD * 2 ? 2 : 1) : 0;
   for (const c of world.creatures) {
     if (!near(c.x, c.y, DEEP[c.species] && DEEP[c.species].mythic ? 220 : 110)) continue;
+    r.lod = crowd && c !== cam.follow && c !== world.hover && c !== world.grab && !(DEEP[c.species] && DEEP[c.species].mythic) ? crowd : 0;
     const a = c.alpha ?? 1;
     r.alpha = a;
     FADE[c.id] = a < 1 ? 1 : 0;
@@ -495,6 +505,7 @@ function render(full = false) {
     if (c.life) drawQuirks(r, c, t);
   }
   r.alpha = 1;
+  r.lod = 0;
   for (const e of world.eggs) e.draw(r, t);
   world.motes.draw(r, world);
   r.castShadows = false;
@@ -513,21 +524,29 @@ function render(full = false) {
   r.compose(out, {
     bg: world.bg, bgLight: world.bgLight, caustic: world.caustic, t,
     outline: OUTLINE, emissive: EMISSIVE, fade: FADE, thick: THICK, anyThick, tint: light.tint,
-    caustics: o.caustics && light.caustics, causticT: water.caustic, shadows: o.shadows, outlines: o.outlines,
+    caustics: o.caustics && light.caustics && q < 2, causticT: water.caustic, shadows: o.shadows, outlines: o.outlines,
     fog: { color: fogColor, amount: water.fog + (bloom ? 0.12 : 0) }, wob,
     shore: world.shore, bgDry: world.bgDry, tide: world.tide.level, surf: world.tide.surf, wave: world.tide.wave,
     depth: world.depth, deepColor: DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed,
     voidSkin: world.eldMarks && world.eldMarks.length || world.plants.some((p) => p.tr && p.tr.eld) ? VOID_SKIN : null,
-    swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6], clouds: world.clouds, sky: skyReflection(light), skyK: 1 - world.weather.rain * 0.7,
-    lights: buildLights(world, rect), lightVis: light.darkness || 0, deepColor2: deepTint(world), trench: world.trench, trenchGlow: TRENCH_GLOW[branchOf(world)],
-    chop: clamp(0.18 + Math.max(0, world.weather.gust) * 0.9 + world.tide.surf * 0.35, 0, 1.2), spindrift: clamp((swell - 0.75) * 2.5, 0, 1),
+    swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6], clouds: q < 1 ? world.clouds : null, sky: skyReflection(light), skyK: 1 - world.weather.rain * 0.7,
+    lights: q < 2 ? buildLights(world, rect) : null, lightVis: light.darkness || 0, deepColor2: deepTint(world), trench: world.trench, trenchGlow: TRENCH_GLOW[branchOf(world)],
+    chop: q < 1 ? clamp(0.18 + Math.max(0, world.weather.gust) * 0.9 + world.tide.surf * 0.35, 0, 1.2) : 0, spindrift: q < 1 ? clamp((swell - 0.75) * 2.5, 0, 1) : 0,
   }, rect);
   drawGlints();
   if (world.bones) drawBones();
   if (full || world.bones) ctx.putImageData(image, 0, 0);
   else ctx.putImageData(image, 0, 0, rect[0], rect[1], rect[2] - rect[0] + 1, rect[3] - rect[1] + 1);
+  if (!full) {
+    const now = performance.now(), Q = QUALITY;
+    Q.ema += (now - t0 - Q.ema) * 0.05;
+    if (Q.ema > 38 && Q.level < 2 && now - Q.at > 2000) { Q.level++; Q.at = now; Q.ema = 30; }
+    else if (Q.ema < 18 && Q.level > 0 && now - Q.at > 5000) { Q.level--; Q.at = now; }
+  }
   updateSkyHud(light);
 }
+
+const CROWD_LOD = 140; // animals on screen before the crowd is drawn coarser
 
 // The colour calm water reflects: a pale day sky, warm at dawn and dusk, deep blue at night.
 const SKY_DAY = hexToInt('#d8eaf4'), SKY_DUSK = hexToInt('#f0b890'), SKY_NIGHT = hexToInt('#2a3452');

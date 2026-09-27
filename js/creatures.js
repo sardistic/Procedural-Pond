@@ -210,12 +210,10 @@ class Creature {
     return [gx, gy, Math.min(Math.hypot(gx, gy) * 4, this.maxSpeed * 3)];
   }
 
+  // The body along the spine, in one pass (Raster.strip: the same picture as a tube per link, far cheaper).
   drawSpine(r, from, to, z, hs, shader, id) {
-    const b = this.body, w = b.w, span = to - from;
-    for (let i = from; i < to; i++) {
-      r.tube(b.x[i], b.y[i], w[i], z, b.x[i + 1], b.y[i + 1], w[i + 1], z, hs, shader, id,
-        (i - from) / span, (i + 1 - from) / span);
-    }
+    const b = this.body;
+    r.strip(b.x, b.y, b.w, from, to, z, hs, shader, id);
   }
 
   drawEyes(r, off, inset, z, shine) {
@@ -253,7 +251,7 @@ class Fish extends Creature {
         (fd) => (hungry || fd.fed) && (!this.foodFilter || this.foodFilter(fd)));
       if (f) {
         gx = f.x - this.x; gy = f.y - this.y;
-        want = this.maxSpeed * (prey ? 1.25 * (typeof huntBurst === 'function' ? huntBurst(this) : 1) : 1);
+        want = this.maxSpeed * (prey ? (1.05 + 0.4 * (typeof hungerOf === 'function' ? hungerOf(this) : 0.5)) * (typeof huntBurst === 'function' ? huntBurst(this) : 1) : 1); // the hungrier, the harder it chases
         this.tz = clamp(f.z, this.zMin * 0.4, this.zMax);
         const reach = (this.widths[0] + 1.2 + (prey ? prey.body.w[0] : 0)) * (prey && typeof huntReach === 'function' ? huntReach(this) : 1);
         if (Math.hypot(gx, gy) < reach && Math.abs(f.z - this.z) < 8) {
@@ -364,8 +362,10 @@ class Koi extends Fish {
   draw(r) {
     const b = this.body, w = b.w, z = this.z, id = this.id;
     this.drawSpine(r, 0, 9, z, 1, this.skin, id);
+    if (r.lod > 1) { r.tube(b.x[9], b.y[9], w[9], z, b.x[11], b.y[11], w[9] * 3.3, z, 0.25, this.fin, id); return; } // (a dense crowd: the tail in one, no eyes)
     r.tube(b.x[9], b.y[9], w[9], z, b.x[10], b.y[10], w[9] * 2.1, z, 0.25, this.fin, id);
     r.tube(b.x[10], b.y[10], w[9] * 2.1, z, b.x[11], b.y[11], w[9] * 3.3, z, 0.25, this.fin, id);
+    if (r.lod) { this.drawEyes(r, 1.15, 1.1, z + w[0] + 0.6, false); return; } // (in a crowd: no small fins)
     for (const s of [-1, 1]) {
       r.ellipsoid(b.px(3, s * PI / 3, 0), b.py(3, s * PI / 3, 0), w[3] * 0.92, w[3] * 0.36, b.a[2] - s * PI / 4, z + 0.3, 0.5, this.fin, id);
       r.ellipsoid(b.px(7, s * PI / 2, 0), b.py(7, s * PI / 2, 0), w[3] * 0.55, w[3] * 0.2, b.a[6] - s * PI / 4, z + 0.3, 0.4, this.fin, id);

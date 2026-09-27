@@ -367,6 +367,7 @@ function renderCensus() {
     }
     const open = census.expanded.has(kind), li = el('li', open ? 'row open' : 'row');
     const head = el('button', 'row-head');
+    head.title = 'Click to list them, the most valuable first; click one to follow it.';
     head.type = 'button';
     head.setAttribute('aria-expanded', open);
     const facts = [stage.young && `${stage.young} young`, stage.adult && `${stage.adult} adult`, stage.elder && `${stage.elder} elder`,
@@ -400,6 +401,7 @@ function renderCensus() {
         const all = el('button', 'recycle-all');
         all.type = 'button';
         all.append(document.createTextNode(`Recycle all ${list.length} for `), el('i', 'essence'), document.createTextNode(String(S ? S.value : 0)));
+        all.title = 'Recycle all\nReturn every one of them to the pond for essence (those kept safe stay). You are asked first.';
         all.addEventListener('click', () => { recycleAll(kind); renderCensus(); });
         ul.append(el('li', null), all);
       }
@@ -799,6 +801,7 @@ function renderSpawnCard() {
     const all = el('button', 'recycle-all');
     all.type = 'button';
     all.append(document.createTextNode('Recycle all '), el('i', 'essence'), document.createTextNode(String(S.value)));
+    all.title = 'Recycle all\nReturn every one of them to the pond for essence (those kept safe stay). You are asked first.';
     all.addEventListener('click', () => { recycleAll(kind); renderSpawnCard(); });
     have.append(colored('span', null, `In the pond: ${S.n}, worth ${S.value} essence${S.best ? `, rarest ${TIERS[S.best]}` : ''}, ${diversityWord(S.diversity)}`), all);
   }
@@ -827,6 +830,7 @@ function renderSpawnCard() {
     b.setAttribute('aria-pressed', grade === gi);
     if (gi) nm.style.color = GRADE_COLOR[gi];
     b.append(nm, el('span', 'bc', gi ? `×${GRADE_PRICE[gi]}` : 'as it comes'));
+    b.title = gi ? `${GRADES[gi]}${gi < 5 ? ' or better' : ''}\nEvery animal in the spawn is at least ${GRADES[gi]}: better working genes, worth more (the price ×${GRADE_PRICE[gi]}).` : 'Any quality\nThe spawn as it comes: mostly Fair to Fine.';
     b.addEventListener('click', () => { spawnUi.grade = gi; renderSpawnCard(); });
     grades.append(b);
   }
@@ -850,7 +854,7 @@ function renderSpawnCard() {
   buy.type = 'button';
   buy.disabled = (G.essence || 0) < price;
   buy.append(document.createTextNode(`Spawn ${SPECIES[kind].label.toLowerCase()} for `), el('i', 'essence'), document.createTextNode(fmt(price)));
-  buy.title = buy.disabled ? `You have ${fmt(G.essence || 0)} essence. Recycle animals with the Net for more.` : '';
+  buy.title = buy.disabled ? `You have ${fmt(G.essence || 0)} essence. Recycle animals with the Net for more.` : `Spawn\nThey arrive in a ring of bubbles. Each settles in ${Math.round(settle * 100)}% of the time; those that don't give half their share back.`;
   buy.addEventListener('click', () => {
     const gene = spawnUi.ancient != null ? genes[spawnUi.ancient] : null;
     if (buyAnimal(kind, [...spawnUi.enh], gene, spawnUi.grade || 0)) { spawnUi.ancient = null; renderSpawnCard(); }
@@ -1088,6 +1092,7 @@ function renderCreature() {
   const acts = el('div', 'cr-acts');
   if (here && !world.observe) {
     const f = el('button', null, cam.follow === c ? 'Following' : 'Follow');
+    f.title = 'Follow\nThe camera rides along with it (F). Esc or dragging stops.';
     f.type = 'button';
     f.addEventListener('click', () => { cam.tour = false; byId('tour').setAttribute('aria-pressed', false); follow(c); });
     const r = el('button', 'recycle');
