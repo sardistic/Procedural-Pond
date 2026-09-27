@@ -541,3 +541,30 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
   - Search radius ×(0.55 + 1.1·hunger); pursuit is kept up to 60 + 110·hunger px; chase speed ×(1.05 + 0.4·hunger) (was 1.25).
   - Starving (hunger > 0.75): `desperateFor` also allows prey under 0.6× its width that isn't a deep predator or mythic, including its own kind's young.
   - Moods "starving, hunting" and "sated after a kill".
+
+## Tabs clear of every panel; the walk without bounce; sand; a river that moves; reshape cost
+- **Tabs.** `placeEdgeTabs` avoids every open panel in `TAB_AVOID`, not just #hud, stepping beside, below or above it, or hiding if there's no room. It's re-run by MutationObserver and ResizeObserver on those panels. The bug behind the user's screenshot: fixed panels have no `offsetParent`, so the first version skipped them all.
+- **Walk model** (replaces free/glide/spring-back):
+  - `beachRange` clamps the view along the beach to the pond's own range. It extends past an end by the neighbour's length only if `view.reach[side]` (set from `viewAtEnds()` at pointerdown or key press) or the view is already past that end (`view.lastTx`/`lastTy`). Ordinary panning runs into the edge; a drag from the end runs on over the neighbour; letting go leaves it there.
+  - `checkCross` crosses once the screen middle is past the seam by `CROSS_MARGIN` (24 px). `crossTo` swaps in place (the pond is placed at its picture's rect, BEACH updated first, `lastTx`/`lastTy` set), so nothing moves. The only easing is across the beach when the new pond is shorter than the screen needs (`glide.perp`).
+  - Go (tab) and Return use `walkTo(side)`: a glide that crosses on the way.
+  - `canvas.beyond` now takes pointer events (a pan-only press), so you can drag the neighbour's picture.
+  - Observed ponds keep their save (`world.observe.save`) so they can be walked back into after leaving them.
+- **River.** Courses are indexed `k = floor(day/period)`, with period 9–18 pond days from the seed; course 0 uses the old seed string so existing ponds keep their first course.
+  - Over the last 18% of a course the next one breaks through (a shallow narrow cut); over the first 35% the old one silts up (its bed rises to 0.4).
+  - Bends grow ×(1 + 0.7·age/60 days) and creep with day-based phase drift.
+  - Width grows faster (`RIVER_GROW` fresh 1.5, mixed 1, salt 0.55; age by /90 days) with a ±14% season.
+  - Everything uses `riverDay` (floor(days) + 0.5), so it's stable within a day, derived, and link-exact.
+- **Sand (js/sand.js).** `applySand` runs before the river (the river cuts through it) and writes `world.sand` (tint amount) plus raises the shore up to a cap, so crests reach about the low-tide line (bars 0.42, delta 0.37, spits 0.45).
+  - Sandbars: 2 lines at band×1.05/1.43, shoals by fbm along the beach, creeping `days·(1.3 + 0.8k)`, built up over 28 days, ×surf by habitat.
+  - Delta: a fan with a noise-modulated edge that fades in from the mouth (no hard edge); the old course's delta wears away.
+  - Spits: curved, waisted, ragged, low in the middle, growing from both ends (islands over 14 days, others 24).
+  - Plant beds: 24 px cells with at least 3 aged plants tint the floor only (the shore isn't raised, so fish can still swim there).
+  - `sandOver` draws a paler floor with ripple marks.
+- **Reshape cost.** Dawn used to reshape only on changes; now the beach changes daily. On the user's 1160×1920 pond:
+  - The bare beach (`shoreBase`) is cached by size, side and band; its per-pixel fbm cost about 150 ms.
+  - `buildDepth` is cached by key (size, expand, side, seed, tier, `scourKey`).
+  - Scour sources update every 5 days, rocks group per 28 px cell, plants no longer scour, the noise comes from a tile, and it's computed on a half-resolution grid. Hollows are capped (R ≤ 52, depth ≤ 120) and trail toward the deep instead of forming a moat ring: at tier 8 the old version made 110 px crater rings.
+  - A daily beach change does `makeShore` plus a partial bake of `beachRect` (band×2.9 + 40) plus `applyStains` on that rect: 2.7 s → about 0.25 s. The partial bake matches a full bake pixel for pixel except at most 8 edge pixels.
+  - A full rebuild (islands or scour changed) is about 1.3 s on that pond, every 5 days at most.
+- **Review of all 40 user messages.** Every request was checked against the code and tests. Two gaps turned up: the scour craters (fixed above), and the lineage fix (`canSuper` referenced the global `world`, which broke in the Node harness and was a latent bug).

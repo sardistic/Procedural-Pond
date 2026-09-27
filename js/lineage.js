@@ -16,13 +16,13 @@ TRAIT_RARITY.paragon = 4; RARE_OUTLINE.paragon = hexToInt('#ffd24a'); TRAIT_BUFF
 TRAIT_NOTES.paragon = 'the finest of its line';
 
 const superKind = (k) => (k === 'tadpole' ? 'frog' : k);
-const canSuper = (k) => !!(SPECIES[k] && CREATE[k] && k !== 'wild' && typeof fitsHabitat === 'function' && fitsHabitat(world, SPECIES_HABITAT[k] || 'both'));
+const canSuper = (world, k) => !!(SPECIES[k] && CREATE[k] && k !== 'wild' && typeof fitsHabitat === 'function' && fitsHabitat(world, SPECIES_HABITAT[k] || 'both'));
 function supersFor(world, kind) { return ((world.game && world.game.supers) || []).map((s, i) => [s, i]).filter(([s]) => s.k === kind); }
 
 function earnSuper(world, kind, traits, why) {
   const G = world.game;
   kind = superKind(kind);
-  if (!G || !canSuper(kind)) return;
+  if (!G || !canSuper(world, kind)) return;
   G.supers = [...(G.supers || []), { k: kind, traits: (traits || []).filter((t) => t !== 'paragon').slice(0, 5) }];
   const what = `a paragon ${[...traits].slice(0, 3).join(' ')} ${SINGULAR[kind] || kind}`.replace(/\s+/g, ' ');
   logEvent(world, `✦ Super spawn earned: ${what} (${why}). Claim it from its spawn card`, null, { cat: 'rare', pri: 3 });
@@ -119,8 +119,8 @@ function drawParagon(r, c, t) {
 
 // ---- keep safe --------------------------------------------------------------------------------------
 const isSafe = (c) => !!(c && c.life && c.life.safe);
-function toggleSafe(c) {
+function toggleSafe(c, w = world) {
   if (!c || !c.life) return;
   c.life.safe = !c.life.safe;
-  logEvent(world, c.life.safe ? `${c.life.name} is kept safe: it won't be recycled` : `${c.life.name} is no longer kept safe`, c, { cat: 'pond', pri: 1 });
+  logEvent(w, c.life.safe ? `${c.life.name} is kept safe: it won't be recycled` : `${c.life.name} is no longer kept safe`, c, { cat: 'pond', pri: 1 });
 }

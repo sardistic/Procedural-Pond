@@ -119,6 +119,13 @@ const STORY = {
     ['The island is a staircase. I know where it goes.'],
     ['the steps go up so that we can go down'],
   ],
+  river: [
+    ['The river has moved. It does that, apparently. I have redrawn the map.'],
+    ['The river has moved again. The old bed is still wet. Something walks in it at night.'],
+    ['The river went somewhere else in the night. I think it was looking for something.'],
+    ['The river has moved. The map is wrong. The map was always wrong.'],
+    ['the river walks. everything walks now.'],
+  ],
   build: [
     ['{what} settles into the floor. The fish are curious.'],
     ['{what}. Lower and lower we go.'],

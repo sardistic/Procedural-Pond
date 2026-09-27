@@ -28,7 +28,7 @@ html, body {
   top: 0;
   transform-origin: 0 0;
   image-rendering: pixelated;
-  pointer-events: none;
+  cursor: move; /* (it can be dragged, to walk on or back) */
 }
 #pond {
   position: fixed;
@@ -885,6 +885,7 @@ body.observing .edge-west.vertical { top: 104px; }
 .edge.near { opacity: 0.55; }
 .edge.pulling { opacity: 1; }
 .edge.ready { border-color: var(--hot); }
+.edge.crowded { visibility: hidden; }
 body.leaving canvas { transition: opacity 0.3s; opacity: 0.2; }
 /* In someone else's pond there's nothing to buy, build or change. */
 body.observing .seg, body.observing #ponds, body.observing #tools, body.observing #builds, body.observing #reset,

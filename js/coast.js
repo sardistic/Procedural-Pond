@@ -6,9 +6,13 @@
 //  - River: seeded from the pond, so it runs the same way every time the pond
 //    regrows. It comes in from the landward edge and cuts across the beach into
 //    the pond: wide in fresh water, middling with both, a trickle in salt. It
-//    widens and cuts deeper as the pond ages and deepens, keeps its channel wet
-//    at every tide, calms the water at its mouth, freshens it (with both
-//    waters), brings nutrients (plankton) and fresh plants, and fresh life likes it.
+//    widens and cuts deeper as the pond ages and deepens (and swells and shrinks
+//    with the wet and dry seasons), its bends grow and creep downstream, and
+//    every so often it breaks its banks and cuts a new course to the sea while
+//    the old channel silts up. It keeps its channel wet at every tide, calms the
+//    water at its mouth, freshens it (with both waters), brings nutrients
+//    (plankton) and fresh plants, and fresh life likes it. All of it follows from
+//    the pond's name and age, so it regrows the same way anywhere.
 //  - Islands sit low, so high tides cover their rim and low tides bare a wide
 //    beach. They swell and shrink over weeks of pond time (a slow cycle from
 //    the island's seed), and can be raised in stacks (up to ten), each a terrace
@@ -34,49 +38,80 @@ function coastXY(world, d, u) {
 }
 const beachBand = (world) => { const [W0, H0] = world.expandPx ? baseSize(world) : [world.W, world.H]; return Math.min(W0, H0) * 0.22; };
 
+// The part of the pond the sand and the river can change: the beach and the water off it.
+function beachRect(world) {
+  const { W, H } = world, side = world.shoreSide, reach = Math.ceil(beachBand(world) * 2.9 + 40);
+  return side === 0 ? [0, 0, Math.min(W - 1, reach), H - 1] : side === 1 ? [Math.max(0, W - 1 - reach), 0, W - 1, H - 1]
+    : side === 2 ? [0, 0, W - 1, Math.min(H - 1, reach)] : [0, Math.max(0, H - 1 - reach), W - 1, H - 1];
+}
+
 // ---- the river ------------------------------------------------------------------------------------
-const RIVER_BASE = { fresh: 8, mixed: 5.5, salt: 3 }, RIVER_GROW = { fresh: 1, mixed: 0.65, salt: 0.35 };
+const RIVER_BASE = { fresh: 8, mixed: 5.5, salt: 3 }, RIVER_GROW = { fresh: 1.5, mixed: 1, salt: 0.55 };
 const RIVER_FOAM = mat('#6aa8b8', '#9ccad6', '#cce6ee', '#f4fcff');
 
-// How wide the river runs now: it grows as the pond ages and deepens (half-pixel steps).
+// The pond's age as the river knows it: whole days, so it only reshapes at dawn.
+const riverDay = (world) => Math.floor(world.days || 0) + 0.5;
+// How wide the river runs now: it grows as the pond ages and deepens, and swells in the wet season (half-pixel steps).
 function riverWidth(world) {
-  const hab = world.opts.habitat || 'mixed', E = world.erosion;
-  const age = clamp((E ? E.e : 0) / 22 + (world.days || 0) / 120, 0, 1.5);
-  return Math.round(RIVER_BASE[hab] * (1 + RIVER_GROW[hab] * age) * 2) / 2;
+  const hab = world.opts.habitat || 'mixed', E = world.erosion, days = riverDay(world);
+  const age = clamp((E ? E.e : 0) / 22 + days / 90, 0, 2.2);
+  const season = 1 + 0.14 * Math.sin(days / 17 * TAU + (hashString(`${world.seed}/season`) % 628) / 100);
+  return Math.round(RIVER_BASE[hab] * (1 + RIVER_GROW[hab] * age) * season * 2) / 2;
 }
 
-function riverPlan(world) {
-  return withSeed(`${world.seed}/river`, () => ({
-    seed: world.seed, u: rand(0.2, 0.8), A: rand(6, 16), f: rand(0.035, 0.07), ph: rand(0, TAU), A2: rand(2, 6), f2: rand(0.12, 0.2), ph2: rand(0, TAU),
+// Each course the river takes (the first is the one it always had). It keeps one for a while, then
+// breaks out: the new channel breaks through over the last days of the old, which then silts up.
+const riverPeriod = (world) => 9 + 9 * ((hashString(`${world.seed}/period`) % 1000) / 1000);
+function riverCourse(world, k) {
+  const C = world.riverCourses && world.riverCourses.seed === world.seed ? world.riverCourses : (world.riverCourses = { seed: world.seed });
+  if (!C[k]) C[k] = withSeed(k === 0 ? `${world.seed}/river` : `${world.seed}/river/${k}`, () => ({
+    u: rand(0.2, 0.8), A: rand(6, 16), f: rand(0.035, 0.07), ph: rand(0, TAU), A2: rand(2, 6), f2: rand(0.12, 0.2), ph2: rand(0, TAU),
   }));
+  return C[k];
+}
+// Where it is now: this course k, how far through it (f), and whether the next is breaking through or the last silting up.
+function riverState(world) {
+  const T = riverDay(world) / riverPeriod(world), k = Math.floor(T), f = T - k;
+  return { k, f, next: f > 0.82 ? (f - 0.82) / 0.18 : 0, old: k > 0 && f < 0.35 ? 1 - f / 0.35 : 0 };
+}
+// The middle of a course at distance d from the landward edge: its bends grow with age and creep downstream.
+function riverCenter(world, C, d) {
+  const along = world.shoreSide < 2 ? world.H : world.W, days = riverDay(world), grow = 1 + 0.7 * clamp(days / 60, 0, 1);
+  return C.u * along + C.A * grow * Math.sin(d * C.f + C.ph - days * 0.07) + C.A2 * Math.sin(d * C.f2 + C.ph2 - days * 0.11);
 }
 
-// Cut the channel into the beach (called from applyShoreEdits, before islands).
+// Cut the channel into the beach (called from applyShoreEdits, after the sand and before islands).
 function applyRiver(world) {
   const shore = world.shore;
   world.river = null;
   if (!shore || world.riverOff) return;
-  if (!world.riverPlan || world.riverPlan.seed !== world.seed) world.riverPlan = riverPlan(world);
-  const P = world.riverPlan, hab = world.opts.habitat || 'mixed', side = world.shoreSide;
-  const along = side < 2 ? world.H : world.W, band = beachBand(world), reach = band * 1.35;
+  const hab = world.opts.habitat || 'mixed', band = beachBand(world), reach = band * 1.35 + 30;
   const w = world.riverW || (world.riverW = riverWidth(world));
   // The bed sits below the lowest tide (so it's always wet), deeper as it widens.
-  const bed = Math.round(clamp(0.13 - 0.05 * (w / RIVER_BASE[hab] - 1), 0.03, 0.13) * 255);
-  const u0 = P.u * along, pts = [];
-  for (let d = 0; d <= reach; d++) {
-    const uc = u0 + P.A * Math.sin(d * P.f + P.ph) + P.A2 * Math.sin(d * P.f2 + P.ph2);
-    const half = w / 2 * (0.8 + 0.5 * d / reach); // it spreads toward the mouth
-    for (let u = Math.floor(uc - half - 3); u <= Math.ceil(uc + half + 3); u++) {
-      const [x, y] = coastXY(world, d, u);
-      if (x < 0 || y < 0 || x >= world.W || y >= world.H) continue;
-      const p = x + y * world.W, dist = Math.abs(u - uc);
-      const v = dist <= half ? bed : Math.round(lerp(bed, shore[p], clamp((dist - half) / 3, 0, 1)));
-      if (v < shore[p]) shore[p] = v;
+  const bed = Math.round(clamp(0.13 - 0.05 * (w / RIVER_BASE[hab] - 1), 0.02, 0.13) * 255);
+  const cut = (C, width, bedAt, keep) => {
+    const pts = [];
+    for (let d = 0; d <= reach; d++) {
+      const uc = riverCenter(world, C, d), half = width / 2 * (0.8 + 0.5 * Math.min(1, d / (band * 1.35))); // it spreads toward the mouth
+      for (let u = Math.floor(uc - half - 3); u <= Math.ceil(uc + half + 3); u++) {
+        const [x, y] = coastXY(world, d, u);
+        if (x < 0 || y < 0 || x >= world.W || y >= world.H) continue;
+        const p = x + y * world.W, dist = Math.abs(u - uc);
+        const v = dist <= half ? bedAt : Math.round(lerp(bedAt, shore[p], clamp((dist - half) / 3, 0, 1)));
+        if (v < shore[p]) shore[p] = v;
+      }
+      if (keep && d % 3 === 0) pts.push(coastXY(world, d, uc));
     }
-    if (d % 3 === 0) pts.push(coastXY(world, d, uc));
-  }
+    return pts;
+  };
+  const R = riverState(world);
+  // The old course, silting up: shallower and narrower each day until it's gone.
+  if (R.old > 0) cut(riverCourse(world, R.k - 1), w * (0.5 + 0.4 * R.old), Math.round(lerp(0.4 * 255, bed + 10, R.old)), false);
+  // The new one breaking through: a thin shallow channel, cutting deeper.
+  if (R.next > 0) cut(riverCourse(world, R.k + 1), w * (0.25 + 0.5 * R.next), Math.round(lerp(0.36 * 255, bed + 8, R.next)), false);
+  const pts = cut(riverCourse(world, R.k), w, bed, true);
   const mi = Math.min(pts.length - 1, Math.round(band * 0.95 / 3)), mouth = pts[mi];
-  world.river = { pts: pts.slice(0, mi + 1), w, mouth, spot: { x: mouth[0], y: mouth[1], r: 8 + w } };
+  world.river = { pts: pts.slice(0, mi + 1), w, mouth, spot: { x: mouth[0], y: mouth[1], r: 8 + w }, k: R.k };
 }
 
 // Flow: flecks of foam riding the current down the channel.
@@ -432,12 +467,16 @@ function dawnCoast(world) {
   if (!world.blight && world.opts.life !== false && Math.random() < blightRisk(world)) startBlight(world);
   let reshape = false;
   if (world.shore) {
-    const w = riverWidth(world);
-    if (world.riverW && w > world.riverW) {
-      logEvent(world, `The river has cut its channel wider${w > (world.riverW || 0) + 1 ? ' and deeper' : ''}`, null, { cat: 'pond', pri: 1 });
-      reshape = true;
-    }
-    if (w !== world.riverW) { world.riverW = w; reshape = true; }
+    const w = riverWidth(world), R = riverState(world), was = world.riverAt;
+    if (world.riverW && w > world.riverW + 0.25) logEvent(world, `The river has cut its channel wider${w > (world.riverW || 0) + 1 ? ' and deeper' : ''}`, null, { cat: 'pond', pri: 1, key: 'river-wide' });
+    else if (world.riverW && w < world.riverW - 0.75) logEvent(world, 'The dry season: the river runs lower and narrower', null, { cat: 'pond', pri: 0, key: 'river-dry' });
+    if (was && R.k > was.k && !world.riverOff) {
+      logEvent(world, '✦ The river has broken its banks and cut a new course to the sea; its old channel will silt up', null, { cat: 'pond', pri: 3 });
+      if (typeof narrate === 'function') narrate(world, 'river');
+    } else if (was && R.next > 0 && !was.next && !world.riverOff) logEvent(world, 'The river is breaking through its bank: a new channel is opening beside the old', null, { cat: 'pond', pri: 2 });
+    world.riverAt = { k: R.k, next: R.next };
+    if (w !== world.riverW) world.riverW = w;
+    world.beachDaily = true; // (the bends creep and the sand moves a little every day: see below)
     const islands = (world.structures || []).filter((s) => s.kind === 'island');
     const key = islands.map((s) => islandRadius(world, s).toFixed(1)).join();
     if (islands.length && world.islandKey != null && key !== world.islandKey) {
@@ -452,6 +491,13 @@ function dawnCoast(world) {
   const sk = scourKey(world);
   if (sk !== world.scourKey) { world.scourKey = sk; reshape = true; }
   if (reshape && typeof structuresChanged === 'function') structuresChanged(true);
+  else if (world.beachDaily && world.shore) {
+    // Only the beach and the water off it change day to day: reshape it, redraw just that strip.
+    makeShore(world);
+    bakeBackground(world, beachRect(world));
+    if (typeof paintMinimapBackground === 'function') paintMinimapBackground();
+  }
+  world.beachDaily = false;
   dawnDeep(world);
 }
 
@@ -460,17 +506,38 @@ function dawnCoast(world) {
 // deep dig the floor out around them as the years go by, deeper nearer the
 // drop-off and elongated toward it, so the deep creeps in where you build.
 function scourSources(world) {
-  const out = [], tier = (world.erosion && world.erosion.tier) || 0;
+  // (It moves on every five days, not every day: redoing the depths is costly on a big pond.)
+  const out = [], tier = (world.erosion && world.erosion.tier) || 0, now = Math.floor((world.days || 0) / 5) * 5;
   const add = (x, y, born, w) => {
     if (born == null || (world.shore && shoreAt(world, x, y) > 0.08)) return;
-    const k = clamp((world.days - born) / 12, 0, 1) * w * (0.6 + 0.3 * tier);
+    const k = clamp((now - born) / 12, 0, 1) * w * (0.6 + 0.3 * tier);
     if (k > 0.05) out.push({ x, y, k: Math.round(k * 10) / 10, sturdy: w });
   };
   for (const s of world.structures || []) add(s.x, s.y, s.born, s.kind === 'island' ? 0 : 1);
-  for (const r of world.rocks || []) if (r.oi == null) add(r.x, r.y, r.born ?? world.days - 30, 0.5);
-  for (const p of world.plants || []) if (p.oi == null) add(p.x, p.y, p.born, 0.3);
+  // Rocks scour together where they stand close: one source per 28 px patch, at their middle, as
+  // strong as all of them (to a point). (Plants don't dig: their beds trap sand instead; see sand.js.)
+  const cells = new Map();
+  const group = (x, y, born, w) => {
+    if (born == null || (world.shore && shoreAt(world, x, y) > 0.08)) return;
+    const k = clamp((now - born) / 12, 0, 1) * w * (0.6 + 0.3 * tier);
+    if (k <= 0.02) return;
+    const key = ((x / 28) | 0) + ((y / 28) | 0) * 4096, c = cells.get(key) || { x: 0, y: 0, k: 0, w: 0, n: 0 };
+    c.x += x * k; c.y += y * k; c.k += k; c.w += w * k; c.n++;
+    cells.set(key, c);
+  };
+  for (const r of world.rocks || []) if (r.oi == null) group(r.x, r.y, r.born ?? world.days - 30, 0.5);
+  for (const c of cells.values()) {
+    const k = Math.min(0.8, c.k);
+    if (k > 0.05) out.push({ x: Math.round(c.x / c.k), y: Math.round(c.y / c.k), k: Math.round(k * 10) / 10, sturdy: c.w / c.k });
+  }
   return out;
 }
+// A little noise for the scour's edges, from a tile (fbm per pixel was the slow part).
+let SCOUR_NOISE = null;
+const scourNoise = (x, y) => {
+  if (!SCOUR_NOISE) { SCOUR_NOISE = new Float32Array(128 * 128); for (let j = 0; j < 128; j++) for (let i = 0; i < 128; i++) SCOUR_NOISE[i + j * 128] = fbm(i * 0.1, j * 0.1, 61); }
+  return SCOUR_NOISE[(x & 127) + ((y & 127) << 7)];
+};
 const scourKey = (world) => scourSources(world).map((s) => `${Math.round(s.x)},${Math.round(s.y)},${s.k}`).join(';');
 
 function applyScour(world, depth) {
@@ -478,21 +545,32 @@ function applyScour(world, depth) {
   if (!src.length) return depth;
   const { W, H } = world, N = world.shoreN || [0, 1], maxD = Math.max(0.35, (DEPTH_TIERS[(world.erosion && world.erosion.tier) || 0].depth || 0.35)) * 255;
   depth = depth || new Uint8Array(W * H);
+  const base = world.shoreBase || world.shore;
+  // (Worked out on every other pixel and written as 2x2 blocks: a quarter of the work.)
+  const set = (p, v, plinth) => {
+    for (const q of [p, p + 1, p + W, p + W + 1]) {
+      if (q >= depth.length) continue;
+      if (plinth) depth[q] = Math.round(depth[q] * v); else if (v > depth[q]) depth[q] = v;
+    }
+  };
+  // (Deep tiers scour harder, but a hollow stays a hollow: its size and depth are capped.)
+  const cap = Math.min(maxD, 120);
   for (const s of src) {
-    const R = 20 + 30 * s.k, foot = 0.32 * (0.6 + 0.4 * s.sturdy); // what stands there is sturdier than the floor
-    for (let y = Math.max(0, Math.floor(s.y - R * 2)); y <= Math.min(H - 1, Math.ceil(s.y + R * 2)); y++) {
-      for (let x = Math.max(0, Math.floor(s.x - R * 2)); x <= Math.min(W - 1, Math.ceil(s.x + R * 2)); x++) {
-        const dx = x - s.x, dy = y - s.y, toward = -(dx * N[0] + dy * N[1]); // + away from the beach
+    const kk = Math.min(1.3, s.k), R = 18 + 26 * kk, foot = 0.2 * (0.6 + 0.4 * s.sturdy); // what stands there is sturdier than the floor
+    const x0 = Math.max(0, Math.floor(s.x - R * 2)) & ~1, y0 = Math.max(0, Math.floor(s.y - R * 2)) & ~1;
+    for (let y = y0; y <= Math.min(H - 2, Math.ceil(s.y + R * 2)); y += 2) {
+      for (let x = x0; x <= Math.min(W - 2, Math.ceil(s.x + R * 2)); x += 2) {
+        const dx = x + 0.5 - s.x, dy = y + 0.5 - s.y, toward = -(dx * N[0] + dy * N[1]); // + away from the beach
         const stretch = toward > 0 ? 2 : 1, a = toward / stretch, b = dx * N[1] - dy * N[0];
         const d = Math.hypot(a, b) / R;
         if (d >= 1) continue;
         const p = x + y * W;
-        if (world.shore && world.shore[p] > 20) continue;
-        // A plinth of harder ground stays under it, with a moat scoured deep around.
-        if (d < foot) { depth[p] = Math.round(depth[p] * (0.25 + 0.75 * (d / foot) ** 3)); continue; }
-        const moat = 1 - Math.abs(d - (foot + 0.18)) / 0.5;
-        const v = Math.round(Math.min(maxD, s.k * 150 * Math.max((1 - d) ** 1.5, moat * 0.9) * (0.8 + 0.2 * fbm(x * 0.1, y * 0.1, 61))));
-        if (v > depth[p]) depth[p] = v;
+        if (base && base[p] > 20) continue; // (the bare beach: sand and the river come and go)
+        // A plinth of harder ground stays under it; around it the floor is scoured into a hollow,
+        // deepest just off it and trailing away toward the deep (not a ring).
+        if (d < foot) { set(p, 0.4 + 0.6 * (d / foot) ** 2, true); continue; }
+        const near = Math.exp(-(((d - foot) / 0.35) ** 2)), trail = toward > 0 ? 0.35 * (1 - d) : 0;
+        set(p, Math.round(Math.min(cap, (0.5 + 0.5 * kk) * 110 * ((1 - d) ** 1.3 * 0.55 + near * 0.45 + trail) * (0.8 + 0.2 * scourNoise(x, y)))), false);
       }
     }
   }

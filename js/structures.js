@@ -529,7 +529,8 @@ function structureZones(world, s, put, tA, infl) {
 function applyShoreEdits(world) {
   const shore = world.shore, { W, H } = world;
   if (!shore) return;
-  if (typeof applyRiver === 'function') applyRiver(world); // the river cuts the beach (coast.js)
+  if (typeof applySand === 'function') applySand(world); // sandbars, the delta, spits in the lee (sand.js)
+  if (typeof applyRiver === 'function') applyRiver(world); // the river cuts the beach, and through the sand (coast.js)
   if (typeof applyIslands === 'function') applyIslands(world);
   if (typeof applyErosion === 'function') applyErosion(world);
 }
@@ -674,9 +675,14 @@ function seedPlants(world) {
 
 const STAIN_FRESH = hexToInt('#34461c'), STAIN_SALT = hexToInt('#6e3a5e'), STAIN_DRY = hexToInt('#8a8448');
 
-function applyStains(world) {
+// (With rect, only that part is repainted: the rest of the floor keeps its stains.)
+let STAIN_BUF = null;
+function applyStains(world, rect = null) {
   if (!world.bgBase) return;
-  const { W, H } = world, stain = new Float32Array(W * H);
+  const { W, H } = world;
+  if (!STAIN_BUF || STAIN_BUF.length !== W * H) STAIN_BUF = new Float32Array(W * H);
+  const stain = STAIN_BUF, [qx0, qy0, qx1, qy1] = rect || [0, 0, W - 1, H - 1];
+  if (rect) for (let y = qy0; y <= qy1; y++) stain.fill(0, qx0 + y * W, qx1 + 1 + y * W); else stain.fill(0);
   const sources = [
     ...(world.structures || []).map((s) => [s.x, s.y, world.days - s.born, STRUCTURES[s.kind].size + 10, s.seed]),
     ...world.rocks.map((r) => [r.x, r.y, world.days - (r.born ?? -8), Math.max(r.a, r.b) + 4, r.seed]),
@@ -685,8 +691,9 @@ function applyStains(world) {
   for (const [sx, sy, age, base, seed] of sources) {
     if (age < 0.5) continue;
     const R = Math.min(base + 34, base * 0.4 + 5 + age * 1.6), depth = Math.min(0.5, 0.06 + age * 0.035);
-    for (let y = Math.max(0, Math.floor(sy - R)); y <= Math.min(H - 1, Math.ceil(sy + R)); y++) {
-      for (let x = Math.max(0, Math.floor(sx - R)); x <= Math.min(W - 1, Math.ceil(sx + R)); x++) {
+    if (sx + R < qx0 || sx - R > qx1 || sy + R < qy0 || sy - R > qy1) continue;
+    for (let y = Math.max(qy0, Math.floor(sy - R)); y <= Math.min(qy1, Math.ceil(sy + R)); y++) {
+      for (let x = Math.max(qx0, Math.floor(sx - R)); x <= Math.min(qx1, Math.ceil(sx + R)); x++) {
         const d = Math.hypot(x - sx, y - sy);
         if (d >= R) continue;
         const v = (1 - d / R) * depth * (0.55 + 0.9 * vnoise(x * 0.14, y * 0.14, seed % 71));
@@ -696,8 +703,8 @@ function applyStains(world) {
     }
   }
   const bg = world.bg, bgL = world.bgLight, bgD = world.bgDry, shore = world.shore;
-  for (let y = 0, p = 0; y < H; y++) {
-    for (let x = 0; x < W; x++, p++) {
+  for (let y = qy0; y <= qy1; y++) {
+    for (let x = qx0, p = qx0 + y * W; x <= qx1; x++, p++) {
       // Dithered into a few steps, so stains read as pixel art rather than a smear.
       const v = Math.floor((stain[p] + dither(x, y) * 0.12) * 8) / 8;
       if (v <= 0) { bg[p] = world.bgBase[p]; bgL[p] = world.bgLightBase[p]; if (bgD) bgD[p] = world.bgDryBase[p]; continue; }

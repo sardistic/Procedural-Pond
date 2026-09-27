@@ -317,15 +317,19 @@ function makeShore(world) {
   // Measured on the pond as it started, so deepening (which grows the far side) leaves the beach alone.
   const [W0, H0] = world.expandPx ? baseSize(world) : [W, H], [ox, oy] = world.expandPx ? originOf(world) : [0, 0];
   const band = Math.min(W0, H0) * 0.22;
-  const shore = new Uint8Array(W * H);
-  for (let y = 0, p = 0; y < H; y++) {
-    for (let x = 0; x < W; x++, p++) {
-      const d = side === 0 ? x : side === 1 ? W - 1 - x : side === 2 ? y : H - 1 - y;
-      const along = side < 2 ? y : x;
-      const local = band * (0.65 + 0.7 * fbm(along * 0.006, side * 7.3, 51));
-      const e = 1 - d / local + (fbm((x - ox) * 0.03, (y - oy) * 0.03, 52) - 0.5) * 0.1;
-      shore[p] = e <= 0 ? 0 : Math.min(255, Math.round(e * 255));
+  const shore = new Uint8Array(W * H), key = `${W}x${H}:${side}:${band}:${ox},${oy}`;
+  if (world.shoreBaseKey === key && world.shoreBase) shore.set(world.shoreBase); // (the bare beach never changes: only what's done to it)
+  else {
+    for (let y = 0, p = 0; y < H; y++) {
+      for (let x = 0; x < W; x++, p++) {
+        const d = side === 0 ? x : side === 1 ? W - 1 - x : side === 2 ? y : H - 1 - y;
+        const along = side < 2 ? y : x;
+        const local = band * (0.65 + 0.7 * fbm(along * 0.006, side * 7.3, 51));
+        const e = 1 - d / local + (fbm((x - ox) * 0.03, (y - oy) * 0.03, 52) - 0.5) * 0.1;
+        shore[p] = e <= 0 ? 0 : Math.min(255, Math.round(e * 255));
+      }
     }
+    world.shoreBase = shore.slice(); world.shoreBaseKey = key;
   }
   world.shore = shore;
   world.shoreN = SHORE_SIDES[side];
@@ -439,7 +443,8 @@ function deepDecor(world, d) {
 // Rasterize rocks and floor decor once, bake them into the floor image, and keep
 // their heights so animals are z-tested against them every frame. The floor is
 // baked in true colour; water colour comes from depth fog at render time.
-function bakeBackground(world) {
+// With rect, only that part of the floor is redrawn (the rest is kept as it was).
+function bakeBackground(world, rect = null) {
   const r = world.raster, { W, H } = world;
   const key = FLOOR_ALIASES[world.opts.floor] || world.opts.floor;
   const floor = FLOORS[key] || FLOORS.sand, water = WATERS[world.opts.water] || WATERS.teal;
@@ -448,8 +453,12 @@ function bakeBackground(world) {
   else if (!world.shore && world.shoreSide !== undefined) makeShore(world);
   const shore = world.shore;
   const savedClip = r.clip;
-  r.clip = [0, 0, W - 1, H - 1];
-  r.zBase.fill(0);
+  const part = !!(rect && world.bgBase && world.bgBase.length === W * H && (!shore || world.bgDryBase));
+  const [rx0, ry0, rx1, ry1] = part ? rect : [0, 0, W - 1, H - 1];
+  // (A margin cleared round a partial redraw, so its edges don't read the last frame's animals.)
+  r.clip = part ? [Math.max(0, rx0 - 2), Math.max(0, ry0 - 2), Math.min(W - 1, rx1 + 2), Math.min(H - 1, ry1 + 2)] : [0, 0, W - 1, H - 1];
+  if (part) for (let y = r.clip[1]; y <= r.clip[3]; y++) r.zBase.fill(0, r.clip[0] + y * W, r.clip[2] + 1 + y * W);
+  else r.zBase.fill(0);
   r.begin();
   const outline = new Uint32Array(8192);
   let nid = 1;
@@ -477,10 +486,10 @@ function bakeBackground(world) {
   let sid = 5000;
   const nextS = (m) => { const i = Math.min(8190, sid++); outline[i] = outlineOf(m); return i; };
   for (const s of world.structures || []) if (!s.anim) withSeed(`bake/${s.seed}`, () => BAKE[s.kind](r, s, nextS)); // same shape every bake (not while it's still arriving)
-  const bg = new Uint32Array(W * H), bgLight = new Uint32Array(W * H), bgDry = shore ? new Uint32Array(W * H) : null;
+  const bg = part ? world.bgBase : new Uint32Array(W * H), bgLight = part ? world.bgLightBase : new Uint32Array(W * H), bgDry = shore ? (part ? world.bgDryBase : new Uint32Array(W * H)) : null;
   const { id, z, col, sh } = r;
-  for (let y = 0, p = 0; y < H; y++) {
-    for (let x = 0; x < W; x++, p++) {
+  for (let y = ry0; y <= ry1; y++) {
+    for (let x = rx0, p = rx0 + y * W; x <= rx1; x++, p++) {
       let c;
       if (id[p]) {
         c = col[p];
@@ -500,6 +509,7 @@ function bakeBackground(world) {
           c = outline[best];
         } else {
           c = floor.color(x - ox, y - oy);
+          if (world.sand && world.sand[p]) c = sandOver(world, c, world.sand[p], x, y);
           if (world.depth && world.depth[p]) c = mixColor(c, DEEP_SILT, Math.min(1, world.depth[p] / 160));
           if (sh[p] > 1.2) c = shadeColor(c);
         }
@@ -513,8 +523,14 @@ function bakeBackground(world) {
       if (bgDry && shore[p]) bgDry[p] = mixColor(c, sun, 0.18);
     }
   }
-  r.zBase.set(r.z);
+  if (part) for (let y = ry0; y <= ry1; y++) r.zBase.set(r.z.subarray(rx0 + y * W, rx1 + 1 + y * W), rx0 + y * W);
+  else r.zBase.set(r.z);
   r.clip = savedClip;
+  if (part) {
+    // The unstained copies were redrawn in place; the stains go back over them (below).
+    if (typeof applyStains === 'function') applyStains(world, [rx0, ry0, rx1, ry1]); else { world.bg.set(bg); world.bgLight.set(bgLight); if (bgDry) world.bgDry.set(bgDry); }
+    return;
+  }
   world.bg = bg;
   world.bgLight = bgLight;
   world.bgDry = bgDry;

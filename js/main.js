@@ -859,7 +859,8 @@ function removeAt(x, y) {
 // The canvas holds the whole world; a CSS transform scales it by a whole number
 // k of screen pixels per world pixel (so the art stays crisp) and pans it.
 
-const view = { k: 3, tx: 0, ty: 0, r: 0, free: false };
+// tx, ty: where the pond sits on screen. reach: which end the view may run on past (see beachRange).
+const view = { k: 3, tx: 0, ty: 0, r: 0, reach: { west: false, east: false }, lastTx: 0, lastTy: 0, glide: null };
 // The view can be turned a quarter at a time (r), so a neighbour's pond shows with
 // its beach on the same side of the screen as yours. World ↔ screen:
 const ROT_SIDE = [[0, 1, 2, 3], [2, 3, 1, 0], [1, 0, 3, 2], [3, 2, 0, 1]]; // where each side of the pond ends up on screen
@@ -887,14 +888,21 @@ const defaultK = () => coverK() + 1; // one step in, so the pond carries on past
 const minK = () => (view.minK ? Math.min(view.minK, coverK()) : coverK());
 function applyView() {
   if (view.k < minK()) view.k = minK();
-  const [w, h] = screenSize(), ax = beachAxisX();
-  // (While you walk along the beach, the camera may run on past the end, into the next pond.)
-  const freeX = view.free && ax, freeY = view.free && !ax;
-  view.tx = freeX ? Math.round(view.tx) : w <= innerWidth ? Math.round((innerWidth - w) / 2) : Math.round(clamp(view.tx, innerWidth - w, 0));
-  view.ty = freeY ? Math.round(view.ty) : h <= innerHeight ? Math.round((innerHeight - h) / 2) : Math.round(clamp(view.ty, innerHeight - h, 0));
+  const [w, h] = screenSize(), ax = beachAxisX(), perpFree = view.glide && view.glide.perp;
+  const across = (len, scr, v) => (len <= scr ? Math.round((scr - len) / 2) : Math.round(clamp(v, scr - len, 0)));
+  if (ax) {
+    const [lo, hi] = beachRange(w, innerWidth, view.lastTx);
+    view.tx = Math.round(clamp(view.tx, lo, hi));
+    view.ty = perpFree ? Math.round(view.ty) : across(h, innerHeight, view.ty);
+  } else {
+    const [lo, hi] = beachRange(h, innerHeight, view.lastTy);
+    view.ty = Math.round(clamp(view.ty, lo, hi));
+    view.tx = perpFree ? Math.round(view.tx) : across(w, innerWidth, view.tx);
+  }
+  view.lastTx = view.tx; view.lastTy = view.ty;
   canvas.style.transform = canvasTransform(view.tx, view.ty, view.k, view.r, world.W, world.H);
   zoomLabel.textContent = `${view.k}×`;
-  if (typeof placeBeyond === 'function') placeBeyond();
+  if (typeof placeBeyond === 'function') { placeBeyond(); edgePull(); }
 }
 
 function zoomTo(k, cx = innerWidth / 2, cy = innerHeight / 2) {
@@ -963,7 +971,8 @@ canvas.addEventListener('pointerdown', (e) => {
     // Someone else's pond: pan and look; a tap on an animal opens its card.
     const c = creatureAt(x, y);
     if (c) tap = { x: e.clientX, y: e.clientY, t: performance.now(), c };
-    press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x, y, panning: false, over: 0, ends: viewAtEnds() };
+    press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x, y, panning: false };
+    view.reach = viewAtEnds();
     return;
   }
   if (world.tool === 'net') { removeAt(x, y); return; }
@@ -974,7 +983,8 @@ canvas.addEventListener('pointerdown', (e) => {
     canvas.style.cursor = 'grabbing';
     tap = { x: e.clientX, y: e.clientY, t: performance.now(), c };
   } else {
-    press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x, y, panning: false, over: 0, ends: viewAtEnds() };
+    press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x, y, panning: false };
+    view.reach = viewAtEnds();
     // A long press opens the card of whatever is there (plants too).
     press.longT = setTimeout(() => { if (press && !press.panning) press.done = openThingAt(x, y); }, 550);
   }
@@ -992,7 +1002,8 @@ function openThingAt(x, y) {
   return false;
 }
 
-canvas.addEventListener('pointermove', (e) => {
+canvas.addEventListener('pointermove', onPointerMove);
+function onPointerMove(e) {
   if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pinch && touches.size === 2) {
     const [a, b] = [...touches.values()];
@@ -1007,17 +1018,13 @@ canvas.addEventListener('pointermove', (e) => {
     const dx = e.clientX - press.cx, dy = e.clientY - press.cy;
     if (!press.panning && dx * dx + dy * dy > 36) { press.panning = true; canvas.style.cursor = 'move'; stopFollow(); }
     if (press.panning) {
-      const wx = press.tx + dx, wy = press.ty + dy, ax = beachAxisX();
-      view.glide = null; view.free = false;
-      view.tx = wx; view.ty = wy; applyView();
-      // Past the end of the beach: the next pond along (see neighbours). Only when the
-      // view was already at that end when the drag began, so ordinary panning never counts;
-      // once what's beyond is drawn, the camera walks on into it.
-      const over = ax ? wx - view.tx : wy - view.ty, side = over > 0 ? 'west' : 'east';
-      press.over = over && press.ends[side] ? over : 0;
-      if (press.over && BEACH[side] && BEACH[side].snap) { view.free = true; if (ax) view.tx = wx; else view.ty = wy; applyView(); }
-      else if (press.over && BEACH[side]) ensureBeyond(side);
-      edgePull(press.over);
+      view.glide = null;
+      view.tx = press.tx + dx; view.ty = press.ty + dy; applyView();
+      // Pushing at an end: make sure what's beyond is being drawn, so the next push runs on into it.
+      const ax = beachAxisX(), over = ax ? press.tx + dx - view.tx : press.ty + dy - view.ty;
+      if (over) { const side = over > 0 ? 'west' : 'east'; if (BEACH[side] && !BEACH[side].snap) ensureBeyond(side); }
+      const moved = checkCross();
+      if (moved) { press.tx += moved[0]; press.ty += moved[1]; }
     }
     return;
   }
@@ -1026,18 +1033,27 @@ canvas.addEventListener('pointermove', (e) => {
   world.hover = over;
   hoverAt = [e.clientX, e.clientY];
   canvas.style.cursor = world.tool === 'net' ? (over ? 'pointer' : 'crosshair') : over ? 'grab' : world.tool === 'feed' ? 'crosshair' : 'copy';
-});
+}
+// A press on the picture of the next pond along (while you're looking over the edge) only pans.
+function beyondDown(e) {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  e.currentTarget.setPointerCapture(e.pointerId);
+  if (touches.size > 1) return;
+  toWorld(e);
+  stopFollow();
+  press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x: world.pointer.x, y: world.pointer.y, panning: false, beyond: true };
+}
 
 let tap = null;
 function pointerEnd(e) {
   touches.delete(e.pointerId);
   if (touches.size < 2) pinch = null;
   if (press) clearTimeout(press.longT);
-  // Let go more than about halfway across and you're there; sooner, and you spring back.
-  if (press && press.panning && view.free) { if (!(Math.abs(press.over) >= crossNeeded() && crossTo(press.over > 0 ? 'west' : 'east'))) glideToRest(); }
-  edgePull(0);
+  // Let go and the view stays where it is: no spring back, no settling.
+  if (press) view.reach = { west: false, east: false };
   if (press && press.done) press = null; // a long press opened a card
-  if (press && !press.panning && e.type === 'pointerup') {
+  if (press && !press.panning && !press.beyond && e.type === 'pointerup') {
     // Clicking the hatchery opens it (with any tool but the Net); feeding over
     // another structure tells you about it.
     const st = world.tool !== 'net' && structureAt(world, press.x, press.y);
@@ -1253,12 +1269,49 @@ const NB = { west: null, east: null, at: 0, busy: false };
 // { id, info, home, save, snap: { canvas, W, H, r }, loading, rect }.
 const BEACH = { west: null, east: null };
 let homeInfo = null; // your own pond, while you're walking: { seed, id, path }
-const crossNeeded = () => Math.max(300, 0.45 * (beachAxisX() ? innerWidth : innerHeight));
-const edgePullNeeded = crossNeeded;
-// Whether the view is already at either end of the beach.
+// The view along the beach. It pans the pond as far as its ends, and runs into the edge there
+// and stops. Push on from an end (a drag that starts there, or a key) and, once the next pond is
+// drawn, it runs on into it, as far as that pond reaches; let go and it stays put. When the middle
+// of the screen is over the next pond, you're in it (crossTo): nothing on screen moves.
+const CROSS_MARGIN = 24; // (how far past the seam the middle of the screen has to be)
+function normalRange(len, scr) { const c = Math.round((scr - len) / 2); return len <= scr ? [c, c] : [scr - len, 0]; }
+function beyondLen(side) {
+  const B = BEACH[side];
+  if (!B || !B.snap) return 0;
+  const [bw, bh] = screenSize(B.snap.W, B.snap.H, B.snap.r);
+  return beachAxisX() ? bw : bh;
+}
+// How far the view may go along the beach: the pond's own range, run on past an end that the view
+// may reach (view.reach) or is already past (cur).
+function beachRange(len, scr, cur) {
+  const [lo0, hi0] = normalRange(len, scr);
+  let lo = lo0, hi = hi0;
+  if (view.reach.west || cur > hi0) hi = hi0 + beyondLen('west');
+  if (view.reach.east || cur < lo0) lo = lo0 - beyondLen('east');
+  return [lo, hi];
+}
+// Whether the view is at either end of the pond (or already past it).
 function viewAtEnds() {
-  const ax = beachAxisX(), [w, h] = screenSize();
-  return ax ? { west: view.tx >= -1, east: view.tx <= innerWidth - w + 1 } : { west: view.ty >= -1, east: view.ty <= innerHeight - h + 1 };
+  const ax = beachAxisX(), [w, h] = screenSize(), len = ax ? w : h, scr = ax ? innerWidth : innerHeight, a = ax ? view.tx : view.ty, [lo0, hi0] = normalRange(len, scr);
+  return { west: a >= hi0 - 1, east: a <= lo0 + 1 };
+}
+// How far past its own end the view is, toward the next pond: 0 (not at all) to 1 (crossing).
+function pastEnd() {
+  const ax = beachAxisX(), [w, h] = screenSize(), len = ax ? w : h, scr = ax ? innerWidth : innerHeight, a = ax ? view.tx : view.ty, [lo0, hi0] = normalRange(len, scr), mid = scr / 2;
+  if (a > hi0) return { side: 'west', k: clamp((a - hi0) / Math.max(1, mid + CROSS_MARGIN - hi0), 0, 1) };
+  if (a < lo0) return { side: 'east', k: clamp((lo0 - a) / Math.max(1, lo0 - (mid - CROSS_MARGIN - len)), 0, 1) };
+  return null;
+}
+// Once the middle of the screen is over the next pond along, you're in it. Returns how far the
+// pond's position on screen shifted (the view itself doesn't move), or null.
+let crossing = false;
+function checkCross() {
+  const p = pastEnd();
+  if (!p || p.k < 1 || crossing || !BEACH[p.side] || !BEACH[p.side].snap) return null;
+  const bx = view.tx, by = view.ty;
+  crossing = true;
+  try { if (!crossTo(p.side)) return null; } finally { crossing = false; }
+  return [view.tx - bx, view.ty - by];
 }
 const beachAxisX = () => displaySide(world.shoreSide ?? 3) >= 2; // a beach along the top or bottom of the screen runs left to right
 
@@ -1354,6 +1407,10 @@ for (const side of ['west', 'east']) {
   cv.hidden = true;
   canvas.before(cv);
   beyondEl[side] = cv;
+  cv.addEventListener('pointerdown', beyondDown);
+  cv.addEventListener('pointermove', onPointerMove);
+  cv.addEventListener('pointerup', pointerEnd);
+  cv.addEventListener('pointercancel', pointerEnd);
 }
 function placeBeyond() {
   const ax = beachAxisX(), [w, h] = screenSize(), ds = displaySide(world.shoreSide ?? 3);
@@ -1379,11 +1436,12 @@ function crossTo(side) {
   placeBeyond();
   const [bx, by] = B.rect;
   if (!world.observe) { saveNow(); homeInfo = { seed: world.seed, id: world.link && world.link.id, path: world.link ? `/${world.link.id}` : `/?pond=${encodeURIComponent(world.seed)}` }; }
-  const leaving = { id: world.observe ? world.observe.id : homeInfo.id, home: !world.observe, back: true, snap: captureSnap(), info: { depth: pondFathoms(world), habitat: world.opts.habitat } };
+  const leaving = { id: world.observe ? world.observe.id : homeInfo.id, home: !world.observe, back: true, snap: captureSnap(), info: { depth: pondFathoms(world), habitat: world.opts.habitat },
+    save: world.observe ? world.observe.save : null, updated: world.observe ? world.observe.updated : 0 };
   const d = B.home ? loadSave(homeInfo.seed) : B.save;
   if (!d) return false;
   hideCreature(); hideObject(); closeSpawnCard(); setHatchery(false); setEvo(false);
-  world.observe = B.home ? null : { id: B.id, updated: B.updated || Date.now(), home: homeInfo, homeId: homeInfo.id, dir: side };
+  world.observe = B.home ? null : { id: B.id, updated: B.updated || Date.now(), home: homeInfo, homeId: homeInfo.id, dir: side, save: d };
   world.noSave = !B.home;
   document.body.classList.toggle('observing', !B.home);
   Object.assign(world.opts, d.opts);
@@ -1393,13 +1451,16 @@ function crossTo(side) {
   view.r = B.snap.r;
   layout(true);
   world.quietRestore = false;
-  // Exactly where its picture was, at the same zoom, then settle into it.
+  // Exactly where its picture was, at the same zoom: nothing on screen moves. (Only if the new pond
+  // is shorter across the beach than the view needs does it ease across to fit.)
   view.minK = k;
-  view.k = k; view.tx = bx; view.ty = by; view.free = true;
-  applyView();
   BEACH[other] = leaving;
   BEACH[side] = null;
-  glideToRest();
+  view.k = k; view.tx = bx; view.ty = by; view.lastTx = bx; view.lastTy = by; view.reach = { west: false, east: false };
+  view.glide = { tx: bx, ty: by, perp: true };
+  applyView();
+  const ax = beachAxisX(), [w2, h2] = screenSize(), fit = ax ? normalRange(h2, innerHeight) : normalRange(w2, innerWidth), cur = ax ? view.ty : view.tx, want = clamp(cur, fit[0], fit[1]);
+  if (Math.abs(want - cur) > 1) { if (ax) view.glide.ty = want; else view.glide.tx = want; } else view.glide = null;
   if (B.home) {
     homeInfo = null;
     $('observe-bar').hidden = true;
@@ -1416,23 +1477,33 @@ function crossTo(side) {
   return true;
 }
 
-// The camera settles back inside the pond (after a short pull, or after crossing).
-function glideToRest() {
-  const f = view.free, tx = view.tx, ty = view.ty;
-  view.free = false; applyView();
-  const to = [view.tx, view.ty];
-  view.tx = tx; view.ty = ty; view.free = f || true;
-  applyView();
-  view.glide = to;
-}
+// A walk the camera takes by itself: into the next pond when you choose Go (or Return), crossing
+// on the way; or easing across after a crossing into a pond shorter across the beach.
 function updateGlide(dt) {
   const g = view.glide;
   if (!g) return;
   // (At least a pixel a frame: the view is kept to whole pixels, so a smaller step would stall.)
-  const a = Math.min(1, dt * 8), step = (v, to) => (Math.abs(to - v) <= 1 ? to : v + Math.sign(to - v) * Math.max(1, Math.abs(to - v) * a));
-  view.tx = step(view.tx, g[0]); view.ty = step(view.ty, g[1]);
-  if (view.tx === g[0] && view.ty === g[1]) { view.glide = null; view.free = false; }
+  const a = Math.min(1, dt * 6), step = (v, to) => (Math.abs(to - v) <= 1 ? to : v + Math.sign(to - v) * Math.max(1, Math.abs(to - v) * a));
+  if (g.side) view.reach = { west: g.side === 'west', east: g.side === 'east' };
+  view.tx = step(view.tx, g.tx); view.ty = step(view.ty, g.ty);
   applyView();
+  // (Crossing ends the walk where the new pond starts; crossTo sets up any easing across.)
+  if (g.side && checkCross()) return;
+  // Done, or held up (the view can't get any closer).
+  if ((Math.abs(view.tx - g.tx) <= 1 && Math.abs(view.ty - g.ty) <= 1) || (g.px === view.tx && g.py === view.ty)) { view.glide = null; view.reach = { west: false, east: false }; return; }
+  g.px = view.tx; g.py = view.ty;
+}
+// Walk on into the next pond along (the tab's Go, or Return to my pond when it's next door).
+async function walkTo(side) {
+  await ensureBeyond(side);
+  const B = BEACH[side];
+  if (!B || !B.snap) return false;
+  stopFollow();
+  const ax = beachAxisX(), [w, h] = screenSize(), len = ax ? w : h, scr = ax ? innerWidth : innerHeight, blen = beyondLen(side), [lo0, hi0] = normalRange(len, scr);
+  // Far enough that the middle of the screen is well over it.
+  const a = side === 'west' ? Math.min(hi0 + blen, scr / 2 + CROSS_MARGIN + 40) : Math.max(lo0 - blen, scr / 2 - CROSS_MARGIN - 40 - len);
+  view.glide = { tx: ax ? a : view.tx, ty: ax ? view.ty : a, side };
+  return true;
 }
 
 // The tab at each end of the beach, naming the pond beyond.
@@ -1451,28 +1522,49 @@ function edgeHints() {
   }
   placeEdgeTabs();
 }
-// Keep the tabs clear of the menu: beside it when the beach runs across the screen, below it when it runs up and down.
+// Keep the tabs clear of the menu and any open card or panel: the west tab steps out beside
+// (or below) whatever covers it, the east tab beside (or above); where there's no room, it hides.
+const TAB_AVOID = ['hud', 'creature', 'object', 'spawn-card', 'score-panel', 'sky-panel', 'census', 'hatchery', 'evo', 'log-panel', 'nb-ask', 'lineage'];
 function placeEdgeTabs() {
-  const h = $('hud'), hr = h.classList.contains('hidden') ? null : h.getBoundingClientRect();
+  // (Fixed panels have no offsetParent, so shown is judged by the hidden flag and a real size.)
+  const boxes = TAB_AVOID.map((id) => document.getElementById(id)).filter((e) => e && !e.hidden && !e.classList.contains('hidden')).map((e) => e.getBoundingClientRect()).filter((r) => r.width > 2 && r.height > 2);
   for (const dir of ['west', 'east']) {
-    const el = $(`edge-${dir}`);
-    el.style.left = el.style.top = el.style.bottom = '';
-    if (el.hidden || !hr || !hr.width) continue;
+    const el = document.getElementById(`edge-${dir}`);
+    el.style.left = el.style.right = el.style.top = el.style.bottom = '';
+    el.classList.remove('crowded');
+    if (el.hidden) continue;
+    const vert = el.classList.contains('vertical');
+    for (let pass = 0; pass < 3; pass++) {
+      const r = el.getBoundingClientRect(), hit = boxes.filter((b) => !(r.right <= b.left || r.left >= b.right || r.bottom <= b.top || r.top >= b.bottom));
+      if (!hit.length) break;
+      if (vert) {
+        if (dir === 'west') { el.style.top = `${Math.round(Math.max(...hit.map((b) => b.bottom)) + 8)}px`; el.style.bottom = 'auto'; }
+        else { el.style.bottom = `${Math.round(innerHeight - Math.min(...hit.map((b) => b.top)) + 8)}px`; el.style.top = 'auto'; }
+      } else if (dir === 'west') el.style.left = `${Math.round(Math.max(...hit.map((b) => b.right)) + 10)}px`;
+      else { el.style.right = `${Math.round(innerWidth - Math.min(...hit.map((b) => b.left)) + 10)}px`; el.style.left = 'auto'; }
+    }
+    // Still in the way (or pushed off screen): leave it out until there's room.
     const r = el.getBoundingClientRect();
-    if (r.right < hr.left || r.left > hr.right || r.bottom < hr.top || r.top > hr.bottom) continue;
-    if (el.classList.contains('vertical')) { el.style.top = `${Math.round(hr.bottom + 8)}px`; el.style.bottom = 'auto'; }
-    else el.style.left = `${Math.round(hr.right + 10)}px`;
+    if (boxes.some((b) => !(r.right <= b.left || r.left >= b.right || r.bottom <= b.top || r.top >= b.bottom)) || r.left < 0 || r.right > innerWidth || r.top < 0 || r.bottom > innerHeight) el.classList.add('crowded');
   }
 }
-if (typeof ResizeObserver === 'function') new ResizeObserver(() => placeEdgeTabs()).observe(document.getElementById('hud'));
+{
+  const again = () => requestAnimationFrame(placeEdgeTabs);
+  const mo = new MutationObserver(again), ro = typeof ResizeObserver === 'function' ? new ResizeObserver(again) : null;
+  for (const id of TAB_AVOID) { const e = document.getElementById(id); if (!e) continue; mo.observe(e, { attributes: true, attributeFilter: ['hidden', 'class', 'style'] }); if (ro) ro.observe(e); }
+  addEventListener('resize', again);
+}
 
-function edgePull(over) {
-  const dir = over > 0 ? 'west' : 'east';
+function edgePull() {
+  const p = pastEnd();
   for (const d of ['west', 'east']) {
-    const el = $(`edge-${d}`);
-    const k = d === dir && BEACH[d] ? clamp(Math.abs(over) / crossNeeded(), 0, 1) : 0;
+    const el = document.getElementById(`edge-${d}`);
+    if (!el) continue;
+    const k = p && p.side === d && BEACH[d] ? p.k : 0;
+    if (el.dataset.pull === k.toFixed(2)) continue;
+    el.dataset.pull = k.toFixed(2);
     el.style.setProperty('--pull', k.toFixed(2));
-    el.classList.toggle('pulling', k > 0.05);
+    el.classList.toggle('pulling', k > 0.02);
     el.classList.toggle('ready', k >= 1);
   }
 }
@@ -1489,8 +1581,7 @@ function askNeighbour(dir) {
 document.getElementById('nb-go').addEventListener('click', async () => {
   const dir = document.getElementById('nb-ask').dataset.dir;
   document.getElementById('nb-ask').hidden = true;
-  await ensureBeyond(dir);
-  crossTo(dir);
+  walkTo(dir);
 });
 document.getElementById('nb-stay').addEventListener('click', () => { document.getElementById('nb-ask').hidden = true; });
 for (const d of ['west', 'east']) document.getElementById(`edge-${d}`).addEventListener('click', () => askNeighbour(d));
@@ -1498,7 +1589,7 @@ for (const d of ['west', 'east']) document.getElementById(`edge-${d}`).addEventL
 document.getElementById('observe-home').addEventListener('click', () => goHome());
 function goHome() {
   const side = ['west', 'east'].find((s) => BEACH[s] && BEACH[s].home && BEACH[s].snap);
-  if (side && crossTo(side)) return;
+  if (side) { walkTo(side); return; }
   const home = (world.observe && world.observe.home) || homeInfo;
   world.noSave = true;
   location.assign(home ? home.path : '/');
@@ -1510,8 +1601,9 @@ async function observeSync(dt) {
   if (!world.observe || (observeTimer -= dt) > 0) return;
   observeTimer = 60;
   const got = await fetchPond(world.observe.id);
-  if (!got || !(got.updated > world.observe.updated + 120000) || view.free) return;
+  if (!got || !(got.updated > world.observe.updated + 120000) || pastEnd() || view.glide) return;
   world.observe.updated = got.updated;
+  world.observe.save = got.save;
   const [cx, cy] = screenToWorld(innerWidth / 2, innerHeight / 2), k = view.k, r = view.r;
   world.resume = got.save;
   world.quietRestore = true;
@@ -1920,8 +2012,11 @@ addEventListener('keydown', (e) => {
   if (pan && !e.ctrlKey && !e.metaKey && !e.altKey) {
     e.preventDefault();
     stopFollow();
+    view.reach = viewAtEnds();
     view.tx += pan[0] * 80; view.ty += pan[1] * 80;
     applyView();
+    view.reach = { west: false, east: false };
+    checkCross();
     return;
   }
   if (e.key === 'b' || e.key === 'B') setBones(!world.bones);
@@ -2007,6 +2102,7 @@ async function boot() {
   world.resume = resume;
   world.linkAdopt = adopt;
   world.observe = observe;
+  if (observe) observe.save = resume; // (kept, so the pond can be walked back into after you leave it)
   if (observe) { world.noSave = true; document.body.classList.add('observing'); }
   world.seed = resume ? resume.seed : urlSeed || newSeedName();
   if (resume) {

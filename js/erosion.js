@@ -103,6 +103,11 @@ function applyErosion(world) {
 
 function buildDepth(world) {
   const ex = world.expandPx || 0, { W, H } = world, side = world.shoreSide;
+  // (The same pond, the same depths: only rebuilt when what shapes them has changed. The sand and
+  // the river reshape the beach every day; the deep doesn't need redoing for that.)
+  const key = [W, H, ex, side, world.seed, world.erosion ? world.erosion.tier : 0, typeof scourKey === 'function' ? scourKey(world) : ''].join('|');
+  if (world.depthKey === key && world.depth !== undefined) return;
+  world.depthKey = key;
   // Scour around what's been placed (coast.js) digs pockets of depth even before the pond opens up.
   if (!ex) { world.depth = typeof applyScour === 'function' ? applyScour(world, null) : null; return; }
   const depth = new Uint8Array(W * H), axisX = deepAxisX(side), shifts = deepShifts(side);
