@@ -5,6 +5,16 @@
 // and updateSkyHud() every frame.
 
 const byId = (id) => document.getElementById(id);
+
+// One window at a time: opening one closes whichever other is open, and a click out in the pond
+// closes it (the actions panel and the menu are tools, not windows, and stay).
+const WINDOWS = [
+  ['creature', () => hideCreature()], ['object', () => hideObject()], ['spawn-card', () => closeSpawnCard()], ['hatchery', () => setHatchery(false)],
+  ['evo', () => setEvo(false)], ['census', () => setCensus(false)], ['log-panel', () => setJournal(false)], ['score-panel', () => setScore(false)], ['sky-panel', () => setSky(false)],
+];
+function closeWindows(except = null) {
+  for (const [id, close] of WINDOWS) { const e = byId(id); if (id !== except && e && !e.hidden) close(); }
+}
 const clockLabel = (c) => `${String(Math.floor(c * 24)).padStart(2, '0')}:${String(Math.floor((c * 24 % 1) * 60)).padStart(2, '0')}`;
 const ageLabel = (s) => `${Math.floor(s / 60)}m ${String(Math.floor(s % 60)).padStart(2, '0')}s`;
 
@@ -370,7 +380,7 @@ function setCensus(open) {
   census.open = open;
   byId('census').hidden = !open;
   byId('census-btn').setAttribute('aria-expanded', open);
-  if (open) { renderCensus(); setJournal(false); }
+  if (open) { renderCensus(); closeWindows('census'); }
 }
 
 function el(tag, cls, text) {
@@ -486,7 +496,7 @@ function setJournal(open) {
   journalUi.open = open;
   byId('log-panel').hidden = !open;
   byId('log-line').setAttribute('aria-expanded', open);
-  if (open) { world.journalDirty = true; renderJournal(); setCensus(false); }
+  if (open) { world.journalDirty = true; renderJournal(); closeWindows('log-panel'); }
 }
 
 // The big news gets a banner under the pond bar for a few seconds, and the narrator a strip below it.
@@ -704,7 +714,7 @@ function drawSkyIcon(cv, kind, age, rain) {
 }
 
 function setSky(open) {
-  if (open && scoreUi.open) setScore(false);
+  if (open) closeWindows('sky-panel');
   skyUi.open = open;
   byId('sky-panel').hidden = !open;
   byId('sky-btn').setAttribute('aria-expanded', open);
@@ -838,7 +848,7 @@ function openSpawnCard(kind, anchor) {
   spawnUi.anchor = anchor;
   spawnUi.enh = new Set();
   hideLineage();
-  setCensus(false);
+  closeWindows('spawn-card');
   renderSpawnCard();
 }
 
@@ -948,6 +958,14 @@ function renderSpawnCard() {
   box.replaceChildren(...[head, supers, facts, have, boosts, grades, ancient, buy].filter(Boolean));
   box.hidden = false;
   const bar = byId('animals').getBoundingClientRect(), a = spawnUi.anchor.getBoundingClientRect(), w = box.offsetWidth;
+  if (spawnUi.anchor.closest('#rail, #actions') && innerWidth > 760) { // (beside what opened it)
+    const side = byId('actions').hidden ? a.right : byId('actions').getBoundingClientRect().right;
+    box.style.left = `${Math.round(Math.min(side + 10, innerWidth - w - 8))}px`;
+    box.style.bottom = 'auto';
+    box.style.top = `${Math.round(clamp(a.top - 20, 8, innerHeight - box.offsetHeight - 8))}px`;
+    return;
+  }
+  box.style.top = '';
   box.style.left = `${Math.round(clamp(a.left + a.width / 2 - w / 2, 8, innerWidth - w - 8))}px`;
   box.style.bottom = `${Math.round(innerHeight - bar.top + 14)}px`;
 }
@@ -966,6 +984,7 @@ const BUFF_ROWS = ['fertility', 'longevity', 'vitality', 'intellect', 'aggressio
 function showCreature(c, auto = false) {
   if (!c || !c.life) return;
   if (auto && creatureUi.c && !creatureUi.auto && alive(creatureUi.c)) return; // don't replace one you opened
+  if (!auto) closeWindows('creature');
   creatureUi.c = c;
   creatureUi.auto = auto;
   creatureUi.rec = world.lineage && world.lineage.get(c.seed);
@@ -1210,7 +1229,7 @@ const hatchUi = { open: false, timer: 0, sig: '' };
 function setHatchery(open) {
   hatchUi.open = open && !!world.hatchery && !world.observe;
   byId('hatchery').hidden = !hatchUi.open;
-  if (hatchUi.open) { setScore(false); hatchUi.sig = ''; renderHatchery(); }
+  if (hatchUi.open) { closeWindows('hatchery'); hatchUi.sig = ''; renderHatchery(); }
 }
 
 function renderHatchery() {
@@ -1403,7 +1422,7 @@ function drawSlice() {
 function setEvo(open) {
   evoUi.open = open;
   byId('evo').hidden = !open;
-  if (open) { setScore(false); setHatchery(false); evoUi.sig = ''; renderEvo(); }
+  if (open) { closeWindows('evo'); evoUi.sig = ''; renderEvo(); }
 }
 
 function renderEvo() {
@@ -1507,7 +1526,7 @@ function setScore(open) {
   byId('score-panel').hidden = !open;
   byId('score-btn').setAttribute('aria-expanded', open);
   if (open) {
-    setSky(false);
+    closeWindows('score-panel');
     renderScorePanel(true);
     if (!Net.board || Date.now() - (Net.board.at || 0) > 60000) refreshBoard();
   }
@@ -1701,7 +1720,7 @@ function traitButton(label, cur, cost, note, maxed, fn, extra, color, redraw) {
 
 function showObject(o) {
   objUi.o = o;
-  hideCreature();
+  closeWindows('object');
   byId('object').hidden = false;
   renderObject();
 }

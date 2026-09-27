@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=23">
+  <link rel="stylesheet" href="style.css?v=27">
 
   <script type="application/ld+json">
   {
@@ -99,16 +99,6 @@
       </div>
     </details>
 
-    <details>
-      <summary>Tools &amp; plants</summary>
-      <div class="grid3" id="tools"></div>
-    </details>
-
-    <details>
-      <summary>Build</summary>
-      <p class="note">Big structures, each with an area of effect. Pick one, then click the pond to place it. Feed-click a structure to read about it; the Net takes one down for half its pearls.</p>
-      <div class="grid2" id="builds"></div>
-    </details>
 
     <details>
       <summary>Scene</summary>
@@ -161,10 +151,25 @@
       <button type="button" id="open-depths" title="The depths and the evolution tree">Depths</button>
       <button type="button" id="open-hatchery" title="The hatchery (build one first)">Hatchery</button>
     </div>
-    <p class="keys">Arrows/WASD pan · +/− zoom · F follow · T tour · C animals · J journal · P score · L light · B bones · Space pause · M sound · H hide (the most used tools stay down the left)</p>
+    <p class="keys">Arrows/WASD pan · +/− zoom · F follow · T tour · C animals · J journal · P score · L light · B bones · Space pause · M sound · H menu (actions are on the rail down the left: ▸ for all of them, + to pin one)</p>
   </aside>
-  <button type="button" id="show-hud" class="icon" hidden aria-label="Show panel" title="Show panel (H)">☰</button>
-  <nav id="quickbar" class="quickbar" hidden aria-label="Most used tools"></nav>
+  <nav id="rail" class="rail" aria-label="Actions">
+    <button type="button" id="show-hud" class="rail-btn menu" aria-pressed="false" aria-label="Menu" title="Menu (H)&#10;Your ponds, the scene, sound, sharing and the rest">☰</button>
+    <div id="quickbar" class="rail-pins" aria-label="Pinned actions"></div>
+    <button type="button" id="rail-more" class="rail-btn more" aria-expanded="false" aria-controls="actions" title="All actions&#10;Food, tools, plants, builds and creatures. Hover one and press + to pin it to this bar">▸</button>
+  </nav>
+  <section id="actions" class="pop actions" hidden aria-label="All actions">
+    <header class="pop-head"><b>Actions</b><button type="button" id="actions-close" class="icon" aria-label="Close actions">×</button></header>
+    <p class="note">Click one to use it. Hover one and press + to pin it to the bar on the left (− takes it off).</p>
+    <div id="tools">
+      <div class="act-cat" data-cat="food"><button type="button" class="act-head" aria-expanded="true">Food <span class="caret">▾</span></button><div class="act-grid"></div></div>
+      <div class="act-cat" data-cat="tools"><button type="button" class="act-head" aria-expanded="true">Tools <span class="caret">▾</span></button><div class="act-grid"></div></div>
+      <div class="act-cat" data-cat="plants"><button type="button" class="act-head" aria-expanded="true">Plants &amp; rocks <span class="caret">▾</span></button><div class="act-grid"></div></div>
+    </div>
+    <div class="act-cat" data-cat="build"><button type="button" class="act-head" aria-expanded="true">Build <span class="caret">▾</span></button>
+      <div class="act-body"><p class="note">Big structures, each with an area of effect: pick one, then click the pond. Click a structure to read about it; the Net takes one down for half its pearls.</p><div class="act-grid" id="builds"></div></div></div>
+    <div class="act-cat" data-cat="life"><button type="button" class="act-head" aria-expanded="true">Creatures <span class="caret">▾</span></button><div class="act-grid" id="act-life"></div></div>
+  </section>
 
   <div id="sky" class="sky">
     <button type="button" id="sky-btn" class="sky-btn" aria-expanded="false" aria-controls="sky-panel" aria-label="Time, moon and tide">
@@ -393,8 +398,8 @@
   <script src="js/net.js?v=30"></script>
   <script src="js/account.js?v=30"></script>
   <script src="js/wander.js?v=30"></script>
-  <script src="js/hud.js?v=30"></script>
-  <script src="js/main.js?v=33"></script>
+  <script src="js/hud.js?v=31"></script>
+  <script src="js/main.js?v=34"></script>
   <script src="js/tips.js?v=30"></script>
 </body>
 </html>

@@ -51,7 +51,7 @@ html, body {
 #hud {
   position: fixed;
   top: 16px;
-  left: 16px;
+  left: 64px;
   width: 248px;
   max-height: calc(100vh - 120px);
   overflow-x: hidden;
@@ -298,11 +298,6 @@ output {
 
 .inspect .traits:empty { display: none; }
 
-#show-hud {
-  position: fixed;
-  top: 16px;
-  left: 16px;
-}
 
 .note {
   margin: 6px 0 0;
@@ -890,7 +885,7 @@ body.observing .edge-west.vertical { top: 104px; }
 body.leaving canvas { transition: opacity 0.3s; opacity: 0.2; }
 /* In someone else's pond there's nothing to buy, build or change. */
 body.observing .seg, body.observing #ponds, body.observing #tools, body.observing #builds, body.observing #reset,
-body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, body.observing #hud details:has(#tools), body.observing #hud details:has(#builds) { display: none; }
+body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, body.observing #rail-more, body.observing #quickbar, body.observing #actions { display: none; }
 .creature .bar { height: 5px; margin-top: 6px; background: var(--ink); border: 1px solid var(--btn-edge); }
 .creature .bar i { display: block; height: 100%; background: #7ed07a; }
 .creature h4 { margin: 10px 0 4px; font-size: 10px; font-weight: 400; color: var(--hot); }
@@ -1079,10 +1074,7 @@ body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, bo
 /* ---- tool icons, and the quick bar of the most used (down the left while the menu is tucked away) ---- */
 .ticon { image-rendering: pixelated; flex: none; }
 #tools .ticon, #builds .ticon { margin-bottom: 1px; }
-.quickbar { position: fixed; top: 52px; left: 16px; z-index: 4; display: flex; flex-direction: column; gap: 6px; max-height: calc(100vh - 150px); overflow-y: auto; scrollbar-width: none; }
-.quickbar[hidden] { display: none; }
-.quickbar button { width: 40px; height: 40px; padding: 0; }
-body.observing .quickbar { display: none; }
+
 
 /* ---- signing in (Your ponds) ---- */
 .account { margin: 6px 0 8px; }
@@ -1093,3 +1085,35 @@ body.observing .quickbar { display: none; }
 button.discord { background: #3a3f8f; border-color: #5865f2; color: #eef0ff; }
 button.discord:hover { background: #4752c4; }
 .pond-item.remote .pond-open { opacity: 0.85; border-style: dashed; }
+
+/* ---- the rail down the left: the menu, what you've pinned, and all actions ---- */
+.rail { position: fixed; top: 16px; left: 12px; z-index: 5; display: flex; flex-direction: column; gap: 6px; max-height: calc(100vh - 150px); }
+.rail-btn, .rail-pins > button { position: relative; flex: none; width: 40px; height: 40px; padding: 0; }
+.rail-btn.menu { font-size: 16px; }
+.rail-btn.more { font-size: 13px; }
+.rail-btn.more[aria-expanded="true"] { background: #5a4a14; border-color: var(--hot); color: var(--hot); }
+.rail-pins { display: flex; flex-direction: column; gap: 6px; min-height: 0; overflow-y: auto; overflow-x: visible; scrollbar-width: none; padding: 0 6px 0 0; margin-right: -6px; }
+.rail-pins[hidden] { display: none; }
+.rail-pins .ticon, .rail-pins img { image-rendering: pixelated; }
+.actions { position: fixed; top: 16px; left: 64px; bottom: auto; z-index: 8; width: min(320px, calc(100vw - 80px)); max-height: calc(100vh - 150px); font-size: 10px; color: var(--muted); }
+.act-cat { margin-top: 8px; }
+#actions .act-head { width: 100%; flex-direction: row; justify-content: space-between; padding: 5px 8px; font-size: 10px; line-height: 1.2; color: var(--hot); text-align: left; }
+.act-head[aria-expanded="false"] + .act-grid, .act-head[aria-expanded="false"] + .act-body { display: none; }
+.act-body .note { margin: 6px 0 0; }
+.act-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 6px; margin-top: 6px; }
+.act-grid > button { position: relative; flex-direction: column; justify-content: center; gap: 2px; min-height: 50px; padding: 4px 2px; line-height: 1.1; }
+.act-grid > button[hidden] { display: none; }
+.act-grid .lbl, .rail-pins .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.act-grid .price, #act-life .price { display: flex; align-items: center; gap: 2px; margin: 0; font-size: 8px; color: #cfe8f0; white-space: nowrap; }
+#act-life .price { color: #c38bff; }
+/* The pin: + to put it on the bar, − to take it off; shown on hover. */
+.pin { position: absolute; top: -6px; right: -6px; z-index: 1; display: none; align-items: center; justify-content: center; width: 16px; height: 16px; font-size: 11px; line-height: 1; color: var(--hot); background: var(--btn); border: 2px solid var(--edge); box-shadow: 1px 1px 0 var(--ink); cursor: pointer; }
+button:hover > .pin, button:focus-visible > .pin { display: flex; }
+.pinned > .pin { color: #ef6f6c; }
+.act-grid > button.pinned { border-color: #7a6a2a; }
+/* Windows keep their title and × in view as their contents scroll. */
+.pop > header, .spawn-card > .sc-head { position: sticky; top: -10px; z-index: 3; margin: -10px -12px 8px; padding: 10px 12px 6px; background: rgb(8, 26, 34); border-bottom: 1px solid var(--btn-edge); } /* (opaque: the panel colour lets scrolled text show through) */
+@media (max-width: 760px) {
+  #hud { left: 60px; }
+  .actions { top: 60px; left: 60px; width: calc(100vw - 72px); max-height: calc(100vh - 230px); }
+}

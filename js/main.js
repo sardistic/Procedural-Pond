@@ -1113,6 +1113,7 @@ function pointerEnd(e) {
   if (press) view.reach = { west: false, east: false };
   if (press && press.done) press = null; // a long press opened a card
   if (press && !press.panning && !press.beyond && e.type === 'pointerup') {
+    closeWindows(); // (one window at a time: a click in the pond closes the one that's open)
     // Clicking the hatchery opens it (with any tool but the Net); feeding over
     // another structure tells you about it.
     const st = world.tool !== 'net' && structureAt(world, press.x, press.y);
@@ -1584,7 +1585,7 @@ function edgeHints() {
 }
 // Keep the tabs clear of the menu and any open card or panel: the west tab steps out beside
 // (or below) whatever covers it, the east tab beside (or above); where there's no room, it hides.
-const TAB_AVOID = ['hud', 'quickbar', 'creature', 'object', 'spawn-card', 'score-panel', 'sky-panel', 'census', 'hatchery', 'evo', 'log-panel', 'nb-ask', 'lineage'];
+const TAB_AVOID = ['hud', 'rail', 'actions', 'creature', 'object', 'spawn-card', 'score-panel', 'sky-panel', 'census', 'hatchery', 'evo', 'log-panel', 'nb-ask', 'lineage'];
 function placeEdgeTabs() {
   // (Fixed panels have no offsetParent, so shown is judged by the hidden flag and a real size.)
   const boxes = TAB_AVOID.map((id) => document.getElementById(id)).filter((e) => e && !e.hidden && !e.classList.contains('hidden')).map((e) => e.getBoundingClientRect()).filter((r) => r.width > 2 && r.height > 2);
@@ -1739,11 +1740,18 @@ function updateCard(dt) {
 function setTool(name) {
   world.tool = name;
   const t = TOOLS[name];
-  for (const b of [...$('tools').children, ...$('builds').children, ...$('quickbar').children]) b.setAttribute('aria-pressed', b.dataset.tool === name);
+  for (const b of document.querySelectorAll('button[data-tool]')) b.setAttribute('aria-pressed', b.dataset.tool === name);
   $('hint').textContent = t.hint || [`click to place ${t.label.toLowerCase()} (${t.price} pearls)`, t.likedBy && likedByText(t.likedBy)].filter(Boolean).join(' · ');
 }
+// Each tool, plant and build is a tile in the actions panel, under its kind: an icon, its price,
+// and (on hover) a + to pin it to the bar. Its name is in its tooltip.
+const toolCat = (name, t) => (t.build ? 'build' : t.food ? 'food' : name === 'net' ? 'tools' : 'plants');
+const pinMark = () => Object.assign(document.createElement('span'), { className: 'pin', textContent: '+', title: 'Pin to the bar' });
 for (const [name, t] of Object.entries(TOOLS)) {
-  const b = button(t.label);
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.append(Object.assign(document.createElement('span'), { className: 'lbl', textContent: t.label }));
+  b.setAttribute('aria-label', t.label);
   b.dataset.tool = name;
   if (t.price != null) {
     b.append(Object.assign(document.createElement('b'), { className: t.price ? 'price' : 'price free', textContent: t.price ? t.price : 'free' }));
@@ -1752,16 +1760,17 @@ for (const [name, t] of Object.entries(TOOLS)) {
   if (t.essence) b.append(Object.assign(document.createElement('b'), { className: 'price ess', textContent: fmtShort(t.essence) }));
   if (t.corruption) b.append(Object.assign(document.createElement('b'), { className: 'price cor', textContent: fmtShort(t.corruption) }));
   if (t.build) b.title += ` · ${STRUCTURES[t.build].desc}`;
-  b.addEventListener('click', () => { setTool(name); noteToolUse(name); });
+  b.addEventListener('click', (e) => { if (e.target.closest('.pin')) { togglePin(name); return; } setTool(name); noteToolUse(name); });
   b.prepend(Object.assign(document.createElement('img'), { className: 'ticon', alt: '', width: 28, height: 28 }));
-  $(t.build ? 'builds' : 'tools').append(b);
+  b.append(pinMark());
+  (t.build ? $('builds') : document.querySelector(`#tools [data-cat="${toolCat(name, t)}"] .act-grid`)).append(b);
 }
 
 // ---- tool icons, and the quick bar ------------------------------------------------------------
 // Each tool's icon is drawn a few at a time once the pond is up (so the start isn't held up).
 function setToolIcon(name) {
   const ic = toolIcon(name);
-  for (const img of document.querySelectorAll(`#tools [data-tool="${name}"] .ticon, #builds [data-tool="${name}"] .ticon, #quickbar [data-tool="${name}"] .ticon`)) {
+  for (const img of document.querySelectorAll(`[data-tool="${name}"] .ticon`)) {
     if (!ic) { img.remove(); continue; }
     const k = clamp(Math.floor(30 / Math.max(ic.nw, ic.nh)), 1, 4);
     img.src = ic.src; img.width = ic.nw * k; img.height = ic.nh * k;
@@ -1787,31 +1796,116 @@ function noteToolUse(name) {
   clearTimeout(useSaveT);
   useSaveT = setTimeout(() => { try { localStorage.setItem(USE_KEY, JSON.stringify(toolUse)); } catch { /* storage unavailable */ } }, 1000);
 }
-// With the menu tucked away, the most used tools (that this pond can use) stand in a bar down the left.
+// The bar down the left: what you've pinned, or, until you pin anything, what you use most.
+// Pins are tools (by name) or creatures ("life:koi"), kept in this browser only.
 const QUICK_N = 8, QUICK_DEFAULT = ['feed', 'net', 'spirulina', 'weed', 'rock', 'brine'];
+const PIN_KEY = 'pond.pins';
+let pins = null;
+try { const p = JSON.parse(localStorage.getItem(PIN_KEY) || 'null'); pins = Array.isArray(p) ? p.filter((k) => typeof k === 'string').slice(0, 30) : null; } catch { pins = null; }
+const actionTile = (k) => document.querySelector(k.startsWith('life:') ? `#act-life [data-spawn="${k.slice(5)}"]` : `#actions [data-tool="${k}"]`);
+const pinUsable = (k) => { if (k.startsWith('life:')) { const kind = k.slice(5); return !!SPECIES[kind] && fitsHabitat(world, SPECIES_HABITAT[kind]) && deepAvailable(world, kind) && deepUnlocked(world, kind); } const b = actionTile(k); return !!TOOLS[k] && !!b && !b.hidden; };
+function barKeys() {
+  if (pins) return pins.filter(pinUsable);
+  const pick = Object.keys(toolUse).filter((n) => TOOLS[n] && pinUsable(n)).sort((a, b) => toolUse[b] - toolUse[a]).slice(0, QUICK_N);
+  for (const n of QUICK_DEFAULT) if (pick.length < QUICK_N && !pick.includes(n) && pinUsable(n)) pick.push(n);
+  return pick;
+}
+function togglePin(k) {
+  const cur = pins || barKeys();
+  pins = cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k];
+  try { localStorage.setItem(PIN_KEY, JSON.stringify(pins)); } catch { /* storage unavailable */ }
+  renderQuickBar();
+}
+// The tiles show which are on the bar (their pin reads − to take one off).
+function markPins() {
+  const on = new Set(barKeys());
+  for (const b of document.querySelectorAll('#actions [data-tool], #act-life [data-spawn]')) {
+    const k = b.dataset.tool || `life:${b.dataset.spawn}`, p = b.querySelector('.pin');
+    b.classList.toggle('pinned', on.has(k));
+    if (p) { p.textContent = on.has(k) ? '−' : '+'; p.title = on.has(k) ? 'Take it off the bar' : 'Pin to the bar'; }
+  }
+}
 function renderQuickBar() {
   const bar = $('quickbar');
-  bar.hidden = !hud.classList.contains('hidden') || !!world.observe;
+  bar.hidden = !!world.observe;
   if (bar.hidden) return;
-  const usable = (n) => { const b = document.querySelector(`#tools [data-tool="${n}"], #builds [data-tool="${n}"]`); return b && !b.hidden; };
-  const pick = Object.keys(toolUse).filter((n) => TOOLS[n] && usable(n)).sort((a, b) => toolUse[b] - toolUse[a]).slice(0, QUICK_N);
-  for (const n of QUICK_DEFAULT) if (pick.length < QUICK_N && !pick.includes(n) && usable(n)) pick.push(n);
-  if (world.tool && !pick.includes(world.tool) && usable(world.tool)) pick[Math.min(pick.length, QUICK_N - 1)] = world.tool; // (what's in hand stays in reach)
-  const sig = pick.join();
+  const keys = barKeys(), sig = keys.join();
   if (bar.dataset.sig !== sig) {
     bar.dataset.sig = sig;
-    bar.replaceChildren(...pick.map((n) => {
-      const t = TOOLS[n], b = document.createElement('button');
-      b.type = 'button'; b.dataset.tool = n;
-      b.append(Object.assign(document.createElement('img'), { className: 'ticon', alt: '', width: 28, height: 28 }));
-      b.setAttribute('aria-label', t.label);
-      b.title = [t.label, t.price ? `${t.price} pearls${t.essence ? ` and ${t.essence} essence` : ''}` : t.price === 0 ? 'free' : '', t.build ? STRUCTURES[t.build].desc : t.hint].filter(Boolean).join('\n');
-      b.addEventListener('click', () => { setTool(n); noteToolUse(n); });
+    bar.replaceChildren(...keys.map((k) => {
+      const b = document.createElement('button'), life = k.startsWith('life:'), kind = life ? k.slice(5) : null, t = life ? null : TOOLS[k];
+      b.type = 'button';
+      if (life) {
+        b.dataset.pin = k;
+        b.append(iconImg(speciesIcon(kind), 28));
+        b.title = `${SPECIES[kind].label}\nSpawn some (${spawnCost(kind)} essence) · − takes it off the bar`;
+        b.setAttribute('aria-label', `Spawn ${SPECIES[kind].label.toLowerCase()}`);
+      } else {
+        b.dataset.tool = k;
+        b.append(Object.assign(document.createElement('img'), { className: 'ticon', alt: '', width: 28, height: 28 }));
+        b.setAttribute('aria-label', t.label);
+        b.title = [t.label, t.price ? `${t.price} pearls${t.essence ? ` and ${t.essence} essence` : ''}` : t.price === 0 ? 'free' : '', t.build ? STRUCTURES[t.build].desc : t.hint, '− takes it off the bar'].filter(Boolean).join('\n');
+      }
+      const p = pinMark();
+      p.textContent = '−'; p.title = 'Take it off the bar';
+      b.append(p);
+      b.addEventListener('click', (e) => {
+        if (e.target.closest('.pin')) { togglePin(k); return; }
+        if (life) openSpawnCard(kind, b); else { setTool(k); noteToolUse(k); }
+      });
       return b;
     }));
-    for (const n of pick) setToolIcon(n);
+    for (const k of keys) if (!k.startsWith('life:')) setToolIcon(k);
   }
   for (const b of bar.children) b.setAttribute('aria-pressed', b.dataset.tool === world.tool);
+  markPins();
+}
+
+// All actions, as icons, by kind; each kind folds away (remembered in this browser).
+const CATS_KEY = 'pond.actCats';
+let lifeTiles = false;
+function setActions(open) {
+  $('actions').hidden = !open;
+  $('rail-more').setAttribute('aria-expanded', open);
+  $('rail-more').textContent = open ? '◂' : '▸';
+  if (open) {
+    if (!hud.classList.contains('hidden')) setHud(false); // (one panel down the left at a time)
+    if (!lifeTiles) buildLifeTiles();
+    markPins();
+  }
+  placeEdgeTabs();
+}
+// Creatures: the dock's species, to spawn from here (or pin to the bar).
+function buildLifeTiles() {
+  lifeTiles = true;
+  $('act-life').replaceChildren(...DOCK_KINDS.map((kind) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.spawn = kind;
+    b.setAttribute('aria-label', `Spawn ${SPECIES[kind].label.toLowerCase()}`);
+    b.title = `${SPECIES[kind].label}\nSpawn some for ${spawnCost(kind)} essence (a card opens to choose boosts)`;
+    b.append(iconImg(speciesIcon(kind), 28), Object.assign(document.createElement('span'), { className: 'lbl', textContent: SPECIES[kind].label }),
+      Object.assign(document.createElement('b'), { className: 'price', textContent: `${fmtShort(spawnCost(kind))}◆` }), pinMark());
+    b.addEventListener('click', (e) => { if (e.target.closest('.pin')) { togglePin(`life:${kind}`); return; } openSpawnCard(kind, b); });
+    return b;
+  }));
+  refreshSpeciesButtons();
+}
+{
+  let folded = {};
+  try { folded = JSON.parse(localStorage.getItem(CATS_KEY) || '{}') || {}; } catch { folded = {}; }
+  for (const cat of document.querySelectorAll('#actions .act-cat')) {
+    const head = cat.querySelector('.act-head'), key = cat.dataset.cat;
+    head.setAttribute('aria-expanded', !folded[key]);
+    head.addEventListener('click', () => {
+      const open = head.getAttribute('aria-expanded') !== 'true';
+      head.setAttribute('aria-expanded', open);
+      folded[key] = !open;
+      try { localStorage.setItem(CATS_KEY, JSON.stringify(folded)); } catch { /* storage unavailable */ }
+    });
+  }
+  $('rail-more').addEventListener('click', () => setActions($('actions').hidden));
+  $('actions-close').addEventListener('click', () => setActions(false));
 }
 
 // Only offer animals and plants that live in this habitat.
@@ -1824,7 +1918,7 @@ function refreshSpeciesButtons() {
   // Builds, foods and plants of the deep show once the pond is that deep.
   const tier = (world.erosion && world.erosion.tier) || 0;
   for (const b of $('builds').children) { const d = STRUCTURES[TOOLS[b.dataset.tool].build]; b.hidden = (!!d.habitat && !fitsHabitat(world, d.habitat)) || (d.tier || 0) > tier; }
-  for (const b of $('tools').children) {
+  for (const b of document.querySelectorAll('#tools [data-tool]')) {
     const t = TOOLS[b.dataset.tool], salt = ['anemone', 'coral', 'urchin'].includes(b.dataset.tool), fresh = ['marimo', 'duckweed', 'lily'].includes(b.dataset.tool);
     b.hidden = (salt && !fitsHabitat(world, 'salt')) || (fresh && !fitsHabitat(world, 'fresh')) || (!!t.habitat && !fitsHabitat(world, t.habitat)) || (t.tier || 0) > tier;
   }
@@ -1914,12 +2008,18 @@ const cycleLight = () => setLight(LIGHT_ORDER[(LIGHT_ORDER.indexOf(world.opts.li
 
 function setBones(on) { world.bones = on; $('bones').setAttribute('aria-pressed', on); }
 function setPaused(on) { world.paused = on; $('pause').setAttribute('aria-pressed', on); }
-function setHud(show) { hud.classList.toggle('hidden', !show); $('show-hud').hidden = show; renderQuickBar(); placeEdgeTabs(); }
+function setHud(show) {
+  hud.classList.toggle('hidden', !show);
+  $('show-hud').setAttribute('aria-pressed', show);
+  if (show && !$('actions').hidden) setActions(false); // (one panel down the left at a time)
+  renderQuickBar();
+  placeEdgeTabs();
+}
 
 $('bones').addEventListener('click', () => setBones(!world.bones));
 $('pause').addEventListener('click', () => setPaused(!world.paused));
 $('collapse').addEventListener('click', () => setHud(false));
-$('show-hud').addEventListener('click', () => setHud(true));
+$('show-hud').addEventListener('click', () => setHud(hud.classList.contains('hidden')));
 $('zoom-in').addEventListener('click', () => zoomStep(1));
 $('zoom-out').addEventListener('click', () => zoomStep(-1));
 zoomLabel.addEventListener('click', resetView);
