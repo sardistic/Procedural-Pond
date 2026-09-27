@@ -624,8 +624,8 @@ class Ripple {
 }
 
 class Bubble {
-  constructor(x, y, z) {
-    this.x = x; this.y = y; this.z = z;
+  constructor(x, y, z, audible = false) {
+    this.x = x; this.y = y; this.z = z; this.audible = audible;
     this.r = rand(0.6, 1.4); this.vz = rand(6, 10); this.ph = rand(0, TAU);
   }
 
@@ -635,7 +635,7 @@ class Bubble {
     this.y += world.current.y * 2 * dt;
     if (this.z < 44) return true;
     addRipple(world, this.x, this.y, 0.3, true);
-    if (typeof Sound !== 'undefined') Sound.bubble(this.x, this.y); // soft, and rationed
+    if (this.audible && typeof Sound !== 'undefined') Sound.bubble(this.x, this.y); // (only a burst is heard; a lone bubble surfaces silently)
     return false;
   }
 
@@ -669,8 +669,11 @@ function addRipple(world, x, y, size = 1, silent = false, m = null) {
   if (!silent && typeof Sound !== 'undefined') Sound.plop(x, y, size);
 }
 
+// A burst of three or more is heard as it surfaces (one of them, rationed); the steady trickle
+// (a fish breathing, a wake, an aerator, a vent) is only seen. (A trickle heard every time made a
+// constant bubbling nobody could place.)
 function addBubbles(world, x, y, z, n) {
-  for (let i = 0; i < n && world.effects.length < 220; i++) world.effects.push(new Bubble(x + rand(-1, 1), y + rand(-1, 1), z + rand(0, 2)));
+  for (let i = 0; i < n && world.effects.length < 220; i++) world.effects.push(new Bubble(x + rand(-1, 1), y + rand(-1, 1), z + rand(0, 2), n >= 3 && i === 0));
 }
 
 // ---- eggs & young -------------------------------------------------------------
@@ -959,7 +962,7 @@ function updateLife(world, dt) {
     // Wakes, splashes and the odd bubble.
     if (c.species === 'duck' && c.speed > 1.5) {
       c.wakeT = (c.wakeT || 0) - dt;
-      if (c.wakeT <= 0) { const b = c.body, n = b.n - 1; addRipple(world, b.x[n], b.y[n], 0.35 * c.k); c.wakeT = 0.35; }
+      if (c.wakeT <= 0) { const b = c.body, n = b.n - 1; addRipple(world, b.x[n], b.y[n], 0.35 * c.k, true); c.wakeT = 0.35; } // (a wake is seen, not heard)
     }
     if (c.species === 'frog') {
       if (c.state !== c.lastState && (c.state === 'hop' || c.lastState === 'hop')) addRipple(world, c.x, c.y, 1);

@@ -271,8 +271,8 @@ const Sound = {
 
   update(world, dt, rect = [0, 0, world.W, world.H], k = 3) {
     if (!this.on || !this.ctx || !this.beds) return;
-    this.budget = Math.min(6, this.budget + dt * 8); // at most ~8 plops a second
-    this.bubbles = Math.min(2, this.bubbles + dt * 1.5); // and a bubble or so
+    this.budget = Math.min(4, this.budget + dt * 3); // at most ~3 plops a second (nothing makes a constant patter)
+    this.bubbles = Math.min(2, this.bubbles + dt * 0.6); // and a bubble now and then
     this.mix.k = k;
     this.mixT -= dt;
     if (this.mixT <= 0) { this.mixT = 0.25; this.measure(world, rect); }
