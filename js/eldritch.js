@@ -73,10 +73,11 @@ function gainCorruption(world, n, src, { quiet = false } = {}) {
   if (!quiet && src && typeof floatAward === 'function') floatAward(src.x, src.y - 4, `+${Math.round(n)}◈`, 'corruption');
   return n;
 }
-function spendCorruption(world, n) {
+function spendCorruption(world, n, cat = null) {
   const G = world.game;
   if (!G || (G.corruption || 0) < n) return false;
   G.corruption -= n;
+  if (cat && typeof invest === 'function') invest(world, cat, n, 'corruption');
   return true;
 }
 
@@ -93,7 +94,7 @@ const ELD_PATHS = {
 const ELD_PATH_CODES = ['veil', 'eyes', 'hunger', 'dream', 'chorus', 'tide', 'crown']; // bits in links (append-only)
 const pathOpen = (world, k) => ELD_PATHS[k].needs.every((n) => eldPath(world, n));
 function buyPath(world, k) {
-  if (eldPath(world, k) || !pathOpen(world, k) || !spendCorruption(world, ELD_PATHS[k].cost)) return false;
+  if (eldPath(world, k) || !pathOpen(world, k) || !spendCorruption(world, ELD_PATHS[k].cost, 'dark')) return false;
   world.game.eldPaths = { ...(world.game.eldPaths || {}), [k]: true };
   logEvent(world, `✦ ${ELD_PATHS[k].label} opens: ${ELD_PATHS[k].note}`, null, { cat: 'rare', pri: 3 });
   if (typeof Sound !== 'undefined') Sound.omen(world.W / 2, world.H / 2);
@@ -368,14 +369,14 @@ function eldBirthChance(world, x, y) {
 const feedDreamCost = (c) => 10 + Math.round(20 * (c.life.corruption || 0));
 const bindCost = (c) => 15 + Math.round(30 * (c.life.corruption || 0));
 function feedDream(world, c) {
-  if (!spendEssence(world, feedDreamCost(c))) return false;
+  if (!spendEssence(world, feedDreamCost(c), 'dark')) return false;
   c.life.bound = false;
   c.life.corruption = Math.min(1, (c.life.corruption || 0) + 0.2);
   eldTick = 0;
   return true;
 }
 function bindMark(world, c) {
-  if (!spendEssence(world, bindCost(c))) return false;
+  if (!spendEssence(world, bindCost(c), 'dark')) return false;
   c.life.bound = true;
   c.life.corruption = Math.max(0, (c.life.corruption || 0) - 0.3);
   c.life.traits = eldTraits(c.life);
@@ -391,7 +392,7 @@ const ELD_TRAITS = {
 };
 function buyEldTrait(world, c, key) {
   const T = ELD_TRAITS[key];
-  if ((T.path && !eldPath(world, T.path)) || !T.ok(c) || !spendCorruption(world, T.cost(c))) return false;
+  if ((T.path && !eldPath(world, T.path)) || !T.ok(c) || !spendCorruption(world, T.cost(c), 'dark')) return false;
   const L = c.life;
   if (key === 'offer') {
     L.genome.eld = true; L.corruption = 0; L.bound = false;

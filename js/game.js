@@ -5,6 +5,9 @@
 //  - essence (◆): the stuff of life. It buys new animals (priced by size, rarity,
 //    how reliably they settle and how long they live) and gene boosts for them,
 //    and comes back when animals are recycled (more for rarer ones) or live out their lives.
+// Whatever is spent on something lasting (building, planting, new life, evolving, deepening,
+// the dark) is an investment: a tenth comes straight back as points, and it pays a dividend of
+// points and essence every dawn (see INVEST).
 // Rare animals score by tier, more each time you breed the same rare again.
 // Animals are comfortable near the plants and rocks their species likes, in calm
 // water of their own kind, and comfort and good food help them live longer and
@@ -88,6 +91,49 @@ function speciesSummary(world) {
 }
 const diversityWord = (d) => (d > 0.25 ? 'very diverse' : d > 0.12 ? 'diverse' : d > 0.04 ? 'a little diverse' : 'uniform');
 
+// ---- investment: what's spent on lasting things pays back -------------------------------------------
+// Everything bought except food goes on the pond's ledger, in pearls' worth (essence ×5,
+// corruption ×8), under what it went on. Each dawn every line pays its rate in points (and as
+// many pearls) and a twenty-fifth of that in essence. What's in animals wears down as they age
+// and go; what's built stays until it's taken down.
+const INVEST = {
+  build: { label: 'building', rate: 0.04, keep: 1 },
+  plants: { label: 'planting', rate: 0.05, keep: 0.99 },
+  life: { label: 'new life', rate: 0.03, keep: 0.97 },
+  evolve: { label: 'evolving', rate: 0.05, keep: 0.98 },
+  deepen: { label: 'deepening', rate: 0.04, keep: 1 },
+  dark: { label: 'the dark', rate: 0.045, keep: 1 },
+};
+const WORTH = { pearls: 1, essence: 5, corruption: 8 }; // in pearls
+function invest(world, cat, n, cur = 'pearls') {
+  const G = world.game;
+  if (!G || !INVEST[cat] || !(n > 0)) return 0;
+  const v = n * WORTH[cur];
+  G.inv = G.inv || {};
+  G.inv[cat] = (G.inv[cat] || 0) + v;
+  G.invested = (G.invested || 0) + v; // all told
+  return award(world, v * 0.1, `investing in ${INVEST[cat].label}`, null, { quiet: true }); // (a tenth back straight away)
+}
+// Take something off the ledger (a structure taken down).
+function divest(world, cat, v) {
+  const G = world.game;
+  if (G && G.inv && G.inv[cat]) G.inv[cat] = Math.max(0, G.inv[cat] - v);
+}
+// What the ledger pays each dawn: [points, essence] (before the habitat's multiplier).
+function dividendOf(world) {
+  const inv = (world.game && world.game.inv) || {};
+  let v = 0;
+  for (const [k, d] of Object.entries(INVEST)) v += (inv[k] || 0) * d.rate;
+  return [v, v / 25];
+}
+function payDividend(world) {
+  const G = world.game, [v, e] = dividendOf(world);
+  if (!G || v < 0.5) return [0, 0];
+  const pts = award(world, v, 'investments'), ess = gainEssence(world, e, 'investments');
+  for (const [k, d] of Object.entries(INVEST)) if (G.inv[k]) G.inv[k] *= d.keep;
+  return [pts, ess];
+}
+
 function gainEssence(world, n, why, subject = null, opts = {}) {
   const G = world.game;
   n = Math.round(n);
@@ -100,12 +146,14 @@ function gainEssence(world, n, why, subject = null, opts = {}) {
   return n;
 }
 
-function spendEssence(world, n) {
+// `cat`: what it's spent on, when that's something lasting (see INVEST).
+function spendEssence(world, n, cat = null) {
   const G = world.game;
   if (!n) return true;
   if (!G || (G.essence || 0) < n) return false;
   G.essence -= n;
   world.gameDirty = true;
+  if (cat) invest(world, cat, n, 'essence');
   return true;
 }
 
@@ -150,12 +198,14 @@ function award(world, n, why, subject = null, opts = {}) {
 }
 
 // Pay for something; false (and nothing spent) if there aren't enough pearls.
-function spend(world, n) {
+// `cat`: what it's spent on, when that's something lasting (see INVEST).
+function spend(world, n, cat = null) {
   const G = world.game;
   if (!n) return true;
   if (!G || G.pearls < n) return false;
   G.pearls -= n;
   world.gameDirty = true;
+  if (cat) invest(world, cat, n, 'pearls');
   return true;
 }
 
@@ -388,10 +438,11 @@ function updateGame(world, dt) {
   if (gameTick <= 0) { gameTick = 2; updateComfort(world); }
   const dawn = Math.floor(world.days - 0.27);
   if (G.dawn == null || dawn < G.dawn) G.dawn = dawn;
-  else if (dawn > G.dawn) { G.dawn = dawn; dawnIncome(world); dawnStructures(world); }
+  else if (dawn > G.dawn) { G.dawn = dawn; dawnIncome(world); dawnStructures(world); if (typeof callWanderer === 'function') callWanderer(world); }
 }
 
-// Each dawn pays a pearl per species in the pond, plus up to 5 for how comfortable everyone is.
+// Each dawn pays a pearl per species in the pond, plus up to 5 for how comfortable everyone is,
+// and the ledger its dividend.
 function dawnIncome(world) {
   const species = new Set();
   let n = 0, comfort = 0;
@@ -401,13 +452,15 @@ function dawnIncome(world) {
     n++;
     comfort += c.life.comfort;
   }
-  if (!n) return;
+  const [dp, de] = payDividend(world), paid = dp ? `; your investments paid +${fmtNum(dp)} points and +${fmtNum(de)} essence` : '';
+  if (!n) { if (dp) logEvent(world, `A new day${paid}`, null, { cat: 'pond', pri: 1 }); return; }
   const got = award(world, species.size + Math.round(5 * comfort / n), 'daily pearls');
   // Deep life enriches the pond: a little more essence for every deep-water animal.
   const deep = typeof DEEP === 'undefined' ? 0 : world.creatures.filter((c) => DEEP[c.species] && !c.leaving).length;
   const ess = gainEssence(world, 2 + Math.floor(species.size / 4) + deep, 'dawn');
-  logEvent(world, `A new day: +${got} pearls and +${ess} essence for ${species.size} species, ${comfortWord(comfort / n)}`, null, { cat: 'pond', pri: 1 });
+  logEvent(world, `A new day: +${got} pearls and +${ess} essence for ${species.size} species, ${comfortWord(comfort / n)}${paid}`, null, { cat: 'pond', pri: 1 });
 }
+const fmtNum = (v) => Math.round(v).toLocaleString('en-US');
 
 // ---- fireflies keep score --------------------------------------------------------------------
 // A full swarm means your score is in the high-score range (the leaderboard's top

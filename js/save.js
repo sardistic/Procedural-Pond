@@ -104,7 +104,7 @@ function serializePond(world) {
     currentBase: world.current.base, records: world.records, spawnNight: world.spawnNight,
     targets: world.targets, eco: { ...ECO }, journalSeq: world.journalSeq,
     game: world.game, lineage: world.lineage ? [...world.lineage.values()] : [], link: world.link || null,
-    structures: (world.structures || []).map((s) => ({ k: s.kind, x: r2(s.x), y: r2(s.y), s: s.seed, born: r2(s.born), lv: s.lv, stack: s.stack, branch: s.branch, blv: s.blv, deep: s.deep || undefined })),
+    structures: (world.structures || []).map((s) => ({ k: s.kind, x: r2(s.x), y: r2(s.y), s: s.seed, born: r2(s.born), lv: s.lv, stack: s.stack, branch: s.branch, blv: s.blv, deep: s.deep || undefined, w: s.worth || undefined })),
     story: world.story || null, darkAvg: world.darkAvg ?? null,
     litter: (world.litter || []).map((l) => ({ k: l.k, x: r2(l.x), y: r2(l.y), b: r2(l.born), hp: l.hp, s: l.seed })),
     blight: world.blight || null,
@@ -121,20 +121,7 @@ function serializePond(world) {
       tr: p.tr || undefined,
     })),
     succession: world.succession || null,
-    creatures: saved.map((c) => ({
-      k: c.make, s: c.seed, sn: c.sn, x: r2(c.x), y: r2(c.y), h: r2(c.heading), z: r2(c.z || 0), a: args(c.args),
-      st: c.state === 'sit' ? 'sit' : undefined,
-      L: {
-        name: c.life.name, age: r2(c.life.age), energy: r2(c.life.energy), cooldown: r2(c.life.cooldown), fed: r2(c.life.fed || 0), comfort: r2(c.life.comfort ?? 0.5),
-        corruption: c.life.genome.eld ? r2(c.life.corruption || 0) : undefined, bound: c.life.bound || undefined,
-        absorbed: c.life.absorbed || undefined, ascended: c.life.ascended || undefined, boosts: c.life.boosts || undefined,
-        quirks: c.life.quirks && c.life.quirks.length ? c.life.quirks : undefined, ill: c.life.ill && c.life.ill.length ? c.life.ill : undefined,
-        hunt: c.life.hunt || undefined, hunter: c.life.hunter || undefined, madCount: c.life.madCount || undefined,
-        safe: c.life.safe || undefined, paragon: c.life.paragon || undefined, warps: c.life.warps && c.life.warps.length ? c.life.warps : undefined,
-        lifespan: r2(c.life.lifespan), gen: c.life.gen, scale: c.life.scale, old: !!c.life.old, inbred: r2(c.life.inbred || 0),
-        genome: c.life.genome, traits: c.life.traits, parents: c.life.parents,
-      },
-    })),
+    creatures: saved.map((c) => creatureRecord(c, args(c.args))),
     schools,
     eggs: world.eggs.map((e) => ({ x: r2(e.x), y: r2(e.y), z: r2(e.z), place: e.place, n: e.cells.length, timer: r2(e.timer), p: parent(e.parent), m: parent(e.mate) })),
     journal: world.journal.slice(0, 120).map((e) => ({
@@ -153,6 +140,46 @@ function restoreRock(r) {
 }
 
 // Put a rebuilt animal back where it was.
+// One animal as a save holds it (a wanderer carries the same, without its construction args).
+function creatureRecord(c, a = {}) {
+  const L = c.life;
+  return {
+    k: c.make, s: c.seed, sn: c.sn, x: r2(c.x), y: r2(c.y), h: r2(c.heading), z: r2(c.z || 0), a,
+    st: c.state === 'sit' ? 'sit' : undefined,
+    L: {
+      name: L.name, age: r2(L.age), energy: r2(L.energy), cooldown: r2(L.cooldown), fed: r2(L.fed || 0), comfort: r2(L.comfort ?? 0.5),
+      corruption: L.genome.eld ? r2(L.corruption || 0) : undefined, bound: L.bound || undefined,
+      absorbed: L.absorbed || undefined, ascended: L.ascended || undefined, boosts: L.boosts || undefined,
+      quirks: L.quirks && L.quirks.length ? L.quirks : undefined, ill: L.ill && L.ill.length ? L.ill : undefined,
+      hunt: L.hunt || undefined, hunter: L.hunter || undefined, madCount: L.madCount || undefined,
+      safe: L.safe || undefined, paragon: L.paragon || undefined, warps: L.warps && L.warps.length ? L.warps : undefined,
+      wanderer: L.wanderer || undefined,
+      lifespan: r2(L.lifespan), gen: L.gen, scale: L.scale, old: !!L.old, inbred: r2(L.inbred || 0),
+      genome: L.genome, traits: L.traits, parents: L.parents,
+    },
+  };
+}
+// And back: an animal made from its record (`a`, its construction args, already resolved).
+function restoreCreature(world, r, a = {}) {
+  const c = makeCreature(r.k, world, r.x, r.y, a, r.s);
+  placeRestored(c, r);
+  initLife(c, { genome: r.L.genome, gen: r.L.gen, scale: r.L.scale, age: r.L.age, alpha: 1, inbred: r.L.inbred || 0 });
+  Object.assign(c.life, {
+    name: r.L.name, energy: r.L.energy ?? 0.6, cooldown: r.L.cooldown ?? 30, lifespan: r.L.lifespan, old: !!r.L.old, parents: r.L.parents || null,
+    fed: r.L.fed || 0, comfort: r.L.comfort ?? 0.5, corruption: r.L.corruption || 0, bound: !!r.L.bound,
+    absorbed: r.L.absorbed || 0, ascended: !!r.L.ascended, boosts: r.L.boosts || null,
+    quirks: r.L.quirks || [], ill: r.L.ill || [], hunt: r.L.hunt || null, hunter: !!r.L.hunter, madCount: r.L.madCount || 0,
+    safe: !!r.L.safe, paragon: !!r.L.paragon, warps: r.L.warps && r.L.warps.length ? r.L.warps : null, wanderer: r.L.wanderer || null,
+  });
+  if (r.L.paragon && c.id) { OUTLINE[c.id] = RARE_OUTLINE.paragon; THICK[c.id] = 1; }
+  if (r.L.wanderer && c.id) { OUTLINE[c.id] = WANDER_OUTLINE; THICK[c.id] = 1; } // (a wanderer, still here: red-edged)
+  c.life.traits = eldTraits(c.life);
+  refreshBuffs(c);
+  c.sn = r.sn ?? null;
+  return c;
+}
+const WANDER_OUTLINE = hexToInt('#ff4a2a');
+
 function placeRestored(c, r) {
   if (c.species === 'frog' && r.st === 'sit' && c.pad) return; // back on a lily pad
   if (c.species === 'frog') { c.pad = null; c.targetPad = null; c.state = 'swim'; }
@@ -198,7 +225,7 @@ function restorePond(world, d) {
   world.erosion = { ...newErosion(), ...(d.erosion || {}), next: 0 };
   // Structures first: islands shape the beach that makeShore builds.
   world.structures = (d.structures || []).filter((s) => STRUCTURES[s.k]).map((s) => Object.assign(makeStructure(s.k, world, s.x, s.y, s.s, s.born ?? world.days),
-    s.lv ? { lv: s.lv } : {}, s.stack ? { stack: s.stack } : {}, s.branch ? { branch: s.branch, blv: s.blv || 1 } : {}, s.deep ? { deep: s.deep } : {}));
+    s.lv ? { lv: s.lv } : {}, s.stack ? { stack: s.stack } : {}, s.branch ? { branch: s.branch, blv: s.blv || 1 } : {}, s.deep ? { deep: s.deep } : {}, s.w ? { worth: s.w } : {}));
   if (typeof growWreck === 'function') for (const s of world.structures) growWreck(s); // (a wreck the size of how deep it went down)
   world.story = d.story || null;
   world.heavens = d.heavens || null;
@@ -245,21 +272,7 @@ function restorePond(world, d) {
   const made = d.creatures.map((r) => {
     const a = resolve(r.a || {});
     if (!CREATE[r.k] || (r.k === 'wild' && !a.sp)) return null;
-    const c = makeCreature(r.k, world, r.x, r.y, a, r.s);
-    placeRestored(c, r);
-    initLife(c, { genome: r.L.genome, gen: r.L.gen, scale: r.L.scale, age: r.L.age, alpha: 1, inbred: r.L.inbred || 0 });
-    Object.assign(c.life, {
-      name: r.L.name, energy: r.L.energy, cooldown: r.L.cooldown, lifespan: r.L.lifespan, old: r.L.old, parents: r.L.parents || null,
-      fed: r.L.fed || 0, comfort: r.L.comfort ?? 0.5, corruption: r.L.corruption || 0, bound: !!r.L.bound,
-      absorbed: r.L.absorbed || 0, ascended: !!r.L.ascended, boosts: r.L.boosts || null,
-      quirks: r.L.quirks || [], ill: r.L.ill || [], hunt: r.L.hunt || null, hunter: !!r.L.hunter, madCount: r.L.madCount || 0,
-      safe: !!r.L.safe, paragon: !!r.L.paragon, warps: r.L.warps || null,
-    });
-    if (r.L.paragon && c.id) { OUTLINE[c.id] = RARE_OUTLINE.paragon; THICK[c.id] = 1; }
-    c.life.traits = eldTraits(c.life);
-    refreshBuffs(c);
-    c.sn = r.sn ?? null;
-    return c;
+    return restoreCreature(world, r, a);
   });
   d.creatures.forEach((r, i) => {
     const c = made[i];

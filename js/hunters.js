@@ -23,7 +23,7 @@ const canBeHunter = (c) => !!c.life && c instanceof Fish;
 
 function buyHunt(world, c, k) {
   const lv = huntLv(c, k);
-  if (lv >= HUNT_MAX || !isPredator(c) || !pay(world, HUNT[k].cur, huntCost(c, k))) return false;
+  if (lv >= HUNT_MAX || !isPredator(c) || !pay(world, HUNT[k].cur, huntCost(c, k), 'evolve')) return false;
   c.life.hunt = { ...(c.life.hunt || {}), [k]: lv + 1 };
   if (k === 'maw' && SCALABLE.has(c.species) && c.base) { c.life.genome.size = Math.min(2, (c.life.genome.size || 1) * 1.03); applyScale(c, c.life.scale * c.life.genome.size); }
   refreshBuffs(c);
@@ -34,8 +34,8 @@ function buyHunt(world, c, k) {
 const AWAKEN = { essence: 50, corruption: 25 };
 function awakenHunter(world, c) {
   if (!canBeHunter(c) || isPredator(c) || (world.game.essence || 0) < AWAKEN.essence || (world.game.corruption || 0) < AWAKEN.corruption) return false;
-  spendEssence(world, AWAKEN.essence);
-  spendCorruption(world, AWAKEN.corruption);
+  spendEssence(world, AWAKEN.essence, 'evolve');
+  spendCorruption(world, AWAKEN.corruption, 'evolve');
   c.life.hunter = true;
   c.life.traits = eldTraits(c.life);
   refreshBuffs(c);

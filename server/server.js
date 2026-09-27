@@ -6,6 +6,9 @@
 //   GET  /api/board          the leaderboard, the high-score line and recent rare finds
 //   GET  /api/neighbours     the ponds on either side of one along the shared beach (?id=)
 //   GET  /api/health
+//   GET  /api/auth/discord   sign in with Discord (then /api/auth/discord/callback); GET /api/me, POST /api/logout
+//   POST /api/me/claim       keep a pond (its id and key) under the signed-in account
+//   POST /api/wanderers      a fierce animal leaving a pond joins the pool; POST /api/wanderers/take calls one up
 // Each pond counts its visitors (one view per address per pond every six hours);
 // the owner hears the count back, and popular ponds draw more litter.
 // Plain Node with its built-in SQLite; no packages. Scores are checked for
@@ -30,6 +33,27 @@ const SMALL_KEEP_DAYS = 45;          // ... or this long, for ponds too small fo
 const BOARD_MIN = 50;                // points before a pond is listed
 const FINDS_KEEP = 300;
 const ID_RE = /^[a-z]{2,8}(?:-[a-z]{2,8}){3}$/;
+const WANDER_KEEP_DAYS = 14;         // a wanderer nobody calls up is gone after this
+const WANDER_MAX = 400;              // the most kept in the pool
+const WANDER_SENDS_PER_HOUR = 8;     // per pond
+const WANDER_TAKES_PER_HOUR = 20;    // per address
+
+// ---- accounts ----------------------------------------------------------------------
+// Signing in is optional, and off until DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET are set: then
+// /api/auth/discord sends the visitor to Discord (scope "identify": the name and avatar only) and
+// the callback starts a session, a random token in an HttpOnly cookie with only its hash stored.
+// A signed-in owner can update their ponds from any browser without the pond's key, their ponds
+// are never pruned, and they can choose to show their name on a pond.
+const DISCORD = {
+  id: process.env.DISCORD_CLIENT_ID || '', secret: process.env.DISCORD_CLIENT_SECRET || '',
+  api: (process.env.DISCORD_API || 'https://discord.com/api/v10').replace(/\/$/, ''),
+  authorize: process.env.DISCORD_AUTHORIZE || 'https://discord.com/oauth2/authorize',
+};
+const PUBLIC_URL = (process.env.PUBLIC_URL || 'https://pond.nz').replace(/\/$/, '');
+const AUTH_ON = !!(DISCORD.id && DISCORD.secret);
+const SESSION_DAYS = 60;
+const SESSION_COOKIE = 'pond_session', STATE_COOKIE = 'pond_oauth';
+const SECURE = PUBLIC_URL.startsWith('https:') ? '; Secure' : '';
 
 const SPECIES = new Set(['koi', 'tetra', 'eel', 'axolotl', 'turtle', 'crab', 'ray', 'frog', 'snake', 'snail', 'jelly', 'clown',
   'puffer', 'octopus', 'duck', 'shrimp', 'dragonfly', 'wild', 'starfish',
@@ -60,6 +84,26 @@ db.exec(`
     save BLOB NOT NULL
   );
   CREATE INDEX IF NOT EXISTS ponds_board ON ponds (board, points DESC);
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    avatar TEXT,
+    created INTEGER NOT NULL,
+    seen INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS sessions (
+    hash TEXT PRIMARY KEY,
+    user TEXT NOT NULL,
+    created INTEGER NOT NULL,
+    expires INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS wanderers (
+    n INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    pond TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    data TEXT NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS finds (
     n INTEGER PRIMARY KEY AUTOINCREMENT,
     at INTEGER NOT NULL,
@@ -76,6 +120,9 @@ const cols = new Set(db.prepare('PRAGMA table_info(ponds)').all().map((c) => c.n
 if (!cols.has('erosion')) db.exec('ALTER TABLE ponds ADD COLUMN erosion REAL NOT NULL DEFAULT 0');
 if (!cols.has('depth')) db.exec('ALTER TABLE ponds ADD COLUMN depth INTEGER NOT NULL DEFAULT 0');
 if (!cols.has('views')) db.exec('ALTER TABLE ponds ADD COLUMN views INTEGER NOT NULL DEFAULT 0');
+if (!cols.has('owner')) db.exec('ALTER TABLE ponds ADD COLUMN owner TEXT');
+if (!cols.has('show_owner')) db.exec('ALTER TABLE ponds ADD COLUMN show_owner INTEGER NOT NULL DEFAULT 0');
+db.exec('CREATE INDEX IF NOT EXISTS ponds_owner ON ponds (owner)');
 db.exec('CREATE INDEX IF NOT EXISTS ponds_depth ON ponds (board, depth DESC)');
 const FATHOM_KNOTS = {
   salt: [[0, 2], [2, 8], [5, 110], [11, 550], [22, 2200], [40, 6000], [70, 20000], [120, 80000], [200, 400000]],
@@ -108,7 +155,24 @@ const q = {
   addFind: db.prepare('INSERT INTO finds (at, pond, tier, species, traits, how) VALUES (?, ?, ?, ?, ?, ?)'),
   finds: db.prepare('SELECT at, pond, tier, species, traits, how FROM finds ORDER BY n DESC LIMIT 20'),
   trimFinds: db.prepare('DELETE FROM finds WHERE n <= (SELECT MAX(n) FROM finds) - ?'),
-  prune: db.prepare(`DELETE FROM ponds WHERE (updated < ? AND opened < ?) OR (points < ${BOARD_MIN} AND updated < ? AND opened < ?)`),
+  prune: db.prepare(`DELETE FROM ponds WHERE owner IS NULL AND ((updated < ? AND opened < ?) OR (points < ${BOARD_MIN} AND updated < ? AND opened < ?))`),
+  setMeta: db.prepare('UPDATE ponds SET meta = ? WHERE id = ?'),
+  setOwner: db.prepare('UPDATE ponds SET owner = ?, show_owner = ?, meta = ? WHERE id = ?'),
+  setShow: db.prepare('UPDATE ponds SET show_owner = ? WHERE id = ?'),
+  owned: db.prepare('SELECT id, points, depth, updated, meta, show_owner FROM ponds WHERE owner = ? ORDER BY updated DESC LIMIT 50'),
+  ownedShown: db.prepare('SELECT id, meta FROM ponds WHERE owner = ? AND show_owner = 1'),
+  user: db.prepare('SELECT * FROM users WHERE id = ?'),
+  upsertUser: db.prepare('INSERT INTO users (id, name, avatar, created, seen) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, avatar = excluded.avatar, seen = excluded.seen'),
+  addSession: db.prepare('INSERT INTO sessions (hash, user, created, expires) VALUES (?, ?, ?, ?)'),
+  session: db.prepare('SELECT u.id, u.name, u.avatar FROM sessions s JOIN users u ON u.id = s.user WHERE s.hash = ? AND s.expires > ?'),
+  dropSession: db.prepare('DELETE FROM sessions WHERE hash = ?'),
+  pruneSessions: db.prepare('DELETE FROM sessions WHERE expires < ?'),
+  addWanderer: db.prepare('INSERT INTO wanderers (at, pond, kind, data) VALUES (?, ?, ?, ?)'),
+  trimWanderers: db.prepare('DELETE FROM wanderers WHERE n <= (SELECT MAX(n) FROM wanderers) - ?'),
+  wandererPool: db.prepare('SELECT n, pond, kind FROM wanderers WHERE at > ? AND pond != ?'),
+  wanderer: db.prepare('SELECT * FROM wanderers WHERE n = ?'),
+  dropWanderer: db.prepare('DELETE FROM wanderers WHERE n = ?'),
+  pruneWanderers: db.prepare('DELETE FROM wanderers WHERE at < ?'),
 };
 
 // ---- input -----------------------------------------------------------------------------
@@ -138,6 +202,7 @@ function cleanMeta(m) {
     gen: int(m.gen, 0, 100000), days: Math.max(0, Math.min(1e7, Math.round((Number(m.days) || 0) * 100) / 100)),
     habitat: HABITATS.has(m.habitat) ? m.habitat : 'mixed', board: m.board !== false, best: cleanFind(m.best),
     lock: m.lock === true, // the owner lets visitors look only (no copies of their own)
+    showName: m.showName === true, // a signed-in owner shows their name on it (the name itself comes from the account, never from here)
     finds: Array.isArray(m.finds) ? m.finds.slice(0, 5).map(cleanFind).filter((f) => f && f.tier >= 2) : [],
   };
 }
@@ -202,7 +267,9 @@ function addFinds(id, finds, now) {
   if (finds.length) { q.trimFinds.run(FINDS_KEEP); boardCache = null; }
 }
 
-const publicMeta = ({ finds, ...m }) => m;
+const publicMeta = ({ finds, showName, ...m }) => m;
+// The owner's name, when they've chosen to show it on this pond.
+const byOf = (owner, show) => { if (!owner || !show) return undefined; const u = q.user.get(owner); return u ? u.name : undefined; };
 
 async function createPond(req) {
   if (!allowCreate(req.ip)) throw new HttpError(429, 'too many new links today');
@@ -223,8 +290,10 @@ async function createPond(req) {
 async function updatePond(req, id) {
   const row = q.get.get(id);
   if (!row) throw new HttpError(404, 'no such pond');
-  if (!keyMatches(row, req.headers['x-pond-key'])) throw new HttpError(403, 'not your pond');
+  // Its key, or its signed-in owner (from any browser).
+  if (!keyMatches(row, req.headers['x-pond-key']) && !ownsRow(req, row)) throw new HttpError(403, 'not your pond');
   const body = await readJson(req), meta = cleanMeta(body.meta), save = cleanSave(body.save), now = Date.now();
+  if (row.owner) { q.setShow.run(meta.showName ? 1 : 0, id); meta.by = byOf(row.owner, meta.showName); }
   // Scores grow only so fast: a claim is capped by what the time since the last update allows.
   const allowed = row.points + POINT_RATE * Math.max(0, (now - row.updated) / 1000) + POINT_BURST;
   const points = Math.min(meta.points, Math.floor(allowed));
@@ -252,13 +321,13 @@ function countView(ip, id, now) {
 function getPond(req, id, peek) {
   const row = q.get.get(id);
   if (!row) throw new HttpError(404, 'no such pond');
-  const now = Date.now();
+  const now = Date.now(), u = userOf(req), mine = !!(u && row.owner === u.id); // (its owner coming back is no visitor)
   if (!peek) {
     if (now - row.opened > 36e5) q.opened.run(now, id);
-    countView(req.ip, id, now);
+    if (!mine) countView(req.ip, id, now);
   }
   const save = JSON.parse(zlib.inflateRawSync(row.save).toString('utf8'));
-  return [200, { id, save, meta: JSON.parse(row.meta), updated: row.updated, views: (row.views || 0) + (peek ? 0 : 1) }];
+  return [200, { id, save, meta: JSON.parse(row.meta), updated: row.updated, views: (row.views || 0) + (peek || mine ? 0 : 1), mine }];
 }
 
 // The shared beach: every pond active in the last month, in the order they were
@@ -271,7 +340,7 @@ function neighbours(id) {
   const side = (r) => {
     if (!r || r.id === id) return null;
     const m = JSON.parse(r.meta);
-    return { id: r.id, depth: r.depth, points: r.points, habitat: m.habitat, animals: m.animals };
+    return { id: r.id, depth: r.depth, points: r.points, habitat: m.habitat, animals: m.animals, by: m.by };
   };
   if (!n) return { west: null, east: null };
   if (i < 0) return { west: side(rows[n - 1]), east: side(rows[0]) };
@@ -284,7 +353,7 @@ function board() {
   if (boardCache && Date.now() - boardCache.at < 15000) return boardCache.data;
   const top = q.top.all().map((r) => {
     const m = JSON.parse(r.meta);
-    return { id: r.id, points: r.points, depth: r.depth, updated: r.updated, animals: m.animals, species: m.species, rares: m.rares, gen: m.gen, days: m.days, habitat: m.habitat, best: m.best };
+    return { id: r.id, points: r.points, depth: r.depth, updated: r.updated, animals: m.animals, species: m.species, rares: m.rares, gen: m.gen, days: m.days, habitat: m.habitat, best: m.best, by: m.by };
   });
   const finds = q.finds.all().map((f) => ({ at: f.at, pond: f.pond, tier: f.tier, species: f.species, traits: f.traits.split(','), how: f.how }));
   const data = { top, high: top.length >= 10 ? top[9].depth : 0, finds, ponds: q.count.get().n };
@@ -292,9 +361,195 @@ function board() {
   return data;
 }
 
+// ---- sessions ------------------------------------------------------------------------------
+
+function cookies(req) {
+  const out = {};
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = part.slice(i + 1).trim();
+  }
+  return out;
+}
+const cookie = (k, v, maxAge, path = '/api') => `${k}=${v}; Path=${path}; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${SECURE}`;
+function userOf(req) {
+  if (req.user === undefined) {
+    const t = cookies(req)[SESSION_COOKIE];
+    req.user = t && /^[A-Za-z0-9_-]{20,64}$/.test(t) ? q.session.get(hashKey(t), Date.now()) || null : null;
+  }
+  return req.user;
+}
+// A write made on the strength of the session cookie must come from the page itself
+// (SameSite=Lax already keeps the cookie off other sites' posts; this is a second lock).
+function sameOrigin(req) {
+  const o = req.headers.origin;
+  if (!o) return true;
+  try { return new URL(o).host === req.headers.host; } catch { return false; }
+}
+const ownsRow = (req, row) => { const u = userOf(req); return !!(u && row.owner && row.owner === u.id && sameOrigin(req)); };
+const cleanName = (s) => (typeof s === 'string' ? s.normalize('NFC').replace(/[\p{C}<>]/gu, '').trim().slice(0, 32) : '');
+const safeBack = (b) => (typeof b === 'string' && /^\/(?:[a-z]{2,8}(?:-[a-z]{2,8}){3})?$/.test(b) ? b : '/');
+
+const oauthStates = new Map(); // state -> { at, back }
+function authStart(url) {
+  if (!AUTH_ON) throw new HttpError(404, 'sign-in is not set up');
+  const now = Date.now();
+  for (const [k, v] of oauthStates) if (now - v.at > 6e5) oauthStates.delete(k);
+  if (oauthStates.size > 5000) throw new HttpError(429, 'try again shortly');
+  const state = crypto.randomBytes(18).toString('base64url');
+  oauthStates.set(state, { at: now, back: safeBack(url.searchParams.get('back')) });
+  const u = new URL(DISCORD.authorize);
+  u.search = new URLSearchParams({ response_type: 'code', client_id: DISCORD.id, scope: 'identify', state, redirect_uri: `${PUBLIC_URL}/api/auth/discord/callback`, prompt: 'none' }).toString();
+  return [302, null, { Location: u.toString(), 'Set-Cookie': cookie(STATE_COOKIE, state, 600, '/api/auth') }];
+}
+
+async function authCallback(req, url) {
+  if (!AUTH_ON) throw new HttpError(404, 'sign-in is not set up');
+  const state = url.searchParams.get('state') || '', code = url.searchParams.get('code') || '', st = oauthStates.get(state);
+  const done = (to, extra = []) => [302, null, { Location: to, 'Set-Cookie': [cookie(STATE_COOKIE, '', 0, '/api/auth'), ...extra] }];
+  const back = st ? st.back : '/', sep = back.includes('?') ? '&' : '?';
+  oauthStates.delete(state);
+  if (url.searchParams.get('error')) return done(`${back}${sep}login=cancelled`);
+  if (!st || cookies(req)[STATE_COOKIE] !== state || !/^[A-Za-z0-9_-]{6,128}$/.test(code)) return done('/?login=failed');
+  let me;
+  try {
+    const redirect = `${PUBLIC_URL}/api/auth/discord/callback`;
+    const tr = await fetch(`${DISCORD.api}/oauth2/token`, {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: AbortSignal.timeout(8000),
+      body: new URLSearchParams({ client_id: DISCORD.id, client_secret: DISCORD.secret, grant_type: 'authorization_code', code, redirect_uri: redirect }),
+    });
+    const tok = await tr.json().catch(() => null);
+    if (!tr.ok || !tok || typeof tok.access_token !== 'string') throw new Error(`token exchange ${tr.status}`);
+    const ur = await fetch(`${DISCORD.api}/users/@me`, { headers: { Authorization: `Bearer ${tok.access_token}` }, signal: AbortSignal.timeout(8000) });
+    me = await ur.json().catch(() => null);
+    if (!ur.ok || !me || !/^\d{5,25}$/.test(String(me.id))) throw new Error(`user lookup ${ur.status}`);
+  } catch (e) {
+    console.error(new Date().toISOString(), 'discord sign-in failed:', e.message);
+    return done(`${back}${sep}login=failed`);
+  }
+  const now = Date.now(), id = String(me.id), name = cleanName(me.global_name) || cleanName(me.username) || 'someone';
+  const avatar = typeof me.avatar === 'string' && /^(?:a_)?[0-9a-f]{32}$/.test(me.avatar) ? me.avatar : null;
+  q.upsertUser.run(id, name, avatar, now, now);
+  // (A new name shows on the ponds they've put it on.)
+  for (const r of q.ownedShown.all(id)) q.setMeta.run(JSON.stringify({ ...JSON.parse(r.meta), by: name }), r.id);
+  boardCache = null;
+  const token = crypto.randomBytes(24).toString('base64url');
+  q.addSession.run(hashKey(token), id, now, now + SESSION_DAYS * 864e5);
+  return done(`${back}${sep}login=ok`, [cookie(SESSION_COOKIE, token, SESSION_DAYS * 86400)]);
+}
+
+function getMe(req) {
+  const u = userOf(req);
+  if (!u) return [200, { auth: AUTH_ON, user: null, ponds: [] }];
+  const ponds = q.owned.all(u.id).map((r) => {
+    const m = JSON.parse(r.meta);
+    return { id: r.id, points: r.points, depth: r.depth, updated: r.updated, habitat: m.habitat, days: m.days, animals: m.animals, show: !!r.show_owner };
+  });
+  return [200, { auth: AUTH_ON, user: { id: u.id, name: u.name, avatar: u.avatar }, ponds }];
+}
+
+function logout(req) {
+  if (!sameOrigin(req)) throw new HttpError(403, 'not from here');
+  const t = cookies(req)[SESSION_COOKIE];
+  if (t) q.dropSession.run(hashKey(t));
+  return [200, { ok: true }, { 'Set-Cookie': cookie(SESSION_COOKIE, '', 0) }];
+}
+
+// Keep a pond under the signed-in account: its key proves it's theirs.
+async function claimPond(req) {
+  const u = userOf(req);
+  if (!u) throw new HttpError(401, 'sign in first');
+  if (!sameOrigin(req)) throw new HttpError(403, 'not from here');
+  const b = await readJson(req), id = String((b && b.id) || '');
+  if (!ID_RE.test(id)) throw new HttpError(400, 'bad pond id');
+  const row = q.get.get(id);
+  if (!row) throw new HttpError(404, 'no such pond');
+  if (row.owner && row.owner !== u.id) throw new HttpError(409, 'someone else keeps this pond');
+  if (row.owner !== u.id && !keyMatches(row, b.key)) throw new HttpError(403, 'not your pond');
+  const show = typeof b.show === 'boolean' ? b.show : !!row.show_owner, meta = JSON.parse(row.meta);
+  if (show) meta.by = u.name; else delete meta.by;
+  q.setOwner.run(u.id, show ? 1 : 0, JSON.stringify(meta), id);
+  boardCache = null; ringCache = null;
+  return [200, { ok: true, id, show }];
+}
+
+// ---- wanderers ------------------------------------------------------------------------------
+// A fierce animal that leaves a pond may turn up in another. Only what the page needs to
+// rebuild it is kept, from known shapes: its kind, build seed, name, age, genes (numbers and
+// flags), and a few lists of plain words.
+const WORD = /^[a-z][a-zA-Z0-9]{0,23}$/;
+function cleanFlat(o, max, flags) {
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+  const out = {};
+  let n = 0;
+  for (const [k, v] of Object.entries(o)) {
+    if (n >= max || !WORD.test(k)) continue;
+    if (typeof v === 'number' && Number.isFinite(v)) out[k] = Math.max(-1e6, Math.min(1e6, v));
+    else if (flags && typeof v === 'boolean') out[k] = v;
+    else continue;
+    n++;
+  }
+  return out;
+}
+const words = (a, max) => (Array.isArray(a) ? [...new Set(a.filter((t) => typeof t === 'string' && WORD.test(t)))].slice(0, max) : []);
+const num = (v, lo, hi) => Math.max(lo, Math.min(hi, Number(v) || 0));
+function cleanWanderer(w) {
+  if (!w || typeof w !== 'object' || !SPECIES.has(w.k) || w.k === 'wild' || !w.L || typeof w.L !== 'object') return null;
+  const L = w.L, name = typeof L.name === 'string' ? L.name.normalize('NFC').replace(/[^\p{L}\p{N} '-]/gu, '').trim().slice(0, 24) : '';
+  const genome = cleanFlat(L.genome, 120, true);
+  if (!name || !genome || !Object.keys(genome).length) return null;
+  return {
+    k: w.k, s: typeof w.s === 'number' && Number.isFinite(w.s) ? Math.trunc(w.s) : 0,
+    L: {
+      name, genome, gen: int(L.gen, 0, 1e6), age: num(L.age, 0, 1e7), lifespan: num(L.lifespan, 1, 1e7), scale: num(L.scale, 0.1, 3), inbred: num(L.inbred, 0, 1),
+      corruption: num(L.corruption, 0, 1e6), absorbed: int(L.absorbed, 0, 1e4), ascended: L.ascended === true, hunter: L.hunter === true, kills: int(L.kills, 0, 1e6),
+      hunt: cleanFlat(L.hunt, 12, false) || {}, boosts: cleanFlat(L.boosts, 12, false) || {},
+      warps: words(L.warps, 12), quirks: words(L.quirks, 8), ill: words(L.ill, 4),
+    },
+  };
+}
+const wanderSends = new Map(), wanderTakes = new Map();
+function underLimit(map, key, max) {
+  const hour = Math.floor(Date.now() / 36e5), e = map.get(key);
+  if (!e || e.hour !== hour) { map.set(key, { hour, n: 1 }); return true; }
+  return ++e.n <= max;
+}
+async function postWanderer(req) {
+  const b = await readJson(req), id = String((b && b.pond) || '');
+  if (!ID_RE.test(id)) throw new HttpError(400, 'bad pond id');
+  const row = q.get.get(id);
+  if (!row) throw new HttpError(404, 'no such pond');
+  if (!keyMatches(row, req.headers['x-pond-key']) && !ownsRow(req, row)) throw new HttpError(403, 'not your pond');
+  const w = cleanWanderer(b.w);
+  if (!w) throw new HttpError(400, 'not an animal');
+  if (!underLimit(wanderSends, id, WANDER_SENDS_PER_HOUR)) throw new HttpError(429, 'enough wanderers from this pond for now');
+  q.addWanderer.run(Date.now(), id, w.k, JSON.stringify(w));
+  q.trimWanderers.run(WANDER_MAX);
+  return [201, { ok: true }];
+}
+// Call one up: any from another pond that can live in this one's water (the page says which kinds).
+async function takeWanderer(req) {
+  const b = await readJson(req), id = b && ID_RE.test(String(b.pond)) ? String(b.pond) : '';
+  const kinds = new Set(Array.isArray(b && b.kinds) ? b.kinds.filter((k) => SPECIES.has(k) && k !== 'wild').slice(0, 80) : []);
+  if (!underLimit(wanderTakes, req.ip, WANDER_TAKES_PER_HOUR)) throw new HttpError(429, 'not so often');
+  const pool = q.wandererPool.all(Date.now() - WANDER_KEEP_DAYS * 864e5, id).filter((r) => kinds.has(r.kind));
+  if (!pool.length) return [200, { w: null }];
+  const pick = pool[crypto.randomInt(pool.length)], row = q.wanderer.get(pick.n);
+  if (!row || !q.dropWanderer.run(pick.n).changes) return [200, { w: null }];
+  const from = q.get.get(row.pond), m = from ? JSON.parse(from.meta) : {};
+  return [200, { w: { ...JSON.parse(row.data), from: row.pond, by: m.by || null } }];
+}
+
 async function route(req) {
   const url = new URL(req.url, 'http://pond'), path = url.pathname;
   if (path === '/api/health' && req.method === 'GET') return [200, { ok: true }];
+  if (path === '/api/auth/discord' && req.method === 'GET') return authStart(url);
+  if (path === '/api/auth/discord/callback' && req.method === 'GET') return authCallback(req, url);
+  if (path === '/api/me' && req.method === 'GET') return getMe(req);
+  if (path === '/api/logout' && req.method === 'POST') return logout(req);
+  if (path === '/api/me/claim' && req.method === 'POST') return claimPond(req);
+  if (path === '/api/wanderers' && req.method === 'POST') return postWanderer(req);
+  if (path === '/api/wanderers/take' && req.method === 'POST') return takeWanderer(req);
   if (path === '/api/neighbours' && req.method === 'GET') {
     const id = url.searchParams.get('id');
     return [200, neighbours(id && ID_RE.test(id) ? id : null)];
@@ -312,16 +567,16 @@ async function route(req) {
 
 const server = http.createServer(async (req, res) => {
   req.ip = String(req.headers['x-real-ip'] || req.socket.remoteAddress || '');
-  let status, body;
+  let status, body, headers = {};
   try {
-    [status, body] = await route(req);
+    [status, body, headers = {}] = await route(req);
   } catch (e) {
     status = e instanceof HttpError ? e.status : 500;
     body = { error: e instanceof HttpError ? e.message : 'server error' };
-    if (status === 500) console.error(new Date().toISOString(), req.method, req.url, e);
+    if (status === 500) console.error(new Date().toISOString(), req.method, req.url.split('?')[0], e); // (no query: it may hold a sign-in code)
   }
-  const text = JSON.stringify(body);
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(text), 'Cache-Control': 'no-store' });
+  const text = body === null ? '' : JSON.stringify(body);
+  res.writeHead(status, { ...(body === null ? {} : { 'Content-Type': 'application/json; charset=utf-8' }), 'Content-Length': Buffer.byteLength(text), 'Cache-Control': 'no-store', ...headers });
   res.end(text);
 });
 server.requestTimeout = 20000;
@@ -331,10 +586,12 @@ function prune() {
   const cut = Date.now() - KEEP_DAYS * 864e5, small = Date.now() - SMALL_KEEP_DAYS * 864e5;
   const n = q.prune.run(cut, cut, small, small).changes;
   if (n) console.log(new Date().toISOString(), `removed ${n} unused ponds`);
-  creates.clear();
+  q.pruneSessions.run(Date.now());
+  q.pruneWanderers.run(Date.now() - WANDER_KEEP_DAYS * 864e5);
+  creates.clear(); wanderSends.clear(); wanderTakes.clear();
 }
 prune();
 setInterval(prune, 864e5).unref();
 
-server.listen(PORT, () => console.log(`pond api on :${PORT}, ${DB_PATH}`));
+server.listen(PORT, () => console.log(`pond api on :${PORT}, ${DB_PATH}, sign-in ${AUTH_ON ? 'on' : 'off'}`));
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => server.close(() => { db.close(); process.exit(0); }));

@@ -63,13 +63,14 @@ function rageOf(world, c) {
   let k = 1 + 0.35 * (world.darkness || 0) * sky;
   if (L.genome.eld) k += 0.25 + 0.35 * Math.max(0, eldStage(L));
   if (hasWarp(L, 'feral')) k += 0.8;
+  if (L.wanderer) k += 0.6;
   return k;
 }
 // Enraged: it will turn on anything smaller than itself (the marked when changed, in the dark; the feral always).
 function enraged(world, c) {
   const L = c.life;
   if (!L || !(c instanceof Fish) || c.dying || c.leaving) return false;
-  if (hasWarp(L, 'feral')) return true;
+  if (hasWarp(L, 'feral') || L.wanderer) return true;
   return !!L.genome.eld && eldStage(L) >= 1 && (world.darkness || 0) > 0.45;
 }
 // How broad an animal is at its widest (worked out once a pass: a horde asks it a great deal).
@@ -131,6 +132,7 @@ function updateNature(world, dt) {
   natureTick = 1;
   widthStamp++;
   if (world.opts.life === false) return;
+  if (typeof updateWanderers === 'function') updateWanderers(world);
   const blood = (world.bloodSpots || []).filter((b) => world.t - b.t < 20);
   world.bloodSpots = blood;
   for (const c of world.creatures) {
@@ -154,7 +156,7 @@ function updateNature(world, dt) {
         addBlood(world, loser.x, loser.y, loser.z || 6, 0.5);
         addRipple(world, loser.x, loser.y, 1, true);
         startle(world, loser, winner.x, winner.y, 1.5);
-        if (loser.life.energy <= 0.05) loser.dying = { t: 0, why: `torn apart by ${winner.life.name} in the dark` };
+        if (loser.life.energy <= 0.05) { loser.dying = { t: 0, why: `torn apart by ${winner.life.name} in the dark` }; if (winner.life.wanderer) winner.life.wanderer.kills++; }
         logEvent(world, `${winner.life.name} the ${describe(winner).label} savaged ${loser.life.name} the ${describe(loser).label}`, winner, {
           cat: 'hunt', pri: 1, key: 'brawl', data: 1, merge: (e) => `Fights break out in the dark: ${e.n} animals savaged`,
         });

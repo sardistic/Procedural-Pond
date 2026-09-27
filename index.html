@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=22">
+  <link rel="stylesheet" href="style.css?v=23">
 
   <script type="application/ld+json">
   {
@@ -89,6 +89,7 @@
 
     <details id="ponds">
       <summary>Your ponds</summary>
+      <div id="account" class="account" hidden></div>
       <p class="note">Your pond saves itself in this browser and is here when you come back. The address bar holds its short link: bookmark it or share it, and it opens this pond as it grows. Friends who open it get their own copy.</p>
       <ol class="pond-list" id="pond-list"></ol>
       <label class="check" title="Look only\nWhoever opens this pond's link can watch it, but can't take a copy to grow as their own. Your pond stays the only one."><input type="checkbox" id="pond-lock"> Visitors can only look (no copies)</label>
@@ -141,6 +142,9 @@
         <li>A long game: the surf erodes tide pools into the beach, then opens the deep beyond a drop-off, tier by tier, down to the abyss (salt) or a drowned cathedral (fresh), with sharks, anglerfish, cavefish, olms and mythic creatures, and further out and darker still, into the deep past: trilobites, sea scorpions, dunkleosteus, plesiosaurs and mosasaurs.</li>
         <li>The dark makes animals savage: the marked roll dice as they change and their natures warp, fights break out at night, and hunters follow blood in the water.</li>
         <li>A sky of its own: glass-calm days you can see deep into, meteor showers, auroras, comets, blood moons, eclipses, and when the stars are right, blood rain.</li>
+        <li>Sign in with Discord to keep your ponds in your account and carry on from any browser; show your name on a pond if you like.</li>
+        <li>Fierce animals that leave one pond sometimes turn up in another to terrorize the natives.</li>
+        <li>Everything you build, plant, breed or evolve is an investment that pays points and essence every dawn.</li>
         <li>Points for every birth and rare find, pearls to spend on animals, plants and food, a shared leaderboard, and fireflies that show your score at night.</li>
         <li>Your pond saves itself and is waiting when you come back, and the address bar always holds its short four-word link.</li>
       </ul>
@@ -214,6 +218,7 @@
       <p class="note" id="sp-mode"></p>
       <p class="note" id="sp-flies"></p>
       <p class="note" id="sp-coast"></p>
+      <p class="note" id="sp-invest"></p>
       <p class="note best" id="sp-best"></p>
       <h3>Lately</h3>
       <ol class="earn-list" id="sp-recent"></ol>
@@ -349,45 +354,47 @@
     </div>
   </div>
 
-  <script src="js/core.js?v=28"></script>
-  <script src="js/raster.js?v=28"></script>
-  <script src="js/creatures.js?v=28"></script>
-  <script src="js/critters.js?v=28"></script>
-  <script src="js/wildlife.js?v=28"></script>
-  <script src="js/wildfish.js?v=28"></script>
-  <script src="js/sound.js?v=28"></script>
-  <script src="js/life.js?v=28"></script>
-  <script src="js/plants.js?v=28"></script>
-  <script src="js/scene.js?v=28"></script>
-  <script src="js/structures.js?v=28"></script>
-  <script src="js/erosion.js?v=28"></script>
-  <script src="js/sky.js?v=28"></script>
-  <script src="js/ecology.js?v=28"></script>
-  <script src="js/game.js?v=28"></script>
-  <script src="js/deep.js?v=28"></script>
-  <script src="js/remains.js?v=28"></script>
-  <script src="js/eldritch.js?v=28"></script>
-  <script src="js/coast.js?v=28"></script>
-  <script src="js/gulls.js?v=28"></script>
-  <script src="js/traits.js?v=28"></script>
-  <script src="js/save.js?v=28"></script>
-  <script src="js/link.js?v=28"></script>
-  <script src="js/abyss.js?v=28"></script>
-  <script src="js/quirks.js?v=28"></script>
-  <script src="js/hunters.js?v=28"></script>
-  <script src="js/habitats.js?v=28"></script>
-  <script src="js/artifacts.js?v=28"></script>
-  <script src="js/story.js?v=28"></script>
-  <script src="js/lineage.js?v=28"></script>
-  <script src="js/depths.js?v=28"></script>
-  <script src="js/sand.js?v=28"></script>
-  <script src="js/heavens.js?v=28"></script>
-  <script src="js/nature.js?v=28"></script>
-  <script src="js/pollution.js?v=28"></script>
-  <script src="js/prehistoric.js?v=28"></script>
-  <script src="js/net.js?v=28"></script>
-  <script src="js/hud.js?v=28"></script>
-  <script src="js/main.js?v=30"></script>
-  <script src="js/tips.js?v=28"></script>
+  <script src="js/core.js?v=29"></script>
+  <script src="js/raster.js?v=29"></script>
+  <script src="js/creatures.js?v=29"></script>
+  <script src="js/critters.js?v=29"></script>
+  <script src="js/wildlife.js?v=29"></script>
+  <script src="js/wildfish.js?v=29"></script>
+  <script src="js/sound.js?v=29"></script>
+  <script src="js/life.js?v=29"></script>
+  <script src="js/plants.js?v=29"></script>
+  <script src="js/scene.js?v=29"></script>
+  <script src="js/structures.js?v=29"></script>
+  <script src="js/erosion.js?v=29"></script>
+  <script src="js/sky.js?v=29"></script>
+  <script src="js/ecology.js?v=29"></script>
+  <script src="js/game.js?v=29"></script>
+  <script src="js/deep.js?v=29"></script>
+  <script src="js/remains.js?v=29"></script>
+  <script src="js/eldritch.js?v=29"></script>
+  <script src="js/coast.js?v=29"></script>
+  <script src="js/gulls.js?v=29"></script>
+  <script src="js/traits.js?v=29"></script>
+  <script src="js/save.js?v=29"></script>
+  <script src="js/link.js?v=29"></script>
+  <script src="js/abyss.js?v=29"></script>
+  <script src="js/quirks.js?v=29"></script>
+  <script src="js/hunters.js?v=29"></script>
+  <script src="js/habitats.js?v=29"></script>
+  <script src="js/artifacts.js?v=29"></script>
+  <script src="js/story.js?v=29"></script>
+  <script src="js/lineage.js?v=29"></script>
+  <script src="js/depths.js?v=29"></script>
+  <script src="js/sand.js?v=29"></script>
+  <script src="js/heavens.js?v=29"></script>
+  <script src="js/nature.js?v=29"></script>
+  <script src="js/pollution.js?v=29"></script>
+  <script src="js/prehistoric.js?v=29"></script>
+  <script src="js/net.js?v=29"></script>
+  <script src="js/account.js?v=29"></script>
+  <script src="js/wander.js?v=29"></script>
+  <script src="js/hud.js?v=29"></script>
+  <script src="js/main.js?v=31"></script>
+  <script src="js/tips.js?v=29"></script>
 </body>
 </html>

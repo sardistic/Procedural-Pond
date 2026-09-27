@@ -1083,3 +1083,13 @@ body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, bo
 .quickbar[hidden] { display: none; }
 .quickbar button { width: 40px; height: 40px; padding: 0; }
 body.observing .quickbar { display: none; }
+
+/* ---- signing in (Your ponds) ---- */
+.account { margin: 6px 0 8px; }
+.account-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.account-row .who { min-width: 0; font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+.account-row .who b { color: var(--hot); }
+.account-row button { flex: none; padding: 4px 6px; }
+button.discord { background: #3a3f8f; border-color: #5865f2; color: #eef0ff; }
+button.discord:hover { background: #4752c4; }
+.pond-item.remote .pond-open { opacity: 0.85; border-style: dashed; }

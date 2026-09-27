@@ -46,7 +46,7 @@ function pondMeta(world) {
     points: G.points, erosion: world.erosion ? Math.round(world.erosion.e * 1000) / 1000 : 0, depth: typeof pondFathoms === 'function' ? pondFathoms(world) : 1,
     animals: alive.length, species: new Set(alive.map((c) => (c.species === 'wild' ? `w${c.sp.id}` : c.species))).size,
     rares: alive.filter((c) => c.life.traits.length).length, gen: world.records ? world.records.gen : 0,
-    days: Math.round(world.days * 100) / 100, habitat: world.opts.habitat, board: !!G.board, lock: !!G.lock,
+    days: Math.round(world.days * 100) / 100, habitat: world.opts.habitat, board: !!G.board, lock: !!G.lock, showName: !!G.showName,
     best: G.best ? { tier: G.best.tier, species: G.best.species, traits: G.best.traits, how: G.best.how } : null,
     finds: G.finds.map((f) => ({ tier: f.tier, species: f.species, traits: f.traits, how: f.how })),
   };
@@ -68,6 +68,7 @@ async function pushPond(world) {
       res = await api('PUT', `/ponds/${world.link.id}`, { save: uploadSave(world), meta }, world.link.key);
     } catch (e) {
       if (e.status !== 404 && e.status !== 403) throw e;
+      if (e.status === 403 && !world.link.key) throw e; // (yours by your account, and signed out here: don't fork it)
       world.link = null; // the link is gone (expired) or not ours after all: make a new one
     }
   }

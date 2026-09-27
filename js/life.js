@@ -514,6 +514,7 @@ function eat(world, c, f) {
     gain = clamp(0.2 + 0.55 * ratio, 0.2, 0.8);
     if (c.life) { c.life.satedUntil = world.t + (18 + 70 * ratio) * (c.life.genome.ravenous ? 0.4 : 1); c.prey = null; }
     ECO.eaten++;
+    if (c.life && c.life.wanderer) c.life.wanderer.kills++;
     addBubbles(world, f.x, f.y, f.z, 3);
     if (typeof onKill === 'function') onKill(world, c, f); // a hunter's devour and contagion
     if (f.life) {
@@ -927,6 +928,7 @@ function updateLife(world, dt) {
           c.gone = true;
           ECO.departures++;
           noteGone(world, c, c.leaveWhy || 'restless');
+          if (c.leaveWhy !== 'of old age' && c.life && typeof sendWanderer === 'function') sendWanderer(world, c); // (the fierce may turn up in someone else's pond)
           if (c.leaveWhy === 'of old age' && c.life) {
             award(world, 1, 'full lives', c, { quiet: true });
             gainEssence(world, 1 + TIER_ESSENCE[tierOf(c.life.traits)] / 2, 'returned to the pond', c, { quiet: true });
@@ -1224,6 +1226,7 @@ function describe(c) {
   else if (c.threat) mood = 'fleeing';
   else if (L && L.satedUntil && typeof world !== 'undefined' && L.satedUntil > world.t && isPredator(c)) mood = 'sated after a kill';
   if (typeof world !== 'undefined' && typeof enraged === 'function' && enraged(world, c) && !c.grabbed) mood = c.prey ? 'in a rage, hunting' : 'in a rage';
+  if (L && L.wanderer && !c.grabbed && !c.leaving) mood = `come over from ${L.wanderer.from} to terrorize the pond${c.prey ? ', hunting' : ''}${L.wanderer.kills ? ` (${L.wanderer.kills} kills here)` : ''}`;
   else if (c.inflate > 0.3) mood = 'puffed up';
   else if (L && L.energy < 0.35) mood = 'hungry';
   else if (L && L.scale < 0.9) mood = 'growing';

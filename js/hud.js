@@ -1305,7 +1305,7 @@ function renderHatchery() {
     b.disabled = max || have < price;
     b.append(max ? document.createTextNode('max') : el('i', u.cur === 'essence' ? 'essence' : 'pearl'), document.createTextNode(max ? '' : ` ${fmt(price)}`));
     b.addEventListener('click', () => {
-      if (u.cur === 'essence' ? !spendEssence(world, price) : !spend(world, price)) return;
+      if (u.cur === 'essence' ? !spendEssence(world, price, 'build') : !spend(world, price, 'build')) return;
       H.levels[key]++;
       renderHatchery();
     });
@@ -1475,7 +1475,7 @@ function renderEvo() {
           b.disabled = (G.essence || 0) < d.unlock;
           b.append(document.createTextNode('Unlock '), el('i', 'essence'), document.createTextNode(String(d.unlock)));
           b.addEventListener('click', () => {
-            if (!spendEssence(world, d.unlock)) return;
+            if (!spendEssence(world, d.unlock, 'evolve')) return;
             G.unlocked = [...(G.unlocked || []), k];
             refreshSpeciesButtons();
             logEvent(world, `You can now spawn ${plural(SINGULAR[k], 2).toLowerCase()} from the dock`, null, { cat: 'pond', pri: 2 });
@@ -1611,6 +1611,12 @@ function renderScorePanel(force = false) {
     world.river ? `the river runs ${world.river.w} wide` : '',
     G.corruptionEarned ? `corruption: ${Math.floor(G.corruption || 0)}` : '',
   ].filter(Boolean).join(' · ') + '. Popular, high-scoring ponds draw more litter; aerators make blights rarer.'));
+  // What's been invested, and what it pays.
+  const inv = G.inv || {}, [dv, de] = dividendOf(world), k = difficulty(world).points * sizeFairness(world);
+  const lines = Object.entries(INVEST).filter(([c]) => (inv[c] || 0) >= 1).map(([c, d]) => `${d.label} ${fmt(Math.round(inv[c]))}`);
+  byId('sp-invest').replaceChildren(colorize(lines.length
+    ? `Invested, in pearls' worth: ${lines.join(', ')}. Each dawn that pays about ${fmt(Math.round(dv * k))} points and ${fmt(Math.round(de))} essence.`
+    : 'Whatever you build, plant, bring in, evolve or deepen is an investment: a tenth comes back as points straight away, and it pays points and essence every dawn after.'));
   byId('sp-best').textContent = G.best ? `Best find: ${TIERS[G.best.tier]} ${findLabel(G.best)}${G.best.name ? `, ${G.best.name}` : ''}` : '';
   byId('sp-recent').replaceChildren(...(G.recent.length ? G.recent.slice(0, 6).map((r) => {
     const li = el('li');
@@ -1636,7 +1642,7 @@ function renderScorePanel(force = false) {
     btn.type = 'button';
     btn.title = p.id === mine ? 'Your pond' : `Visit ${p.id}`;
     btn.append(el('span', 'rk', `#${i + 1}`), el('b', null, p.id), el('span', 'pt', `${fmt(p.depth || 1)} fm`),
-      el('span', 'mt', [p.best && `${TIERS[p.best.tier]} ${findLabel(p.best)}`, `${fmt(p.points)} points`, `${p.animals} animals`, `day ${Math.floor(p.days) + 1}`].filter(Boolean).join(' · ')));
+      el('span', 'mt', [p.by && `${p.by}'s`, p.best && `${TIERS[p.best.tier]} ${findLabel(p.best)}`, `${fmt(p.points)} points`, `${p.animals} animals`, `day ${Math.floor(p.days) + 1}`].filter(Boolean).join(' · ')));
     if (p.best) btn.querySelector('.mt').style.color = TIER_COLOR[p.best.tier];
     btn.addEventListener('click', () => visitPond(p.id));
     li.append(btn);

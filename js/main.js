@@ -185,7 +185,7 @@ function spawn(kind, x, y, how = 'founder') {
 function buyAnimal(kind, enh = [], ancient = null, grade = 0) {
   const price = Math.round(spawnPrice(kind, enh) * GRADE_PRICE[grade]); // a guaranteed grade costs more
   if (world.creatures.length >= world.maxPop + 60) { showTicker('The pond is full: no room for more'); return false; }
-  if (!spendEssence(world, price)) { notEnough(price, 'essence'); return false; }
+  if (!spendEssence(world, price, 'life')) { notEnough(price, 'essence'); return false; }
   const [x, y] = openSpot();
   const group = SPECIES[kind].spawn(world, x, y);
   const p = settleChance(world, kind, enh.includes('hardy') ? ENHANCE.hardy.settle : 0);
@@ -803,11 +803,14 @@ function build(kind, x, y) {
   if (world.game.pearls < pearls) { notEnough(pearls, 'pearls'); return; }
   if ((world.game.essence || 0) < essence) { notEnough(essence, 'essence'); return; }
   if (def.corruption && (world.game.corruption || 0) < def.corruption) { notEnough(def.corruption, 'corruption'); return; }
-  if (def.corruption) spendCorruption(world, def.corruption);
-  spend(world, pearls);
-  spendEssence(world, essence);
+  if (def.corruption) spendCorruption(world, def.corruption, 'build');
+  spend(world, pearls, 'build');
+  spendEssence(world, essence, 'build');
   floatAward(x, y, `−${pearls}`, 'spend');
   const made = makeStructure(kind, world, x, y);
+  made.worth = pearls + essence * WORTH.essence + (def.corruption || 0) * WORTH.corruption; // (off the ledger again if it's taken down)
+  const back = Math.round(made.worth * 0.1 * difficulty(world).points * sizeFairness(world));
+  if (back > 0) setTimeout(() => floatAward(x, y - 8, `+${back}`), 450);
   if (kind === 'island' || kind === 'ship') made.deep = Math.round(deep * 100) / 100;
   growWreck(made);
   startBuildAnim(made); // it arrives in its own way, then settles into the floor
@@ -826,6 +829,7 @@ function demolish(s) {
     setHatchery(false);
   }
   world.structures.splice(world.structures.indexOf(s), 1);
+  divest(world, 'build', s.worth || def.pearls);
   world.game.pearls += Math.round(def.pearls / 2);
   world.gameDirty = true;
   structuresChanged(!!def.shore);
@@ -844,7 +848,7 @@ function useTool(x, y) {
   if (tool.food && world.food.filter((f) => f.fed).length >= 120) return;
   if (!tool.place && !tool.food) return;
   if (tool.deepMin && depthAt(world, x, y) < tool.deepMin) { showTicker(`${tool.label} only grows in deep water`); return; }
-  if (!spend(world, price)) { notEnough(price); return; }
+  if (!spend(world, price, tool.food ? null : 'plants')) { notEnough(price); return; }
   if (price) floatAward(x, y, `−${price}`, 'spend');
   noteToolUse(world.tool);
   if (tool.place) tool.place(x, y);
@@ -1498,7 +1502,7 @@ function crossTo(side) {
     updateLink();
     logEvent(world, 'You walked back along the beach, home to your own pond', null, { cat: 'pond', pri: 1 });
   } else {
-    $('observe-name').textContent = B.id;
+    $('observe-name').textContent = B.info && B.info.by ? `${B.id} · ${B.info.by}'s pond` : B.id;
     $('observe-bar').hidden = false;
     history.replaceState(null, '', `/${B.id}?observe=1`);
     logEvent(world, `You walked along the beach into ${B.id}, someone else's pond. Look around; nothing here is yours to touch`, null, { cat: 'pond', pri: 2 });
@@ -1547,7 +1551,7 @@ function edgeHints() {
     el.classList.toggle('vertical', !ax);
     const info = B.info || {};
     el.querySelector('b').textContent = B.home ? 'your pond' : B.id;
-    el.querySelector('span').textContent = B.home ? 'drag on past the end to walk home' : `${(info.depth || 1).toLocaleString()} fm · ${HABITATS[info.habitat] || ''} · drag on past the end to walk over`;
+    el.querySelector('span').textContent = B.home ? 'drag on past the end to walk home' : `${info.by ? `${info.by}'s pond · ` : ''}${(info.depth || 1).toLocaleString()} fm · ${HABITATS[info.habitat] || ''} · drag on past the end to walk over`;
     el.classList.toggle('near', ends[dir]);
     if (ends[dir]) ensureBeyond(dir); // near the end: draw what's beyond it
   }
@@ -1970,6 +1974,7 @@ const IS_BOT = /bot|crawl|spider|slurp|lighthouse|pagespeed|preview|facebookexte
 
 // Every pond gets its own short link a few seconds after it opens, and the
 // server's copy behind it is kept up to date from then on.
+let syncWarned = false;
 async function syncPond(force = false) {
   if (syncing || world.noSave || !world.raster || !world.game || !Net.base) return false;
   if (!world.link && IS_BOT && !force) return false;
@@ -1980,8 +1985,13 @@ async function syncPond(force = false) {
     saveNow();
     if (!had || finds) refreshBoard();
     if (!had) logEvent(world, `This pond's link is ${location.host}/${world.link.id}: the address bar always opens it, as it grows`, null, { cat: 'pond', pri: 1 });
+    if (!had && Account.user) claimLocalPonds().then(renderAccount);
     return true;
-  } catch {
+  } catch (e) {
+    if (e && e.status === 403 && world.link && !world.link.key && !syncWarned) {
+      syncWarned = true;
+      showTicker('This pond is kept in your account: sign in again (Your ponds) to keep it in sync');
+    }
     return false;
   } finally {
     syncing = false;
@@ -2033,21 +2043,29 @@ function renderPondList() {
     seed: world.seed, habitat: world.opts.habitat, days: world.days, current: true, points: world.game.points, link: world.link && world.link.id,
     animals: world.creatures.filter((c) => c.life).length, rares: world.creatures.filter((c) => c.life && c.life.traits.length).length,
   };
-  $('pond-list').replaceChildren(...[here, ...list].map((s) => {
+  const local = new Set([here, ...list].map((s) => s.link).filter(Boolean));
+  const kept = Account.ponds.filter((p) => !local.has(p.id)).map((p) => ({
+    seed: p.id, habitat: p.habitat, days: p.days || 0, animals: p.animals || 0, rares: 0, depth: p.depth, savedAt: p.updated, link: p.id, remote: true,
+  }));
+  renderAccount();
+  $('pond-list').replaceChildren(...[here, ...list, ...kept].map((s) => {
     const li = document.createElement('li'), open = document.createElement('button'), name = document.createElement('b'), meta = document.createElement('span');
     li.className = s.current ? 'pond-item current' : 'pond-item';
     open.type = 'button';
     open.className = 'pond-open';
     name.textContent = s.seed;
     meta.textContent = [HABITATS[s.habitat] || '', `day ${Math.floor(s.days) + 1}`, `${s.animals} animals`, s.rares && `✦ ${s.rares}`,
-      `${(s.current ? pondFathoms(world) : s.depth || 1).toLocaleString()} fathoms`, s.current ? 'open now' : ago(Date.now() - s.savedAt)].filter(Boolean).join(' · ');
+      `${(s.current ? pondFathoms(world) : s.depth || 1).toLocaleString()} fathoms`, s.current ? 'open now' : ago(Date.now() - s.savedAt),
+      s.remote ? 'in your account (not in this browser yet)' : s.link && accountPond(s.link) ? 'kept in your account' : ''].filter(Boolean).join(' · ');
+    if (s.remote) li.classList.add('remote');
     if (s.link) open.title = `pond.nz/${s.link}`;
     open.append(name, meta);
     open.title = s.current ? 'The pond you are watching' : `Open ${s.seed}`;
     if (s.current && s.link) open.title = `The pond you are watching · ${location.host || 'pond.nz'}/${s.link}`;
-    if (!s.current) open.addEventListener('click', () => openPond(s));
+    if (s.remote) open.addEventListener('click', () => { saveNow(); world.noSave = true; location.assign(`/${s.link}`); });
+    else if (!s.current) open.addEventListener('click', () => openPond(s));
     li.append(open);
-    if (!s.current) {
+    if (!s.current && !s.remote) {
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'icon';
@@ -2142,6 +2160,7 @@ function syncControls() {
 async function boot() {
   setTool('feed');
   initHud();
+  const meP = Net.base ? fetchMe() : Promise.resolve(Account); // (who's signed in, if anyone)
   const code = (/(?:^#|&)s=([A-Za-z0-9._-]+)/.exec(location.hash) || [])[1];
   const pathId = HOME === '/' && SHORT_ID.test(location.pathname.slice(1)) ? location.pathname.slice(1) : null;
   let linked = code ? await decodePond(code) : null, shortId = null, resume = null, adopt = false;
@@ -2154,19 +2173,22 @@ async function boot() {
     try { home = JSON.parse(sessionStorage.getItem('pond.home') || 'null'); } catch { /* none */ }
     if (got && !(home && home.id === pathId)) {
       resume = got.save;
-      observe = { id: pathId, updated: got.updated, home: home || { path: '/', id: null }, homeId: home && home.id, seed: got.save.seed };
+      observe = { id: pathId, updated: got.updated, home: home || { path: '/', id: null }, homeId: home && home.id, seed: got.save.seed, by: (got.meta && got.meta.by) || null };
     }
   }
   if (observe) { /* nothing more to decide */ } else if (!linked && pathId) {
     // Your own pond's link opens your save straight away; anyone else's comes from the server.
     const own = listSaves().find((s) => s.link === pathId), mine = own && loadSave(own.seed);
-    if (mine && mine.link && mine.link.id === pathId) resume = mine;
+    if (mine && mine.link && mine.link.id === pathId) resume = await newerFromAccount(mine, meP);
     else {
       const got = await fetchPond(pathId);
-      if (got && got.meta && got.meta.lock) {
+      if (got && got.mine) {
+        // Yours, kept in your account (from another browser): your own pond here too, not a copy.
+        resume = { ...got.save, link: { id: pathId, key: null } };
+      } else if (got && got.meta && got.meta.lock) {
         // Its owner lets visitors look only: watch it, don't take a copy.
         resume = got.save;
-        observe = { id: pathId, updated: got.updated, home: { path: '/', id: null }, homeId: null, seed: got.save.seed, locked: true };
+        observe = { id: pathId, updated: got.updated, home: { path: '/', id: null }, homeId: null, seed: got.save.seed, locked: true, by: got.meta.by || null };
         history.replaceState(null, '', `/${pathId}?observe=1`);
       } else if (got) { linked = got.save; shortId = pathId; }
     }
@@ -2189,10 +2211,10 @@ async function boot() {
   } else if (resume) {
     // your own short link, found above
   } else if (urlSeed) {
-    resume = loadSave(urlSeed);
+    resume = await newerFromAccount(loadSave(urlSeed), meP);
   } else {
     const last = listSaves()[0];
-    resume = last ? loadSave(last.seed) : null;
+    resume = last ? await newerFromAccount(loadSave(last.seed), meP) : null;
   }
   world.resume = resume;
   world.linkAdopt = adopt;
@@ -2212,7 +2234,7 @@ async function boot() {
   world.linkAdopt = false;
   if (edge === 'west' || edge === 'east') startAtEdge(edge);
   if (observe) {
-    $('observe-name').textContent = observe.id;
+    $('observe-name').textContent = observe.by ? `${observe.id} · ${observe.by}'s pond` : observe.id;
     $('observe-bar').hidden = false;
     logEvent(world, `You walked along the beach into ${observe.id}, someone else's pond. Look around; nothing here is yours to touch`, null, { cat: 'pond', pri: 2 });
   }
@@ -2226,6 +2248,15 @@ async function boot() {
   if (observe) { /* keep the address: it names the pond you're looking at */ } else if (HOME === '/') updateLink(); else history.replaceState(null, '', `${HOME}${new URL(shareUrl()).search}`);
   syncTimer = world.link ? 30 : adopt ? 2 : 8; // a pond without a link gets one in a few seconds
   requestAnimationFrame(frame);
+  // Back from signing in (or not); either way, your ponds go into your account.
+  const login = params.get('login');
+  meP.then(async () => {
+    renderAccount();
+    if (!Account.user) { if (login === 'failed') showTicker("Couldn't sign in with Discord just now. Try again in a moment"); return; }
+    const n = await claimLocalPonds();
+    renderAccount();
+    if (login === 'ok') showTicker(`Signed in as ${Account.user.name}${n ? `: ${n === 1 ? 'your pond is' : `${n} ponds are`} kept in your account now` : ''}`);
+  });
 }
 
 boot();

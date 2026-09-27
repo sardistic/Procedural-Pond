@@ -222,6 +222,7 @@ function updateErosion(world, dt) {
     if (next.expand && typeof expandWorld === 'function' && (world.expandPx || 0) < MAX_DEEP_PX - 8) expandWorld(next.expand, `${tierName(world, E.tier)} opens beyond the drop-off`);
     else logEvent(world, `The pond has deepened: ${tierName(world, E.tier).toLowerCase()}`, null, { cat: 'rare', pri: 3 });
     if (typeof narrateTier === 'function') narrateTier(world, E.tier);
+    if (typeof award === 'function') award(world, 150 * E.tier * E.tier, 'reaching the depths');
   }
 }
 
@@ -253,7 +254,7 @@ const etaLabel = (s) => (s == null ? '' : s < 90 ? 'about a minute' : s < 3600 ?
 const deepenCost = (world) => Math.round((12 + 10 * (world.erosion ? world.erosion.tier : 0)) * 1.15 ** ((world.erosion && world.erosion.bought) || 0));
 function deepenPond(world) {
   const cost = deepenCost(world);
-  if (!spendEssence(world, cost)) return false;
+  if (!spendEssence(world, cost, 'deepen')) return false;
   world.erosion.bought = (world.erosion.bought || 0) + 1;
   deepenBy(world, 1, 'essence');
   world.erosion.next = 0;

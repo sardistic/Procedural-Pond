@@ -168,6 +168,13 @@ const STORY = {
     ['THE STARS ARE RIGHT.'],
     ['the stars are right the stars are right the stars are right'],
   ],
+  wanderer: [
+    ['A {label} came in from along the beach, from {from}. It was not born here, and it knows it.'],
+    ['{name} came over from {from}. Everything moved away from it at once.'],
+    ['A stranger in the water: {name}, from {from}. It has killed before.'],
+    ['{name} has come from {from} to feed. The pond made room for it. The pond always makes room.'],
+    ['it came from {from} it came for us it came for us'],
+  ],
   bloodrain: [
     ['Red rain. Dust from somewhere far away, I expect.'],
     ['It rained red. The pond drank it all.'],
