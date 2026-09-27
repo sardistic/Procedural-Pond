@@ -354,7 +354,7 @@ function renderLineage() {
     for (const r of [...alive, ...gone].slice(0, 8)) {
       const tier = tierOf(r.t || []), li = el('li', isHere(r) ? '' : 'gone'), sw = el('i');
       sw.style.background = r.c;
-      const name = el('b', null, r.n), tr = el('span', 'tr', tier ? `${TIERS[tier]} ${r.t.join(' ')}` : '');
+      const name = el('b', null, r.n), tr = el('span', 'tr', tier ? `${TIERS[tier]} · ${traitText(r.t, 2)}` : '');
       if (tier) tr.style.color = TIER_COLOR[tier];
       const sp = r.w != null && WILD_SPECIES[r.w] ? `${WILD_SPECIES[r.w].name} · ` : '';
       const status = isHere(r) ? 'here' : r.d != null ? `left day ${Math.floor(r.d) + 1}${r.why ? ` (${r.why})` : ''}` : 'gone';
@@ -452,7 +452,7 @@ function renderCensus() {
         b.type = 'button';
         b.title = 'Follow';
         b.append(el('b', null, `${isSafe(c) ? '🔒 ' : ''}${c.life.paragon ? '♛ ' : ''}${c.life.name}`), el('span', 'sub', `${d.label === SPECIES[kind]?.label ? '' : `${d.label} · `}${d.stage} · gen ${d.gen} · ${ageLabel(d.age)} · ${GRADES[gradeOf(c.life.genome)].toLowerCase()}`),
-          energyBar(d.energy), colored('span', 'mood', [d.traits.length && `✦ ${TIERS[d.tier]} ${d.traits.join(' ')}`, d.mood, comfortWord(d.comfort), d.fed && 'well fed'].filter(Boolean).join(' · ')));
+          energyBar(d.energy), colored('span', 'mood', [d.traits.length && `✦ ${TIERS[d.tier]}: ${traitText(d.traits, 3)}`, d.mood, comfortWord(d.comfort), d.fed && 'well fed'].filter(Boolean).join(' · ')));
         b.addEventListener('click', () => { if (alive(c)) { follow(c); showCreature(c); } });
         b.append(el('span', 'val', `◆${recycleValue(c)}`));
         m.append(b);
@@ -834,6 +834,30 @@ function colorize(text) {
 }
 const colored = (tag, cls, text) => { const e = el(tag, cls); e.append(colorize(text)); return e; };
 const chip = (word, color) => { const e = el('span', 'tchip', word); e.style.color = color; e.style.borderColor = color; return e; };
+// Traits pile up as a line evolves (a marked, warped, parasite-born koi can carry a dozen), so lists
+// show the rarest first and only a few of them, counting the rest; the whole list is in the tooltip.
+const byRarity = (traits) => [...traits].sort((a, b) => (TRAIT_RARITY[b] || 0) - (TRAIT_RARITY[a] || 0));
+const TRAIT_WORDS = { darkloving: 'dark-loving', manyeyed: 'many-eyed', longcoiled: 'long-coiled', sporebearing: 'spore-bearing' };
+const traitName = (k) => TRAIT_WORDS[k] || k;
+function traitText(traits, max = 4) {
+  const t = byRarity(traits).map(traitName);
+  return t.length > max ? `${t.slice(0, max).join(' · ')} +${t.length - max}` : t.join(' · ');
+}
+// A trait's colour as text: the darkest (nocturnal, dark-loving…) are lifted toward white so they read on the panels.
+function traitColor(k) {
+  const c = CLASS_COLOR[k] || (RARE_OUTLINE[k] !== undefined ? hex6(RARE_OUTLINE[k]) : '#ffd166'), n = parseInt(c.slice(1), 16);
+  const rgb = [n >> 16, (n >> 8) & 255, n & 255], lum = (0.3 * rgb[0] + 0.59 * rgb[1] + 0.11 * rgb[2]) / 255;
+  if (lum >= 0.42) return c;
+  const k2 = Math.min(0.6, (0.42 - lum) * 1.6 + 0.15);
+  return `rgb(${rgb.map((v) => Math.round(v + (255 - v) * k2)).join(', ')})`;
+}
+function traitChips(traits, max = 5) {
+  const box = el('span', 'tchips'), t = byRarity(traits);
+  for (const k of t.slice(0, max)) box.append(chip(traitName(k), traitColor(k)));
+  if (t.length > max) box.append(chip(`+${t.length - max} more`, '#8fbcb8'));
+  box.title = t.map(traitName).join(', ');
+  return box;
+}
 
 // ---- spawn card: click a dock icon to buy that animal with essence --------------------------
 
@@ -950,7 +974,7 @@ function renderSpawnCard() {
     for (const [S, i] of sups) {
       const b = el('button', 'super');
       b.type = 'button';
-      b.append(colored('b', null, `♛ Paragon ${S.traits.join(' ')} ${SPECIES[kind].label.toLowerCase()}`.replace(/\s+/g, ' ')));
+      b.append(colored('b', null, `♛ Paragon ${byRarity(S.traits).slice(0, 3).join(' ')} ${SPECIES[kind].label.toLowerCase()}`.replace(/\s+/g, ' ')));
       b.addEventListener('click', () => { if (claimSuper(world, i)) renderSpawnCard(); });
       supers.append(b);
     }
@@ -1082,12 +1106,16 @@ function renderCreature() {
   parts.push(Object.assign(el('div', 'chips'), {}).appendChild(gradeChip).parentNode);
   if (d.traits.length || d.carries.length) {
     const t = el('div', 'chips');
-    for (const tr of d.traits) t.append(chip(tr, CLASS_COLOR[tr] || '#ffd166'));
+    for (const tr of byRarity(d.traits)) t.append(chip(traitName(tr), traitColor(tr)));
     for (const k of d.carries) { const ch = chip(`carries ${k}`, CLASS_COLOR[k] || '#8fbcb8'); ch.classList.add('carrier'); t.append(ch); }
     parts.push(t);
     // What its gifts, curses, quirks and ills do.
-    const notes = d.traits.filter((k) => TRAIT_NOTES[k]).map((k) => `${k}: ${TRAIT_NOTES[k]}`);
-    if (notes.length) parts.push(colored('p', 'note', notes.join(' · ')));
+    const noted = byRarity(d.traits).filter((k) => TRAIT_NOTES[k]);
+    if (noted.length) {
+      const ul = el('ul', 'tnotes');
+      for (const k of noted) { const li = el('li'), b = el('b', null, traitName(k)); b.style.color = traitColor(k); li.append(b, document.createTextNode(` ${TRAIT_NOTES[k]}`)); ul.append(li); }
+      parts.push(ul);
+    }
   }
   // The mark: its stage, how fast it's coming on, and what you can do about it.
   const st = eldStage(L);
@@ -1261,7 +1289,8 @@ function renderHatchery() {
     rel.title = 'Put it back in the pond';
     rel.addEventListener('click', () => { releaseStock(world, i); hatchUi.sig = ''; renderHatchery(); });
     const k = pen.get(rec), rest = k != null && pairResting(world, pairs[k]);
-    li.append(nm, colored('span', 'note', `${k != null ? `pen ${k + 1} · ` : 'waiting for a mate · '}${label} · gen ${rec.gen}${rec.traits.length ? ` · ${rec.traits.join(' ')}` : ''}${rest ? ' · resting (plenty in the pond)' : ''}`), rel);
+    li.append(nm, colored('span', 'note', `${k != null ? `pen ${k + 1} · ` : 'waiting for a mate · '}${label} · gen ${rec.gen}${rest ? ' · resting (plenty in the pond)' : ''}`), rel);
+    if (rec.traits.length) li.append(traitChips(rec.traits, 6));
     return li;
   });
   // Empty places: the pond's breeding lines to choose from, most valuable first.
@@ -1280,7 +1309,7 @@ function renderHatchery() {
       for (const a of row.animals) {
         const t = tierOf(a.life.traits), nm = el('b', null, a.life.name);
         if (t) nm.style.color = TIER_COLOR[t];
-        who.append(nm, colored('span', 'tr', a.life.traits.length ? a.life.traits.join(' ') : describe(a).label));
+        who.append(nm, a.life.traits.length ? traitChips(a.life.traits, 4) : el('span', 'tr', describe(a).label));
       }
       const val = el('span', 'val');
       val.append(el('i', 'essence'), document.createTextNode(String(row.animals.reduce((s, a) => s + recycleValue(a), 0))));
@@ -1519,7 +1548,7 @@ function renderEvo() {
 
 const scoreUi = { open: false, timer: 0, shown: '', boardAt: -1 };
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
-const findLabel = (f) => `${f.traits.join(' ')} ${f.species === 'wild' ? 'wild fish' : SINGULAR[f.species] || f.species}`;
+const findLabel = (f) => `${byRarity(f.traits).slice(0, 3).join(' ')}${f.traits.length > 3 ? ' …' : ''} ${f.species === 'wild' ? 'wild fish' : SINGULAR[f.species] || f.species}`;
 
 function setScore(open) {
   scoreUi.open = open;
@@ -1597,7 +1626,7 @@ function renderStoryBits() {
     sup.forEach((s, i) => {
       const b = el('button', 'super');
       b.type = 'button';
-      b.append(colored('b', null, `♛ Paragon ${s.traits.join(' ')} ${(SINGULAR[s.k] || s.k).toLowerCase()}`.replace(/\s+/g, ' ')));
+      b.append(colored('b', null, `♛ Paragon ${byRarity(s.traits).slice(0, 3).join(' ')} ${(SINGULAR[s.k] || s.k).toLowerCase()}`.replace(/\s+/g, ' ')));
       b.disabled = !!world.observe;
       b.addEventListener('click', () => { if (claimSuper(world, i)) { box.dataset.sig = ''; renderStoryBits(); } });
       list.append(b);

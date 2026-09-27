@@ -9,5 +9,6 @@ COPY index.html 404.html style.css robots.txt sitemap.xml manifest.webmanifest \
      favicon.ico icon-192.png icon-512.png apple-touch-icon.png og.png \
      /usr/share/nginx/html/
 COPY js/ /usr/share/nginx/html/js/
+COPY audio/ /usr/share/nginx/html/audio/
 
 EXPOSE 80

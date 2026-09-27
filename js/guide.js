@@ -291,6 +291,7 @@ function chapterStart() {
       { key: 's:touch', name: 'Look closer', text: 'Click an animal for its card (genes, traits, family, what it’s doing, and boosts to buy); drag one to move it. Click a plant or a structure to read about it and grow its traits. Point at almost anything for a tip.' },
       { key: 's:rail', name: 'The rail and the actions', text: 'Down the left: ☰ the menu, then your pinned actions, then ▸ for all of them (food, tools, plants, builds and creatures). Hover one and press + to pin it. NEW marks what just opened up.' },
       { key: 's:dock', name: 'The dock', text: 'The animals along the bottom: click one to spawn it for essence (its card lets you add boosts and a grade). Deep species join the dock once you unlock them in the depths. The number at the end is the census.' },
+      { key: 's:music', name: 'Sound and music', text: 'Sound (M) is a soundscape made live from what you’re looking at. Music (N) is off until you turn it on: quiet phrases of two pieces, cut up and cued by what happens in the pond (a birth, a hunt, dawn, something from the deep), faded in and out with long rests between, and muffled the deeper you look. Set its level in the menu’s Scene.' },
       { key: 's:depths', name: 'The depths', text: 'The little side view above the map: the beach, the floor and the deep. Click it for the depths: how far the pond has worn, what lives at each stage, and what’s ready to unlock.' },
     ] },
     { title: 'The water', note: 'Chosen from the menu; a pond regrows from day one if you change it.', entries: Object.entries(DIFFICULTY).map(([k, D]) => ({
@@ -548,7 +549,7 @@ function chapterPonds() {
 function chapterKeys() {
   const K = [['Click', 'feed (or use the picked action)'], ['Drag', 'move an animal, or pan the water'], ['Scroll, + / −', 'zoom'], ['Arrows / WASD', 'pan'], ['0', 'reset the view'], ['F', 'follow the animal under the pointer'],
     ['T', 'tour: the camera wanders between animals'], ['C', 'the census'], ['J', 'the journal'], ['P', 'the score and leaderboard'], ['L', 'change the light'], ['B', 'bones: the spines and legs'],
-    ['Space', 'pause'], ['M', 'sound'], ['H', 'the menu'], ['G', 'this guide'], ['Right-click / long-press', 'a plant’s traits']];
+    ['Space', 'pause'], ['M', 'sound'], ['N', 'music'], ['H', 'the menu'], ['G', 'this guide'], ['Right-click / long-press', 'a plant’s traits']];
   return [{ title: 'Controls', entries: K.map(([k, v]) => ({ key: `k:${k}`, name: k, text: gCap(v) })) }];
 }
 

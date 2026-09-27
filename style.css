@@ -940,16 +940,18 @@ body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, bo
 .hatch-prog .tidebar { height: 16px; }
 .hatch-prog .tidebar i { background: linear-gradient(90deg, #b8a676, #f8c050); }
 .hatch-stock, .hatch-ups { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.slot { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "nm b" "sub b"; align-items: center; gap: 1px 8px; padding: 4px 6px; border: 2px solid #1c4654; }
-.slot b { grid-area: nm; font-weight: 400; color: var(--text); }
-.slot .note { grid-area: sub; margin: 0; }
-.slot button { grid-area: b; padding: 3px 6px; box-shadow: none; }
+.slot { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "nm b" "sub b" "tr b"; align-items: center; gap: 1px 8px; padding: 4px 6px; border: 2px solid #1c4654; }
+.slot > b { grid-area: nm; font-weight: 400; color: var(--text); }
+.slot > .note { grid-area: sub; margin: 0; }
+.slot button { padding: 3px 6px; box-shadow: none; }
+.slot:not(.picker) > button { grid-area: b; } /* (only a pen's Release: the picker's pair buttons each take their own row) */
+.slot > .tchips { grid-area: tr; margin-top: 2px; }
 .slot.empty { border-style: dashed; }
 .slot.picker { display: grid; grid-template-columns: 1fr; grid-template-areas: none; gap: 4px; }
 .pair { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 8px; padding: 4px 6px; text-align: left; box-shadow: none; border-color: #1c4654; background: transparent; }
 .pair .ic { display: grid; place-items: center; }
 .pair img { image-rendering: pixelated; }
-.pair .who { display: grid; grid-template-columns: auto 1fr; gap: 1px 8px; align-items: baseline; }
+.pair .who { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: center; min-width: 0; }
 .pair .who b { margin: 0; font-weight: 400; color: var(--text); }
 .pair .tr { font-size: 9px; color: var(--muted); }
 .pair .val { display: flex; align-items: center; color: #c38bff; }
@@ -1158,3 +1160,12 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
   .g-nav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .g-nav .chip { flex: none; }
 }
+
+/* Trait lists: wrapping chips, rarest first, the rest counted. */
+.tchips { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; }
+.tchips .tchip { line-height: 1.3; }
+.tnotes { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; font-size: 9px; line-height: 1.4; color: var(--muted); }
+.tnotes b { font-weight: 400; }
+
+/* A lone last button in a row of three spans it. */
+.grid3 > .span3 { grid-column: 1 / -1; }

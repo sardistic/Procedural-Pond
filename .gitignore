@@ -7,6 +7,11 @@ node_modules/
 .DS_Store
 Thumbs.db
 
+# the soundtrack's sources (tools/music_chop.py cuts them into audio/music/)
+*.flac
+
 # local API database
 server/*.db
 server/*.db-*
+
+__pycache__/

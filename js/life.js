@@ -327,6 +327,7 @@ function logEvent(world, text, subject = null, opts = {}) {
   world.journal.unshift(e);
   if (world.journal.length > 150) world.journal.pop();
   world.journalDirty = true;
+  if (typeof musicFromLog === 'function') musicFromLog(world, e); // (the music, if it's on, may answer it)
   return e;
 }
 

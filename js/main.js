@@ -7,6 +7,7 @@ const OPTS_KEY = 'procedural-pond.opts';
 const DEFAULT_OPTS = {
   v: 4, world: 'auto', habitat: 'mixed', floor: 'sand', water: 'teal', light: 'cycle', dayLength: 180,
   current: 25, speed: 1, caustics: true, shadows: true, outlines: true, life: true, weather: true, sound: false,
+  music: false, musicLevel: 40,
 };
 // The pond is a fixed-size world, larger than the screen at the default zoom.
 // "Fit screen" makes it the window at 2x pixels, so zoom 2 fills the screen exactly.
@@ -664,6 +665,7 @@ function frame(now) {
   render();
   updateCard(dt);
   Sound.update(world, world.paused ? 0 : dt, visibleRect(), view.k);
+  if (typeof Music !== 'undefined') Music.update(dt);
   hudTick(dt);
   saveTimer -= dt;
   if (saveTimer <= 0) { saveTimer = 15; saveNow(); }
@@ -1725,7 +1727,7 @@ function updateCard(dt) {
   card.querySelector('.nm').textContent = d.name || d.label;
   card.querySelector('.sp').textContent = d.name ? d.label : '';
   const traits = card.querySelector('.traits');
-  traits.textContent = [d.traits.length && `✦ ${TIERS[d.tier]}: ${d.traits.join(' · ')}`, d.carries.length && `carries ${d.carries.join(', ')}`].filter(Boolean).join('  ·  ');
+  traits.textContent = [d.traits.length && `✦ ${TIERS[d.tier]}: ${traitText(d.traits, 5)}`, d.carries.length && `carries ${d.carries.join(', ')}`].filter(Boolean).join('  ·  ');
   traits.style.color = d.tier ? TIER_COLOR[d.tier] : '';
   card.querySelector('.meta').textContent = [d.stage, d.gen != null && `gen ${d.gen}`, age].filter(Boolean).join(' · ');
   card.querySelector('.mood').textContent = d.mood;
