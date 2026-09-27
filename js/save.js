@@ -100,7 +100,7 @@ function serializePond(world) {
     t: r2(world.t), days: world.days, moon0: world.moon0, tide0: world.tide0,
     weather: { rain: r2(world.weather.rain), target: r2(world.weather.target), next: r2(world.weather.next), blood: world.weather.blood || undefined },
     heavens: world.heavens || null,
-    slicks: (world.slicks || []).map((s) => ({ x: r2(s.x), y: r2(s.y), r: r2(s.r), oil: r2(s.oil), seed: s.seed })), tar: world.tar || null,
+    slicks: (world.slicks || []).map((s) => ({ x: r2(s.x), y: r2(s.y), r: r2(s.r), oil: r2(s.oil), seed: s.seed, t: s.fromTar ? 1 : undefined })), tar: world.tar || null,
     currentBase: world.current.base, records: world.records, spawnNight: world.spawnNight,
     targets: world.targets, eco: { ...ECO }, journalSeq: world.journalSeq,
     game: world.game, lineage: world.lineage ? [...world.lineage.values()] : [], link: world.link || null,
@@ -229,7 +229,7 @@ function restorePond(world, d) {
   if (typeof growWreck === 'function') for (const s of world.structures) growWreck(s); // (a wreck the size of how deep it went down)
   world.story = d.story || null;
   world.heavens = d.heavens || null;
-  world.slicks = (d.slicks || []).map((s) => ({ ...s }));
+  world.slicks = (d.slicks || []).map(({ t, ...s }) => (t ? { ...s, fromTar: true } : { ...s }));
   world.tar = d.tar || null;
   world.darkAvg = d.darkAvg ?? undefined;
   world.litter = (d.litter || []).filter((l) => LITTER[l.k]).map((l) => new Litter(l.k, l.x, l.y, l.b ?? world.days, l.hp, l.s));

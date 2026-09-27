@@ -64,12 +64,14 @@ if (typeof LIGHT_STRUCTS !== 'undefined') LIGHT_STRUCTS.rig = { r: 26, col: '#ff
 
 // ---- slicks ------------------------------------------------------------------------------------------
 // { x, y, r, oil (0..1 how thick), seed }
-function spillOil(world, x, y, amt) {
+// `fromTar`: the tar's own thin bleed, kept apart (the tar can't live on what it leaks).
+function spillOil(world, x, y, amt, fromTar = false) {
   const S = world.slicks || (world.slicks = []);
-  const near = S.find((s) => Math.hypot(s.x - x, s.y - y) < s.r);
+  const near = S.find((s) => Math.hypot(s.x - x, s.y - y) < s.r && !!s.fromTar === fromTar);
   if (near) { near.oil = Math.min(1, near.oil + amt); near.r = Math.min(46, near.r + amt * 6); return near; }
   if (S.length >= 14) return null;
-  const s = { x, y, r: 6 + amt * 8, oil: Math.min(1, 0.4 + amt), seed: randi(0, 9999) };
+  const s = { x, y, r: 6 + amt * 8, oil: Math.min(1, (fromTar ? 0.1 : 0.4) + amt), seed: randi(0, 9999) };
+  if (fromTar) s.fromTar = true;
   S.push(s);
   return s;
 }
@@ -145,7 +147,7 @@ function updateTar(world, dt) {
   T.t += dt;
   // It crawls toward the thickest oil, or whatever grows nearest.
   let goal = null, gd = Infinity;
-  for (const s of world.slicks || []) { const d = Math.hypot(s.x - T.x, s.y - T.y) / (0.5 + s.oil); if (d < gd) { gd = d; goal = s; } }
+  for (const s of world.slicks || []) { if (s.fromTar) continue; const d = Math.hypot(s.x - T.x, s.y - T.y) / (0.5 + s.oil); if (d < gd) { gd = d; goal = s; } }
   if (!goal) for (const p of world.plants) { const d = Math.hypot(p.x - T.x, p.y - T.y); if (d < gd) { gd = d; goal = p; } }
   if (goal) { const a = Math.atan2(goal.y - T.y, goal.x - T.x); T.heading += clamp(wrapAngle(a - T.heading), -dt * 0.8, dt * 0.8); }
   T.heading += (vnoise(T.t * 0.3, 7, 3) - 0.5) * dt;
@@ -155,7 +157,7 @@ function updateTar(world, dt) {
   if (world.shore && isDry(world, T.x, T.y)) T.heading += PI * dt; // (it keeps to the water)
   const R = T.size;
   // It swallows oil and grows; without it, it starves.
-  for (const s of world.slicks || []) if (Math.hypot(s.x - T.x, s.y - T.y) < R + s.r * 0.5) { const bite = Math.min(s.oil, dt * 0.2); s.oil -= bite; T.size = Math.min(30, T.size + bite * 6); }
+  for (const s of world.slicks || []) if (!s.fromTar && Math.hypot(s.x - T.x, s.y - T.y) < R + s.r * 0.5) { const bite = Math.min(s.oil, dt * 0.2); s.oil -= bite; T.size = Math.min(30, T.size + bite * 6); }
   world.slicks = (world.slicks || []).filter((s) => s.oil > 0.05);
   T.size -= dt * 0.03; // (starving, slowly)
   // Plants it passes over wither; animals near it sicken, and some are marked.
@@ -167,7 +169,7 @@ function updateTar(world, dt) {
     if (Math.random() < 0.01 && !o.life.genome.eld) { o.life.genome.eld = true; o.life.corruption = 0; o.life.traits = eldTraits(o.life); logEvent(world, `The tar got into ${o.life.name} the ${describe(o).label}: it has been marked`, o, { cat: 'rare', pri: 2 }); }
   });
   // And it bleeds new oil as it goes.
-  if (Math.random() < dt * 0.05 * (T.size / 10)) spillOil(world, T.x + rand(-R, R), T.y + rand(-R, R), 0.2);
+  if (Math.random() < dt * 0.05 * (T.size / 10)) spillOil(world, T.x + rand(-R, R), T.y + rand(-R, R), 0.15, true);
   if (typeof gainCorruption === 'function') gainCorruption(world, dt * 0.01 * T.size / 10, null, { quiet: true });
   if (T.size < 4) {
     world.tar = null;

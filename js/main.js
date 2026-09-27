@@ -291,6 +291,9 @@ function buildPond() {
   Object.assign(world, {
     creatures: [], food: [], eggs: [], effects: [], swarms: [], targets: {}, journal: [], glints: [], structures: [], hatchery: null, remains: [], fossils: [],
     litter: [], blight: null, riverW: 0, islandKey: null, scourKey: null, deepPlaced: 0, maxPopBonus: 0, pollution: 0,
+    // (A new pond starts clean of the last one's oil, sky, blood, fights, story and weather; a saved one restores its own.)
+    slicks: [], tar: null, heavens: null, bloodSpots: [], natureDay: null, story: null, darkAvg: null, meta: null,
+    weather: { rain: 0, target: 0, next: 30, gust: 0 },
     days: 0.4, clock: 0.4, spawning: 0, spawnNight: -1, records: null, moon: null,
     tide: { level: 0.5, range: 0, rising: true, flow: 0, surf: 0, wave: 0 },
   });
