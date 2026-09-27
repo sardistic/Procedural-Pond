@@ -638,7 +638,7 @@ output {
 
 /* ---- the pond bar (top centre): its name, points, pearls and rank; opens the score ---- */
 
-.score { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 2; }
+.score { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 7; } /* (its panel opens over the notices below it) */
 
 .score-btn {
   gap: 12px;
@@ -663,6 +663,7 @@ output {
 .score-btn .cor b { color: #5af0a8; }
 .price.cor { color: #5af0a8; }
 .sky-artifacts { display: grid; gap: 6px; margin-top: 8px; }
+.heavens-line { color: #ffb0d8; }
 .sky-artifacts h3 { margin: 0; }
 .artifact { display: grid; gap: 3px; padding: 6px; border: 2px solid #3a6a5e; background: linear-gradient(135deg, #0a1a14, #10202a); }
 .artifact b { font-weight: 400; color: #8af0c0; }
@@ -1074,3 +1075,11 @@ body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, bo
   .spawn-card { left: 12px !important; width: calc(100vw - 24px); }
   .creature { top: auto; bottom: 150px; left: 12px; right: 12px; width: auto; max-height: 50vh; }
 }
+
+/* ---- tool icons, and the quick bar of the most used (down the left while the menu is tucked away) ---- */
+.ticon { image-rendering: pixelated; flex: none; }
+#tools .ticon, #builds .ticon { margin-bottom: 1px; }
+.quickbar { position: fixed; top: 52px; left: 16px; z-index: 4; display: flex; flex-direction: column; gap: 6px; max-height: calc(100vh - 150px); overflow-y: auto; scrollbar-width: none; }
+.quickbar[hidden] { display: none; }
+.quickbar button { width: 40px; height: 40px; padding: 0; }
+body.observing .quickbar { display: none; }

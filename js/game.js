@@ -237,6 +237,7 @@ const COMFORT_R = 56;
 
 // What an animal likes nearby: plants and rocks, plus structures its species favours.
 function likesOf(c) {
+  if (typeof hasWarp === 'function' && hasWarp(c.life, 'darkloving')) return DARK_LIKES; // (it loves the dark things now)
   const kind = c.species === 'tadpole' ? 'frog' : c.species;
   const base = c.species === 'wild' ? (c.sp.habitat === 'salt' ? ['coral', 'anemone', 'weed'] : ['weed', 'eelgrass', 'lily']) : LIKES[c.species] || null;
   if (!base) return null; // drifters don't mind
@@ -253,7 +254,7 @@ function updateComfort(world) {
   spots.remains = world.remains || [];
   spots.river = world.river ? [world.river.spot] : [];
   world.likeSpots = spots;
-  const litter = world.litter && world.litter.length, blight = world.blight;
+  const litter = (world.litter && world.litter.length) || (world.slicks && world.slicks.length), blight = world.blight;
   const lights = world.darkness > 0.5 ? world.creatures.filter((c) => geneBuffs(c).light > 0.3) : [];
   const R2 = COMFORT_R * COMFORT_R;
   for (const c of world.creatures) {
@@ -286,6 +287,7 @@ const RHYTHM = {
   ray: 'dusk', snake: 'day', shark: 'always', sandshark: 'dusk', jelly: 'always', starfish: 'always', kraken: 'night', watcher: 'night',
 };
 function activity(world, c) {
+  if (c.life && c.life.warps) { if (c.life.warps.includes('tireless')) return 1; if (c.life.warps.includes('nocturnal')) return 0.35 + 0.8 * (world.darkness || 0); }
   const r = RHYTHM[c.species] || (typeof DEEP !== 'undefined' && DEEP[c.species] ? 'always' : c.species === 'wild' && c.sp.predator ? 'dusk' : 'day');
   const d = world.darkness || 0;
   if (r === 'always') return 1;

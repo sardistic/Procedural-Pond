@@ -130,11 +130,11 @@ function makeStructure(kind, world, x, y, seed = newSeed(), born = world.days) {
   return s;
 }
 
-const structureAt = (world, x, y) => (world.structures || []).find((s) => Math.hypot(s.x - x, s.y - y) < STRUCTURES[s.kind].size);
+const structureAt = (world, x, y) => (world.structures || []).find((s) => Math.hypot(s.x - x, s.y - y) < STRUCTURES[s.kind].size * (s.big || 1));
 
 // Where a structure can go: in water, away from the edges and from other structures.
 function canPlace(world, kind, x, y) {
-  const def = STRUCTURES[kind], m = def.size + 6;
+  const def = STRUCTURES[kind], big = kind === 'ship' && typeof wreckScale === 'function' ? wreckScale(depthAt(world, x, y)) : 1, m = def.size * big + 6;
   if (x < m || y < m || x > world.W - m || y > world.H - m) return 'too close to the edge';
   if (def.habitat && !fitsHabitat(world, def.habitat)) return `it needs ${def.habitat} water`;
   if (def.shore && !world.shore) return 'a pool has no floor to raise';
@@ -143,7 +143,7 @@ function canPlace(world, kind, x, y) {
   if (world.shore && shoreAt(world, x, y) > world.tide.level - 0.1) return 'too shallow here';
   for (const s of world.structures || []) {
     if (def.unique && s.kind === kind) return 'you already have one';
-    if (Math.hypot(s.x - x, s.y - y) < def.size + STRUCTURES[s.kind].size) return 'too close to another structure';
+    if (Math.hypot(s.x - x, s.y - y) < def.size * big + STRUCTURES[s.kind].size * (s.big || 1)) return 'too close to another structure';
   }
   return null;
 }
@@ -559,7 +559,7 @@ function updateStructures(world, dt) {
 // Each dawn: the ship's salvage, plants gathering around old things, and the stains spreading.
 function dawnStructures(world) {
   let coins = 0, ess = 0;
-  for (const s of world.structures || []) { coins += STRUCTURES[s.kind].dawnPearls || 0; ess += STRUCTURES[s.kind].dawnEssence || 0; }
+  for (const s of world.structures || []) { coins += (STRUCTURES[s.kind].dawnPearls || 0) * (s.big || 1) ** 2; ess += STRUCTURES[s.kind].dawnEssence || 0; } // (a bigger wreck has more to salvage)
   if (coins) {
     const got = award(world, coins, 'salvage', null, { flat: true });
     if (got) logEvent(world, `Coins turned up in the silt around the wreck: +${got} pearls`, null, { cat: 'pond', pri: 0 });
@@ -567,11 +567,12 @@ function dawnStructures(world) {
   if (ess) gainEssence(world, ess, 'the deep structures');
   sproutAround(world);
   seedPlants(world);
-  applyStains(world);
+  if (typeof queueStains === 'function') queueStains(world); else applyStains(world); // (in slices, on a big pond)
   dawnFinds(world);
   if (typeof dawnCoast === 'function') dawnCoast(world);
   if (typeof dawnAbyss === 'function') dawnAbyss(world);
   if (typeof dawnQuirks === 'function') dawnQuirks(world);
+  if (typeof dawnHeavens === 'function') dawnHeavens(world);
 }
 
 // Plants take root around structures, rocks and plants that have been there a while.
@@ -634,7 +635,7 @@ function updatePlantLife(world, dt) {
       const [rate] = PLANT_LIFE[p.make] || [0.4];
       p.age += step;
       // Litter nearby stunts it (hardy plants mind less).
-      const foul = world.litter && world.litter.length ? Math.min(0.8, pollutionAt(world, p.x, p.y) * 1.5 * (1 - 0.3 * ((p.tr && p.tr.hardy) || 0))) : 0;
+      const foul = (world.litter && world.litter.length) || (world.slicks && world.slicks.length) ? Math.min(0.8, pollutionAt(world, p.x, p.y) * 1.5 * (1 - 0.3 * ((p.tr && p.tr.hardy) || 0))) : 0;
       if (p.age < p.span) p.growth = Math.min(1, p.growth + rate * step * (1 - foul));
       else p.growth -= 0.4 * step; // dying back
       if (p.growth < 0.12) {
@@ -673,6 +674,7 @@ function seedPlants(world) {
 // The floor keeps an unstained copy (from bakeBackground); each day the stains are
 // painted over it again, a little wider and deeper than before.
 
+const NO_STAIN = new Set(['ship', 'island', 'gate', 'cradle', 'spire', 'ossuary', 'aerator', 'lantern']);
 const STAIN_FRESH = hexToInt('#34461c'), STAIN_SALT = hexToInt('#6e3a5e'), STAIN_DRY = hexToInt('#8a8448');
 
 // (With rect, only that part is repainted: the rest of the floor keeps its stains.)
@@ -683,22 +685,26 @@ function applyStains(world, rect = null) {
   if (!STAIN_BUF || STAIN_BUF.length !== W * H) STAIN_BUF = new Float32Array(W * H);
   const stain = STAIN_BUF, [qx0, qy0, qx1, qy1] = rect || [0, 0, W - 1, H - 1];
   if (rect) for (let y = qy0; y <= qy1; y++) stain.fill(0, qx0 + y * W, qx1 + 1 + y * W); else stain.fill(0);
+  // (Not around rocks or the wreck: a halo round them read as a glow. Living things and warm or
+  // mineral-rich structures stain the ground; stone and old timber don't.)
   const sources = [
-    ...(world.structures || []).map((s) => [s.x, s.y, world.days - s.born, STRUCTURES[s.kind].size + 10, s.seed]),
-    ...world.rocks.map((r) => [r.x, r.y, world.days - (r.born ?? -8), Math.max(r.a, r.b) + 4, r.seed]),
+    ...(world.structures || []).filter((s) => !NO_STAIN.has(s.kind)).map((s) => [s.x, s.y, world.days - s.born, STRUCTURES[s.kind].size + 10, s.seed]),
     ...world.plants.filter((p) => p.born != null).map((p) => [p.x, p.y, world.days - p.born, 5, p.seed]),
   ];
   for (const [sx, sy, age, base, seed] of sources) {
     if (age < 0.5) continue;
     const R = Math.min(base + 34, base * 0.4 + 5 + age * 1.6), depth = Math.min(0.5, 0.06 + age * 0.035);
     if (sx + R < qx0 || sx - R > qx1 || sy + R < qy0 || sy - R > qy1) continue;
-    for (let y = Math.max(qy0, Math.floor(sy - R)); y <= Math.min(qy1, Math.ceil(sy + R)); y++) {
-      for (let x = Math.max(qx0, Math.floor(sx - R)); x <= Math.min(qx1, Math.ceil(sx + R)); x++) {
-        const d = Math.hypot(x - sx, y - sy);
+    // (Every other pixel, written as 2x2: a stain is soft, and this is a quarter of the work.)
+    for (let y = Math.max(qy0, Math.floor(sy - R)) & ~1; y <= Math.min(qy1, Math.ceil(sy + R)); y += 2) {
+      for (let x = Math.max(qx0, Math.floor(sx - R)) & ~1; x <= Math.min(qx1, Math.ceil(sx + R)); x += 2) {
+        const d = Math.hypot(x + 0.5 - sx, y + 0.5 - sy);
         if (d >= R) continue;
         const v = (1 - d / R) * depth * (0.55 + 0.9 * vnoise(x * 0.14, y * 0.14, seed % 71));
         const p = x + y * W;
         if (v > stain[p]) stain[p] = v;
+        if (x + 1 < W && v > stain[p + 1]) stain[p + 1] = v;
+        if (y + 1 < H) { if (v > stain[p + W]) stain[p + W] = v; if (x + 1 < W && v > stain[p + W + 1]) stain[p + W + 1] = v; }
       }
     }
   }

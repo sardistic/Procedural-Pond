@@ -98,7 +98,9 @@ function serializePond(world) {
     opts: { habitat: world.opts.habitat, floor: world.opts.floor, water: world.opts.water, world: world.opts.world },
     size: [world.W, world.H], shoreSide: world.shoreSide,
     t: r2(world.t), days: world.days, moon0: world.moon0, tide0: world.tide0,
-    weather: { rain: r2(world.weather.rain), target: r2(world.weather.target), next: r2(world.weather.next) },
+    weather: { rain: r2(world.weather.rain), target: r2(world.weather.target), next: r2(world.weather.next), blood: world.weather.blood || undefined },
+    heavens: world.heavens || null,
+    slicks: (world.slicks || []).map((s) => ({ x: r2(s.x), y: r2(s.y), r: r2(s.r), oil: r2(s.oil), seed: s.seed })), tar: world.tar || null,
     currentBase: world.current.base, records: world.records, spawnNight: world.spawnNight,
     targets: world.targets, eco: { ...ECO }, journalSeq: world.journalSeq,
     game: world.game, lineage: world.lineage ? [...world.lineage.values()] : [], link: world.link || null,
@@ -128,7 +130,7 @@ function serializePond(world) {
         absorbed: c.life.absorbed || undefined, ascended: c.life.ascended || undefined, boosts: c.life.boosts || undefined,
         quirks: c.life.quirks && c.life.quirks.length ? c.life.quirks : undefined, ill: c.life.ill && c.life.ill.length ? c.life.ill : undefined,
         hunt: c.life.hunt || undefined, hunter: c.life.hunter || undefined, madCount: c.life.madCount || undefined,
-        safe: c.life.safe || undefined, paragon: c.life.paragon || undefined,
+        safe: c.life.safe || undefined, paragon: c.life.paragon || undefined, warps: c.life.warps && c.life.warps.length ? c.life.warps : undefined,
         lifespan: r2(c.life.lifespan), gen: c.life.gen, scale: c.life.scale, old: !!c.life.old, inbred: r2(c.life.inbred || 0),
         genome: c.life.genome, traits: c.life.traits, parents: c.life.parents,
       },
@@ -197,7 +199,11 @@ function restorePond(world, d) {
   // Structures first: islands shape the beach that makeShore builds.
   world.structures = (d.structures || []).filter((s) => STRUCTURES[s.k]).map((s) => Object.assign(makeStructure(s.k, world, s.x, s.y, s.s, s.born ?? world.days),
     s.lv ? { lv: s.lv } : {}, s.stack ? { stack: s.stack } : {}, s.branch ? { branch: s.branch, blv: s.blv || 1 } : {}, s.deep ? { deep: s.deep } : {}));
+  if (typeof growWreck === 'function') for (const s of world.structures) growWreck(s); // (a wreck the size of how deep it went down)
   world.story = d.story || null;
+  world.heavens = d.heavens || null;
+  world.slicks = (d.slicks || []).map((s) => ({ ...s }));
+  world.tar = d.tar || null;
   world.darkAvg = d.darkAvg ?? undefined;
   world.litter = (d.litter || []).filter((l) => LITTER[l.k]).map((l) => new Litter(l.k, l.x, l.y, l.b ?? world.days, l.hp, l.s));
   world.blight = d.blight || null;
@@ -247,7 +253,7 @@ function restorePond(world, d) {
       fed: r.L.fed || 0, comfort: r.L.comfort ?? 0.5, corruption: r.L.corruption || 0, bound: !!r.L.bound,
       absorbed: r.L.absorbed || 0, ascended: !!r.L.ascended, boosts: r.L.boosts || null,
       quirks: r.L.quirks || [], ill: r.L.ill || [], hunt: r.L.hunt || null, hunter: !!r.L.hunter, madCount: r.L.madCount || 0,
-      safe: !!r.L.safe, paragon: !!r.L.paragon,
+      safe: !!r.L.safe, paragon: !!r.L.paragon, warps: r.L.warps || null,
     });
     if (r.L.paragon && c.id) { OUTLINE[c.id] = RARE_OUTLINE.paragon; THICK[c.id] = 1; }
     c.life.traits = eldTraits(c.life);

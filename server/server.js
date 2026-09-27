@@ -34,7 +34,8 @@ const ID_RE = /^[a-z]{2,8}(?:-[a-z]{2,8}){3}$/;
 const SPECIES = new Set(['koi', 'tetra', 'eel', 'axolotl', 'turtle', 'crab', 'ray', 'frog', 'snake', 'snail', 'jelly', 'clown',
   'puffer', 'octopus', 'duck', 'shrimp', 'dragonfly', 'wild', 'starfish',
   'shark', 'sandshark', 'angler', 'gulper', 'vampire', 'isopod', 'catfish', 'cavefish', 'olm', 'kraken', 'leviathan', 'watcher',
-  'snailfish', 'frilled', 'boneeel', 'siphon', 'squid', 'deepone', 'sleeper']);
+  'snailfish', 'frilled', 'boneeel', 'siphon', 'squid', 'deepone', 'sleeper',
+  'trilobite', 'anomalocaris', 'ammonite', 'eurypterid', 'lungfish', 'dunkleosteus', 'coelacanth', 'placoderm', 'temnospondyl', 'plesiosaur', 'mosasaur', 'hyneria']);
 const TRAIT_RARITY = {
   pale: 1, piebald: 1, giant: 2, dwarf: 2, melanistic: 2, xanthic: 2, marbled: 2, axanthic: 3, albino: 3, leucistic: 3,
   shiny: 4, ghost: 4, glow: 4, chimera: 5, touched: 4, changed: 5, eldritch: 7,
@@ -133,9 +134,10 @@ function cleanFind(f) {
 function cleanMeta(m) {
   if (!m || typeof m !== 'object') m = {};
   return {
-    points: int(m.points, 0, 1e12), erosion: Math.max(0, Math.min(500, Number(m.erosion) || 0)), animals: int(m.animals, 0, 5000), species: int(m.species, 0, 200), rares: int(m.rares, 0, 5000),
+    points: int(m.points, 0, 1e12), erosion: Math.max(0, Math.min(1e7, Number(m.erosion) || 0)), animals: int(m.animals, 0, 5000), species: int(m.species, 0, 200), rares: int(m.rares, 0, 5000),
     gen: int(m.gen, 0, 100000), days: Math.max(0, Math.min(1e7, Math.round((Number(m.days) || 0) * 100) / 100)),
     habitat: HABITATS.has(m.habitat) ? m.habitat : 'mixed', board: m.board !== false, best: cleanFind(m.best),
+    lock: m.lock === true, // the owner lets visitors look only (no copies of their own)
     finds: Array.isArray(m.finds) ? m.finds.slice(0, 5).map(cleanFind).filter((f) => f && f.tier >= 2) : [],
   };
 }

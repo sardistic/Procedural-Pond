@@ -252,6 +252,13 @@ function packPond(world) {
   }
   w.u8(st.length);
   for (const s of st) w.u8(Math.round((s.deep || 0) * 100));
+  // And the warped: which warps, and how big they've grown.
+  const warped = saved.map((c, i) => [c, i]).filter(([c]) => c.life.warps && c.life.warps.length);
+  w.vu(warped.length);
+  for (const [c, i] of warped) {
+    const bits = c.life.warps.reduce((a, k) => a | (WARP_KEYS.includes(k) ? 1 << WARP_KEYS.indexOf(k) : 0), 0);
+    w.vu(i); w.u8(bits & 255); w.u8(bits >> 8); w.u8(Math.round(clamp(c.life.genome.size || 1, 0, 2.5) * 100));
+  }
   return w.bytes();
 }
 
@@ -411,6 +418,10 @@ function unpackV2(r, v = 2) {
                 for (let n = r.u8(); n > 0; n--) { const k = KIND_CODES[r.u8()], tr = []; for (let m = r.u8(); m > 0; m--) tr.push(TK[r.u8()]); if (k) sup.push({ k, traits: tr.filter(Boolean) }); }
                 if (s.game) s.game.supers = sup;
                 for (let n = r.u8(), i = 0; i < n; i++) { const v = r.u8(), t = s.structures[i]; if (t && v) t.deep = v / 100; }
+                if (r.i < r.b.length) {
+                  s.warps = new Map();
+                  for (let n = r.vu(); n > 0; n--) { const i = r.vu(), lo = r.u8(), hi = r.u8(), size = r.u8() / 100, bits = lo | (hi << 8); s.warps.set(i, { warps: WARP_KEYS.filter((k, j) => bits & (1 << j)), size }); }
+                }
               }
             }
           }
@@ -524,6 +535,8 @@ function linkToSave(s) {
 
   // Gifts and curses come only from the link's own list (links from before have none).
   s.creatures.forEach((c, i) => unpackG5(c.L.genome, (s.g5 && s.g5.get(i)) || 0));
+  // The warped keep their warps, and the size they grew to.
+  if (s.warps) s.creatures.forEach((c, i) => { const wp = s.warps.get(i); if (wp) { c.L.warps = wp.warps; if (wp.size) c.L.genome.size = wp.size; } });
   // Links since v2 don't carry population targets: the pond aims to keep what it has.
   const targets = s.targets || {};
   if (!s.targets) for (const c of s.creatures) targets[c.k] = (targets[c.k] || 0) + 1;

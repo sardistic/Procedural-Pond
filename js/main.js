@@ -109,6 +109,7 @@ function lighting() {
   }
   const rain = world.weather.rain;
   if (rain > 0.01) tint = tint.map((v, j) => v * (1 - rain * [0.24, 0.2, 0.1][j])); // overcast
+  if (typeof heavensLight === 'function') tint = heavensLight(world, tint); // eclipses, the blood moon, blood rain
   const lum = (tint[0] + tint[1] + tint[2]) / 3;
   return { tint: lum > 0.995 ? null : tint, darkness: clamp((0.92 - lum) / 0.48, 0, 1), caustics: lum > 0.8 && rain < 0.3 };
 }
@@ -117,7 +118,24 @@ let image, out;
 
 // (Re)create the world buffers. The world only changes size when the World
 // option changes; window resizes just move the view.
+// Heavy work (the dawn's reshaping and redrawing on a big pond) split into pieces and run a
+// slice at a time between frames, so nothing stalls; a new pond (layout) drops what's left.
+const JOBS = [];
+let jobGen = 0;
+function queueJob(fn) { const g = jobGen; JOBS.push(() => { if (g === jobGen) fn(); }); }
+function runJobs() { const t0 = performance.now(); while (JOBS.length && performance.now() - t0 < 12) JOBS.shift()(); }
+// A part of the floor redrawn in bands of rows (about 25 ms each on the biggest ponds).
+function queueBake(w, rect) {
+  const [x0, y0, x1, y1] = rect, rows = Math.max(16, Math.floor(110000 / Math.max(1, x1 - x0 + 1)));
+  for (let y = y0; y <= y1; y += rows) { const r = [x0, y, x1, Math.min(y1, y + rows - 1)]; queueJob(() => bakeBackground(w, r)); }
+}
+function queueStains(w) {
+  const rows = Math.max(32, Math.floor(500000 / Math.max(1, w.W)));
+  for (let y = 0; y < w.H; y += rows) { const r = [0, y, w.W - 1, Math.min(w.H - 1, y + rows - 1)]; queueJob(() => applyStains(w, r)); }
+}
+
 function layout(regen) {
+  jobGen++; JOBS.length = 0; // (whatever was queued was for the pond as it was)
   const [W, H] = worldDims();
   if (W !== world.W || H !== world.H) {
     world.W = W; world.H = H;
@@ -391,6 +409,9 @@ function update(dt) {
   updateQuirks(world, dt);
   updateBalance(world, dt);
   updateVertical(world, dt);
+  updateHeavens(world, dt);
+  updateNature(world, dt);
+  updatePollution(world, dt);
   updateDark(world, dt);
   updateStory(world, dt);
   updateZones(world, dt);
@@ -483,6 +504,8 @@ function render(full = false) {
   for (const s of world.structures) { if (!near(s.x, s.y, 60 + (s.R || STRUCTURES[s.kind].size || 20) * 3)) continue; if (s.anim) drawBuildAnim(r, s, t); else if (DRAW[s.kind]) DRAW[s.kind](r, s, t, world); }
   drawRiver(r, world, t);
   for (const l of world.litter) l.draw(r, t, world);
+  drawSlicks(r, world, t, rect);
+  drawTar(r, world, t);
   for (const rm of world.remains) rm.draw(r, t);
   for (const f of world.fossils) f.draw(r, t);
   for (const p of world.pads) if (near(p.x, p.y, 30)) drawGrown(r, p, t);
@@ -518,20 +541,22 @@ function render(full = false) {
   for (let y = rect[1]; y <= rect[3]; y++) wob.x[y] = Math.round(Math.sin(y * 0.19 + t * 1.9) * amp * (0.55 + 0.45 * Math.sin(t * 0.4 + y * 0.013)));
   for (let x = rect[0]; x <= rect[2]; x++) wob.y[x] = Math.round(Math.sin(x * 0.15 + t * 1.6) * amp * (0.55 + 0.45 * Math.sin(t * 0.35 + x * 0.011)));
   // A bloom turns the water green (a red tide, red); wind and surf raise a swell, bigger over the deep.
-  const bloom = world.blight && world.blight.k === 'bloom', hab = world.opts.habitat;
-  const fogColor = bloom ? mixColor(world.waterColor, BLOOM_TINT[hab] || BLOOM_TINT.mixed, 0.45) : world.waterColor;
-  const swell = clamp(0.3 + world.tide.surf * 0.35 + Math.max(0, world.weather.gust) * 0.45 + world.weather.rain * 0.15, 0, 1.2) * (hab === 'fresh' ? 0.7 : 1);
+  const bloom = world.blight && world.blight.k === 'bloom', hab = world.opts.habitat, glass = typeof isGlass === 'function' && isGlass(world);
+  let fogColor = bloom ? mixColor(world.waterColor, BLOOM_TINT[hab] || BLOOM_TINT.mixed, 0.45) : world.waterColor;
+  if (typeof bloodRain === 'function' && bloodRain(world)) fogColor = mixColor(fogColor, BLOOD_WATER, Math.min(0.5, world.weather.rain * 0.6));
+  // (A glass day: the surface still, and the water clear far down into the deep.)
+  const swell = glass ? 0.02 : clamp(0.3 + world.tide.surf * 0.35 + Math.max(0, world.weather.gust) * 0.45 + world.weather.rain * 0.15, 0, 1.2) * (hab === 'fresh' ? 0.7 : 1);
   r.compose(out, {
     bg: world.bg, bgLight: world.bgLight, caustic: world.caustic, t,
     outline: OUTLINE, emissive: EMISSIVE, fade: FADE, thick: THICK, anyThick, tint: light.tint,
     caustics: o.caustics && light.caustics && q < 2, causticT: water.caustic, shadows: o.shadows, outlines: o.outlines,
-    fog: { color: fogColor, amount: water.fog + (bloom ? 0.12 : 0) }, wob,
+    fog: { color: fogColor, amount: (water.fog + (bloom ? 0.12 : 0)) * (glass ? 0.3 : 1) }, wob, deepK: glass ? 0.5 : 1,
     shore: world.shore, bgDry: world.bgDry, tide: world.tide.level, surf: world.tide.surf, wave: world.tide.wave,
     depth: world.depth, deepColor: DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed,
     voidSkin: world.eldMarks && world.eldMarks.length || world.plants.some((p) => p.tr && p.tr.eld) ? VOID_SKIN : null,
-    swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6], clouds: q < 1 ? world.clouds : null, sky: skyReflection(light), skyK: 1 - world.weather.rain * 0.7,
+    swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6], clouds: q < 1 ? world.clouds : null, sky: typeof heavensSky === 'function' ? heavensSky(world, skyReflection(light)) : skyReflection(light), skyK: glass ? 1.4 : typeof heavenNow === 'function' && heavenNow(world, 'aurora') ? 1.6 : 1 - world.weather.rain * 0.7,
     lights: q < 2 ? buildLights(world, rect) : null, lightVis: light.darkness || 0, deepColor2: deepTint(world), trench: world.trench, trenchGlow: TRENCH_GLOW[branchOf(world)],
-    chop: q < 1 ? clamp(0.18 + Math.max(0, world.weather.gust) * 0.9 + world.tide.surf * 0.35, 0, 1.2) : 0, spindrift: q < 1 ? clamp((swell - 0.75) * 2.5, 0, 1) : 0,
+    chop: q < 1 && !glass ? clamp(0.18 + Math.max(0, world.weather.gust) * 0.9 + world.tide.surf * 0.35, 0, 1.2) : 0, spindrift: q < 1 ? clamp((swell - 0.75) * 2.5, 0, 1) : 0,
   }, rect);
   drawGlints();
   if (world.bones) drawBones();
@@ -547,6 +572,7 @@ function render(full = false) {
 }
 
 const CROWD_LOD = 140; // animals on screen before the crowd is drawn coarser
+const BLOOD_WATER = hexToInt('#5a0808');
 
 // The colour calm water reflects: a pale day sky, warm at dawn and dusk, deep blue at night.
 const SKY_DAY = hexToInt('#d8eaf4'), SKY_DUSK = hexToInt('#f0b890'), SKY_NIGHT = hexToInt('#2a3452');
@@ -605,6 +631,7 @@ function frame(now) {
   const dt = clamp((now - last) / 1000, 0, 0.05);
   last = now;
   if (!world.paused) update(dt * world.opts.speed);
+  runJobs();
   updateCamera(dt);
   updateGlide(dt);
   render();
@@ -674,7 +701,7 @@ for (const [kind, def] of Object.entries(STRUCTURES)) {
 // the view keeps looking at the same place.
 function expandWorld(frac, why) {
   const axisX = deepAxisX(world.shoreSide), [W0, H0] = baseSize(world);
-  const add = Math.round((axisX ? W0 : H0) * frac), [sx, sy] = deepShifts(world.shoreSide) ? (axisX ? [add, 0] : [0, add]) : [0, 0];
+  const add = Math.min(Math.round((axisX ? W0 : H0) * frac), MAX_DEEP_PX - (world.expandPx || 0)), [sx, sy] = deepShifts(world.shoreSide) ? (axisX ? [add, 0] : [0, add]) : [0, 0];
   const cx = (innerWidth / 2 - view.tx) / view.k + sx, cy = (innerHeight / 2 - view.ty) / view.k + sy;
   const d = serializePond(world);
   shiftSave(d, sx, sy);
@@ -768,10 +795,11 @@ function build(kind, x, y) {
     const base = world.structures.find((s) => s.kind === 'island' && Math.hypot(s.x - x, s.y - y) < islandRadius(world, s) * 1.2);
     if (base) { raiseIsland(world, base); return; }
   }
-  const def = STRUCTURES[kind], why = canPlace(world, kind, x, y), deep = kind === 'island' ? depthAt(world, x, y) : 0;
+  const def = STRUCTURES[kind], why = canPlace(world, kind, x, y), deep = kind === 'island' || kind === 'ship' ? depthAt(world, x, y) : 0;
   if (why) { showTicker(`Can't build a ${def.label.toLowerCase()} here: ${why}`); return; }
-  // An island out over the deep needs far more raised to reach the surface (and stands as a cliff).
-  const k = kind === 'island' ? islandDeepCost(deep) : 1, pearls = Math.round(def.pearls * k), essence = Math.round(def.essence * k);
+  // An island out over the deep needs far more raised to reach the surface (and stands as a cliff);
+  // a ship that goes down further out is a bigger ship, and dearer.
+  const k = kind === 'island' ? islandDeepCost(deep) : kind === 'ship' ? wreckCost(deep) : 1, pearls = Math.round(def.pearls * k), essence = Math.round(def.essence * k);
   if (world.game.pearls < pearls) { notEnough(pearls, 'pearls'); return; }
   if ((world.game.essence || 0) < essence) { notEnough(essence, 'essence'); return; }
   if (def.corruption && (world.game.corruption || 0) < def.corruption) { notEnough(def.corruption, 'corruption'); return; }
@@ -780,11 +808,12 @@ function build(kind, x, y) {
   spendEssence(world, essence);
   floatAward(x, y, `−${pearls}`, 'spend');
   const made = makeStructure(kind, world, x, y);
-  if (kind === 'island') made.deep = Math.round(deep * 100) / 100;
+  if (kind === 'island' || kind === 'ship') made.deep = Math.round(deep * 100) / 100;
+  growWreck(made);
   startBuildAnim(made); // it arrives in its own way, then settles into the floor
   world.structures.push(made);
   if (kind === 'hatchery' && !world.hatchery) world.hatchery = newHatchery();
-  logEvent(world, `You built ${withArticle(def.label.toLowerCase())}${k > 1.05 ? ` out over the deep (×${k.toFixed(1)})` : ''}: ${def.desc}`, null, { cat: 'pond', pri: 2 });
+  logEvent(world, kind === 'ship' ? `You sank ${wreckName(made)}${k > 1.05 ? ` out over the deep (×${k.toFixed(1)})` : ''}: ${def.desc}` : `You built ${withArticle(def.label.toLowerCase())}${k > 1.05 ? ` out over the deep (×${k.toFixed(1)})` : ''}: ${def.desc}`, null, { cat: 'pond', pri: 2 });
   if (def.tier >= 3 && typeof narrate === 'function') narrate(world, 'build', { what: capFirst(withArticle(def.label.toLowerCase())) });
   if (kind === 'hatchery') setHatchery(true);
 }
@@ -811,12 +840,13 @@ function likedByText(kind) {
 
 function useTool(x, y) {
   const tool = TOOLS[world.tool], price = tool.price || 0;
-  if (tool.build) { build(tool.build, x, y); return; }
+  if (tool.build) { build(tool.build, x, y); noteToolUse(world.tool); return; }
   if (tool.food && world.food.filter((f) => f.fed).length >= 120) return;
   if (!tool.place && !tool.food) return;
   if (tool.deepMin && depthAt(world, x, y) < tool.deepMin) { showTicker(`${tool.label} only grows in deep water`); return; }
   if (!spend(world, price)) { notEnough(price); return; }
   if (price) floatAward(x, y, `−${price}`, 'spend');
+  noteToolUse(world.tool);
   if (tool.place) tool.place(x, y);
   else {
     const spread = tool.spread || 3;
@@ -975,7 +1005,7 @@ canvas.addEventListener('pointerdown', (e) => {
     view.reach = viewAtEnds();
     return;
   }
-  if (world.tool === 'net') { removeAt(x, y); return; }
+  if (world.tool === 'net') { removeAt(x, y); noteToolUse('net'); return; }
   const c = creatureAt(x, y);
   if (c) {
     world.grab = c;
@@ -1058,9 +1088,10 @@ function pointerEnd(e) {
     // another structure tells you about it.
     const st = world.tool !== 'net' && structureAt(world, press.x, press.y);
     const rm = world.tool !== 'net' && remainsAt(world, press.x, press.y), fo = world.tool !== 'net' && fossilAt(world, press.x, press.y);
-    const li = litterAt(world, press.x, press.y);
+    const li = litterAt(world, press.x, press.y), sl = !li && slickAt(world, press.x, press.y);
     if (world.observe) { /* someone else's pond: look only */ }
     else if (li) haulLitter(world, li);
+    else if (sl && world.tool !== 'net' && !creatureAt(press.x, press.y)) skimSlick(world, sl);
     else if (fo) collectFossil(world, fo);
     else if (rm) collectRemains(world, rm);
     else if (st && st.kind === 'hatchery') setHatchery(true);
@@ -1524,7 +1555,7 @@ function edgeHints() {
 }
 // Keep the tabs clear of the menu and any open card or panel: the west tab steps out beside
 // (or below) whatever covers it, the east tab beside (or above); where there's no room, it hides.
-const TAB_AVOID = ['hud', 'creature', 'object', 'spawn-card', 'score-panel', 'sky-panel', 'census', 'hatchery', 'evo', 'log-panel', 'nb-ask', 'lineage'];
+const TAB_AVOID = ['hud', 'quickbar', 'creature', 'object', 'spawn-card', 'score-panel', 'sky-panel', 'census', 'hatchery', 'evo', 'log-panel', 'nb-ask', 'lineage'];
 function placeEdgeTabs() {
   // (Fixed panels have no offsetParent, so shown is judged by the hidden flag and a real size.)
   const boxes = TAB_AVOID.map((id) => document.getElementById(id)).filter((e) => e && !e.hidden && !e.classList.contains('hidden')).map((e) => e.getBoundingClientRect()).filter((r) => r.width > 2 && r.height > 2);
@@ -1679,7 +1710,7 @@ function updateCard(dt) {
 function setTool(name) {
   world.tool = name;
   const t = TOOLS[name];
-  for (const b of [...$('tools').children, ...$('builds').children]) b.setAttribute('aria-pressed', b.dataset.tool === name);
+  for (const b of [...$('tools').children, ...$('builds').children, ...$('quickbar').children]) b.setAttribute('aria-pressed', b.dataset.tool === name);
   $('hint').textContent = t.hint || [`click to place ${t.label.toLowerCase()} (${t.price} pearls)`, t.likedBy && likedByText(t.likedBy)].filter(Boolean).join(' · ');
 }
 for (const [name, t] of Object.entries(TOOLS)) {
@@ -1692,8 +1723,66 @@ for (const [name, t] of Object.entries(TOOLS)) {
   if (t.essence) b.append(Object.assign(document.createElement('b'), { className: 'price ess', textContent: fmtShort(t.essence) }));
   if (t.corruption) b.append(Object.assign(document.createElement('b'), { className: 'price cor', textContent: fmtShort(t.corruption) }));
   if (t.build) b.title += ` · ${STRUCTURES[t.build].desc}`;
-  b.addEventListener('click', () => setTool(name));
+  b.addEventListener('click', () => { setTool(name); noteToolUse(name); });
+  b.prepend(Object.assign(document.createElement('img'), { className: 'ticon', alt: '', width: 28, height: 28 }));
   $(t.build ? 'builds' : 'tools').append(b);
+}
+
+// ---- tool icons, and the quick bar ------------------------------------------------------------
+// Each tool's icon is drawn a few at a time once the pond is up (so the start isn't held up).
+function setToolIcon(name) {
+  const ic = toolIcon(name);
+  for (const img of document.querySelectorAll(`#tools [data-tool="${name}"] .ticon, #builds [data-tool="${name}"] .ticon, #quickbar [data-tool="${name}"] .ticon`)) {
+    if (!ic) { img.remove(); continue; }
+    const k = clamp(Math.floor(30 / Math.max(ic.nw, ic.nh)), 1, 4);
+    img.src = ic.src; img.width = ic.nw * k; img.height = ic.nh * k;
+  }
+}
+{
+  const names = Object.keys(TOOLS);
+  let i = 0;
+  const step = () => {
+    const t0 = performance.now();
+    while (i < names.length && performance.now() - t0 < 6) setToolIcon(names[i++]);
+    if (i < names.length) setTimeout(step, 40); else renderQuickBar();
+  };
+  setTimeout(step, 600);
+}
+// What gets used most (kept in this browser only): a pick counts, and so does each use.
+const USE_KEY = 'pond.toolUse';
+let toolUse = {};
+try { toolUse = JSON.parse(localStorage.getItem(USE_KEY) || '{}') || {}; } catch { toolUse = {}; }
+let useSaveT = 0;
+function noteToolUse(name) {
+  toolUse[name] = (toolUse[name] || 0) + 1;
+  clearTimeout(useSaveT);
+  useSaveT = setTimeout(() => { try { localStorage.setItem(USE_KEY, JSON.stringify(toolUse)); } catch { /* storage unavailable */ } }, 1000);
+}
+// With the menu tucked away, the most used tools (that this pond can use) stand in a bar down the left.
+const QUICK_N = 8, QUICK_DEFAULT = ['feed', 'net', 'spirulina', 'weed', 'rock', 'brine'];
+function renderQuickBar() {
+  const bar = $('quickbar');
+  bar.hidden = !hud.classList.contains('hidden') || !!world.observe;
+  if (bar.hidden) return;
+  const usable = (n) => { const b = document.querySelector(`#tools [data-tool="${n}"], #builds [data-tool="${n}"]`); return b && !b.hidden; };
+  const pick = Object.keys(toolUse).filter((n) => TOOLS[n] && usable(n)).sort((a, b) => toolUse[b] - toolUse[a]).slice(0, QUICK_N);
+  for (const n of QUICK_DEFAULT) if (pick.length < QUICK_N && !pick.includes(n) && usable(n)) pick.push(n);
+  if (world.tool && !pick.includes(world.tool) && usable(world.tool)) pick[Math.min(pick.length, QUICK_N - 1)] = world.tool; // (what's in hand stays in reach)
+  const sig = pick.join();
+  if (bar.dataset.sig !== sig) {
+    bar.dataset.sig = sig;
+    bar.replaceChildren(...pick.map((n) => {
+      const t = TOOLS[n], b = document.createElement('button');
+      b.type = 'button'; b.dataset.tool = n;
+      b.append(Object.assign(document.createElement('img'), { className: 'ticon', alt: '', width: 28, height: 28 }));
+      b.setAttribute('aria-label', t.label);
+      b.title = [t.label, t.price ? `${t.price} pearls${t.essence ? ` and ${t.essence} essence` : ''}` : t.price === 0 ? 'free' : '', t.build ? STRUCTURES[t.build].desc : t.hint].filter(Boolean).join('\n');
+      b.addEventListener('click', () => { setTool(n); noteToolUse(n); });
+      return b;
+    }));
+    for (const n of pick) setToolIcon(n);
+  }
+  for (const b of bar.children) b.setAttribute('aria-pressed', b.dataset.tool === world.tool);
 }
 
 // Only offer animals and plants that live in this habitat.
@@ -1716,6 +1805,7 @@ function refreshSpeciesButtons() {
     b.title = `${HABITATS[b.dataset.hab]} water: ${D.label.toLowerCase()} (${D.note}). Points ×${D.points}.`;
   }
   if (MINI_LAYERS[miniLayer][0] === 'water' && world.opts.habitat !== 'mixed') setMiniLayer(0);
+  if (typeof renderQuickBar === 'function' && $('quickbar')) renderQuickBar();
 }
 
 function fillSelect(el, entries, value) {
@@ -1795,7 +1885,7 @@ const cycleLight = () => setLight(LIGHT_ORDER[(LIGHT_ORDER.indexOf(world.opts.li
 
 function setBones(on) { world.bones = on; $('bones').setAttribute('aria-pressed', on); }
 function setPaused(on) { world.paused = on; $('pause').setAttribute('aria-pressed', on); }
-function setHud(show) { hud.classList.toggle('hidden', !show); $('show-hud').hidden = show; placeEdgeTabs(); }
+function setHud(show) { hud.classList.toggle('hidden', !show); $('show-hud').hidden = show; renderQuickBar(); placeEdgeTabs(); }
 
 $('bones').addEventListener('click', () => setBones(!world.bones));
 $('pause').addEventListener('click', () => setPaused(!world.paused));
@@ -2073,7 +2163,12 @@ async function boot() {
     if (mine && mine.link && mine.link.id === pathId) resume = mine;
     else {
       const got = await fetchPond(pathId);
-      if (got) { linked = got.save; shortId = pathId; }
+      if (got && got.meta && got.meta.lock) {
+        // Its owner lets visitors look only: watch it, don't take a copy.
+        resume = got.save;
+        observe = { id: pathId, updated: got.updated, home: { path: '/', id: null }, homeId: null, seed: got.save.seed, locked: true };
+        history.replaceState(null, '', `/${pathId}?observe=1`);
+      } else if (got) { linked = got.save; shortId = pathId; }
     }
   }
   if (linked) {

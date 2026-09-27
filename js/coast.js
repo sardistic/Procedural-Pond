@@ -300,7 +300,7 @@ function litterPressure(world) {
 
 // How spoiled the water is here (0 clean .. 1 fouled).
 function pollutionAt(world, x, y) {
-  let v = 0;
+  let v = typeof oilAt === 'function' ? oilAt(world, x, y) : 0; // (oil from the rigs, too)
   for (const l of world.litter || []) {
     const L = LITTER[l.k], d = Math.hypot(l.x - x, l.y - y);
     if (d < L.r) v += L.harm * 3 * (1 - d / L.r);
@@ -465,7 +465,7 @@ function updateCoast(world, dt) {
 // Each dawn: blights may come; the river and islands are reshaped; the deep is counted.
 function dawnCoast(world) {
   if (!world.blight && world.opts.life !== false && Math.random() < blightRisk(world)) startBlight(world);
-  let reshape = false;
+  const islandRects = []; // (islands swell and shrink a little day to day: only round them is redrawn)
   if (world.shore) {
     const w = riverWidth(world), R = riverState(world), was = world.riverAt;
     if (world.riverW && w > world.riverW + 0.25) logEvent(world, `The river has cut its channel wider${w > (world.riverW || 0) + 1 ? ' and deeper' : ''}`, null, { cat: 'pond', pri: 1, key: 'river-wide' });
@@ -482,20 +482,27 @@ function dawnCoast(world) {
     if (islands.length && world.islandKey != null && key !== world.islandKey) {
       const grew = islands.reduce((a, s) => a + islandRadius(world, s) - (s.lastR || s.R), 0) > 0;
       logEvent(world, grew ? 'Calm weeks have built the island out a little' : 'The sea has taken some of the island', null, { cat: 'pond', pri: 1, key: 'island-size' });
-      reshape = true;
+      for (const s of islands) {
+        const R = Math.max(islandRadius(world, s), s.lastR || s.R) * 1.45 + 8;
+        islandRects.push([Math.max(0, Math.floor(s.x - R)), Math.max(0, Math.floor(s.y - R)), Math.min(world.W - 1, Math.ceil(s.x + R)), Math.min(world.H - 1, Math.ceil(s.y + R))]);
+      }
     }
     for (const s of islands) s.lastR = islandRadius(world, s);
     world.islandKey = key;
   }
-  // Scour around what's been placed on the floor changes the depths slowly.
-  const sk = scourKey(world);
-  if (sk !== world.scourKey) { world.scourKey = sk; reshape = true; }
-  if (reshape && typeof structuresChanged === 'function') structuresChanged(true);
-  else if (world.beachDaily && world.shore) {
-    // Only the beach and the water off it change day to day: reshape it, redraw just that strip.
-    makeShore(world);
-    bakeBackground(world, beachRect(world));
-    if (typeof paintMinimapBackground === 'function') paintMinimapBackground();
+  // Scour around what's been placed on the floor changes the depths slowly (only its patches are redone).
+  const sk = scourKey(world), scourMoved = sk !== world.scourKey;
+  world.scourKey = sk;
+  if ((world.beachDaily && world.shore) || scourMoved || islandRects.length) {
+    // Reshape the beach and the scour's patches, and redraw just those (a big pond needn't redraw it all).
+    world.depthDirty = [];
+    if (world.shore) makeShore(world); else buildDepth(world);
+    const dirty = world.depthDirty;
+    world.depthDirty = null;
+    if (!dirty) bakeBackground(world);
+    else for (const r of mergeRects([...dirty, ...islandRects, ...(world.shore ? [beachRect(world)] : [])])) { if (typeof queueBake === 'function') queueBake(world, r); else bakeBackground(world, r); }
+    if (typeof queueJob === 'function') queueJob(() => { if (typeof paintMinimapBackground === 'function') paintMinimapBackground(); });
+    else if (typeof paintMinimapBackground === 'function') paintMinimapBackground();
   }
   world.beachDaily = false;
   dawnDeep(world);
@@ -538,28 +545,35 @@ const scourNoise = (x, y) => {
   if (!SCOUR_NOISE) { SCOUR_NOISE = new Float32Array(128 * 128); for (let j = 0; j < 128; j++) for (let i = 0; i < 128; i++) SCOUR_NOISE[i + j * 128] = fbm(i * 0.1, j * 0.1, 61); }
   return SCOUR_NOISE[(x & 127) + ((y & 127) << 7)];
 };
-const scourKey = (world) => scourSources(world).map((s) => `${Math.round(s.x)},${Math.round(s.y)},${s.k}`).join(';');
+const scourKeyOf = (src) => src.map((s) => `${Math.round(s.x)},${Math.round(s.y)},${s.k}`).join(';');
+const scourKey = (world) => scourKeyOf(scourSources(world));
 
-function applyScour(world, depth) {
-  const src = scourSources(world);
+function applyScour(world, depth, src = scourSources(world), rect = null) {
   if (!src.length) return depth;
   const { W, H } = world, N = world.shoreN || [0, 1], maxD = Math.max(0.35, (DEPTH_TIERS[(world.erosion && world.erosion.tier) || 0].depth || 0.35)) * 255;
   depth = depth || new Uint8Array(W * H);
   const base = world.shoreBase || world.shore;
   // (Worked out on every other pixel and written as 2x2 blocks: a quarter of the work.)
-  const set = (p, v, plinth) => {
-    for (const q of [p, p + 1, p + W, p + W + 1]) {
-      if (q >= depth.length) continue;
-      if (plinth) depth[q] = Math.round(depth[q] * v); else if (v > depth[q]) depth[q] = v;
+  let qx0 = 0, qy0 = 0, qx1 = W - 1, qy1 = H - 1;
+  if (rect) [qx0, qy0, qx1, qy1] = rect;
+  const set = (x, y, v, plinth) => {
+    for (let j = y; j <= y + 1 && j <= qy1; j++) {
+      for (let i = x; i <= x + 1 && i <= qx1; i++) {
+        if (i < qx0 || j < qy0) continue;
+        const q = i + j * W;
+        if (plinth) depth[q] = Math.round(depth[q] * v); else if (v > depth[q]) depth[q] = v;
+      }
     }
   };
   // (Deep tiers scour harder, but a hollow stays a hollow: its size and depth are capped.)
   const cap = Math.min(maxD, 120);
   for (const s of src) {
     const kk = Math.min(1.3, s.k), R = 18 + 26 * kk, foot = 0.2 * (0.6 + 0.4 * s.sturdy); // what stands there is sturdier than the floor
-    const x0 = Math.max(0, Math.floor(s.x - R * 2)) & ~1, y0 = Math.max(0, Math.floor(s.y - R * 2)) & ~1;
-    for (let y = y0; y <= Math.min(H - 2, Math.ceil(s.y + R * 2)); y += 2) {
-      for (let x = x0; x <= Math.min(W - 2, Math.ceil(s.x + R * 2)); x += 2) {
+    if (s.x + R * 2 < qx0 || s.x - R * 2 > qx1 || s.y + R * 2 < qy0 || s.y - R * 2 > qy1) continue;
+    // (Aligned to the same 2x2 grid whether the whole pond or one patch is being done.)
+    const x0 = Math.max(qx0, Math.floor(s.x - R * 2)) & ~1, y0 = Math.max(qy0, Math.floor(s.y - R * 2)) & ~1;
+    for (let y = y0; y <= Math.min(H - 2, qy1, Math.ceil(s.y + R * 2)); y += 2) {
+      for (let x = x0; x <= Math.min(W - 2, qx1, Math.ceil(s.x + R * 2)); x += 2) {
         const dx = x + 0.5 - s.x, dy = y + 0.5 - s.y, toward = -(dx * N[0] + dy * N[1]); // + away from the beach
         const stretch = toward > 0 ? 2 : 1, a = toward / stretch, b = dx * N[1] - dy * N[0];
         const d = Math.hypot(a, b) / R;
@@ -568,9 +582,9 @@ function applyScour(world, depth) {
         if (base && base[p] > 20) continue; // (the bare beach: sand and the river come and go)
         // A plinth of harder ground stays under it; around it the floor is scoured into a hollow,
         // deepest just off it and trailing away toward the deep (not a ring).
-        if (d < foot) { set(p, 0.4 + 0.6 * (d / foot) ** 2, true); continue; }
+        if (d < foot) { set(x, y, 0.4 + 0.6 * (d / foot) ** 2, true); continue; }
         const near = Math.exp(-(((d - foot) / 0.35) ** 2)), trail = toward > 0 ? 0.35 * (1 - d) : 0;
-        set(p, Math.round(Math.min(cap, (0.5 + 0.5 * kk) * 110 * ((1 - d) ** 1.3 * 0.55 + near * 0.45 + trail) * (0.8 + 0.2 * scourNoise(x, y)))), false);
+        set(x, y, Math.round(Math.min(cap, (0.5 + 0.5 * kk) * 110 * ((1 - d) ** 1.3 * 0.55 + near * 0.45 + trail) * (0.8 + 0.2 * scourNoise(x, y)))), false);
       }
     }
   }

@@ -80,6 +80,9 @@ Object.defineProperty(HTMLElement.prototype, 'title', {
 });
 for (const el of document.querySelectorAll('[title]')) { el.dataset.tip = el.getAttribute('title'); el.removeAttribute('title'); }
 
+// (Panels redraw themselves (the cards, the census): when the element under the pointer is replaced,
+// the tip carries on to its replacement instead of hiding and coming back, which flickered.)
+const tipUnder = (x, y) => { const e = document.elementFromPoint(x, y); return e && e.closest ? e.closest('[data-tip]') : null; };
 document.addEventListener('pointerover', (e) => {
   if (e.pointerType !== 'mouse') return;
   // (Icon buttons with only a label, like the close buttons, say what they do.)
@@ -87,17 +90,34 @@ document.addEventListener('pointerover', (e) => {
   if (ib) ib.dataset.tip = ib.getAttribute('aria-label');
   const t = e.target.closest && e.target.closest('[data-tip]');
   if (!t || t === TIP.target) return;
+  // Already showing one: switch straight over (no hide, no wait).
+  if (TIP.el && !TIP.el.hidden && !TIP.world) { TIP.target = t; if (t.dataset.tip) { renderTip(t.dataset.tip); placeTip(e.clientX, e.clientY); } return; }
   hideTip();
   TIP.target = t;
-  TIP.show = setTimeout(() => { if (TIP.target !== t || !t.isConnected || !t.dataset.tip) return; renderTip(t.dataset.tip); tipBox().hidden = false; placeTip(e.clientX, e.clientY); }, 280);
+  TIP.show = setTimeout(() => { if (TIP.target !== t || !t.isConnected || !t.dataset.tip) return; renderTip(t.dataset.tip); tipBox().hidden = false; placeTip(TIP.px ?? e.clientX, TIP.py ?? e.clientY); }, 280);
 });
 document.addEventListener('pointermove', (e) => {
-  if (e.pointerType !== 'mouse' || !TIP.target || !TIP.el || TIP.el.hidden) return;
-  if (!TIP.target.isConnected) { hideTip(); return; } // (redrawn under the pointer)
+  if (e.pointerType !== 'mouse') return;
+  TIP.px = e.clientX; TIP.py = e.clientY;
+  if (!TIP.target || !TIP.el || TIP.el.hidden) return;
+  if (!TIP.target.isConnected) { const n = tipUnder(e.clientX, e.clientY); if (!n) { hideTip(); return; } TIP.target = n; }
   if (TIP.target.dataset.tip && TIP.target.dataset.tip !== TIP.text) renderTip(TIP.target.dataset.tip); // (it changed under the pointer)
   placeTip(e.clientX, e.clientY);
 });
-document.addEventListener('pointerout', (e) => { if (TIP.target && !TIP.world && (!e.relatedTarget || !TIP.target.contains(e.relatedTarget))) hideTip(); });
+// And when the pointer is still: follow a redrawn element to its replacement.
+setInterval(() => {
+  if (!TIP.el || TIP.el.hidden || TIP.world || !TIP.target || TIP.target.isConnected || TIP.px == null) return;
+  const n = tipUnder(TIP.px, TIP.py);
+  if (!n) { hideTip(); return; }
+  TIP.target = n;
+  if (n.dataset.tip && n.dataset.tip !== TIP.text) renderTip(n.dataset.tip);
+}, 150);
+document.addEventListener('pointerout', (e) => {
+  if (!TIP.target || TIP.world || (e.relatedTarget && TIP.target.contains(e.relatedTarget))) return;
+  // (Leaving for another element with a tip: the pointerover above takes it from here.)
+  if (e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('[data-tip]')) return;
+  hideTip();
+});
 document.addEventListener('pointerdown', () => { if (!TIP.world) hideTip(); }, true);
 addEventListener('scroll', hideTip, true);
 
@@ -106,6 +126,10 @@ function worldTipAt(x, y) {
   if (world.hover) return null; // animals have their own card
   const fo = typeof fossilAt === 'function' && fossilAt(world, x, y);
   if (fo) return `${capFirst(FOSSIL_KINDS[fo.kind] || 'a fossil')}\nUncovered by the tide. Click to dig it up: essence, points and an ancient ${fo.gene} gene for a new spawn or a brood.${fo.kind === 'relic' ? ' Relics hold artifacts.' : ''}`;
+  const TA = world.tar;
+  if (TA && Math.hypot(TA.x - x, TA.y - y) < TA.size) return 'The tar\nOil that woke up. It crawls toward whatever grows, swallowing slicks to grow, withering plants and poisoning (and marking) what swims near. It starves without oil: take the rigs down and skim the slicks.';
+  const sl = typeof slickAt === 'function' && slickAt(world, x, y);
+  if (sl) return 'An oil slick\nLeaked from a rig. Animals under it sour and sicken, plants wither, and where oil gathers thick, the tar may wake. Click it to skim it off (a few pearls).';
   const li = typeof litterAt === 'function' && litterAt(world, x, y);
   if (li) return `${capFirst(LITTER[li.k].label)}\nLitter: it fouls the water around it${li.k === 'net' ? ', and ghost nets snare small animals' : ''}. Click it (a few times for the big ones) to haul it out for pearls.`;
   const rm = typeof remainsAt === 'function' && remainsAt(world, x, y);

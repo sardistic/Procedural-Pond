@@ -52,6 +52,7 @@ function eldTraits(L) {
   for (const i of L.ill || []) t.push(i);
   if (L.hunter) t.push('awakened');
   if (L.paragon) t.push('paragon');
+  for (const w of L.warps || []) t.push(w);
   return t;
 }
 
@@ -159,17 +160,19 @@ function scatterFrom(world, src, secs = 2.5) {
 // ---- taking in their own ---------------------------------------------------------------------------
 // The changed and the transcendent take in lesser animals of their own kind:
 // often when their kind is crowded, rarely otherwise.
-function tryAbsorb(world, c, st) {
+function tryAbsorb(world, c, st, counts) {
   const key = breedKey(c), worth = recycleValue(c);
   if ((c.life.absorbed || 0) >= 6) return; // it can hold no more
-  const kin = world.creatures.filter((o) => o !== c && o.life && breedKey(o) === key && !o.dying && !o.absorbing && !o.leaving && !o.grabbed &&
-    !o.life.genome.eld && recycleValue(o) <= worth);
-  if (!kin.length) return;
-  const target = world.targets[c.species] || kin.length;
-  const over = kin.length + 1 > target * 1.15 || world.creatures.length > (world.maxPop || 130) * 0.85;
+  const n = (counts && counts.get(key)) || 1;
+  const target = world.targets[c.species] || n;
+  const over = n > target * 1.15 || world.creatures.length > (world.maxPop || 130) * 0.85;
   if (Math.random() > (over ? 0.03 : 0.002) * st * (eldPath(world, 'hunger') ? 2 : 1) * (c.life.quirks && c.life.quirks.includes('many-mouthed') ? 2 : 1)) return;
-  let best = null, bd = 70 * 70;
-  for (const o of kin) { const d = (o.x - c.x) ** 2 + (o.y - c.y) ** 2; if (d < bd) { bd = d; best = o; } }
+  // The nearest lesser one of its own kind, within reach.
+  let best = null, bd = Infinity;
+  forNear(world, c.x, c.y, 70, (o, d2) => {
+    if (d2 >= bd || o === c || !o.life || o.dying || o.absorbing || o.leaving || o.grabbed || o.life.genome.eld || breedKey(o) !== key || recycleValue(o) > worth) return;
+    bd = d2; best = o;
+  });
   if (!best) return;
   best.absorbing = { by: c, t: 0 };
   c.feeding = best;
@@ -211,6 +214,7 @@ function absorbInto(world, c) {
   refreshBuffs(c);
   c.feeding = null;
   gainCorruption(world, 1 + eldStage(L), c);
+  if (typeof rollWarp === 'function' && Math.random() < 0.35) rollWarp(world, c, 'as it fed');
 }
 
 // ---- the tick --------------------------------------------------------------------------------------
@@ -226,6 +230,8 @@ function updateEldritch(world, dt) {
   // How much of the pond is marked: the more, the less the dreams spread it and the thinner the corruption.
   const share = marked.length / Math.max(1, world.creatures.filter((c) => c.life).length), thin = 1 / (1 + marked.length / 12);
   let transcendent = 0;
+  const counts = new Map();
+  for (const c of world.creatures) if (c.life && !c.dying && !c.leaving) { const k = breedKey(c); counts.set(k, (counts.get(k) || 0) + 1); }
   for (const c of marked) {
     const L = c.life, before = eldStage(L);
     L.corruption = Math.min(1, (L.corruption || 0) + eldRate(world, c) * step);
@@ -239,6 +245,7 @@ function updateEldritch(world, dt) {
       logEvent(world, fill(ELD_STAGE_LINES[now], c), c, { cat: 'rare', pri: now === 2 ? 3 : 2 });
       scatterFrom(world, c, now === 2 ? 3.5 : 2.5);
       if (typeof maybeQuirk === 'function') maybeQuirk(world, c); // sometimes something stays with it
+      if (typeof rollWarp === 'function' && now >= 1) rollWarp(world, c, now === 2 ? 'as it transcended' : 'as it changed'); // and its nature warps
       if (typeof narrate === 'function') narrate(world, 'mark', { name: L.name, subject: c });
       gainCorruption(world, now === 2 ? 15 : 5, c);
       if (now === 2) {
@@ -252,25 +259,24 @@ function updateEldritch(world, dt) {
     // Taking in their own.
     if (now >= 1) {
       c.absorbCd = (c.absorbCd ?? rand(10, 30)) - step;
-      if (c.absorbCd <= 0 && !c.feeding) tryAbsorb(world, c, now);
+      if (c.absorbCd <= 0 && !c.feeding) tryAbsorb(world, c, now, counts);
     }
     // Psychic effects.
     if (now >= 1) {
       const R = (now === 2 ? 70 : 42) * (now === 2 ? chorus : 1) * (L.ascended ? 1.6 : 1);
       let drawn = 0, mad = 0; // a few at a time are drawn in, and fewer lose their minds
-      for (const o of world.creatures) {
-        if (o === c || !o.life || o.life.genome.eld) continue;
-        const d2 = (o.x - c.x) ** 2 + (o.y - c.y) ** 2;
-        if (d2 > R * R) continue;
+      forNear(world, c.x, c.y, R, (o, d2) => {
+        if (o === c || !o.life || o.life.genome.eld) return;
         o.life.comfort = Math.max(0, o.life.comfort - (now === 2 ? 0.06 : 0.03)); // dread
         if (now === 2 && drawn < 4 * chorus && isPrey(o) && Math.random() < 0.25) { drawn++; o.tx = c.x + rand(-14, 14); o.ty = c.y + rand(-14, 14); o.timer = 2; } // enthralled: circling it
         if (now === 2 && mad < 3 * chorus && d2 < 900 * chorus && Math.random() < 0.5) { mad++; o.maddened = 2; } // too close: something is wrong with it
-      }
+      });
       if (now === 2) addHeat(world, c.x, c.y, 0.04);
     }
     // At night the transcendent dream, and the mark can pass to a neighbour.
     if (now === 2 && world.darkness > 0.5 && Math.random() < 0.004 * lightMadness(world) * (eldPath(world, 'dream') ? 2.5 : 1) * Math.max(0, 1 - share / 0.08)) {
-      const near = world.creatures.filter((o) => o !== c && o.life && !o.life.genome.eld && (o.x - c.x) ** 2 + (o.y - c.y) ** 2 < 3600);
+      const near = [];
+      forNear(world, c.x, c.y, 60, (o) => { if (o !== c && o.life && !o.life.genome.eld) near.push(o); });
       if (near.length) {
         const o = pick(near);
         o.life.genome.eld = true;
@@ -285,12 +291,11 @@ function updateEldritch(world, dt) {
   if (transcendent && eldPath(world, 'tide')) deepenBy(world, 0.0008 * transcendent * step);
   // Everyone else keeps their distance (the fish steer away every frame; the rest pick somewhere else to be).
   for (const m of world.eldMarks) {
-    for (const o of world.creatures) {
-      if (o === m.c || o instanceof Fish || !o.life || o.life.genome.eld || o.grabbed) continue;
-      const dx = o.x - m.x, dy = o.y - m.y, d = Math.hypot(dx, dy);
-      if (d > m.R || d < 0.1) continue;
+    forNear(world, m.x, m.y, m.R, (o, d2) => {
+      if (o === m.c || o instanceof Fish || !o.life || o.life.genome.eld || o.grabbed || d2 < 0.01) return;
+      const dx = o.x - m.x, dy = o.y - m.y, d = Math.sqrt(d2);
       o.tx = clamp(o.x + dx / d * m.R, 8, world.W - 8); o.ty = clamp(o.y + dy / d * m.R, 8, world.H - 8); o.timer = Math.max(o.timer || 0, 2);
-    }
+    });
   }
   const clear = 1.6 - 0.6 * lightMadness(world); // fits pass off faster in the light
   for (const o of world.creatures) if (o.maddened) o.maddened = Math.max(0, o.maddened - step * clear);

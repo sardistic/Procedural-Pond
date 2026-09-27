@@ -54,6 +54,7 @@ function updateSky(world, dt) {
   const surf = tidal ? (0.3 + 0.7 * m.spring) * SURF_BASE[hab] + Math.max(0, world.weather.gust) * 0.35 + world.weather.rain * 0.25 : 0;
   tide.surf = clamp(surf, 0, 1.4);
   if (tidal && typeof metaTide === 'function') metaTide(world, tide); // the moonstone, the tide bell, the wind conch
+  if (typeof isGlass === 'function' && isGlass(world)) { tide.level = 0.5 + (tide.level - 0.5) * 0.15; tide.surf *= 0.05; tide.flow *= 0.1; } // a glass day: the sea holds still
   tide.wave = (tide.wave + dt * (0.2 + tide.surf * 0.12)) % 1000;
 
   const spring = m.spring > 0.75, which = Math.abs(m.age - 0.5) < 0.25 ? 'full' : 'new';
@@ -76,6 +77,7 @@ function updateSky(world, dt) {
       const flies = fitsHabitat(world, 'fresh') ? ', the fireflies come out' : '';
       logEvent(world, `Dusk settles${flies} and ${moonLine(m)}`, null, { cat: 'sky' });
       if (typeof narrate === 'function' && Math.random() < 0.4) narrate(world, 'dusk');
+      if (typeof duskHeavens === 'function') duskHeavens(world);
     }
   }
   updateCoralSpawning(world, dt, m);

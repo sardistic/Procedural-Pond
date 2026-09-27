@@ -639,7 +639,8 @@ function arriveDeep(world) {
   // The idol's lure, the Black Tide, and anything Ascended all draw the mythic up.
   const lure = (world.structures || []).reduce((a, s) => a + (STRUCTURES[s.kind].lure || 0), 0) +
     (typeof eldPath === 'function' && eldPath(world, 'tide') ? 1 : 0) + world.creatures.filter((c) => c.life && c.life.ascended).length;
-  const pool = Object.keys(DEEP).filter((k) => deepAvailable(world, k) && (!DEEP[k].mythic || Math.random() < 0.06 * (1 + lure)));
+  const stars = typeof heavenNow === 'function' && heavenNow(world, 'stars') ? 4 : 0; // (the stars are right: the mythic rise)
+  const pool = Object.keys(DEEP).filter((k) => deepAvailable(world, k) && (!DEEP[k].mythic || Math.random() < 0.06 * (1 + lure + stars)));
   if (!pool.length) return;
   const kind = pick(pool);
   if (world.creatures.filter((c) => c.species === kind).length >= (DEEP[kind].mythic ? 1 : 3)) return;

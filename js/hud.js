@@ -56,10 +56,14 @@ const ICON_PREFER = {
 };
 
 function rasterIcon(c, w) {
-  const N = 96, r = new Raster(N, N);
-  poseIcon(c, w, N / 2, N / 2);
+  poseIcon(c, w, 48, 48);
+  return rasterDrawn(96, (r) => c.draw(r, 0, w));
+}
+// Draw something into an N×N raster and crop it to what was drawn.
+function rasterDrawn(N, draw) {
+  const r = new Raster(N, N);
   r.begin();
-  c.draw(r, 0, w);
+  draw(r);
   const out = new Uint32Array(N * N), clear = new Uint32Array(N * N);
   r.compose(out, {
     bg: clear, bgLight: clear, caustic: ICON_CAUSTIC, t: 0, outline: OUTLINE, emissive: EMISSIVE, fade: ICON_FADE,
@@ -125,6 +129,54 @@ const speciesIcon = (kind) => makeIcon(kind, (w) => {
   }
   const g = SPECIES[kind].spawn(w, 48, 48);
   return (kind === 'duck' && g.find((d) => d.kind === 'drake')) || g[0];
+});
+// Icons for the tools, plants and builds, drawn by the same renderer: once at full size to
+// measure, then again scaled to fit (a structure shrinks, a pellet grows), shown at a whole-number scale.
+const TOOL_ICON_BOX = 14;
+const NET_RIM = mat('#4a3a22', '#7a6038', '#a88a52', '#d0b47a'), NET_MESH = mat('#6a6a64', '#94948c', '#bcbcb2', '#e2e2d8');
+function drawnIcon(key, make, fit = TOOL_ICON_BOX) {
+  if (iconCache.has(key)) return iconCache.get(key);
+  let icon = null;
+  try {
+    icon = withSeed(`icon/${key}`, () => {
+      const w = iconWorld(), N = 192, draw = make(w, N / 2);
+      let crop = rasterDrawn(N, (r) => draw(r, w));
+      const k = Math.min(4, fit / Math.max(crop.w, crop.h));
+      if (Math.abs(k - 1) > 0.05) crop = rasterDrawn(N, (r) => { r.setScale(N / 2, N / 2, k); draw(r, w); r.setScale(); });
+      return iconImage(crop);
+    });
+  } catch (e) { console.warn('icon', key, e); }
+  iconCache.set(key, icon);
+  return icon;
+}
+const toolIcon = (name) => drawnIcon(`tool/${name}`, (w, c) => {
+  const t = TOOLS[name];
+  if (t.build) {
+    const s = makeStructure(t.build, w, c, c), next = (m) => newId(outlineOf(m));
+    return (r) => { withSeed(`bake/${s.seed}`, () => BAKE[s.kind](r, s, next)); if (DRAW[s.kind]) DRAW[s.kind](r, s, 0, w); };
+  }
+  if (t.food) {
+    const tiny = t.food === 'snow' || t.food === 'offering', m = t.food === 'snow' ? SNOW_MAT : OFFER_MAT;
+    const fs = [[0, 0], [3, 1], [-2, 2.5], [1.5, -2.5], [-3, -1]].map(([dx, dy], i) => { const f = new Food(c + dx, c + dy, 2 + i * 0.2, t.food); f.life = 30; return f; });
+    return (r) => { for (const f of fs) if (tiny) r.ellipsoid(f.x, f.y, 0.7, 0.7, 0, f.z, 0.6, m, FOOD_ID); else f.draw(r); };
+  }
+  if (name === 'net') {
+    const rim = newId(outlineOf(NET_RIM)), mesh = newId(outlineOf(NET_MESH));
+    return (r) => {
+      r.tube(c + 3, c + 3, 0.7, 2, c + 9, c + 9, 0.7, 2, 0.6, NET_RIM, rim); // the handle
+      for (let k = 0; k < 12; k++) { const a0 = k / 12 * TAU, a1 = (k + 1) / 12 * TAU; r.tube(c - 2 + Math.cos(a0) * 5, c - 2 + Math.sin(a0) * 5, 0.6, 2.5, c - 2 + Math.cos(a1) * 5, c - 2 + Math.sin(a1) * 5, 0.6, 2.5, 0.6, NET_RIM, rim); }
+      for (let k = -2; k <= 2; k++) { r.tube(c - 2 + k * 2, c - 6.5, 0.3, 2, c - 2 + k * 2, c + 2.5, 0.3, 2, 0.8, NET_MESH, mesh); r.tube(c - 6.5, c - 2 + k * 2, 0.3, 2, c + 2.5, c - 2 + k * 2, 0.3, 2, 0.8, NET_MESH, mesh); }
+    };
+  }
+  if (name === 'rock') {
+    const rk = makeRock(c, c, 7), id = newId(rk.outline);
+    return (r) => r.ellipsoid(rk.x, rk.y, rk.a, rk.b, rk.ang, 0, rk.h, rk.shader, id);
+  }
+  if (t.likedBy && t.place) {
+    const p = makePlant(t.likedBy, w, c, c);
+    return (r) => p.draw(r, 0, w);
+  }
+  return () => {};
 });
 const wildIcon = (sp) => makeIcon(`wild/${sp.id}/${sp.name}`, (w) => new WildFish(w, 48, 48, sp));
 const iconFor = (c) => (c.species === 'wild' ? wildIcon(c.sp) : speciesIcon(c.species));
@@ -440,12 +492,30 @@ function setJournal(open) {
 // The big news gets a banner under the pond bar for a few seconds, and the narrator a strip below it.
 const bannerUi = { until: 0, narrUntil: 0 };
 // (Below the tab naming the pond up the beach, when there is one at the top of the screen.)
+// Everything that shows under the pond bar, stacked so nothing covers anything: the tab naming the
+// pond up the beach (when the beach runs up and down), the observe bar, the follow chip, the big
+// news, the narrator. Restacked whenever one of them appears, changes or goes.
+const NOTICES = ['observe-bar', 'follow', 'banner', 'narrator'];
 function placeNews() {
-  const tab = byId('edge-west'), b = byId('banner'), n = byId('narrator');
-  let top = 62;
-  if (tab && !tab.hidden && tab.classList.contains('vertical') && +getComputedStyle(tab).opacity > 0.1) top = Math.max(top, Math.round(tab.getBoundingClientRect().bottom + 8));
-  b.style.top = `${top}px`;
-  n.style.top = `${b.hidden ? top : Math.round(b.getBoundingClientRect().bottom + 8)}px`;
+  if (innerWidth <= 760) return; // (on a phone the follow chip sits at the bottom; the rest keep their places)
+  let top = Math.round(byId('score').getBoundingClientRect().bottom + 6);
+  const tab = byId('edge-west');
+  if (tab && !tab.hidden && tab.classList.contains('vertical') && !tab.classList.contains('crowded') && +getComputedStyle(tab).opacity > 0.05) {
+    const r = tab.getBoundingClientRect();
+    if (r.top < top + 60) top = Math.max(top, Math.round(r.bottom + 6));
+  }
+  for (const id of NOTICES) {
+    const e = byId(id);
+    if (!e || e.hidden) continue;
+    e.style.top = `${top}px`;
+    top = Math.round(e.getBoundingClientRect().bottom + 6);
+  }
+}
+{
+  const again = () => requestAnimationFrame(placeNews);
+  const mo = new MutationObserver(again);
+  for (const id of [...NOTICES, 'edge-west']) { const e = byId(id); if (e) mo.observe(e, { attributes: true, attributeFilter: ['hidden', 'class'], childList: true, subtree: true, characterData: true }); }
+  addEventListener('resize', again);
 }
 function showBanner(text) {
   const b = byId('banner');
@@ -675,6 +745,9 @@ function updateSkyPanel() {
   }
   byId('tide-text').textContent = tideText;
   byId('surf-text').textContent = surfText;
+  const hv = typeof heavensLine === 'function' ? heavensLine(world) : '';
+  byId('heavens-text').hidden = !hv;
+  if (byId('heavens-text').textContent !== hv) byId('heavens-text').textContent = hv;
   renderArtifacts();
 }
 
@@ -1382,7 +1455,7 @@ function renderEvo() {
   byId('evo-tree').replaceChildren(eld, ...branches.map((br) => {
     const col = el('div', 'evo-col');
     col.append(colored('h3', null, br === 'salt' ? 'Salt: down into the abyss' : 'Fresh: down into the drowned cathedral'));
-    DEPTH_TIERS.forEach((t, i) => {
+    DEPTH_TIERS.slice(0, Math.max(12, E.tier + 2)).forEach((t, i) => {
       const node = el('div', i <= E.tier ? 'evo-node reached' : 'evo-node');
       node.append(el('b', null, t[br]), el('span', 'note', i <= E.tier ? (i ? 'reached' : 'where every pond starts') : `erosion ${t.erosion}`));
       const kinds = Object.keys(DEEP).filter((k) => DEEP[k].tier === i && (DEEP[k].branch === br || DEEP[k].branch === 'both'));
@@ -1547,6 +1620,7 @@ function renderScorePanel(force = false) {
     return li;
   }) : [el('li', 'empty', 'Nothing yet: births, rare animals and each dawn pay points.')]));
   byId('sp-join').checked = !!G.board;
+  byId('pond-lock').checked = !!G.lock;
 
   const b = Net.board;
   if (!force && (!b || b.at === scoreUi.boardAt)) return;
@@ -1705,6 +1779,12 @@ function initHud() {
     f.addEventListener('animationend', () => f.remove());
     restartAnim(e.currentTarget, 'squish');
     renderHatchery();
+  });
+  byId('pond-lock').addEventListener('change', (e) => {
+    world.game.lock = e.target.checked;
+    world.gameDirty = true;
+    showTicker(e.target.checked ? "Visitors can only look at your pond now: nobody can take a copy of it" : 'Visitors who open your link get their own copy again');
+    syncPond();
   });
   byId('sp-join').addEventListener('change', (e) => {
     world.game.board = e.target.checked;

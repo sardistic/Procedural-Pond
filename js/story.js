@@ -16,8 +16,8 @@
 // ---- light and dark --------------------------------------------------------------------------------
 // How much the dark is feeding madness here: 0.4 (steady daylight) to 1.7 (endless night).
 function lightMadness(world) {
-  const now = world.darkness || 0, avg = world.darkAvg ?? now;
-  return clamp(0.4 + 1.3 * (0.45 * now + 0.55 * avg), 0.4, 1.7);
+  const now = world.darkness || 0, avg = world.darkAvg ?? now, sky = typeof heavensMadness === 'function' ? heavensMadness(world) : 1;
+  return clamp((0.4 + 1.3 * (0.45 * now + 0.55 * avg)) * sky, 0.4, 3);
 }
 function updateDark(world, dt) {
   const k = Math.min(1, dt / (world.opts.dayLength * 1.5));
@@ -118,6 +118,83 @@ const STORY = {
     ['The island climbs. From the top you could see the bottom, if you wanted to.'],
     ['The island is a staircase. I know where it goes.'],
     ['the steps go up so that we can go down'],
+  ],
+  glass: [
+    ['A glass day. I could see the bottom of the deep end. There is a bottom. Good.'],
+    ['A glass day. I could see a long way down. Things were looking back up.'],
+    ['The water is clear today. Too clear. It shows you things.'],
+    ['Glass. I can see all the way down to where they are waiting.'],
+    ['clear clear clear. they can see me too'],
+  ],
+  meteors: [
+    ['Falling stars tonight. I made a wish, which is unscientific.'],
+    ['Stars falling into the pond. I counted nine. The pond kept them.'],
+    ['Stars fell tonight. They fell toward the pond, not the sea.'],
+    ['The stars are coming down to see.'],
+    ['the stars are falling in. we are filling up with stars'],
+  ],
+  aurora: [
+    ['Lights in the sky, green and violet, doubled in the water. Beautiful.'],
+    ['The aurora came out. The fish swam in its reflection, all facing the same way.'],
+    ['Lights in the sky. The water tried to copy them and got them slightly wrong.'],
+    ['The sky has opened a little. I can see the colours of the other side.'],
+    ['the sky is bleeding colours into the water'],
+  ],
+  comet: [
+    ['A comet. A good omen, the old sailors said.'],
+    ['A comet, with a tail like a torn page.'],
+    ['A comet. The young born under it are strange and bright.'],
+    ['The comet is getting closer. I am sure of it.'],
+    ['it is looking at us. the comet. it is an eye.'],
+  ],
+  bloodmoon: [
+    ['A red moon tonight: an eclipse of the moon. Nothing more.'],
+    ['The moon came up red. The water looked like wine, and then like something else.'],
+    ['Blood moon. The marked are restless. So am I.'],
+    ['The moon is bleeding into the pond. Of course it is.'],
+    ['red red red the moon is open'],
+  ],
+  eclipse: [
+    ['An eclipse at noon. The fish thought it was night. So did I, for a moment.'],
+    ['The sun went out. When it came back, it was not quite the same sun.'],
+    ['The sun went dark and the marked turned to face the pond, all together.'],
+    ['The sun blinked. Something on the other side of it saw us.'],
+    ['the sun closed its eye so the other one could open'],
+  ],
+  stars: [
+    ['An odd conjunction tonight. I have noted the positions.'],
+    ['The stars are in an arrangement I don\'t like. I checked the charts twice.'],
+    ['The stars are right. I don\'t know how I know that phrase.'],
+    ['THE STARS ARE RIGHT.'],
+    ['the stars are right the stars are right the stars are right'],
+  ],
+  bloodrain: [
+    ['Red rain. Dust from somewhere far away, I expect.'],
+    ['It rained red. The pond drank it all.'],
+    ['It is raining blood. The marked lift their heads to it.'],
+    ['Blood from the sky. The pond is being fed.'],
+    ['it rains and rains and the pond is so thirsty'],
+  ],
+  fallen: [
+    ['Something fell on the beach in the night, still warm.'],
+    ['A star came down on the beach. It left something behind.'],
+    ['A star fell and the thing it carried is waiting on the sand.'],
+    ['A star fell. It was sent.'],
+    ['a gift from above. from below. same thing'],
+  ],
+  tar: [
+    ['The oil has pooled into something like a creature. I have not seen that before. Nobody has.'],
+    ['The tar moved. Against the current. I watched it for an hour.'],
+    ['The tar is awake. It is hungry for the green things.'],
+    ['The tar knows my name. It says it in bubbles.'],
+    ['the tar is the pond dreaming of money'],
+  ],
+  tarGone: [
+    ['The tar broke up. Good riddance.'],
+    ['The tar is gone. The water tastes of it still.'],
+    ['The tar starved. It will be back when we feed it.'],
+    ['The tar has gone under. It is only resting.'],
+    ['the tar sleeps in the rigs'],
   ],
   river: [
     ['The river has moved. It does that, apparently. I have redrawn the map.'],

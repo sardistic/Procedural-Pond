@@ -183,10 +183,10 @@ function updateQuirks(world, dt) {
     c.wasMad = !!c.maddened;
     // The rot: from foul water, and (for the sickly, more) out of nowhere.
     if (world.pollution > 0.3 && Math.random() < 0.0004 * world.pollution * (L.genome.sickly ? 3 : 1) * step) infect(world, c, 'rot', 'from the fouled water');
-    for (const o of world.creatures) {
-      if (o === c || !o.life || o.dying) continue;
-      const d2 = (o.x - c.x) ** 2 + (o.y - c.y) ** 2;
-      if (d2 > 1600) continue;
+    const touches = hasQ(L, 'whispering') || L.genome.feral || hasQ(L, 'weeping') || hasQ(L, 'rot') || (night && hasQ(L, 'madness'));
+    if (!touches) continue;
+    forNear(world, c.x, c.y, 40, (o, d2) => {
+      if (o === c || !o.life || o.dying) return;
       if (hasQ(L, 'whispering') && !o.life.genome.eld) o.life.comfort = Math.max(0, o.life.comfort - 0.03);
       if (L.genome.feral && d2 < 625) o.life.comfort = Math.max(0, o.life.comfort - 0.02);
       if (d2 < 100 && hasQ(L, 'weeping') && !o.life.genome.eld && Math.random() < 0.003 * step) {
@@ -195,7 +195,7 @@ function updateQuirks(world, dt) {
       }
       if (d2 < 64 && hasQ(L, 'rot') && o.species === c.species && Math.random() < 0.002 * (o.life.genome.sickly ? 3 : 1) * step) infect(world, o, 'rot', `from ${L.name}`);
       if (night && d2 < 144 && hasQ(L, 'madness') && Math.random() < 0.0002 * step * lightMadness(world)) infect(world, o, 'madness', `from ${L.name}`);
-    }
+    });
   }
 }
 

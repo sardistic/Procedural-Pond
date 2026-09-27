@@ -235,7 +235,7 @@ class Raster {
     const shore = s.shore || null, bgDry = s.bgDry, tideL = (s.tide ?? 1) * 255;
     const surf = s.surf || 0, wave = s.wave || 0, surfReach = 30 + 70 * surf, foamW = 0.05 + 0.07 * surf;
     // The depths: deep water swallows the light (up to ~90%), except things that make their own.
-    const depthMap = s.depth || null, dc = s.deepColor || 0xff0e0402, dc2 = s.deepColor2 ?? dc;
+    const depthMap = s.depth || null, dc = s.deepColor || 0xff0e0402, dc2 = s.deepColor2 ?? dc, deepK = s.deepK ?? 1;
     const dr0 = dc & 255, dg0 = (dc >> 8) & 255, db0 = (dc >>> 16) & 255, dr1 = dc2 & 255, dg1 = (dc2 >> 8) & 255, db1 = (dc2 >>> 16) & 255;
     // Trenches (black chasms with faint lights along their rims) and the light cast by glowing things.
     const trench = s.trench || null, tg = s.trenchGlow || 0xffffb02a, tgr = tg & 255, tgg = (tg >> 8) & 255, tgb = (tg >>> 16) & 255;
@@ -412,7 +412,7 @@ class Raster {
         if (depthMap && !dry) {
           const dd = depthMap[p];
           if (dd && !(i && emissive[i] === 2)) {
-            let a = (dd * 230) >> 8;
+            let a = (dd * 230 * deepK) >> 8;
             const m = (dd * dd) >> 8, dr = dr0 + (((dr1 - dr0) * m) >> 8), dg = dg0 + (((dg1 - dg0) * m) >> 8), db = db0 + (((db1 - db0) * m) >> 8);
             if (i) a = (a * (256 - Math.min(200, (z[p] * 256 / SURFACE_Z * 0.78) | 0))) >> 8; // nearer the surface, less of the dark
             // Over the floor, the dark comes in dithered steps with a slow murk moving through it

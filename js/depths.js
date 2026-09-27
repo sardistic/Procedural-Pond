@@ -126,35 +126,40 @@ const TIER_DARK = {
 function deepTint(world) {
   const tier = (world.erosion && world.erosion.tier) || 0, base = DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed;
   if (tier < 5) return base;
-  return mixColor(base, TIER_DARK[branchOf(world)][Math.min(3, tier - 5)] || base, 0.5);
+  const t = mixColor(base, TIER_DARK[branchOf(world)][Math.min(3, tier - 5)] || base, 0.5);
+  return tier > 8 ? mixColor(t, 0xff000000, Math.min(0.8, 0.25 * (tier - 8))) : t; // (the deep past: darker every tier)
 }
 const TRENCH_GLOW = { salt: hexToInt('#2ab0ff'), fresh: hexToInt('#8aff4a') };
 
 // Trenches: from the hadal trench (tier 5) on, a long canyon across the deep (a second from the
 // drowned city): a black floor far down, walls that step down into it, and a lip either side, the
 // one facing the light lit. Stored per pixel: 0..127 how far in, +128 on the lit side.
-function carveTrenches(world, depth, into, along, ex) {
-  const tier = (world.erosion && world.erosion.tier) || 0;
+function carveTrenches(world, depth, rect) {
+  const tier = (world.erosion && world.erosion.tier) || 0, ex = world.expandPx || 0;
   if (tier < 5 || !ex) { world.trench = null; return; }
   const { W, H } = world, T = world.trench && world.trench.length === W * H ? world.trench : (world.trench = new Uint8Array(W * H));
-  T.fill(0);
-  const seed = hashString(world.seed || 'pond') % 89, n = tier >= 7 ? 2 : 1;
+  const [x0, y0, x1, y1] = rect || [0, 0, W - 1, H - 1];
+  for (let y = y0; y <= y1; y++) T.fill(0, x0 + y * W, x1 + 1 + y * W);
+  const seed = hashString(world.seed || 'pond') % 89, n = tier >= 7 ? 2 : 1, side = world.shoreSide;
+  const axisX = deepAxisX(side), shifts = deepShifts(side), [W0, H0] = baseSize(world);
   const tr = Array.from({ length: n }, (_, k) => ({
     c: ex * (n === 1 ? 0.55 : 0.42 + 0.3 * k) + ex * 0.06 * (hash2(k, seed, 7) - 0.5),
     a1: ex * 0.05, f1: 0.0035 + 0.002 * hash2(k, seed, 9), p1: hash2(k, seed, 11) * TAU,
     a2: ex * 0.012, f2: 0.012, p2: hash2(k, seed, 13) * TAU, w: 9 + 5 * hash2(k, seed, 17),
   }));
-  for (let p = 0; p < W * H; p++) {
-    const a = into[p];
-    if (a < ex * 0.2) continue;
-    const u = along[p];
-    let best = 0, lit = false;
-    for (const t of tr) {
-      const cc = t.c + t.a1 * Math.sin(u * t.f1 + t.p1) + t.a2 * Math.sin(u * t.f2 + t.p2), w = t.w * (0.8 + 0.2 * Math.sin(u * 0.02 + t.p2));
-      const v = 1 - Math.abs(a - cc) / w;
-      if (v > best) { best = v; lit = a < cc; }
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0, p = x0 + y * W; x <= x1; x++, p++) {
+      const a = axisX ? (shifts ? ex - x : x - (W0 - 1)) : (shifts ? ex - y : y - (H0 - 1));
+      if (a < ex * 0.2) continue;
+      const u = axisX ? y : x;
+      let best = 0, lit = false;
+      for (const t of tr) {
+        const cc = t.c + t.a1 * Math.sin(u * t.f1 + t.p1) + t.a2 * Math.sin(u * t.f2 + t.p2), w = t.w * (0.8 + 0.2 * Math.sin(u * 0.02 + t.p2));
+        const v = 1 - Math.abs(a - cc) / w;
+        if (v > best) { best = v; lit = a < cc; }
+      }
+      if (best > 0) { T[p] = Math.round(best * 127) + (lit ? 128 : 0); if (best > 0.3) depth[p] = 255; }
     }
-    if (best > 0) { T[p] = Math.round(best * 127) + (lit ? 128 : 0); if (best > 0.3) depth[p] = 255; }
   }
 }
 

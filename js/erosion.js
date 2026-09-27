@@ -18,6 +18,8 @@ const DEPTH_TIERS = [
   { erosion: 11, salt: 'The midnight zone', fresh: 'The sunless cave', depth: 0.7, expand: 0.22 },
   { erosion: 22, salt: 'The abyss', fresh: 'The drowned cathedral', depth: 1, expand: 0.22 },
 ];
+// How far out the pond may grow along the deep, all told: past this the tiers go on in the dark, with no more room.
+const MAX_DEEP_PX = 2800;
 const DEEP_COLOR = { salt: hexToInt('#02040e'), fresh: hexToInt('#050806'), mixed: hexToInt('#03050c') };
 
 // ---- depth is the score -------------------------------------------------------------------------
@@ -104,36 +106,81 @@ function applyErosion(world) {
 function buildDepth(world) {
   const ex = world.expandPx || 0, { W, H } = world, side = world.shoreSide;
   // (The same pond, the same depths: only rebuilt when what shapes them has changed. The sand and
-  // the river reshape the beach every day; the deep doesn't need redoing for that.)
-  const key = [W, H, ex, side, world.seed, world.erosion ? world.erosion.tier : 0, typeof scourKey === 'function' ? scourKey(world) : ''].join('|');
-  if (world.depthKey === key && world.depth !== undefined) return;
-  world.depthKey = key;
-  // Scour around what's been placed (coast.js) digs pockets of depth even before the pond opens up.
-  if (!ex) { world.depth = typeof applyScour === 'function' ? applyScour(world, null) : null; return; }
-  const depth = new Uint8Array(W * H), axisX = deepAxisX(side), shifts = deepShifts(side);
-  const [W0, H0] = baseSize(world), tiers = (world.erosion ? world.erosion.tier : 0);
-  const maxD = DEPTH_TIERS[Math.min(tiers, DEPTH_TIERS.length - 1)].depth || 0.4;
-  const seed = hashString(world.seed || 'pond') % 97;
-  const trenchy = tiers >= 5, INTO = trenchy ? new Float32Array(W * H) : null, ALONG = trenchy ? new Float32Array(W * H) : null;
-  for (let y = 0, p = 0; y < H; y++) {
-    for (let x = 0; x < W; x++, p++) {
-      // Distance past the original edge of the pond, into the deep band.
-      const into = axisX ? (shifts ? ex - x : x - (W0 - 1)) : (shifts ? ex - y : y - (H0 - 1));
-      const along = axisX ? y : x;
-      if (trenchy) { INTO[p] = into; ALONG[p] = along; }
-      // A ragged drop-off that wanders well either side of the old edge (no straight seam),
-      // a slope down from it, then terraces whose risers slope into each other.
-      const lip = 12 + (fbm(along * 0.011, seed, 31) - 0.5) * 80 + (fbm(along * 0.05, seed, 33) - 0.5) * 22;
-      const t = (into + lip) / (ex + lip);
-      if (t <= 0) continue;
-      const s = t * 4 + (fbm(x * 0.03, y * 0.03, 32) - 0.5) * 0.9, f = s - Math.floor(s);
-      const shelf = (Math.floor(s) + smoothstep(0.7, 1, f)) / 4;
-      const slope = smoothstep(0, 0.2, t) * (0.85 + 0.3 * fbm(x * 0.06, y * 0.06, 34)); // the lip: down gently, unevenly
-      depth[p] = Math.round(clamp((0.25 + 0.75 * clamp(shelf, 0, 1)) * slope, 0, 1) * maxD * 255);
+  // the river reshape the beach every day; the deep doesn't need redoing for that. When only the
+  // scour round what's been placed has moved on, just those patches are redone.)
+  const baseKey = [W, H, ex, side, world.seed, world.erosion ? world.erosion.tier : 0].join('|');
+  const src = typeof scourSources === 'function' ? scourSources(world) : [], sk = scourKeyOf(src);
+  if (world.depthKey === baseKey && world.depthScour === sk && world.depth !== undefined) return;
+  if (world.depthKey === baseKey && world.depth && world.depthSrc) {
+    const rects = mergeRects(scourDirty(world.depthSrc, src, W, H));
+    if (rects.reduce((a, r) => a + (r[2] - r[0] + 1) * (r[3] - r[1] + 1), 0) < W * H * 0.4) {
+      for (const r of rects) depthIn(world, world.depth, r, src);
+      world.depthScour = sk; world.depthSrc = src;
+      if (world.depthDirty) world.depthDirty.push(...rects);
+      return;
     }
   }
-  if (typeof carveTrenches === 'function') carveTrenches(world, depth, INTO || new Float32Array(0), ALONG, ex);
-  world.depth = typeof applyScour === 'function' ? applyScour(world, depth) : depth;
+  world.depthKey = baseKey; world.depthScour = sk; world.depthSrc = src; world.depthDirty = null; // (a whole redraw is needed)
+  // Scour around what's been placed (coast.js) digs pockets of depth even before the pond opens up.
+  if (!ex && !src.length) { world.depth = null; world.trench = null; return; }
+  world.depth = new Uint8Array(W * H);
+  depthIn(world, world.depth, [0, 0, W - 1, H - 1], src);
+}
+
+// The depths within one rectangle: the deep band's shelves, the trenches, and the scour.
+function depthIn(world, depth, rect, src) {
+  const ex = world.expandPx || 0, { W } = world, side = world.shoreSide, [x0, y0, x1, y1] = rect;
+  for (let y = y0; y <= y1; y++) depth.fill(0, x0 + y * W, x1 + 1 + y * W);
+  if (ex) {
+    const axisX = deepAxisX(side), shifts = deepShifts(side);
+    const [W0, H0] = baseSize(world), tiers = (world.erosion ? world.erosion.tier : 0);
+    const maxD = DEPTH_TIERS[Math.min(tiers, DEPTH_TIERS.length - 1)].depth || 0.4;
+    const seed = hashString(world.seed || 'pond') % 97;
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0, p = x0 + y * W; x <= x1; x++, p++) {
+        // Distance past the original edge of the pond, into the deep band.
+        const into = axisX ? (shifts ? ex - x : x - (W0 - 1)) : (shifts ? ex - y : y - (H0 - 1));
+        const along = axisX ? y : x;
+        // A ragged drop-off that wanders well either side of the old edge (no straight seam),
+        // a slope down from it, then terraces whose risers slope into each other.
+        const lip = 12 + (fbm(along * 0.011, seed, 31) - 0.5) * 80 + (fbm(along * 0.05, seed, 33) - 0.5) * 22;
+        const t = (into + lip) / (ex + lip);
+        if (t <= 0) continue;
+        const s = t * 4 + (fbm(x * 0.03, y * 0.03, 32) - 0.5) * 0.9, f = s - Math.floor(s);
+        const shelf = (Math.floor(s) + smoothstep(0.7, 1, f)) / 4;
+        const slope = smoothstep(0, 0.2, t) * (0.85 + 0.3 * fbm(x * 0.06, y * 0.06, 34)); // the lip: down gently, unevenly
+        depth[p] = Math.round(clamp((0.25 + 0.75 * clamp(shelf, 0, 1)) * slope, 0, 1) * maxD * 255);
+      }
+    }
+  }
+  if (typeof carveTrenches === 'function') carveTrenches(world, depth, rect);
+  if (typeof applyScour === 'function') applyScour(world, depth, src, rect);
+}
+
+// Rectangles round the scour sources that appeared, went, or changed (at their larger reach).
+function scourDirty(before, after, W, H) {
+  const key = (s) => `${s.x},${s.y}`, A = new Map(before.map((s) => [key(s), s])), B = new Map(after.map((s) => [key(s), s])), out = [];
+  const add = (s, k) => { const R = (18 + 26 * Math.min(1.3, k)) * 2 + 3; out.push([Math.max(0, Math.floor(s.x - R)), Math.max(0, Math.floor(s.y - R)), Math.min(W - 1, Math.ceil(s.x + R)), Math.min(H - 1, Math.ceil(s.y + R))]); };
+  for (const [k, s] of B) { const o = A.get(k); if (!o || o.k !== s.k || o.sturdy !== s.sturdy) add(s, Math.max(s.k, o ? o.k : 0)); }
+  for (const [k, s] of A) if (!B.has(k)) add(s, s.k);
+  return out;
+}
+// Merge overlapping rectangles (so nothing is done twice).
+function mergeRects(rects) {
+  const R = rects.map((r) => r.slice());
+  for (let merged = true; merged;) {
+    merged = false;
+    for (let i = 0; i < R.length && !merged; i++) {
+      for (let j = i + 1; j < R.length; j++) {
+        const a = R[i], b = R[j];
+        if (a[0] <= b[2] + 1 && b[0] <= a[2] + 1 && a[1] <= b[3] + 1 && b[1] <= a[3] + 1) {
+          R[i] = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
+          R.splice(j, 1); merged = true; break;
+        }
+      }
+    }
+  }
+  return R;
 }
 
 // ---- the tick -----------------------------------------------------------------------------------
@@ -172,7 +219,7 @@ function updateErosion(world, dt) {
   if (next && E.e >= next.erosion) {
     E.tier++;
     if (typeof refreshSpeciesButtons === 'function') setTimeout(refreshSpeciesButtons, 0); // new builds, foods and plants
-    if (next.expand && typeof expandWorld === 'function') expandWorld(next.expand, `${tierName(world, E.tier)} opens beyond the drop-off`);
+    if (next.expand && typeof expandWorld === 'function' && (world.expandPx || 0) < MAX_DEEP_PX - 8) expandWorld(next.expand, `${tierName(world, E.tier)} opens beyond the drop-off`);
     else logEvent(world, `The pond has deepened: ${tierName(world, E.tier).toLowerCase()}`, null, { cat: 'rare', pri: 3 });
     if (typeof narrateTier === 'function') narrateTier(world, E.tier);
   }

@@ -508,6 +508,7 @@ function eat(world, c, f) {
     f.caught = true;
     noteGone(world, f, 'eaten');
     addHeat(world, f.x, f.y, 0.5);
+    if (typeof addBlood === 'function') addBlood(world, f.x, f.y, f.z || 6, f.body ? clamp(Math.max(...f.body.w) / 4, 0.3, 1.2) : 0.5);
     // A meal the size of the prey; afterwards the hunter is sated for a while (longer after a big one).
     const ratio = c.body && f.body ? clamp(Math.max(...f.body.w) / Math.max(0.5, ...c.body.w), 0.15, 1.2) : 0.5;
     gain = clamp(0.2 + 0.55 * ratio, 0.2, 0.8);
@@ -545,6 +546,36 @@ const FOOD_GAIN = { plankton: 0.1, pellet: 0.3, spawn: 0.3, brine: 0.5, spirulin
 const FOOD_FED = { pellet: 45, spawn: 45, brine: 90, spirulina: 240, krill: 120, bloodworm: 120, snow: 200 };
 const CONDITIONING = new Set(['brine', 'krill', 'bloodworm']); // foods that bring animals into breeding condition
 
+// Who's near: a coarse grid of the animals, built at most once per frame when asked, so the
+// once-a-second jobs (the marked, quirks and ills) don't compare every animal with every other.
+const NEAR_CELL = 48;
+function nearGrid(world) {
+  const G = world.nearGrid;
+  if (G && G.t === world.t && G.n === world.creatures.length) return G;
+  const cols = Math.ceil(world.W / NEAR_CELL) + 2, cells = new Map();
+  for (const c of world.creatures) {
+    if (c.gone) continue;
+    const k = ((Math.max(0, c.x) / NEAR_CELL) | 0) + ((Math.max(0, c.y) / NEAR_CELL) | 0) * cols;
+    let a = cells.get(k);
+    if (!a) cells.set(k, (a = []));
+    a.push(c);
+  }
+  return (world.nearGrid = { t: world.t, n: world.creatures.length, cols, cells });
+}
+// Call fn(o, d2) for every animal within r of (x, y).
+function forNear(world, x, y, r, fn) {
+  const G = nearGrid(world), r2 = r * r;
+  const i0 = Math.max(0, ((x - r) / NEAR_CELL) | 0), i1 = Math.max(0, ((x + r) / NEAR_CELL) | 0);
+  const j0 = Math.max(0, ((y - r) / NEAR_CELL) | 0), j1 = Math.max(0, ((y + r) / NEAR_CELL) | 0);
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const a = G.cells.get(i + j * G.cols);
+      if (!a) continue;
+      for (const o of a) { const d2 = (o.x - x) ** 2 + (o.y - y) ** 2; if (d2 <= r2) fn(o, d2); }
+    }
+  }
+}
+
 // How hungry: 0 full, 1 starving.
 const hungerOf = (c) => (c.life ? clamp(1 - c.life.energy, 0, 1) : 0);
 // Starving, a hunter takes what it would usually leave: anything well smaller than itself that
@@ -569,9 +600,10 @@ const RIPPLE_MAT = mat('#9cc8d0', '#bfe0e6', '#dff2f4', '#ffffff');
 const BUBBLE_MAT = mat('#a8d4e0', '#cfeaf0', '#eefafc', '#ffffff');
 const PLANKTON_MAT = solid('#b8e07a');
 
+const BLOOD_RIPPLE = mat('#4a0606', '#7a0a0a', '#a81414', '#d83a3a');
 class Ripple {
-  constructor(x, y, size) {
-    this.x = x; this.y = y; this.r = 0.6;
+  constructor(x, y, size, m = null) {
+    this.x = x; this.y = y; this.r = 0.6; this.m = m || RIPPLE_MAT;
     this.max = 3 + size * 5; this.speed = 5 + size * 4;
   }
 
@@ -580,7 +612,8 @@ class Ripple {
   draw(r) {
     const inner = Math.max(0, (this.r - 1.1) / this.r), i2 = inner * inner;
     r.alpha = 1 - this.r / this.max;
-    r.ellipsoid(this.x, this.y, this.r, this.r * 0.92, 0, 44.7, 0.1, (lx, ly) => (lx * lx + ly * ly > i2 ? RIPPLE_MAT : null), FX_ID);
+    const m = this.m;
+    r.ellipsoid(this.x, this.y, this.r, this.r * 0.92, 0, 44.7, 0.1, (lx, ly) => (lx * lx + ly * ly > i2 ? m : null), FX_ID);
   }
 }
 
@@ -624,9 +657,9 @@ class Sparkle {
   }
 }
 
-function addRipple(world, x, y, size = 1, silent = false) {
+function addRipple(world, x, y, size = 1, silent = false, m = null) {
   if (world.shore && isDry(world, x, y)) return;
-  if (world.effects.length < 220) world.effects.push(new Ripple(x, y, size));
+  if (world.effects.length < 220) world.effects.push(new Ripple(x, y, size, m));
   if (!silent && typeof Sound !== 'undefined') Sound.plop(x, y, size);
 }
 
@@ -722,6 +755,7 @@ function makeBaby(world, p, m, x, y) {
   }
   const g = childGenomeFor(c.seed, p.life.genome, m.life.genome);
   if (typeof curseAtBirth === 'function') curseAtBirth(world, g); // a pond pushed too fast breeds wrongness
+  if (typeof cometGift === 'function') cometGift(world, g); // born under a comet
   if (typeof habitatNudge === 'function') habitatNudge(world, x, y, p.species, g); // what stands around its birthplace
   if (!g.eld && typeof eldBirthChance === 'function' && Math.random() < eldBirthChance(world, x, y)) g.eld = true;
   // The Deep Dream: the mark passes more readily to young.
@@ -844,9 +878,13 @@ function updateWeather(world, dt) {
   if (world.opts.weather === false) w.target = 0;
   else if (w.next <= 0) {
     if (w.target === 0) {
-      w.target = rand(0.45, 1); w.next = rand(25, 60);
-      logEvent(world, w.target > 0.8 ? 'Dark clouds roll in: a downpour' : 'Clouds roll in and it starts to rain', null, { cat: 'sky' });
-    } else { w.target = 0; w.next = rand(90, 240); logEvent(world, 'The rain eases off', null, { cat: 'sky' }); }
+      w.target = rand(0.45, 1); w.next = rand(20, 50);
+      // Rain that falls red: when the stars are right, under a blood moon, or on a pond steeped in corruption.
+      const dark = 1 - 1 / (1 + ((world.game && world.game.corruptionEarned) || 0) / 600);
+      w.blood = typeof heavenNow === 'function' && (!!heavenNow(world, 'stars') || (!!heavenNow(world, 'bloodmoon') && Math.random() < 0.5) || Math.random() < 0.12 * dark);
+      logEvent(world, w.blood ? '✦ The clouds are the wrong colour. It is raining blood' : w.target > 0.8 ? 'Dark clouds roll in: a downpour' : 'Clouds roll in and it starts to rain', null, { cat: 'sky', pri: w.blood ? 3 : 1 });
+      if (w.blood && typeof narrate === 'function') narrate(world, 'bloodrain');
+    } else { w.target = 0; w.next = rand(150, 420); w.blood = false; logEvent(world, 'The rain eases off', null, { cat: 'sky' }); } // (clear spells run long)
   }
   if (typeof metaWeather === 'function') metaWeather(world, w); // the storm glass
   w.rain += (w.target - w.rain) * Math.min(1, dt * 0.12);
@@ -854,7 +892,7 @@ function updateWeather(world, dt) {
   if (typeof metaNow === 'function' && metaNow(world, 'weather') === 'storm') w.gust = Math.max(w.gust, 0.6 + 0.4 * Math.sin(world.t * 0.7));
   // Raindrops land as small ripples all over the surface.
   let drops = w.rain * world.W * world.H / 1800 * dt;
-  while (Math.random() < drops) { addRipple(world, rand(0, world.W), rand(0, world.H), rand(0.2, 0.6), true); drops -= 1; }
+  while (Math.random() < drops) { addRipple(world, rand(0, world.W), rand(0, world.H), rand(0.2, 0.6), true, w.blood ? BLOOD_RIPPLE : null); drops -= 1; }
 }
 
 // ---- the tick ---------------------------------------------------------------------
@@ -989,12 +1027,16 @@ function steerOut(c, world) {
   if (c.species === 'frog') c.targetPad = null;
 }
 
+// (Hunters look only at what's near them, through the neighbour grid: a marked horde enraged at
+// night is hundreds of hunters at once.)
+let huntStamp = 0;
 function assignHunts(world) {
-  const preds = [], prey = [];
+  const preds = [], prey = [], stamp = ++huntStamp;
+  if (typeof widthStamp !== 'undefined') widthStamp++;
   for (const c of world.creatures) {
     if (c.grabbed || c.leaving || c.gone || c.caught) continue;
-    if (isPredator(c)) preds.push(c);
-    else if (isPrey(c)) prey.push(c);
+    if (isPredator(c) || (typeof enraged === 'function' && enraged(world, c))) { preds.push(c); c.predT = stamp; }
+    else if (isPrey(c)) { prey.push(c); c.preyT = stamp; }
   }
   const night = world.darkness > 0.5;
   for (const p of preds) {
@@ -1004,32 +1046,34 @@ function assignHunts(world) {
     // is the further it looks and the longer it keeps after one quarry; starving, it will take
     // bigger prey than usual, even its own kind's young.
     const h = p.life ? hungerOf(p) : 0;
-    if (!p.life || p.life.satedUntil > world.t || p.life.energy > huntThreshold(p, Math.min(0.85, 0.6 * P.aggression * (0.4 + 0.6 * activity(world, p))))) { p.prey = null; continue; }
+    // (Rage: the dark, the sky and corruption make a hunter hungrier for it; the enraged hunt whatever their hunger.)
+    const rage = typeof rageOf === 'function' ? rageOf(world, p) : 1, mad = typeof enraged === 'function' && enraged(world, p);
+    if (!p.life || p.life.satedUntil > world.t || (!mad && p.life.energy > huntThreshold(p, Math.min(0.92, 0.6 * P.aggression * rage * (0.4 + 0.6 * activity(world, p)))))) { p.prey = null; continue; }
     const cur = p.prey;
     if (cur && !cur.caught && !cur.gone && Math.hypot(cur.x - p.x, cur.y - p.y) < 60 + 110 * h) continue;
+    // (The merely enraged look again every fourth pass, each on its own beat.)
+    if (mad && !isPredator(p) && (p.id + stamp) % 4) { if (cur && (cur.caught || cur.gone)) p.prey = null; continue; }
     let best = null, bd = Infinity;
     const starving = h > 0.75;
-    const R = 60 * P.intellect * huntRange(p) * (0.55 + 1.1 * h), extra = starving || !!p.life.hunter || huntLv(p, 'maw') > 0 || !!p.life.genome.cannibal;
-    for (const q of extra ? world.creatures.filter((q) => q.life && !q.grabbed && !q.leaving && !q.gone && !q.caught && !q.dying && (isPrey(q) || huntExtra(p, q) || (starving && desperateFor(p, q)))) : prey) {
-      if (Math.abs(q.z - p.z) > 14 || q === p) continue;
+    const R = 60 * P.intellect * huntRange(p) * (0.55 + 1.1 * Math.max(h, mad ? 0.6 : 0)), extra = mad || starving || !!p.life.hunter || huntLv(p, 'maw') > 0 || !!p.life.genome.cannibal;
+    forNear(world, p.x, p.y, R * 1.5, (q, d) => {
+      if (q === p || d >= bd || Math.abs(q.z - p.z) > 14) return;
+      if (q.preyT !== stamp) { if (!extra || !q.life || q.grabbed || q.leaving || q.gone || q.caught || q.dying || !(huntExtra(p, q) || (starving && desperateFor(p, q)) || (mad && rageTarget(p, q)))) return; }
+      else if (extra && q.dying) return;
       const Q = geneBuffs(q);
       // Ghostly prey is hard to see; glowing prey stands out at night.
       // (The Veil of Stars: hunters look straight through the marked.)
       const veil = q.life && q.life.genome.eld && typeof eldPath === 'function' && eldPath(world, 'veil') ? 0.35 : 0;
       const seen = R * (1 - Math.min(1, Q.stealth + veil) * 0.7 * huntSees(p)) * (night && Q.light > 0 ? 1.5 : 1);
-      const d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
-      if (d < seen * seen && d < bd) { bd = d; best = q; }
-    }
+      if (d < seen * seen) { bd = d; best = q; }
+    });
     p.prey = best;
   }
   for (const q of prey) {
     q.threat = null;
-    let bd = (26 * geneBuffs(q).intellect) ** 2;
-    for (const p of preds) {
-      if (!p.prey || Math.abs(q.z - p.z) > 14) continue;
-      const d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
-      if (d < bd) { bd = d; q.threat = p; }
-    }
+    const r = 26 * geneBuffs(q).intellect;
+    let bd = r * r;
+    forNear(world, q.x, q.y, r, (p, d) => { if (p.predT === stamp && p.prey && d < bd && Math.abs(q.z - p.z) <= 14) { bd = d; q.threat = p; } });
   }
 }
 
@@ -1179,6 +1223,7 @@ function describe(c) {
   else if (c.prey) mood = L && L.energy < 0.25 ? 'starving, hunting' : 'hunting';
   else if (c.threat) mood = 'fleeing';
   else if (L && L.satedUntil && typeof world !== 'undefined' && L.satedUntil > world.t && isPredator(c)) mood = 'sated after a kill';
+  if (typeof world !== 'undefined' && typeof enraged === 'function' && enraged(world, c) && !c.grabbed) mood = c.prey ? 'in a rage, hunting' : 'in a rage';
   else if (c.inflate > 0.3) mood = 'puffed up';
   else if (L && L.energy < 0.35) mood = 'hungry';
   else if (L && L.scale < 0.9) mood = 'growing';

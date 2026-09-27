@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=21">
+  <link rel="stylesheet" href="style.css?v=22">
 
   <script type="application/ld+json">
   {
@@ -91,6 +91,7 @@
       <summary>Your ponds</summary>
       <p class="note">Your pond saves itself in this browser and is here when you come back. The address bar holds its short link: bookmark it or share it, and it opens this pond as it grows. Friends who open it get their own copy.</p>
       <ol class="pond-list" id="pond-list"></ol>
+      <label class="check" title="Look only\nWhoever opens this pond's link can watch it, but can't take a copy to grow as their own. Your pond stays the only one."><input type="checkbox" id="pond-lock"> Visitors can only look (no copies)</label>
       <div class="grid2">
         <button type="button" id="reset" title="Start a brand new pond; this one stays saved">New pond</button>
         <button type="button" id="copy-link" title="Copy a link that opens this pond just as it is now">Copy link</button>
@@ -137,7 +138,9 @@
         <li>Freshwater, saltwater or both: reef fish, corals and starfish, or koi, frogs and lily pads.</li>
         <li>Genetics that inherit like real genes (recessive, dominant, incompletely dominant, hybrid vigour, inbreeding), with rare albino, leucistic, melanistic, xanthic, axanthic, piebald, marbled, shiny, glowing, ghostly, chimeric, giant and dwarf animals, from Uncommon up to Mythic. Genes set fertility, longevity, vitality, intellect, light and temper.</li>
         <li>Fresh water is easy and calm, salt water hard, and both together difficult: fresh and salt life fight over the water, and aggressive water drives animals away.</li>
-        <li>A long game: the surf erodes tide pools into the beach, then opens the deep beyond a drop-off, tier by tier, down to the abyss (salt) or a drowned cathedral (fresh), with sharks, anglerfish, cavefish, olms and mythic creatures.</li>
+        <li>A long game: the surf erodes tide pools into the beach, then opens the deep beyond a drop-off, tier by tier, down to the abyss (salt) or a drowned cathedral (fresh), with sharks, anglerfish, cavefish, olms and mythic creatures, and further out and darker still, into the deep past: trilobites, sea scorpions, dunkleosteus, plesiosaurs and mosasaurs.</li>
+        <li>The dark makes animals savage: the marked roll dice as they change and their natures warp, fights break out at night, and hunters follow blood in the water.</li>
+        <li>A sky of its own: glass-calm days you can see deep into, meteor showers, auroras, comets, blood moons, eclipses, and when the stars are right, blood rain.</li>
         <li>Points for every birth and rare find, pearls to spend on animals, plants and food, a shared leaderboard, and fireflies that show your score at night.</li>
         <li>Your pond saves itself and is waiting when you come back, and the address bar always holds its short four-word link.</li>
       </ul>
@@ -154,9 +157,10 @@
       <button type="button" id="open-depths" title="The depths and the evolution tree">Depths</button>
       <button type="button" id="open-hatchery" title="The hatchery (build one first)">Hatchery</button>
     </div>
-    <p class="keys">Arrows/WASD pan · +/− zoom · F follow · T tour · C animals · J journal · P score · L light · B bones · Space pause · M sound · H hide</p>
+    <p class="keys">Arrows/WASD pan · +/− zoom · F follow · T tour · C animals · J journal · P score · L light · B bones · Space pause · M sound · H hide (the most used tools stay down the left)</p>
   </aside>
   <button type="button" id="show-hud" class="icon" hidden aria-label="Show panel" title="Show panel (H)">☰</button>
+  <nav id="quickbar" class="quickbar" hidden aria-label="Most used tools"></nav>
 
   <div id="sky" class="sky">
     <button type="button" id="sky-btn" class="sky-btn" aria-expanded="false" aria-controls="sky-panel" aria-label="Time, moon and tide">
@@ -175,6 +179,7 @@
       <div class="tide-row"><span>Tide</span><div class="tidebar"><i id="tide-fill"></i></div></div>
       <p class="note" id="tide-text"></p>
       <p class="note" id="surf-text"></p>
+      <p class="note heavens-line" id="heavens-text" hidden></p>
       <div id="sky-artifacts" class="sky-artifacts" hidden></div>
       <div class="fields">
         <label>Light <select id="opt-light"></select></label>
@@ -344,41 +349,45 @@
     </div>
   </div>
 
-  <script src="js/core.js?v=26"></script>
-  <script src="js/raster.js?v=26"></script>
-  <script src="js/creatures.js?v=26"></script>
-  <script src="js/critters.js?v=26"></script>
-  <script src="js/wildlife.js?v=26"></script>
-  <script src="js/wildfish.js?v=26"></script>
-  <script src="js/sound.js?v=26"></script>
-  <script src="js/life.js?v=26"></script>
-  <script src="js/plants.js?v=26"></script>
-  <script src="js/scene.js?v=26"></script>
-  <script src="js/structures.js?v=26"></script>
-  <script src="js/erosion.js?v=26"></script>
-  <script src="js/sky.js?v=26"></script>
-  <script src="js/ecology.js?v=26"></script>
-  <script src="js/game.js?v=26"></script>
-  <script src="js/deep.js?v=26"></script>
-  <script src="js/remains.js?v=26"></script>
-  <script src="js/eldritch.js?v=26"></script>
-  <script src="js/coast.js?v=26"></script>
-  <script src="js/gulls.js?v=26"></script>
-  <script src="js/traits.js?v=26"></script>
-  <script src="js/save.js?v=26"></script>
-  <script src="js/link.js?v=26"></script>
-  <script src="js/abyss.js?v=26"></script>
-  <script src="js/quirks.js?v=26"></script>
-  <script src="js/hunters.js?v=26"></script>
-  <script src="js/habitats.js?v=26"></script>
-  <script src="js/artifacts.js?v=26"></script>
-  <script src="js/story.js?v=26"></script>
-  <script src="js/lineage.js?v=26"></script>
-  <script src="js/depths.js?v=26"></script>
-  <script src="js/sand.js?v=26"></script>
-  <script src="js/net.js?v=26"></script>
-  <script src="js/hud.js?v=26"></script>
-  <script src="js/main.js?v=29"></script>
-  <script src="js/tips.js?v=26"></script>
+  <script src="js/core.js?v=28"></script>
+  <script src="js/raster.js?v=28"></script>
+  <script src="js/creatures.js?v=28"></script>
+  <script src="js/critters.js?v=28"></script>
+  <script src="js/wildlife.js?v=28"></script>
+  <script src="js/wildfish.js?v=28"></script>
+  <script src="js/sound.js?v=28"></script>
+  <script src="js/life.js?v=28"></script>
+  <script src="js/plants.js?v=28"></script>
+  <script src="js/scene.js?v=28"></script>
+  <script src="js/structures.js?v=28"></script>
+  <script src="js/erosion.js?v=28"></script>
+  <script src="js/sky.js?v=28"></script>
+  <script src="js/ecology.js?v=28"></script>
+  <script src="js/game.js?v=28"></script>
+  <script src="js/deep.js?v=28"></script>
+  <script src="js/remains.js?v=28"></script>
+  <script src="js/eldritch.js?v=28"></script>
+  <script src="js/coast.js?v=28"></script>
+  <script src="js/gulls.js?v=28"></script>
+  <script src="js/traits.js?v=28"></script>
+  <script src="js/save.js?v=28"></script>
+  <script src="js/link.js?v=28"></script>
+  <script src="js/abyss.js?v=28"></script>
+  <script src="js/quirks.js?v=28"></script>
+  <script src="js/hunters.js?v=28"></script>
+  <script src="js/habitats.js?v=28"></script>
+  <script src="js/artifacts.js?v=28"></script>
+  <script src="js/story.js?v=28"></script>
+  <script src="js/lineage.js?v=28"></script>
+  <script src="js/depths.js?v=28"></script>
+  <script src="js/sand.js?v=28"></script>
+  <script src="js/heavens.js?v=28"></script>
+  <script src="js/nature.js?v=28"></script>
+  <script src="js/pollution.js?v=28"></script>
+  <script src="js/prehistoric.js?v=28"></script>
+  <script src="js/net.js?v=28"></script>
+  <script src="js/hud.js?v=28"></script>
+  <script src="js/main.js?v=30"></script>
+  <script src="js/tips.js?v=28"></script>
 </body>
 </html>
