@@ -159,19 +159,40 @@ function layout(regen) {
   resetView();
 }
 
+// Somewhere open for new arrivals: in the water, clear of rocks, and the least crowded of a dozen tries.
 function openSpot() {
   const { W, H } = world;
-  for (let i = 0; i < 20; i++) {
+  let best = null, bn = Infinity;
+  for (let i = 0, tries = 0; i < 40 && tries < 12; i++) {
     const x = rand(W * 0.08, W * 0.92), y = rand(H * 0.08, H * 0.92);
-    if (!world.rocks.some((r) => Math.hypot(r.x - x, r.y - y) < Math.max(r.a, r.b) + 8)) return [x, y];
+    if (world.rocks.some((r) => Math.hypot(r.x - x, r.y - y) < Math.max(r.a, r.b) + 8) || (world.shore && isDry(world, x, y))) continue;
+    tries++;
+    let n = 0;
+    forNear(world, x, y, 40, () => { n++; });
+    if (n < bn) { bn = n; best = [x, y]; }
+    if (!n) break;
   }
-  return [W / 2, H / 2];
+  return best || [W / 2, H / 2];
+}
+// A group that arrived on one spot fans out a little (a school keeps together, but not in a heap).
+function spreadGroup(group) {
+  if (group.length < 3) return;
+  const R = 4 + group.length * 1.5;
+  group.forEach((c, i) => {
+    if (i === 0) return;
+    const a = i / group.length * TAU + rand(-0.3, 0.3), d = rand(0.5, 1) * R;
+    const x = clamp(c.x + Math.cos(a) * d, 4, world.W - 4), y = clamp(c.y + Math.sin(a) * d, 4, world.H - 4);
+    c.x = x; c.y = y;
+    if (c.place) c.place(x, y); else if (c.body) c.body.place(x, y, c.heading);
+    if (c.footRest) for (const L of c.legs) [L.fx, L.fy] = c.footRest(L);
+  });
 }
 
 function spawn(kind, x, y, how = 'founder') {
   if (world.creatures.length >= world.maxPop + 60) return false;
   if (x === undefined) [x, y] = openSpot();
   const group = SPECIES[kind].spawn(world, x, y);
+  spreadGroup(group);
   for (const c of group) { initLife(c, { alpha: 0 }); noteBorn(world, c, how); }
   world.creatures.push(...group);
   world.targets[kind] = (world.targets[kind] || 0) + group.length;
@@ -188,6 +209,7 @@ function buyAnimal(kind, enh = [], ancient = null, grade = 0) {
   if (!spendEssence(world, price, 'life')) { notEnough(price, 'essence'); return false; }
   const [x, y] = openSpot();
   const group = SPECIES[kind].spawn(world, x, y);
+  spreadGroup(group);
   const p = settleChance(world, kind, enh.includes('hardy') ? ENHANCE.hardy.settle : 0);
   let failed = 0;
   const genes = world.game.fossilGenes || [], ai = ancient ? genes.indexOf(ancient) : -1;
@@ -456,12 +478,12 @@ function updateFireflies(dt) {
 // Sun glints: brief sparkles on the surface in daylight.
 const GLINT = hexToInt('#f6fcff'), GLINT_SOFT = hexToInt('#cfe6ee');
 function updateGlints(dt) {
-  world.glints = world.glints.filter((g) => (g.t += dt) < 0.35);
+  world.glints = world.glints.filter((g) => (g.t += dt) < 0.9);
   const [x0, y0, x1, y1] = visibleRect();
   // Sunlight by day; a little moonlight on bright nights.
   const moon = world.moon ? world.moon.illum : 0;
   const k = ((1 - world.darkness) + world.darkness * moon * 0.35) * (1 - world.weather.rain) * (world.opts.caustics ? 1 : 0.4);
-  let n = (x1 - x0) * (y1 - y0) * 0.000007 * k * dt * 60;
+  let n = (x1 - x0) * (y1 - y0) * 0.000003 * k * dt * 60;
   while (Math.random() < n) {
     const g = { x: randi(x0 + 1, x1 - 1), y: randi(y0 + 1, y1 - 1), t: 0, star: Math.random() < 0.25 };
     if (!isDry(world, g.x, g.y)) world.glints.push(g);
@@ -473,8 +495,8 @@ function drawGlints() {
   const W = world.W;
   for (const g of world.glints) {
     const p = g.x + g.y * W;
-    out[p] = g.t > 0.07 && g.t < 0.28 ? GLINT : GLINT_SOFT;
-    if (g.star && g.t > 0.1 && g.t < 0.24) { out[p - 1] = out[p + 1] = out[p - W] = out[p + W] = GLINT_SOFT; }
+    out[p] = g.t > 0.2 && g.t < 0.7 ? GLINT : GLINT_SOFT;
+    if (g.star && g.t > 0.3 && g.t < 0.6) { out[p - 1] = out[p + 1] = out[p - W] = out[p + W] = GLINT_SOFT; }
   }
 }
 
@@ -538,8 +560,8 @@ function render(full = false) {
   // Refraction: rows and columns of the floor shift by a pixel as the surface moves.
   const water = WATERS[o.water] || WATERS.teal, wob = world.wob;
   const amp = water.wobble * (1 + Math.max(0, world.weather.gust) * 0.5 + world.tide.surf * 0.3);
-  for (let y = rect[1]; y <= rect[3]; y++) wob.x[y] = Math.round(Math.sin(y * 0.19 + t * 1.9) * amp * (0.55 + 0.45 * Math.sin(t * 0.4 + y * 0.013)));
-  for (let x = rect[0]; x <= rect[2]; x++) wob.y[x] = Math.round(Math.sin(x * 0.15 + t * 1.6) * amp * (0.55 + 0.45 * Math.sin(t * 0.35 + x * 0.011)));
+  for (let y = rect[1]; y <= rect[3]; y++) wob.x[y] = Math.round(Math.sin(y * 0.19 + t * 0.7) * amp * (0.55 + 0.45 * Math.sin(t * 0.2 + y * 0.013)));
+  for (let x = rect[0]; x <= rect[2]; x++) wob.y[x] = Math.round(Math.sin(x * 0.15 + t * 0.6) * amp * (0.55 + 0.45 * Math.sin(t * 0.17 + x * 0.011)));
   // A bloom turns the water green (a red tide, red); wind and surf raise a swell, bigger over the deep.
   const bloom = world.blight && world.blight.k === 'bloom', hab = world.opts.habitat, glass = typeof isGlass === 'function' && isGlass(world);
   let fogColor = bloom ? mixColor(world.waterColor, BLOOM_TINT[hab] || BLOOM_TINT.mixed, 0.45) : world.waterColor;

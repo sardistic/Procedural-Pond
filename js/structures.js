@@ -723,6 +723,11 @@ function applyStains(world, rect = null) {
 }
 
 // ---- the hatchery: an idle breeding game -----------------------------------------------------
+// Pens hold breeding pairs, each a line of its own kind: one pen to start, up to five. Broods
+// come from the pairs in turn, slowly, and a pair rests while its kind is already plentiful in
+// the pond, so the hatchery adds variety, not a horde of one kind. The best of each brood (for
+// what you're breeding for) can take the weaker parent's place in its pen, so each line is bred
+// forward generation by generation.
 
 const HATCH_FOCUS = {
   size: { label: 'Size', gene: 'size', hi: 1.5 }, speed: { label: 'Speed', gene: 'speed', hi: 1.3 },
@@ -733,27 +738,54 @@ const HATCH_FOCUS = {
   dream: { label: 'The deep dream', eld: true },
 };
 // Levers, bought with pearls (p) or essence (e); each level costs more than the last.
+// (Many small steps: each level does a little, and costs more than the last.)
 const HATCH_UPGRADES = {
-  feeder: { label: 'Auto-feeder', cur: 'pearls', base: 40, grow: 1.6, max: 8, note: 'feeds the brood on its own, even while you are away' },
-  paddle: { label: 'Bigger scoop', cur: 'pearls', base: 25, grow: 1.5, max: 8, note: 'each click feeds more' },
-  tank: { label: 'Bigger tank', cur: 'pearls', base: 60, grow: 1.7, max: 6, note: 'one more young in every brood' },
-  incubator: { label: 'Incubator', cur: 'pearls', base: 50, grow: 1.6, max: 6, note: 'broods need less food' },
-  lamp: { label: 'UV lamp', cur: 'essence', base: 15, grow: 1.8, max: 5, note: 'more mutations, so more rare young' },
-  filter: { label: 'Selective filter', cur: 'essence', base: 12, grow: 1.7, max: 5, note: 'pushes the chosen trait harder' },
+  feeder: { label: 'Auto-feeder', cur: 'pearls', base: 40, grow: 1.45, max: 12, note: 'feeds the broods on its own, even while you are away' },
+  paddle: { label: 'Bigger scoop', cur: 'pearls', base: 25, grow: 1.4, max: 12, note: 'each click feeds more' },
+  tank: { label: 'Bigger tank', cur: 'pearls', base: 60, grow: 1.55, max: 10, note: 'one more young in a brood every other level' },
+  incubator: { label: 'Incubator', cur: 'pearls', base: 50, grow: 1.5, max: 10, note: 'broods need a little less food' },
+  lamp: { label: 'UV lamp', cur: 'essence', base: 15, grow: 1.6, max: 8, note: 'more mutations, so more rare young' },
+  filter: { label: 'Selective filter', cur: 'essence', base: 12, grow: 1.55, max: 8, note: 'pushes the chosen trait harder' },
+  pens: { label: 'Breeding pens', cur: 'essence', base: 40, grow: 2.2, max: 4, note: 'room for another breeding pair (broods take turns)' },
 };
 
-const newHatchery = () => ({ nutrients: 0, focus: 'size', stock: [], broods: 0, levels: { feeder: 0, paddle: 0, tank: 0, incubator: 0, lamp: 0, filter: 0 } });
-const hatchCost = (H) => Math.round(40 * 0.85 ** H.levels.incubator);
-const hatchClick = (H) => 1 + H.levels.paddle * 0.75;
-const hatchAuto = (H) => H.levels.feeder * 0.25; // food per second
+const newHatchery = () => ({ nutrients: 0, focus: 'size', stock: [], broods: 0, turn: 0, levels: { pens: 0, feeder: 0, paddle: 0, tank: 0, incubator: 0, lamp: 0, filter: 0 } });
+const hatchCost = (H) => Math.round(60 * 0.93 ** H.levels.incubator);
+const hatchClick = (H) => 1 + H.levels.paddle * 0.5;
+const hatchAuto = (H) => H.levels.feeder * 0.1; // food per second
+const hatchBroodSize = (H) => 2 + Math.floor(H.levels.tank / 2);
+const hatchSlots = (H) => 2 * (1 + (H.levels.pens || 0)); // two to a pen
 const upgradeCost = (key, lvl) => Math.round(HATCH_UPGRADES[key].base * HATCH_UPGRADES[key].grow ** lvl);
 
 function hatcheryStructure(world) { return (world.structures || []).find((s) => s.kind === 'hatchery'); }
 
-// A pair from the same breeding line, if the stock holds one.
-function hatchPair(H) {
-  const [a, b] = H.stock;
-  return a && b && a.key === b.key ? [a, b] : null;
+// The stocked pairs, each two of the same breeding line, in the order they were stocked.
+function hatchPairs(H) {
+  const pairs = [], open = new Map();
+  for (const r of H.stock) {
+    const o = open.get(r.key);
+    if (o) { pairs.push([o, r]); open.delete(r.key); } else open.set(r.key, r);
+  }
+  return pairs;
+}
+const hatchPair = (H) => hatchPairs(H)[0] || null;
+// A stocked animal still waiting for its mate.
+function hatchSingle(H) {
+  const paired = new Set(hatchPairs(H).flat());
+  return H.stock.find((r) => !paired.has(r)) || null;
+}
+// How many of a kind the pond can have before its pair rests: a share of the pond, never a horde.
+const hatchCap = (world) => Math.max(10, Math.round((world.maxPop || 200) * 0.08));
+const kindCount = (world, species) => world.creatures.reduce((n, c) => n + (c.life && !c.leaving && (c.species === species || (species === 'frog' && c.species === 'tadpole')) ? 1 : 0), 0);
+const pairResting = (world, [a]) => kindCount(world, a.species) >= hatchCap(world);
+// The next pair to brood, in turn, skipping those resting.
+function nextHatchPair(world) {
+  const H = world.hatchery, pairs = hatchPairs(H);
+  for (let k = 0; k < pairs.length; k++) {
+    const i = ((H.turn || 0) + k) % pairs.length;
+    if (!pairResting(world, pairs[i])) return [pairs[i], i];
+  }
+  return [null, -1];
 }
 
 function feedHatchery(world, amount) {
@@ -766,18 +798,29 @@ function updateHatchery(world, dt) {
   const H = world.hatchery;
   if (!H || !hatcheryStructure(world)) return;
   if (hatchAuto(H)) feedHatchery(world, hatchAuto(H) * dt);
-  if (H.nutrients >= hatchCost(H) && hatchPair(H) && world.creatures.length < world.maxPop + 40) {
+  if (H.nutrients >= hatchCost(H) && world.creatures.length < world.maxPop + 40) {
+    const [pair, i] = nextHatchPair(world);
+    if (!pair) return; // (every stocked kind is plentiful: the food keeps)
     H.nutrients -= hatchCost(H);
-    hatchBrood(world);
+    H.turn = i + 1;
+    hatchBrood(world, pair);
   }
 }
 
-// A brood from the stocked pair: ordinary inheritance, then the chosen trait pushed
+// How good an animal is at what the hatchery breeds for.
+function focusScore(focus, g) {
+  if (focus.eld) return g.eld ? 1 : 0;
+  if (focus.mutate) return tierOf(traitsOf(g)) + (g.shiny ? 1 : 0);
+  return focus.hi === 0 ? -g[focus.gene] : g[focus.gene];
+}
+
+// A brood from a stocked pair: ordinary inheritance, then the chosen trait pushed
 // toward its extreme (harder with the filter), and more mutations under the lamp.
-function hatchBrood(world) {
-  const H = world.hatchery, s = hatcheryStructure(world), [a, b] = hatchPair(H);
+function hatchBrood(world, pair = nextHatchPair(world)[0]) {
+  if (!pair) return;
+  const H = world.hatchery, s = hatcheryStructure(world), [a, b] = pair;
   const focus = HATCH_FOCUS[H.focus] || HATCH_FOCUS.size, push = 0.25 + 0.12 * H.levels.filter;
-  const n = 2 + H.levels.tank, babies = [], school = schoolFor(a, s);
+  const n = Math.max(1, Math.min(hatchBroodSize(H), hatchCap(world) - kindCount(world, a.species))), babies = [], school = schoolFor(a, s);
   for (let i = 0; i < n; i++) {
     const ang = rand(0, TAU), x = s.x + Math.cos(ang) * 14, y = s.y + Math.sin(ang) * 14;
     const kind = a.k === 'frog' ? 'tadpole' : a.k;
@@ -805,8 +848,21 @@ function hatchBrood(world) {
   H.broods++;
   scoreBirths(world, babies);
   deepenBy(world, 0.02);
-  const ess = gainEssence(world, 2 + H.levels.tank, 'hatchery');
+  const ess = gainEssence(world, 2 + Math.floor(H.levels.tank / 2), 'hatchery');
   logEvent(world, `The hatchery hatched ${n} young from ${a.name} & ${b.name}, bred for ${focus.label.toLowerCase()} · +${ess} essence`, babies[0], { cat: 'life', pri: 1, key: 'hatch-brood', merge: (e) => `The hatchery hatched ${e.n} broods` });
+  // Bred forward: the best of the brood takes the weaker parent's place in the pen (the parent goes back to the pond).
+  const best = babies.reduce((m, c) => (focusScore(focus, c.life.genome) > focusScore(focus, m.life.genome) ? c : m), babies[0]);
+  const weak = focusScore(focus, a.genome) <= focusScore(focus, b.genome) ? a : b;
+  if (best && best.species !== 'tadpole' && focusScore(focus, best.life.genome) > focusScore(focus, weak.genome) + (focus.gene ? 0.02 : 0)) {
+    const i = H.stock.indexOf(weak);
+    releaseStock(world, i);
+    H.stock.splice(i, 0, stockRecord(best));
+    world.creatures.splice(world.creatures.indexOf(best), 1);
+    noteGone(world, best, 'to the hatchery');
+    logEvent(world, `${best.life.name} (gen ${best.life.gen}) was the best of the brood: it takes ${weak.name}'s place in the pen, and ${weak.name} goes back to the pond`, null, {
+      cat: 'life', pri: 1, key: 'hatch-forward', merge: (e) => `The hatchery bred its lines forward ${e.n} times`,
+    });
+  }
 }
 
 // Schooling fish hatch (or come back) as a school of their own.
@@ -828,25 +884,30 @@ function hatchCandidates(world) {
     lines.get(key).push(c);
   }
   const out = [];
+  const single = hatchSingle(H);
+  if (!single && H.stock.length + 2 > hatchSlots(H)) return [];
   for (const [key, list] of lines) {
-    if (H.stock.length === 1 ? key !== H.stock[0].key : list.length < 2) continue;
+    if (single ? key !== single.key : list.length < 2 || hatchPairs(H).some(([a]) => a.key === key)) continue;
     list.sort((a, b) => worth(b) - worth(a));
     out.push({ key, list, value: list.slice(0, 2).reduce((a, c) => a + worth(c), 0) });
   }
   return out.sort((a, b) => b.value - a.value);
 }
 
-// Take an animal out of the pond into the hatchery's stock (two at most).
+// An animal as the hatchery keeps it.
+const stockRecord = (c) => ({
+  k: c.make, key: breedKey(c), args: c.species === 'wild' ? { sp: c.sp } : c.species === 'koi' ? { variety: c.variety } : {},
+  s: c.seed, name: c.life.name, gen: c.life.gen, genome: c.life.genome, species: c.species, traits: c.life.traits.slice(),
+  schoolKind: c.school ? c.school.kind || null : null,
+});
+// Take an animal out of the pond into the hatchery's stock (two to a pen).
 function stockHatchery(world, c) {
   const H = world.hatchery;
   if (!H || !c.life || !BREED[c.species === 'tadpole' ? 'frog' : c.species]) return 'only animals that lay eggs can be bred here';
-  const rec = {
-    k: c.make, key: breedKey(c), args: c.species === 'wild' ? { sp: c.sp } : c.species === 'koi' ? { variety: c.variety } : {},
-    s: c.seed, name: c.life.name, gen: c.life.gen, genome: c.life.genome, species: c.species, traits: c.life.traits.slice(),
-    schoolKind: c.school ? c.school.kind || null : null,
-  };
-  if (H.stock.length >= 2) H.stock.shift();
-  H.stock.push(rec);
+  const single = hatchSingle(H);
+  if (single && single.key !== breedKey(c)) return `${single.name} is waiting for a mate of its own kind first`;
+  if (!single && H.stock.length + 2 > hatchSlots(H)) return 'the pens are full: release a pair, or build another pen';
+  H.stock.push(stockRecord(c));
   world.creatures.splice(world.creatures.indexOf(c), 1);
   noteGone(world, c, 'to the hatchery');
   return null;

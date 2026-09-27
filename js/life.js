@@ -563,6 +563,11 @@ function nearGrid(world) {
   }
   return (world.nearGrid = { t: world.t, n: world.creatures.length, cols, cells });
 }
+// How many animals share the grid cell at (x, y): a rough, instant measure of crowding.
+function crowdAt(world, x, y) {
+  const G = nearGrid(world), a = G.cells.get(((Math.max(0, x) / NEAR_CELL) | 0) + ((Math.max(0, y) / NEAR_CELL) | 0) * G.cols);
+  return a ? a.length : 0;
+}
 // Call fn(o, d2) for every animal within r of (x, y).
 function forNear(world, x, y, r, fn) {
   const G = nearGrid(world), r2 = r * r;

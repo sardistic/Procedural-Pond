@@ -175,8 +175,10 @@ class Creature {
 
   newTarget(world, avoidRocks) {
     const m = Math.min(28, world.W * 0.15, world.H * 0.15), wet = world.shore && !AMPHIBIOUS.has(this.species);
-    // More often than not, head for somewhere this species likes.
-    if (this.life && Math.random() < 0.55 && typeof likedSpot === 'function') {
+    // More often than not, head for somewhere this species likes (less often where it's crowded:
+    // a horde spreads out over the pond instead of circling one patch).
+    const crowd = typeof crowdAt === 'function' ? crowdAt(world, this.x, this.y) : 0;
+    if (this.life && Math.random() < 0.55 / (1 + crowd / 6) && typeof likedSpot === 'function') {
       const s = likedSpot(world, this);
       if (s) {
         const a = rand(0, TAU), R = spotRadius(s) + rand(3, 14);
@@ -187,16 +189,22 @@ class Creature {
         }
       }
     }
-    let best = null, be = Infinity;
-    for (let tries = 0; tries < 12; tries++) {
+    // Anywhere open: the least crowded of the first few good spots (so a horde spreads over the pond).
+    let best = null, be = Infinity, good = null, gc = Infinity, ok = 0;
+    for (let tries = 0; tries < 12 && ok < 4; tries++) {
       const x = rand(m, world.W - m), y = rand(m, world.H - m);
       if (this.keepIn && !this.keepIn(world, x, y)) continue;
       const e = wet ? shoreAt(world, x, y) : 0;
       if (e < be) { be = e; best = [x, y]; }
       if (wet && e > world.tide.level - SHORE_MARGIN - 0.06) continue;
-      if (!avoidRocks || !world.rocks.some((r) => Math.hypot(r.x - x, r.y - y) < Math.max(r.a, r.b) + 6)) { best = [x, y]; break; }
+      if (!avoidRocks || !world.rocks.some((r) => Math.hypot(r.x - x, r.y - y) < Math.max(r.a, r.b) + 6)) {
+        ok++;
+        const n = typeof crowdAt === 'function' ? crowdAt(world, x, y) : 0;
+        if (n < gc) { gc = n; good = [x, y]; }
+        if (!n) break;
+      }
     }
-    if (best) [this.tx, this.ty] = best;
+    if (good || best) [this.tx, this.ty] = good || best;
   }
 
   turnToward(angle, rate, dt) {
@@ -249,6 +257,7 @@ class Fish extends Creature {
       const prey = this.prey && !this.prey.caught && !this.prey.gone ? this.prey : null;
       const f = prey || world.nearestFood(this.x, this.y, this.sight * (hungry ? 1.4 : 1),
         (fd) => (hungry || fd.fed) && (!this.foodFilter || this.foodFilter(fd)));
+      this.chasing = !!f;
       if (f) {
         gx = f.x - this.x; gy = f.y - this.y;
         want = this.maxSpeed * (prey ? (1.05 + 0.4 * (typeof hungerOf === 'function' ? hungerOf(this) : 0.5)) * (typeof huntBurst === 'function' ? huntBurst(this) : 1) : 1); // the hungrier, the harder it chases
@@ -286,7 +295,8 @@ class Fish extends Creature {
       const [sx, sy] = this.social(world);
       const [dx, dy] = deepPush(world, this);
       const [ex, ey] = typeof eldPush === 'function' ? eldPush(world, this) : [0, 0]; // everyone keeps clear of the marked
-      gx += ax * 2 + sx + dx + ex; gy += ay * 2 + sy + dy + ey;
+      const [px, py] = this.personalSpace(world, dt), pk = this.chasing ? 0.3 : 1; // (going for food or prey, it shoulders in)
+      gx += ax * 2 + sx + dx + ex + px * pk; gy += ay * 2 + sy + dy + ey + py * pk;
     }
     const sp = this.speed / this.maxSpeed;
     this.turnToward(Math.atan2(gy, gx), this.turnRate * (this.grabbed ? 3 : 0.6 + sp), dt);
@@ -306,11 +316,13 @@ class Fish extends Creature {
     this.newTarget(world, this.zMax < 8);
     this.timer = rand(3, 9);
     this.cruiseNow = this.cruise * (Math.random() < 0.2 ? 0.3 : rand(0.6, 1.1));
+    // In a crowd it sets off properly for somewhere emptier, and keeps going.
+    if (typeof crowdAt === 'function' && crowdAt(world, this.x, this.y) >= 10) { this.timer = rand(12, 20); this.cruiseNow = this.cruise * rand(0.9, 1.2); }
     this.tz = rand(this.zMin, this.zMax);
     if (typeof deepZ === 'function') this.tz = deepZ(world, this, this.tz); // over the deep: up at night, down by day
     // Out of its active hours it rests: near cover, low down, drifting slowly.
     if (this.life && activity(world, this) < 0.55 && !this.alwaysSwims) {
-      const s = likedSpot(world, this);
+      const s = (typeof crowdAt !== 'function' || crowdAt(world, this.x, this.y) < 10 || Math.random() < 0.3) && likedSpot(world, this);
       if (s) { const a = rand(0, TAU), R = spotRadius(s) + rand(2, 8); this.tx = clamp(s.x + Math.cos(a) * R, 8, world.W - 8); this.ty = clamp(s.y + Math.sin(a) * R, 8, world.H - 8); }
       this.tz = this.zMin;
       this.timer = rand(7, 15);
@@ -319,7 +331,28 @@ class Fish extends Creature {
   }
 
   social() { return [0, 0]; }
+
+  // Personal space: a swimmer eases away from others pressed right up against it, so a crowd
+  // spreads out instead of heaping on one spot. (A few times a second, from the neighbour grid;
+  // a school's own boids already do this, and a hunter doesn't shy from its quarry.)
+  personalSpace(world, dt) {
+    if ((this.spaceT = (this.spaceT ?? Math.random() * 0.25) - dt) > 0) return this.space || NO_SPACE;
+    this.spaceT = 0.25;
+    if (this.school || typeof forNear !== 'function' || !this.body) return (this.space = NO_SPACE);
+    const R = Math.min(16, this.body.w[0] * 2.2 + 5);
+    let sx = 0, sy = 0, n = 0;
+    forNear(world, this.x, this.y, R, (o, d2) => {
+      if (o === this || n >= 14 || !o.body || o === this.prey || o.grabbed || Math.abs((o.z || 0) - this.z) > 8) return;
+      n++;
+      if (d2 < 0.01) { const a = Math.random() * TAU; sx += Math.cos(a); sy += Math.sin(a); return; }
+      const d = Math.sqrt(d2), f = (R - d) / R;
+      sx += (this.x - o.x) / d * f; sy += (this.y - o.y) / d * f;
+    });
+    const m = Math.hypot(sx, sy), k = 1.4;
+    return (this.space = m > 1 ? [sx / m * k, sy / m * k] : [sx * k, sy * k]);
+  }
 }
+const NO_SPACE = [0, 0];
 
 const KOI_VARIETIES = [
   { base: 'koiWhite', fin: 'finWhite', spots: [['koiRed', 0.5]] },                       // kohaku

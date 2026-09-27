@@ -1216,21 +1216,24 @@ function setHatchery(open) {
 function renderHatchery() {
   const H = world.hatchery;
   if (!hatchUi.open || !H) return;
-  const cost = hatchCost(H), pair = hatchPair(H), n = 2 + H.levels.tank, auto = hatchAuto(H);
+  const cost = hatchCost(H), pairs = hatchPairs(H), single = hatchSingle(H), n = hatchBroodSize(H), auto = hatchAuto(H), [next] = nextHatchPair(world);
   byId('hatch-broods').textContent = H.broods ? `· ${H.broods} brood${H.broods > 1 ? 's' : ''}` : '';
   byId('hatch-click').textContent = `+${hatchClick(H).toFixed(2).replace(/\.?0+$/, '')}`;
   byId('hatch-fill').style.width = `${Math.round(Math.min(1, H.nutrients / cost) * 100)}%`;
   const ready = Math.floor(H.nutrients / cost);
-  byId('hatch-status').textContent = !pair
-    ? (H.stock.length < 2 ? 'Stock a breeding pair: open an animal\u2019s card and choose \u201cTo hatchery\u201d.' : 'These two can\u2019t breed: they must be the same kind.')
-    : `${Math.floor(H.nutrients)} of ${cost} food · ${n} young a brood${ready > 1 ? ` · ${ready} broods ready` : ''}${auto ? ` · auto-feeding ${auto.toFixed(2)}/s` : ''}`;
+  byId('hatch-status').textContent = !pairs.length
+    ? 'Stock a breeding pair: choose one below, or open an animal\u2019s card and choose \u201cTo hatchery\u201d.'
+    : !next ? `Resting: every kind stocked already has ${hatchCap(world)} or more in the pond`
+      : `${pairs.length} pair${pairs.length > 1 ? 's' : ''} taking turns · ${Math.floor(H.nutrients)} of ${cost} food · up to ${n} young a brood${ready > 1 ? ` · ${ready} broods ready` : ''}${auto ? ` · auto-feeding ${auto.toFixed(2)}/s` : ''}`;
   const sig = JSON.stringify([H.stock.map((r) => r.s), H.focus, H.levels, Math.floor(world.game.pearls / 5), Math.floor((world.game.essence || 0) / 5),
-    H.stock.length < 2 ? Math.floor(world.t / 4) : 0, (world.game.fossilGenes || []).length]);
+    Math.floor(world.t / 4), (world.game.fossilGenes || []).length]);
   if (sig === hatchUi.sig) return;
   hatchUi.sig = sig;
-  // The pair.
-  const stock = [0, 1].filter((i) => H.stock[i]).map((i) => {
-    const rec = H.stock[i], li = el('li', 'slot');
+  // The pens: each stocked animal, pen by pen, with whether its pair is resting.
+  const pen = new Map();
+  pairs.forEach((p, k) => p.forEach((r) => pen.set(r, k)));
+  const stock = H.stock.map((rec, i) => {
+    const li = el('li', 'slot');
     const tier = tierOf(rec.traits || []), nm = el('b', null, rec.name);
     if (tier) nm.style.color = TIER_COLOR[tier];
     const label = rec.species === 'wild' && rec.args.sp ? rec.args.sp.name : SINGULAR[rec.species] || rec.species;
@@ -1238,15 +1241,16 @@ function renderHatchery() {
     rel.type = 'button';
     rel.title = 'Put it back in the pond';
     rel.addEventListener('click', () => { releaseStock(world, i); hatchUi.sig = ''; renderHatchery(); });
-    li.append(nm, colored('span', 'note', `${label} · gen ${rec.gen}${rec.traits.length ? ` · ${rec.traits.join(' ')}` : ''}`), rel);
+    const k = pen.get(rec), rest = k != null && pairResting(world, pairs[k]);
+    li.append(nm, colored('span', 'note', `${k != null ? `pen ${k + 1} · ` : 'waiting for a mate · '}${label} · gen ${rec.gen}${rec.traits.length ? ` · ${rec.traits.join(' ')}` : ''}${rest ? ' · resting (plenty in the pond)' : ''}`), rel);
     return li;
   });
   // Empty places: the pond's breeding lines to choose from, most valuable first.
-  if (H.stock.length < 2) {
+  if (single || H.stock.length + 2 <= hatchSlots(H)) {
     const cands = hatchCandidates(world), pick = el('li', 'slot empty picker');
-    pick.append(el('span', 'sc-sub', H.stock.length ? `Pair ${H.stock[0].name} with:` : 'Choose a breeding pair from your pond'));
-    if (!cands.length) pick.append(el('span', 'note', H.stock.length ? 'No other grown animal of its kind in the pond yet.' : 'No kind has two grown animals yet: let the pond grow, or spawn some from the dock.'));
-    const rows = H.stock.length
+    pick.append(el('span', 'sc-sub', single ? `Pair ${single.name} with:` : pairs.length ? `Pen ${pairs.length + 1}: choose another pair (a different kind breeds best)` : 'Choose a breeding pair from your pond'));
+    if (!cands.length) pick.append(el('span', 'note', single ? 'No other grown animal of its kind in the pond yet.' : 'No other kind has two grown animals yet: let the pond grow, or spawn some from the dock.'));
+    const rows = single
       ? cands.flatMap((c) => c.list.slice(0, 6).map((a) => ({ animals: [a], key: c.key })))
       : cands.slice(0, 8).map((c) => ({ animals: c.list.slice(0, 2), key: c.key, n: c.list.length }));
     for (const row of rows) {
@@ -1262,7 +1266,7 @@ function renderHatchery() {
       const val = el('span', 'val');
       val.append(el('i', 'essence'), document.createTextNode(String(row.animals.reduce((s, a) => s + recycleValue(a), 0))));
       b.append(ic, who, val);
-      b.title = row.n ? `${describe(first).label}: ${row.n} grown in the pond. These two go into the hatchery.` : `Put ${first.life.name} in as the other half of the pair`;
+      b.title = row.n ? `${describe(first).label}: ${row.n} grown in the pond. These two go into a pen.` : `Put ${first.life.name} in as the other half of the pair`;
       b.addEventListener('click', () => {
         for (const a of row.animals) { const why = stockHatchery(world, a); if (why) { showTicker(why); break; } }
         hatchUi.sig = '';

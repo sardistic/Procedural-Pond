@@ -114,6 +114,15 @@ function addBlood(world, x, y, z = 6, amt = 0.6) {
 }
 
 // ---- the tick ----------------------------------------------------------------------------------------
+// However many are in a rage, fights stay rare across the pond: a handful a day, and only a few of
+// them to the death; and a red night warps only a few of the marked. (A horde of hundreds of marked
+// koi fighting at 8% a second each tore a pond apart overnight.)
+const BRAWLS_PER_DAY = 16, BRAWL_KILLS_PER_DAY = 3, WARPS_PER_NIGHT = 4;
+const natureDay = (world) => {
+  const day = Math.floor(world.days), N = world.natureDay || (world.natureDay = { day, fights: 0, kills: 0, warps: 0 });
+  if (N.day !== day) Object.assign(N, { day, fights: 0, kills: 0, warps: 0 });
+  return N;
+};
 let natureTick = 0;
 function updateNature(world, dt) {
   // Every frame: the chase. A hunter closing in leaves a wake; its quarry jinks.
@@ -135,6 +144,7 @@ function updateNature(world, dt) {
   if (typeof updateWanderers === 'function') updateWanderers(world);
   const blood = (world.bloodSpots || []).filter((b) => world.t - b.t < 20);
   world.bloodSpots = blood;
+  const N = natureDay(world);
   for (const c of world.creatures) {
     const L = c.life;
     if (!L || c.dying || c.leaving || c.absorbing || c.grabbed) continue;
@@ -145,18 +155,19 @@ function updateNature(world, dt) {
       if (best) { c.tx = best.x + rand(-6, 6); c.ty = best.y + rand(-6, 6); c.timer = Math.max(c.timer || 0, 3); }
     }
     // The enraged pick fights with their equals: the weaker bleeds, and may die of it.
-    if (enraged(world, c) && c.body && Math.random() < 0.08 * step * rageOf(world, c)) {
+    if (N.fights < BRAWLS_PER_DAY && enraged(world, c) && c.body && Math.random() < 0.01 * step * rageOf(world, c)) {
       const w = widthOf(c);
       let foe = null;
       forNear(world, c.x, c.y, 26, (o) => { if (!foe && o !== c && o.life && o.body && !o.dying && !(DEEP[o.species] && DEEP[o.species].mythic) && Math.abs(widthOf(o) - w) < w * 0.35) foe = o; });
       if (foe) {
+        N.fights++;
         const score = (x) => x.life.energy * geneBuffs(x).vitality * rageOf(world, x) * rand(0.6, 1.4), loser = score(c) < score(foe) ? c : foe, winner = loser === c ? foe : c;
-        loser.life.energy -= 0.3;
+        loser.life.energy = Math.max(N.kills < BRAWL_KILLS_PER_DAY ? 0 : 0.1, loser.life.energy - 0.2);
         loser.life.comfort = Math.max(0, loser.life.comfort - 0.25);
         addBlood(world, loser.x, loser.y, loser.z || 6, 0.5);
         addRipple(world, loser.x, loser.y, 1, true);
         startle(world, loser, winner.x, winner.y, 1.5);
-        if (loser.life.energy <= 0.05) { loser.dying = { t: 0, why: `torn apart by ${winner.life.name} in the dark` }; if (winner.life.wanderer) winner.life.wanderer.kills++; }
+        if (loser.life.energy <= 0.05 && N.kills < BRAWL_KILLS_PER_DAY) { N.kills++; loser.dying = { t: 0, why: `torn apart by ${winner.life.name} in the dark` }; if (winner.life.wanderer) winner.life.wanderer.kills++; }
         logEvent(world, `${winner.life.name} the ${describe(winner).label} savaged ${loser.life.name} the ${describe(loser).label}`, winner, {
           cat: 'hunt', pri: 1, key: 'brawl', data: 1, merge: (e) => `Fights break out in the dark: ${e.n} animals savaged`,
         });
@@ -164,6 +175,6 @@ function updateNature(world, dt) {
     }
     // On a red night, one of the marked may roll again.
     const red = typeof heavenNow === 'function' && (heavenNow(world, 'bloodmoon') || heavenNow(world, 'stars') || (typeof bloodRain === 'function' && bloodRain(world)));
-    if (red && L.genome.eld && Math.random() < 0.004 * step) rollWarp(world, c, 'under the red sky');
+    if (red && L.genome.eld && N.warps < WARPS_PER_NIGHT && Math.random() < 0.004 * step) { N.warps++; rollWarp(world, c, 'under the red sky'); }
   }
 }

@@ -1,18 +1,18 @@
 'use strict';
 // Plants and floating things. Each has update(dt, world), draw(r, t, world) and hit(x, y).
 
-// Sum of pushes away from nearby animals below maxZ, weighted by closeness.
+// Push away from nearby animals below maxZ, weighted by closeness, and never more than one
+// animal's worth however many crowd in (a heap of them used to stretch a plant across the pond).
+// Only the animals near it are looked at, through the neighbour grid.
 function pushFrom(world, x, y, reach, maxZ) {
   let tx = 0, ty = 0;
-  for (const c of world.creatures) {
-    if (c.z > maxZ) continue;
-    const dx = x - c.x, dy = y - c.y, d2 = dx * dx + dy * dy;
-    if (d2 < reach * reach && d2 > 0.01) {
-      const d = Math.sqrt(d2), f = (reach - d) / reach;
-      tx += dx / d * f; ty += dy / d * f;
-    }
-  }
-  return [tx, ty];
+  forNear(world, x, y, reach, (c, d2) => {
+    if (c.z > maxZ || d2 <= 0.01) return;
+    const d = Math.sqrt(d2), f = (reach - d) / reach;
+    tx += (x - c.x) / d * f; ty += (y - c.y) / d * f;
+  });
+  const m = Math.hypot(tx, ty);
+  return m > 1 ? [tx / m, ty / m] : [tx, ty];
 }
 
 class Weed {
@@ -125,9 +125,7 @@ class Anemone {
   update(dt, world) {
     const reach = this.R + this.len + 3;
     let near = false;
-    for (const c of world.creatures) {
-      if (c.z < 14 && c.species !== 'clown' && (c.x - this.x) ** 2 + (c.y - this.y) ** 2 < reach * reach) { near = true; break; }
-    }
+    forNear(world, this.x, this.y, reach, (c) => { if (!near && c.z < 14 && c.species !== 'clown') near = true; });
     const p = world.pointer;
     if (p.inside && (p.x - this.x) ** 2 + (p.y - this.y) ** 2 < reach * reach) near = true;
     this.retract += ((near ? 1 : 0) - this.retract) * Math.min(1, dt * (near ? 8 : 0.7));

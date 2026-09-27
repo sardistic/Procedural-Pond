@@ -221,8 +221,9 @@ class Raster {
     const mr = tint ? Math.round(tint[0] * 256) : 256, mg = tint ? Math.round(tint[1] * 256) : 256, mb = tint ? Math.round(tint[2] * 256) : 256;
     const sr = (mr + 256) >> 1, sg = (mg + 256) >> 1, sb = (mb + 256) >> 1;
     const TM = CAUSTIC_SIZE - 1, t = s.t, causticT = s.causticT || 0.09;
-    const o1x = Math.floor(t * 3.1), o1y = Math.floor(t * 1.7);
-    const o2x = Math.floor(-t * 2.3), o2y = Math.floor(t * 2.7);
+    // (Everything on the surface moves slowly: quick flicker reads as noise, not water.)
+    const o1x = Math.floor(t * 1.2), o1y = Math.floor(t * 0.65);
+    const o2x = Math.floor(-t * 0.9), o2y = Math.floor(t * 1.05);
     // Fog strength by height, in 64 steps from the floor up to the surface.
     let fogA = null, fr = 0, fgc = 0, fb = 0;
     if (fog && fog.amount > 0) {
@@ -241,18 +242,18 @@ class Raster {
     const trench = s.trench || null, tg = s.trenchGlow || 0xffffb02a, tgr = tg & 255, tgg = (tg >> 8) & 255, tgb = (tg >>> 16) & 255;
     const LM = s.lights || null, LD = LM ? LM.data : null, lw = LM ? LM.lw : 0, lh = LM ? LM.lh : 0, lvis = s.lightVis || 0;
     // Chop: short, quick waves in the shallows when it blows; spindrift: streaks of foam blown along the deep in a storm.
-    const chop = s.chop || 0, spin = s.spindrift || 0, L3 = 10, w3x = (sw0x(s) * 1024) / L3, w3y = (sw0y(s) * 1024) / L3, w3t = t * 14 * 1024 / L3;
+    const chop = s.chop || 0, spin = s.spindrift || 0, L3 = 10, w3x = (sw0x(s) * 1024) / L3, w3y = (sw0y(s) * 1024) / L3, w3t = t * 4 * 1024 / L3;
     // The eldritch: veins of void in marked skin, crawling slowly, with stars in them.
-    const voidL = s.voidSkin || null, vox = Math.floor(t * 0.9), voy = Math.floor(t * 0.6), starT = Math.floor(t * 2) * 83492791;
+    const voidL = s.voidSkin || null, vox = Math.floor(t * 0.9), voy = Math.floor(t * 0.6), starT = Math.floor(t * 0.4) * 83492791;
     // Swell: two trains of waves rolling toward the beach, bigger over the deep, whitecaps on the biggest.
     // In a big swell the waves run longer and faster; calm water shows the sky instead.
     const swell = s.swell || 0, sw = s.swellDir || [0, 1], L1 = 40 + 50 * swell, L2 = 26 + 20 * swell;
-    const w1x = sw[0] * 1024 / L1, w1y = sw[1] * 1024 / L1, w1t = t * (7 + 8 * swell) * 1024 / L1;
-    const c2 = Math.cos(0.7), s2 = Math.sin(0.7), w2x = (sw[0] * c2 - sw[1] * s2) * 1024 / L2, w2y = (sw[0] * s2 + sw[1] * c2) * 1024 / L2, w2t = t * (5 + 5 * swell) * 1024 / L2;
+    const w1x = sw[0] * 1024 / L1, w1y = sw[1] * 1024 / L1, w1t = t * (3 + 3.5 * swell) * 1024 / L1;
+    const c2 = Math.cos(0.7), s2 = Math.sin(0.7), w2x = (sw[0] * c2 - sw[1] * s2) * 1024 / L2, w2y = (sw[0] * s2 + sw[1] * c2) * 1024 / L2, w2t = t * (2 + 2 * swell) * 1024 / L2;
     const clouds = s.clouds || null, sky = s.sky || 0xffe0d8c8, calm = clamp(1 - swell * 1.5, 0, 1) * (s.skyK ?? 1);
-    const skr = sky & 255, skg = (sky >> 8) & 255, skb = (sky >>> 16) & 255, cdx = t * 2.2, cdy = t * 0.7, mdx = t * 0.35;
+    const skr = sky & 255, skg = (sky >> 8) & 255, skb = (sky >>> 16) & 255, cdx = t * 1.1, cdy = t * 0.35, mdx = t * 0.2;
     // (Wave marks: always drawn level, the way top-down water is; they drift with the swell.)
-    const wd = t * (3 + 5 * swell), wdu = -sw[0] * wd, wdv = -sw[1] * wd;
+    const wd = t * (1.2 + 2 * swell), wdu = -sw[0] * wd, wdv = -sw[1] * wd;
     const [rx0, ry0, rx1, ry1] = rect;
     for (let y = ry0; y <= ry1; y++) {
       for (let x = rx0, p = rx0 + y * W; x <= rx1; x++, p++) {
@@ -320,7 +321,7 @@ class Raster {
                     const w = 5 + ((h >>> 8) % 5), gu = (h >>> 12) % (18 - w), gv = (h >>> 18) % 7;
                     const lu = Math.floor(U2 - col * 18) - gu, lv = Math.floor(V - row * 11) - gv;
                     if (lu >= 0 && lu < w && lv >= 0 && lv < 3) {
-                      const life = Math.sin(t * (0.6 + ((h >>> 24) & 7) * 0.08) + (h >>> 21)); // swelling, breaking, gone
+                      const life = Math.sin(t * (0.22 + ((h >>> 24) & 7) * 0.03) + (h >>> 21)); // swelling, breaking, gone (slowly)
                       const edge = lu === 0 || lu === w - 1, mid = lu >= 2 && lu <= w - 3;
                       if (life > -0.25) {
                         if (lv === 0 && !edge && (life > 0.25 || mid)) stroke = k;
@@ -358,8 +359,8 @@ class Raster {
                 const cv = clouds[(((x * 0.3 + cdx) | 0) & 127) | ((((y * 0.45 + cdy) | 0) & 127) << 7)], dens = (cv - 0.38) * 1.6 * (1 - 0.65 * (depthMap ? depthMap[p] : 0) / 255);
                 if (dens > 0) {
                   // Each 8 px stretch of each 4 px band may hold one dash, on a line of its own within the band.
-                  const row = y >> 2, sx = x + ((Math.imul(row, 0x9e3779b1) >>> 27) << 1) + ((t * 1.5) | 0), seg = sx >> 3;
-                  const h = Math.imul(Math.imul(row, 0x85ebca6b) ^ Math.imul(seg, 0xc2b2ae35) ^ (((t * 0.4 + (seg & 7) / 8) | 0) * 0x27d4eb2d), 0x9e3779b1) >>> 0;
+                  const row = y >> 2, sx = x + ((Math.imul(row, 0x9e3779b1) >>> 27) << 1) + ((t * 0.45) | 0), seg = sx >> 3;
+                  const h = Math.imul(Math.imul(row, 0x85ebca6b) ^ Math.imul(seg, 0xc2b2ae35) ^ (((t * 0.08 + (seg & 7) / 8) | 0) * 0x27d4eb2d), 0x9e3779b1) >>> 0;
                   const len = 2 + ((h >>> 8) & 3), at = sx & 7;
                   if ((h >>> 24) < dens * dens * 210 && (y & 3) === ((h >>> 4) & 3) && at < len) {
                     const mid = at > 0 && at < len - 1; // lit in the middle, dimmer at the ends

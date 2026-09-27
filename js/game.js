@@ -358,7 +358,7 @@ function likedSpot(world, c) {
       if ((s.growth ?? 1) < 0.4) continue;
       const d = Math.hypot(s.x - c.x, s.y - c.y);
       if (d > 220) continue;
-      const w = 1 / (d + 40);
+      const w = 1 / (d + 40) / (1 + (typeof crowdAt === 'function' ? crowdAt(world, s.x, s.y) : 0) / 4); // (a crowded spot draws fewer)
       cand.push([s, w]); total += w;
     }
   }
