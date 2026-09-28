@@ -640,14 +640,16 @@ function arriveDeep(world) {
   const lure = (world.structures || []).reduce((a, s) => a + (STRUCTURES[s.kind].lure || 0), 0) +
     (typeof eldPath === 'function' && eldPath(world, 'tide') ? 1 : 0) + world.creatures.filter((c) => c.life && c.life.ascended).length;
   const stars = typeof heavenNow === 'function' && heavenNow(world, 'stars') ? 4 : 0; // (the stars are right: the mythic rise)
-  const pool = Object.keys(DEEP).filter((k) => deepAvailable(world, k) && (!DEEP[k].mythic || Math.random() < 0.06 * (1 + lure + stars)));
+  // (A kind that's never been here waits its turn, and each pond has its own odds: arrivals.js.)
+  const pool = Object.keys(DEEP).filter((k) => deepAvailable(world, k) && (!DEEP[k].mythic || Math.random() < 0.06 * (1 + lure + stars)) && (typeof canDiscover !== 'function' || canDiscover(world, k)));
   if (!pool.length) return;
-  const kind = pick(pool);
+  const kind = typeof pickByOdds === 'function' ? pickByOdds(world, pool) : pick(pool);
   if (world.creatures.filter((c) => c.species === kind).length >= (DEEP[kind].mythic ? 1 : 3)) return;
   const group = SPECIES[kind].spawn(world, ...deepSpot(world, kind));
   for (const c of group) { initLife(c, { alpha: 0 }); noteBorn(world, c, 'arrived'); }
   world.creatures.push(...group);
   ECO.arrivals += group.length;
+  if (typeof knows === 'function' && !knows(world, kind)) discover(world, kind, group[0]);
   const G = world.game, first = G && !G.seen.includes(`species:${kind}`);
   if (first) { G.seen.push(`species:${kind}`); deepenBy(world, 0.1); }
   const pts = award(world, (DEEP[kind].mythic ? 150 : 20) + (first ? 30 : 0), DEEP[kind].mythic ? 'mythic sightings' : 'deep sightings', group[0]);

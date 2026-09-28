@@ -579,6 +579,8 @@ function dawnStructures(world) {
   if (typeof dawnQuirks === 'function') dawnQuirks(world);
   if (typeof dawnHeavens === 'function') dawnHeavens(world);
   if (typeof dawnLand === 'function') dawnLand(world);
+  if (typeof dawnArrivals === 'function') dawnArrivals(world);
+  if (typeof dawnStances === 'function') dawnStances(world);
   // The pond reaches a little further out (between frames: it rebuilds the pond).
   if (typeof dawnExpand === 'function' && typeof window !== 'undefined') setTimeout(() => dawnExpand(world), 0);
 }

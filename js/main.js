@@ -294,7 +294,7 @@ function buildPond() {
     litter: [], blight: null, riverW: 0, islandKey: null, scourKey: null, deepPlaced: 0, maxPopBonus: 0, pollution: 0,
     // (A new pond starts clean of the last one's oil, sky, blood, fights, story and weather; a saved one restores its own.)
     slicks: [], tar: null, heavens: null, bloodSpots: [], natureDay: null, story: null, darkAvg: null, meta: null, xeno: [], parasites: [], xenoShards: [],
-    land: null, forms: [], boneBeds: [], isleJoins: {}, landSeen: {}, formSeen: {}, landArea: null, detritus: [],
+    land: null, forms: [], boneBeds: [], isleJoins: {}, landSeen: {}, formSeen: {}, landArea: null, detritus: [], acts: [],
     weather: { rain: 0, target: 0, next: 30, gust: 0 },
     days: 0.4, clock: 0.4, spawning: 0, spawnNight: -1, records: null, moon: null,
     tide: { level: 0.5, range: 0, rising: true, flow: 0, surf: 0, wave: 0 },
@@ -320,6 +320,7 @@ function buildPond() {
       generateScenery(world);
       barePond();
       populate();
+      if (typeof ensureKnown === 'function') ensureKnown(world, true); // (a new pond knows only what it starts with)
       world.moon0 = Math.random();
       world.tide0 = Math.random();
     });
@@ -383,9 +384,13 @@ function succession() {
     if (have >= want) continue;
     left++;
     if (m < min || Math.random() > 0.05) continue;
+    // (A kind that's never been here waits its turn: arrivals.js.)
+    const fresh = typeof knows === 'function' && !knows(world, kind);
+    if (fresh && !canDiscover(world, kind)) continue;
     const group = arrive(world, kind);
     if (!group) continue;
     world.targets[kind] = have + group.length;
+    if (fresh) discover(world, kind, group[0]);
     if (!S.seen.includes(kind)) {
       S.seen.push(kind);
       logEvent(world, `✦ The pond is alive enough now for ${plural(SINGULAR[kind] || kind, 2).toLowerCase()}: the first ones found their way in`, group[0], { cat: 'come', pri: 2 });
@@ -444,6 +449,7 @@ function update(dt) {
   updateAlien(world, dt);
   if (typeof updateLand === 'function') updateLand(world, dt);
   if (typeof updateCycle === 'function') updateCycle(world, dt);
+  if (typeof updateInteract === 'function') updateInteract(world, dt);
   updateDark(world, dt);
   updateStory(world, dt);
   updateZones(world, dt);
@@ -557,7 +563,9 @@ function render(full = false) {
     r.alpha = a;
     FADE[c.id] = a < 1 ? 1 : 0;
     if (THICK[c.id]) anyThick = true;
+    if (c.flare) r.setScale(c.x, c.y, 1 + 0.16 * c.flare); // (flaring up at a rival, or a warning)
     c.draw(r, t, world);
+    if (c.flare) r.setScale();
     if (c.life && c.life.genome.eld) drawEldritch(r, c, t, world);
     if (c.life) drawQuirks(r, c, t);
   }
@@ -1933,6 +1941,8 @@ function buildLifeTiles() {
     });
   }
   $('rail-more').addEventListener('click', () => setActions($('actions').hidden));
+$('wild-btn').addEventListener('click', () => setWild(!wildUi.open));
+$('wild-close').addEventListener('click', () => setWild(false));
   $('actions-close').addEventListener('click', () => setActions(false));
 }
 
@@ -1991,7 +2001,7 @@ function refreshSpeciesButtons() {
   // Deep species show once their zone exists and they're unlocked on the evolution tree.
   for (const b of document.querySelectorAll('[data-spawn]')) {
     const k = b.dataset.spawn;
-    b.hidden = !fitsHabitat(world, SPECIES_HABITAT[k]) || !deepAvailable(world, k) || !deepUnlocked(world, k);
+    b.hidden = !fitsHabitat(world, SPECIES_HABITAT[k]) || !deepAvailable(world, k) || (typeof spawnable === 'function' ? !spawnable(world, k) : !deepUnlocked(world, k));
   }
   // Builds, foods and plants of the deep show once the pond is that deep.
   const tier = (world.erosion && world.erosion.tier) || 0;
@@ -2008,6 +2018,7 @@ function refreshSpeciesButtons() {
   if (MINI_LAYERS[miniLayer][0] === 'water' && world.opts.habitat !== 'mixed') setMiniLayer(0);
   if (typeof renderQuickBar === 'function' && $('quickbar')) renderQuickBar();
   if (typeof markBuilt === 'function') { markBuilt(); markNew(); }
+  if (typeof refreshWildButton === 'function') refreshWildButton();
 }
 
 function fillSelect(el, entries, value) {

@@ -1169,3 +1169,22 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
 
 /* A lone last button in a row of three spans it. */
 .grid3 > .span3 { grid-column: 1 / -1; }
+
+/* ---- wildlife: the kinds that haven't come yet ---- */
+.wild-dock { position: relative; flex: none; align-self: center; flex-direction: column; gap: 0; width: 44px; height: 44px; padding: 0; font-size: 14px; color: #bff4ff; border-style: dashed; }
+.wild-dock b { font-size: 8px; font-weight: 400; color: var(--muted); }
+#wild { position: fixed; top: 60px; left: 50%; bottom: auto; transform: translateX(-50%); z-index: 9; width: min(520px, calc(100vw - 24px)); max-height: calc(100vh - 200px); font-size: 10px; color: var(--muted); }
+.wild-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.wild-row { display: grid; grid-template-columns: 30px 1fr auto auto; align-items: center; gap: 6px; padding: 4px 6px; border: 2px solid #1c4654; }
+.wild-row .ic { display: grid; place-items: center; }
+.wild-row img { image-rendering: pixelated; }
+.wild-row .who { display: grid; gap: 1px; min-width: 0; }
+.wild-row .who b { font-weight: 400; color: var(--text); }
+.wild-row .who .note { margin: 0; }
+.wild-row button { padding: 3px 6px; box-shadow: none; font-size: 9px; white-space: nowrap; }
+.wild-row button:disabled { opacity: 0.45; cursor: not-allowed; }
+/* The census: protect or cull a kind; one that has outgrown the pond is marked. */
+.members .stance { display: flex; gap: 6px; margin: 4px 0; }
+.members .stance button { flex: 1; padding: 3px 6px; box-shadow: none; font-size: 9px; }
+.census-rows .row.over .row-head .facts { color: #f0a15c; }
+@media (max-width: 760px) { #wild { top: 60px; left: 60px; transform: none; width: calc(100vw - 72px); } }

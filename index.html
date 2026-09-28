@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=30">
+  <link rel="stylesheet" href="style.css?v=31">
 
   <script type="application/ld+json">
   {
@@ -139,6 +139,7 @@
         <li>Deeper still, alien artifacts land in the deep and release parasites that ride your animals and spread strange contagions; very rarely, something new evolves from them.</li>
         <li>Everything you build, plant, breed or evolve is an investment that pays points and essence every dawn.</li>
         <li>Optional music: quiet phrases, cut up and cued by what happens in the pond.</li>
+        <li>New kinds find their way in slowly, each pond with its own odds; lure or summon the ones you want. Different kinds meet and interact (cleaning stations, rival displays, riders, warnings), and you can protect a kind or call a cull.</li>
         <li>The land remembers: the floor slowly turns to bone sand, glow sand, ash, glass or fossil beds by what lives and dies there, islands grow their own plants and join, scavengers recycle the waste, and the pond keeps reaching further out.</li>
         <li>Points for every birth and rare find, pearls to spend on animals, plants and food, a shared leaderboard, and fireflies that show your score at night.</li>
         <li>Your pond saves itself and is waiting when you come back, and the address bar always holds its short four-word link.</li>
@@ -320,6 +321,11 @@
     </header>
     <div id="guide-body" class="g-list"></div>
   </section>
+  <section id="wild" class="pop wild" hidden aria-label="Wildlife">
+    <header class="pop-head"><b>Wildlife</b><button type="button" id="wild-close" class="icon" aria-label="Close">×</button></header>
+    <p class="note" id="wild-status"></p>
+    <ol class="wild-list" id="wild-list"></ol>
+  </section>
   <section id="evo" class="pop evo" hidden aria-label="The depths">
     <header class="pop-head"><b>The depths</b><button type="button" id="evo-close" class="icon" aria-label="Close">×</button></header>
     <p class="note" id="evo-status"></p>
@@ -358,6 +364,7 @@
       </section>
       <div class="dock-bar">
         <div id="animals" class="animals" role="group" aria-label="Add animals"></div>
+        <button type="button" id="wild-btn" class="wild-dock" hidden aria-label="Wildlife: kinds that haven't come yet"><span aria-hidden="true">?</span><b>0</b></button>
         <button type="button" id="hatch-btn" class="hatch-dock" hidden aria-label="Hatchery"><span class="egg" aria-hidden="true"></span></button>
         <button type="button" id="census-btn" class="census-btn" aria-expanded="false" aria-controls="census" title="Details about the animals in the pond (C)">
           <b id="census-count">0</b><span class="caret" aria-hidden="true">▴</span>
@@ -379,53 +386,55 @@
     </div>
   </div>
 
-  <script src="js/core.js?v=36"></script>
-  <script src="js/raster.js?v=36"></script>
-  <script src="js/creatures.js?v=36"></script>
-  <script src="js/critters.js?v=36"></script>
-  <script src="js/wildlife.js?v=36"></script>
-  <script src="js/wildfish.js?v=36"></script>
-  <script src="js/sound.js?v=36"></script>
-  <script src="js/life.js?v=36"></script>
-  <script src="js/plants.js?v=36"></script>
-  <script src="js/scene.js?v=36"></script>
-  <script src="js/structures.js?v=36"></script>
-  <script src="js/erosion.js?v=36"></script>
-  <script src="js/sky.js?v=36"></script>
-  <script src="js/ecology.js?v=36"></script>
-  <script src="js/game.js?v=36"></script>
-  <script src="js/deep.js?v=36"></script>
-  <script src="js/remains.js?v=36"></script>
-  <script src="js/eldritch.js?v=36"></script>
-  <script src="js/coast.js?v=36"></script>
-  <script src="js/gulls.js?v=36"></script>
-  <script src="js/traits.js?v=36"></script>
-  <script src="js/save.js?v=36"></script>
-  <script src="js/link.js?v=36"></script>
-  <script src="js/abyss.js?v=36"></script>
-  <script src="js/quirks.js?v=36"></script>
-  <script src="js/hunters.js?v=36"></script>
-  <script src="js/habitats.js?v=36"></script>
-  <script src="js/artifacts.js?v=36"></script>
-  <script src="js/story.js?v=36"></script>
-  <script src="js/lineage.js?v=36"></script>
-  <script src="js/depths.js?v=36"></script>
-  <script src="js/sand.js?v=36"></script>
-  <script src="js/heavens.js?v=36"></script>
-  <script src="js/nature.js?v=36"></script>
-  <script src="js/pollution.js?v=36"></script>
-  <script src="js/prehistoric.js?v=36"></script>
-  <script src="js/alien.js?v=36"></script>
-  <script src="js/bestiary.js?v=36"></script>
-  <script src="js/land.js?v=36"></script>
-  <script src="js/cycle.js?v=36"></script>
-  <script src="js/net.js?v=36"></script>
-  <script src="js/account.js?v=36"></script>
-  <script src="js/wander.js?v=36"></script>
-  <script src="js/hud.js?v=36"></script>
-  <script src="js/main.js?v=39"></script>
-  <script src="js/guide.js?v=36"></script>
-  <script src="js/music.js?v=36"></script>
-  <script src="js/tips.js?v=36"></script>
+  <script src="js/core.js?v=37"></script>
+  <script src="js/raster.js?v=37"></script>
+  <script src="js/creatures.js?v=37"></script>
+  <script src="js/critters.js?v=37"></script>
+  <script src="js/wildlife.js?v=37"></script>
+  <script src="js/wildfish.js?v=37"></script>
+  <script src="js/sound.js?v=37"></script>
+  <script src="js/life.js?v=37"></script>
+  <script src="js/plants.js?v=37"></script>
+  <script src="js/scene.js?v=37"></script>
+  <script src="js/structures.js?v=37"></script>
+  <script src="js/erosion.js?v=37"></script>
+  <script src="js/sky.js?v=37"></script>
+  <script src="js/ecology.js?v=37"></script>
+  <script src="js/game.js?v=37"></script>
+  <script src="js/deep.js?v=37"></script>
+  <script src="js/remains.js?v=37"></script>
+  <script src="js/eldritch.js?v=37"></script>
+  <script src="js/coast.js?v=37"></script>
+  <script src="js/gulls.js?v=37"></script>
+  <script src="js/traits.js?v=37"></script>
+  <script src="js/save.js?v=37"></script>
+  <script src="js/link.js?v=37"></script>
+  <script src="js/abyss.js?v=37"></script>
+  <script src="js/quirks.js?v=37"></script>
+  <script src="js/hunters.js?v=37"></script>
+  <script src="js/habitats.js?v=37"></script>
+  <script src="js/artifacts.js?v=37"></script>
+  <script src="js/story.js?v=37"></script>
+  <script src="js/lineage.js?v=37"></script>
+  <script src="js/depths.js?v=37"></script>
+  <script src="js/sand.js?v=37"></script>
+  <script src="js/heavens.js?v=37"></script>
+  <script src="js/nature.js?v=37"></script>
+  <script src="js/pollution.js?v=37"></script>
+  <script src="js/prehistoric.js?v=37"></script>
+  <script src="js/alien.js?v=37"></script>
+  <script src="js/bestiary.js?v=37"></script>
+  <script src="js/land.js?v=37"></script>
+  <script src="js/cycle.js?v=37"></script>
+  <script src="js/arrivals.js?v=37"></script>
+  <script src="js/interact.js?v=37"></script>
+  <script src="js/net.js?v=37"></script>
+  <script src="js/account.js?v=37"></script>
+  <script src="js/wander.js?v=37"></script>
+  <script src="js/hud.js?v=37"></script>
+  <script src="js/main.js?v=40"></script>
+  <script src="js/guide.js?v=37"></script>
+  <script src="js/music.js?v=37"></script>
+  <script src="js/tips.js?v=37"></script>
 </body>
 </html>

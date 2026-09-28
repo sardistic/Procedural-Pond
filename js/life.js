@@ -520,6 +520,7 @@ function eat(world, c, f) {
     ECO.eaten++;
     if (c.life && c.life.wanderer) c.life.wanderer.kills++;
     if (typeof paraEaten === 'function') paraEaten(world, c, f);
+    if (typeof afterCatch === 'function') afterCatch(world, c, f); // (scraps, and a cull's bounty)
     addBubbles(world, f.x, f.y, f.z, 3);
     if (typeof onKill === 'function') onKill(world, c, f); // a hunter's devour and contagion
     if (f.life) {
@@ -1073,8 +1074,11 @@ function assignHunts(world) {
     let best = null, bd = Infinity;
     const starving = h > 0.75;
     const R = 60 * P.intellect * huntRange(p) * (0.55 + 1.1 * Math.max(h, mad ? 0.6 : 0)), extra = mad || starving || !!p.life.hunter || huntLv(p, 'maw') > 0 || !!p.life.genome.cannibal;
-    forNear(world, p.x, p.y, R * 1.5, (q, d) => {
+    forNear(world, p.x, p.y, R * 1.5, (q, d0) => {
+      // (A culled kind looks nearer than it is; a protected one, or one in a refuge, isn't there at all: interact.js.)
+      const d = typeof huntWeight === 'function' ? d0 / huntWeight(world, q) : d0;
       if (q === p || d >= bd || Math.abs(q.z - p.z) > 14) return;
+      if (typeof huntable === 'function' && q.preyT === stamp && !huntable(world, q)) return;
       if (q.preyT !== stamp) { if (!extra || !q.life || q.grabbed || q.leaving || q.gone || q.caught || q.dying || !(huntExtra(p, q) || (starving && desperateFor(p, q)) || (mad && rageTarget(p, q)))) return; }
       else if (extra && q.dying) return;
       const Q = geneBuffs(q);
@@ -1082,7 +1086,7 @@ function assignHunts(world) {
       // (The Veil of Stars: hunters look straight through the marked.)
       const veil = q.life && q.life.genome.eld && typeof eldPath === 'function' && eldPath(world, 'veil') ? 0.35 : 0;
       const seen = R * (1 - Math.min(1, Q.stealth + veil) * 0.7 * huntSees(p)) * (night && Q.light > 0 ? 1.5 : 1);
-      if (d < seen * seen) { bd = d; best = q; }
+      if (d0 < seen * seen) { bd = d; best = q; }
     });
     p.prey = best;
   }
@@ -1177,7 +1181,10 @@ function migrate(world) {
   if (world.erosion && world.erosion.tier >= 1 && Math.random() < 0.02 * (1 + 0.4 * (world.deepPlaced || 0)) * (1 + deepLure) * eye && typeof arriveDeep === 'function') arriveDeep(world);
   const activeWild = new Set(world.creatures.filter((c) => c.species === 'wild').map((c) => c.sp)).size;
   const young = world.succession && typeof SUCCESSION === 'object' && (world.maturity ?? 0) < SUCCESSION.wild; // a new pond isn't ready for them yet
-  if (activeWild < 4 && !young && Math.random() < 0.025) arrive(world, 'wild', true);
+  if (activeWild < 4 && !young && Math.random() < 0.025 && (typeof canDiscover !== 'function' || canDiscover(world, 'wild'))) {
+    const g = arrive(world, 'wild', true);
+    if (g && typeof knows === 'function' && !knows(world, 'wild')) discover(world, 'wild', g[0]);
+  }
 }
 
 function arrive(world, kind, discover = false) {

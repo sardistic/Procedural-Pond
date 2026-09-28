@@ -180,7 +180,7 @@ const guideUi = { open: false, chapter: 'start', q: '', here: false, cache: {} }
 const GUIDE_CHAPTERS = [
   ['start', 'Start here'], ['animals', 'Animals'], ['plants', 'Plants & rocks'], ['food', 'Food & tools'], ['builds', 'Builds'],
   ['breeding', 'Breeding'], ['genes', 'Genes & traits'], ['depths', 'The depths'], ['land', 'The land & the cycle'], ['sky', 'Sky & sea'], ['dark', 'Blood & the dark'],
-  ['eldritch', 'The eldritch'], ['alien', 'The alien'], ['hunters', 'Hunters'], ['score', 'Score & ledger'], ['ponds', 'Ponds & friends'], ['keys', 'Controls'],
+  ['together', 'Animals together'], ['eldritch', 'The eldritch'], ['alien', 'The alien'], ['hunters', 'Hunters'], ['score', 'Score & ledger'], ['ponds', 'Ponds & friends'], ['keys', 'Controls'],
 ];
 WINDOWS.push(['guide', () => setGuide(false)]);
 
@@ -256,7 +256,8 @@ function speciesEntry(k) {
       if (n) bits.push(`${n} in this pond`);
       if (!fitsHabitat(world, hab)) bits.push(`not in ${WATER_NAME[world.opts.habitat].toLowerCase()} ponds`);
       else if (!deepAvailable(world, k)) bits.push(`this pond isn’t that deep yet`);
-      else if (!deepUnlocked(world, k)) bits.push('ready to unlock in the depths');
+      else if (typeof knows === 'function' && !knows(world, k) && !DEEP[k]) bits.push(`hasn’t found its way in yet (${oddsWord(kindOdds(world, k))})`);
+      else if (typeof spawnable === 'function' ? !spawnable(world, k) : !deepUnlocked(world, k)) bits.push('ready to unlock in the depths');
       else bits.push(`in the dock (${spawnCost(k)} essence)`);
       return bits.join(' · ');
     },
@@ -291,6 +292,7 @@ function chapterStart() {
       { key: 's:touch', name: 'Look closer', text: 'Click an animal for its card (genes, traits, family, what it’s doing, and boosts to buy); drag one to move it. Click a plant or a structure to read about it and grow its traits. Point at almost anything for a tip.' },
       { key: 's:rail', name: 'The rail and the actions', text: 'Down the left: ☰ the menu, then your pinned actions, then ▸ for all of them (food, tools, plants, builds and creatures). Hover one and press + to pin it. NEW marks what just opened up.' },
       { key: 's:dock', name: 'The dock', text: 'The animals along the bottom: click one to spawn it for essence (its card lets you add boosts and a grade). Deep species join the dock once you unlock them in the depths. The number at the end is the census.' },
+      { key: 's:kinds', name: 'New kinds come slowly', text: 'A new pond knows only its pioneers. The rest find their way in one kind at a time, with a pause after each that grows as the pond gets to know more; each pond has its own odds for each kind (from its seed), and they drift with the seasons. You can spawn a kind from the dock once it has come. The dock’s ? lists what could still come and how likely each is here: lure one (pearls) to make it far likelier to come next, or summon it (essence) to bring it at dawn.' },
       { key: 's:music', name: 'Sound and music', text: 'Sound (M) is a soundscape made live from what you’re looking at. Music (N) is off until you turn it on: quiet phrases of two pieces, cut up and cued by what happens in the pond (a birth, a hunt, dawn, something from the deep), faded in and out with long rests between, and muffled the deeper you look. Set its level in the menu’s Scene.' },
       { key: 's:depths', name: 'The depths', text: 'The little side view above the map: the beach, the floor and the deep. Click it for the depths: how far the pond has worn, what lives at each stage, and what’s ready to unlock.' },
     ] },
@@ -532,6 +534,24 @@ function chapterAlien() {
   ];
 }
 
+function chapterTogether() {
+  return [
+    { title: 'When different kinds meet', note: 'Each has its own little dance; look for the signs over them.', entries: [
+      { key: 'tg:clean', name: 'Cleaning stations', text: 'A cleaner wrasse or a shrimp swims up to a bigger fish (hunters too), which stops and holds still while the cleaner circles its head, picking it over. The fish comes away calmer; now and then the cleaner takes off a parasite that was riding it, or a sickness.' },
+      { key: 'tg:display', name: 'Displays', text: 'Territorial kinds (bettas, clownfish, crabs, hermit crabs, crayfish, lionfish, morays, pike) that meet something about their size flare up and circle each other until one backs down.' },
+      { key: 'tg:ride', name: 'Riders', text: 'Small fish ride alongside a big calm animal (a turtle, a ray, a shark, a sturgeon, a koi) for a while; the hunters leave them be while they’re there.' },
+      { key: 'tg:ball', name: 'Bait balls', text: 'A school a hunter comes close to swirls tight around its middle.' },
+      { key: 'tg:warn', name: 'Warnings', text: 'Lionfish, pufferfish and sea spiders flare at a hunter that comes for them, and it thinks better of it.' },
+      { key: 'tg:scraps', name: 'Scraps', text: 'Scavengers trail a hunter at a distance, and when it catches something they pick up the scraps (which go back into the floor).' },
+    ] },
+    { title: 'The balance, by hand', note: 'Open the census (the number at the end of the dock) and a kind’s row.', entries: [
+      { key: 'tg:protect', name: '🛡 Protect a kind', text: 'The hunters leave it alone. It costs a pearl a dawn for every two of them; if you can’t pay, the protection lapses.' },
+      { key: 'tg:cull', name: '🎯 Cull a kind', text: 'The hunters go for it first, and every catch pays a bounty. The census marks a kind that has outgrown the pond (well past what it breeds up to, or a big share of everything).' },
+      { key: 'tg:refuge', name: 'The refuge', icon: () => toolIcon('build-refuge'), text: `${gCap(STRUCTURES.refuge.desc)}. A build (${priceText(TOOLS['build-refuge'])}).` },
+    ] },
+  ];
+}
+
 function chapterHunters() {
   return [
     { title: 'Building a hunter', note: `Any predator (and any swimmer you wake to the hunt, for ${AWAKEN.essence} essence and ${AWAKEN.corruption} corruption) can be built up on its card: ten levels in each of eight ways, each dearer than the last. Built up far enough, a hunter takes anything smaller than itself.`, entries: Object.entries(HUNT).map(([k, H]) => ({
@@ -579,7 +599,7 @@ function chapterKeys() {
 
 const GUIDE_BUILD = {
   start: chapterStart, animals: chapterAnimals, plants: chapterPlants, food: chapterFood, builds: chapterBuilds, breeding: chapterBreeding, genes: chapterGenes,
-  depths: chapterDepths, land: chapterLand, sky: chapterSky, dark: chapterDark, eldritch: chapterEldritch, alien: chapterAlien, hunters: chapterHunters, score: chapterScore, ponds: chapterPonds, keys: chapterKeys,
+  depths: chapterDepths, land: chapterLand, sky: chapterSky, dark: chapterDark, together: chapterTogether, eldritch: chapterEldritch, alien: chapterAlien, hunters: chapterHunters, score: chapterScore, ponds: chapterPonds, keys: chapterKeys,
 };
 // A chapter's sections (built once; they read the tables, not the pond, so they keep).
 function guideChapter(id) {

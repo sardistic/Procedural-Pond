@@ -10,7 +10,7 @@ const byId = (id) => document.getElementById(id);
 // closes it (the actions panel and the menu are tools, not windows, and stay).
 const WINDOWS = [
   ['creature', () => hideCreature()], ['object', () => hideObject()], ['spawn-card', () => closeSpawnCard()], ['hatchery', () => setHatchery(false)],
-  ['evo', () => setEvo(false)], ['census', () => setCensus(false)], ['log-panel', () => setJournal(false)], ['score-panel', () => setScore(false)], ['sky-panel', () => setSky(false)],
+  ['evo', () => setEvo(false)], ['census', () => setCensus(false)], ['wild', () => setWild(false)], ['log-panel', () => setJournal(false)], ['score-panel', () => setScore(false)], ['sky-panel', () => setSky(false)],
 ];
 function closeWindows(except = null) {
   for (const [id, close] of WINDOWS) { const e = byId(id); if (id !== except && e && !e.hidden) close(); }
@@ -436,8 +436,10 @@ function renderCensus() {
       hungry && `${hungry} hungry`, rare && `✦ ${rare} rare`, gen && `gen ${gen}`,
       S && kind !== 'tadpole' && `worth ${S.value} essence`, S && kind !== 'tadpole' && `${diversityWord(S.diversity)} (${Math.round(S.diversity * 100)}%)`].filter(Boolean).join(' · ');
     if (S && S.best >= 2 && kind !== 'tadpole') li.style.setProperty('--tier', TIER_COLOR[S.best]);
+    const st = world.game.stance && world.game.stance[kind], over = kind !== 'tadpole' && typeof overAbundant === 'function' && overAbundant(world, kind);
     head.append(el('span', 'ic'), el('b', 'nm', kind === 'tadpole' ? 'Tadpoles' : SPECIES[kind].label),
-      el('span', 'ct', list.length), colored('span', 'facts', facts));
+      el('span', 'ct', list.length), colored('span', 'facts', [facts, over ? 'outgrowing the pond' : '', st === 'protect' ? '🛡 protected' : st === 'cull' ? '🎯 culled' : ''].filter(Boolean).join(' · ')));
+    if (over) li.classList.add('over');
     head.firstChild.append(iconImg(speciesIcon(kind), 28));
     head.addEventListener('click', () => {
       if (census.expanded.has(kind)) census.expanded.delete(kind); else census.expanded.add(kind);
@@ -459,6 +461,12 @@ function renderCensus() {
         ul.append(m);
       }
       if (list.length > 60) ul.append(el('li', 'more', `and ${list.length - 60} more`));
+      if (kind !== 'tadpole' && !world.observe && typeof setStance === 'function') {
+        const bar = el('li', 'stance'), mk = (k, label, tip) => { const b = el('button', null, label); b.type = 'button'; b.setAttribute('aria-pressed', st === k); b.title = tip; b.addEventListener('click', () => { setStance(world, kind, k); renderCensus(); }); return b; };
+        bar.append(mk('protect', '🛡 Protect', 'Protect them\nThe hunters leave them alone (a pearl a dawn for every two of them).'),
+          mk('cull', '🎯 Cull', 'Cull them\nThe hunters go for them first, and every catch pays a bounty: for a kind that has outgrown the pond.'));
+        ul.append(bar);
+      }
       if (kind !== 'tadpole' && !world.observe) {
         const all = el('button', 'recycle-all');
         all.type = 'button';

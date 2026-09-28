@@ -288,6 +288,7 @@ class Fish extends Creature {
         want = this.maxSpeed;
       }
     }
+    if (this.hold > world.t) want = Math.min(want, 0.4); // (holding still: being cleaned, say)
     const gl = Math.hypot(gx, gy) || 1;
     gx /= gl; gy /= gl;
     if (!this.grabbed) {
@@ -577,6 +578,7 @@ class Walker extends Creature {
         this.timer = rand(3, 8);
       }
     }
+    if (this.hold > world.t) want = Math.min(want, 0.4); // (holding still: being cleaned, say)
     const gl = Math.hypot(gx, gy) || 1;
     gx /= gl; gy /= gl;
     if (!this.grabbed) {
