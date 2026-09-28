@@ -178,7 +178,7 @@ function islandSand(world, s) {
 }
 // Each level widens it: a sixth for each of the first four, an eighth after.
 const islandGrow = (stack = 1) => 1 + 0.16 * Math.min(stack - 1, 4) + 0.12 * Math.max(0, stack - 5);
-const islandRadius = (world, s) => s.R * islandGrow(s.stack || 1) * islandSand(world, s);
+const islandRadius = (world, s) => s.R * islandGrow(s.stack || 1) * islandSand(world, s) * ((s.ig && s.ig.sz) || 1); // (and what it has grown or lost over the weeks: isles.js)
 // The terraces of a raised island, one per level above the first, from the widest up:
 // [x offset, y offset, radius, tilt, height of its top]. Low steps (so what basks on
 // them still shows), each a little off-centre so the mound isn't a perfect cone.
@@ -206,10 +206,11 @@ function applyIslands(world) {
   for (const s of world.structures || []) {
     if (s.kind !== 'island' || s.anim) continue;
     // Out over the deep an island rises as a cliff: a flat top and steep sides.
-    const R0 = islandRadius(world, s), R = R0 * 1.4, top = Math.min(1.5, 0.97 + 0.06 * ((s.stack || 1) - 1)), cliff = 2 + 8 * (s.deep || 0);
+    // (Its coastline wanders as it ages, into headlands and coves: isles.js isleLobe.)
+    const R0 = islandRadius(world, s), lobed = !!(s.ig && s.ig.lob) && typeof isleLobe === 'function', R = R0 * 1.4 * (lobed ? 1.22 : 1), top = Math.min(1.5, 0.97 + 0.06 * ((s.stack || 1) - 1)), cliff = 2 + 8 * (s.deep || 0);
     for (let y = Math.max(0, Math.floor(s.y - R)); y <= Math.min(H - 1, Math.ceil(s.y + R)); y++) {
       for (let x = Math.max(0, Math.floor(s.x - R)); x <= Math.min(W - 1, Math.ceil(s.x + R)); x++) {
-        const d = Math.hypot(x - s.x, y - s.y) / R0;
+        const d = Math.hypot(x - s.x, y - s.y) / R0 / (lobed ? isleLobe(s, Math.atan2(y - s.y, x - s.x)) : 1);
         if (d >= 1.4) continue;
         // Low and broad: the tide covers the rim at high water and bares a wide beach at low.
         const e = top * (1 - (d / 1.4) ** cliff) + (fbm(x * 0.08, y * 0.08, s.seed % 53) - 0.5) * 0.25;
@@ -217,6 +218,7 @@ function applyIslands(world) {
         if (v > shore[p]) shore[p] = v;
       }
     }
+    if (typeof applyIsleReef === 'function') applyIsleReef(world, s, R0); // (a barrier reef offshore, once it has risen)
   }  if (typeof applyIsleBars === 'function') applyIsleBars(world); // (islands close together grow a bar between them: land.js)
 }
 
@@ -512,12 +514,12 @@ function dawnCoast(world) {
     if (w !== world.riverW) world.riverW = w;
     world.beachDaily = true; // (the bends creep and the sand moves a little every day: see below)
     const islands = (world.structures || []).filter((s) => s.kind === 'island');
-    const key = islands.map((s) => islandRadius(world, s).toFixed(1)).join();
+    const key = islands.map((s) => islandRadius(world, s).toFixed(1) + (typeof isleShapeKey === 'function' ? isleShapeKey(s) : '')).join();
     if (islands.length && world.islandKey != null && key !== world.islandKey) {
       const grew = islands.reduce((a, s) => a + islandRadius(world, s) - (s.lastR || s.R), 0) > 0;
       logEvent(world, grew ? 'Calm weeks have built the island out a little' : 'The sea has taken some of the island', null, { cat: 'pond', pri: 1, key: 'island-size' });
       for (const s of islands) {
-        const R = Math.max(islandRadius(world, s), s.lastR || s.R) * 1.45 + 8;
+        const R = Math.max(islandRadius(world, s), s.lastR || s.R) * (typeof isleReach === 'function' ? isleReach(world, s) / islandRadius(world, s) : 1.45) + 8;
         islandRects.push([Math.max(0, Math.floor(s.x - R)), Math.max(0, Math.floor(s.y - R)), Math.min(world.W - 1, Math.ceil(s.x + R)), Math.min(world.H - 1, Math.ceil(s.y + R))]);
       }
     }

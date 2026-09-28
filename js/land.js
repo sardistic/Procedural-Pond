@@ -387,14 +387,16 @@ function landIslands(world) {
     // Grow, age, die (dead wood lingers a few days, then goes back to the sand).
     for (let i = fl.length - 1; i >= 0; i--) {
       const f = fl[i], age = day - f.b;
+      if (!f.dead && Math.hypot(f.x, f.y) > R * 0.9) { f.dead = 1; f.b = day; f.span = rand(1, 2); continue; } // (the sea has taken the ground under it)
       if (age < f.span) f.g = Math.min(1, f.g + 0.25);
       else if (!f.dead) { f.dead = 1; f.b = day; f.span = rand(2, 4); }
       else { fl.splice(i, 1); landAdd(world, s.x + f.x, s.y + f.y, 'life', 0.02); }
     }
     // New growth, as much as the island (and the land around it) can carry.
-    const cap = Math.round(clamp((5 + 4 * ((s.stack || 1) - 1)) * (0.7 + 0.8 * m.life + 0.5 * m.bone + 0.3 * m.light - 0.4 * m.dark), 2, 42));
+    const cap = Math.round(clamp((5 + 4 * ((s.stack || 1) - 1)) * (0.7 + 0.8 * m.life + 0.5 * m.bone + 0.3 * m.light - 0.4 * m.dark) * (typeof isleFloraK === 'function' ? isleFloraK(s) : 1), 2, 64));
     const weights = { ...K.flora };
     for (const k of LAND_KEYS) if (m[k] > 0.15 && ISLE_BIOME_FLORA[k]) for (const [t, w] of Object.entries(ISLE_BIOME_FLORA[k])) weights[t] = (weights[t] || 0) + w * m[k] * 4;
+    if (typeof isleFloraWeights === 'function') isleFloraWeights(s, weights); // (as it matures, bigger trees: isles.js)
     for (let n = 0; n < 3 && fl.length < cap; n++) {
       const a = rand(0, TAU), d = Math.sqrt(Math.random()) * R * 0.75, x = Math.cos(a) * d, y = Math.sin(a) * d;
       if (fl.some((f) => (f.x - x) ** 2 + (f.y - y) ** 2 < 16)) continue;
@@ -752,6 +754,7 @@ function landLights(M, world, big) {
     if (s.kind !== 'island' || !s.flora) continue;
     for (const f of s.flora) if ((f.t === 'glowbloom' || f.t === 'glassshoot') && !f.dead && (f.gs || 0) > 0.3) splat(M, s.x + f.x, s.y + f.y, 6, f.t === 'glowbloom' ? 0xff90ffff : 0xffff6ae0, 0.35 * f.gs, 0, 0, big);
   }
+  if (typeof isleLights === 'function') isleLights(M, world, big); // (an island's fire: isles.js)
 }
 
 // ---- the map layer, tips, and the card ----------------------------------------------------------------------
@@ -775,7 +778,7 @@ function isleSummary(world, s) {
   const K = ISLE_KINDS[isleOf(s)], fl = (s.flora || []).filter((f) => !f.dead).length, dead = (s.flora || []).filter((f) => f.dead).length;
   const joins = Object.entries(world.isleJoins || {}).filter(([k, j]) => j.kind && k.split('-').includes(String(s.seed))).map(([, j]) => ISLE_JOINS[j.kind].name);
   const bar = Object.entries(world.isleJoins || {}).some(([k, j]) => !j.kind && k.split('-').includes(String(s.seed)));
-  return `${capFirst(K.name)}${s.evo ? `, ${ISLE_EVO[s.evo]}` : ''}. ${fl} plant${fl === 1 ? '' : 's'} growing${dead ? `, ${dead} dying back` : ''}.${joins.length ? ` Joined to another: ${joins.join(', ')}.` : bar ? ' A sandbar is building toward another island.' : ''}`;
+  return `${capFirst(K.name)}${s.evo ? `, ${ISLE_EVO[s.evo]}` : ''}.${typeof isleStatus === 'function' ? isleStatus(world, s) : ''} ${fl} plant${fl === 1 ? '' : 's'} growing${dead ? `, ${dead} dying back` : ''}.${joins.length ? ` Joined to another: ${joins.join(', ')}.` : bar ? ' A sandbar is building toward another island.' : ''}`;
 }
 
 // ---- saving ------------------------------------------------------------------------------------------------

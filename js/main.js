@@ -459,6 +459,7 @@ function update(dt) {
   updateCoast(world, dt);
   updateGulls(world, dt);
   if (typeof updateShoreLife === 'function') updateShoreLife(world, dt);
+  if (typeof updateIsles === 'function') updateIsles(world, dt);
   updateQuirks(world, dt);
   updateBalance(world, dt);
   updateVertical(world, dt);

@@ -1835,6 +1835,7 @@ function renderObject() {
           tree.append(traitButton(B.label, B.cur, room ? B.cost(lv) : null, lv >= ISLAND_BRANCH_MAX ? B.note : room ? B.note : `${B.note} (raise the island to grow it further)`, !room, () => growIsland(world, o, k), pips(lv, ISLAND_BRANCH_MAX), k === 'life' ? '#ffd870' : '#3aff9a', renderObject));
         }
       } else parts.push(el('p', 'note', 'Raise it to level 3 and it can go one of two ways: lanterns of life, or the whispering stone.'));
+      if (typeof isleCardButtons === 'function') isleCardButtons(world, o, tree); // (sand, a grove, reefs, reeds, mangroves, birds, pools, a spring, fire, a giant: isles.js)
     }
     if (o.kind === 'hatchery') tree.append(traitButton('Open the hatchery', null, null, '', false, () => { hideObject(); setHatchery(true); return false; }, null, '#f8c050', renderObject));
     if (def.habitatFor) {

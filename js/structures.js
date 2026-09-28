@@ -303,6 +303,7 @@ const BAKE = {
       const sid = next(SM.idol), z0 = zAt(0, -0.5), h = z0 + 14 + 4 * (s.blv || 1);
       r.tube(x - 0.8, y - 0.5, 2.4, z0, x + 0.8, y - 0.5, 1.2, h, 1, SM.idol, sid);
     }
+    if (typeof bakeIsleFeatures === 'function') bakeIsleFeatures(r, s, next); // (what it has grown: reef, mangroves, nests, pools, spring, fire, the giant: isles.js)
     if (typeof bakeFlora === 'function') bakeFlora(r, s, next); // (its living flora: land.js)
   },
   vent(r, s, next) {
@@ -574,6 +575,7 @@ function dawnStructures(world) {
   seedPlants(world);
   if (typeof queueStains === 'function') queueStains(world); else applyStains(world); // (in slices, on a big pond)
   dawnFinds(world);
+  if (typeof dawnIsles === 'function') dawnIsles(world); // (islands grow up, drift in size, grow things: before the coast is reshaped)
   if (typeof dawnCoast === 'function') dawnCoast(world);
   if (typeof dawnAbyss === 'function') dawnAbyss(world);
   if (typeof dawnQuirks === 'function') dawnQuirks(world);

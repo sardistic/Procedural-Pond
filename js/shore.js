@@ -96,6 +96,7 @@ function shiftShoreLife(world, dx, dy, beach) {
     if (c.body) for (let i = 0; i < c.body.n; i++) { c.body.x[i] += dx; c.body.y[i] += dy; }
     if (c.nest) c.nest = [c.nest[0] + dx, c.nest[1] + dy];
     if (c.lastTrack) c.lastTrack = [c.lastTrack[0] + dx, c.lastTrack[1] + dy];
+    if (c.roost) c.roost = [c.roost[0] + dx, c.roost[1] + dy]; // (a tern's nest on its island: isles.js)
   }
 }
 
