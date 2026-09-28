@@ -2585,6 +2585,7 @@ async function boot() {
   let firstVisit = false;
   try { firstVisit = !localStorage.getItem('pond.visited'); localStorage.setItem('pond.visited', '1'); } catch { /* storage unavailable */ }
   if (innerWidth < 600 || !firstVisit || observe) setHud(false); else $('ponds').open = true;
+  if (typeof saveReset !== 'undefined' && saveReset && !observe) logEvent(world, '✦ A fresh start: every pond was reset, so the ones this browser kept are gone. This one is new', null, { cat: 'pond', pri: 3 });
   // A word about signing in, once the pond has had a little while (and not again for a few days if put off).
   setTimeout(() => { if (typeof maybeNudgeSignIn === 'function') maybeNudgeSignIn(); }, firstVisit ? 90000 : 20000);
   if (location.hash === '#bones') setBones(true);

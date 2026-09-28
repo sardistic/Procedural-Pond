@@ -13,6 +13,21 @@ const SAVE_PREFIX = 'procedural-pond.save.';
 const SAVE_INDEX = 'procedural-pond.saves';
 const MAX_SAVES = 12;
 
+// The season: when every pond is reset (the server wiped), this goes up by one, and each browser lets go of
+// the ponds it kept from before, once, on its next visit (its settings and sign-in stay). The server takes
+// ponds only from pages of this season, so a page left open from before can't bring an old pond back.
+const SAVE_EPOCH = 2;
+const saveReset = (() => {
+  try {
+    if (typeof localStorage === 'undefined' || localStorage.getItem('pond.epoch') === String(SAVE_EPOCH)) return false;
+    let n = 0;
+    for (const k of Object.keys(localStorage)) if (k.startsWith(SAVE_PREFIX) || k === SAVE_INDEX) { if (k !== SAVE_INDEX) n++; localStorage.removeItem(k); }
+    try { if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('pond.home'); } catch { /* storage unavailable */ }
+    localStorage.setItem('pond.epoch', String(SAVE_EPOCH));
+    return n > 0;
+  } catch { return false; }
+})();
+
 const r2 = (v) => Math.round(v * 100) / 100;
 // Identifies this browser's copy of a pond, so a link to an older state of your
 // own pond doesn't roll it back, while someone else's copy of the same seed asks first.

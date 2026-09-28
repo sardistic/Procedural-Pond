@@ -34,6 +34,10 @@ const SMALL_KEEP_DAYS = 45;          // ... or this long, for ponds too small fo
 const BOARD_MIN = 50;                // points before a pond is listed
 const FINDS_KEEP = 300;
 const ID_RE = /^[a-z]{2,8}(?:-[a-z]{2,8}){3}$/;
+// The season (the page's SAVE_EPOCH): after a reset, a pond is taken only from a page of this season, so a page
+// left open from before (with an old pond in it) can't bring it back.
+const EPOCH = 2;
+const fromThisSeason = (body) => !!body && !!body.meta && body.meta.epoch === EPOCH;
 const WANDER_KEEP_DAYS = 14;         // a wanderer nobody calls up is gone after this
 const WANDER_MAX = 400;              // the most kept in the pool
 const WANDER_SENDS_PER_HOUR = 8;     // per pond
@@ -279,7 +283,9 @@ const byOf = (owner, show) => { if (!owner || !show) return undefined; const u =
 
 async function createPond(req) {
   if (!allowCreate(req.ip)) throw new HttpError(429, 'too many new links today');
-  const body = await readJson(req), meta = cleanMeta(body.meta), save = cleanSave(body.save), now = Date.now();
+  const body = await readJson(req);
+  if (!fromThisSeason(body)) throw new HttpError(409, 'this page is from before the reset: reload it');
+  const meta = cleanMeta(body.meta), save = cleanSave(body.save), now = Date.now();
   const key = crypto.randomBytes(18).toString('base64url');
   const points = Math.min(meta.points, FIRST_POINTS), erosion = Math.min(meta.erosion, FIRST_EROSION), depth = fathomsOf(erosion, meta.habitat);
   for (let i = 0; i < 12; i++) {
@@ -298,7 +304,9 @@ async function updatePond(req, id) {
   if (!row) throw new HttpError(404, 'no such pond');
   // Its key, or its signed-in owner (from any browser).
   if (!keyMatches(row, req.headers['x-pond-key']) && !ownsRow(req, row)) throw new HttpError(403, 'not your pond');
-  const body = await readJson(req), meta = cleanMeta(body.meta), save = cleanSave(body.save), now = Date.now();
+  const body = await readJson(req);
+  if (!fromThisSeason(body)) throw new HttpError(409, 'this page is from before the reset: reload it');
+  const meta = cleanMeta(body.meta), save = cleanSave(body.save), now = Date.now();
   if (row.owner) { q.setShow.run(meta.showName ? 1 : 0, id); meta.by = byOf(row.owner, meta.showName); }
   // Scores grow only so fast: a claim is capped by what the time since the last update allows.
   const allowed = row.points + POINT_RATE * Math.max(0, (now - row.updated) / 1000) + POINT_BURST;

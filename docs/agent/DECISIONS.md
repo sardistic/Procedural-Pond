@@ -714,3 +714,10 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
 - **The eye and the card:** `viewFocus()` is the middle of what an open creature/object card leaves showing (above a bottom sheet, beside a side panel). Following centres there, and a tap that opens a card on a touchscreen glides the view so the animal sits there (`revealFromCard`). A second quick tap on the same animal follows it (`lastTap`), but the sheet usually covers the spot first, so the card's Follow button is the way on a phone (the guide says so).
 - **What a tap picks:** `creatureAt` now prefers the pond's animals over gnats and fireflies drifting over them (a gnat over a crab took the tap, and opened nothing; on desktop too). On a touchscreen with the pointer, a tap that misses picks the nearest animal within 14 screen px (`creatureNear`).
 
+## Seasons: a reset that sticks (2026-09-28)
+- The first wipe (2026-09-27) cleared only the server, and a browser's own saved pond put itself back (it resumes from localStorage and uploads when it has no live link). A reset now has two halves:
+  - **The page:** `SAVE_EPOCH` (save.js, now 2). On load, a browser whose `pond.epoch` differs drops every `procedural-pond.save.*` and the index (and the walk's `pond.home`), once, and records the new epoch. Settings, pins, the map choice, the first-visit mark and the sign-in cookie stay. If it dropped anything, the journal says so (✦, pri 3). `pondMeta` sends `epoch`.
+  - **The server:** `EPOCH` (server.js, 2). POST and PUT /api/ponds refuse any body whose `meta.epoch` isn't the current one (409, "this page is from before the reset: reload it"), so a tab left open on the old code can't upload its old pond. Wanderers and claims need no guard: they act on ponds that exist, and after a wipe only this season's do.
+- **For the next reset:** raise both numbers together, deploy pond and api, then back up and clear `ponds`, `finds` and `wanderers` (keep `users` and `sessions` unless asked), and restart the api (its board cache).
+- `#s=` pond links from before a reset still open: they're a pond in the URL, not a save (rare now).
+
