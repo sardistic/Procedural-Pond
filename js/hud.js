@@ -941,7 +941,7 @@ function renderSpawnCard() {
     have.append(colored('span', null, `In the pond: ${S.n}, worth ${S.value} essence${S.best ? `, rarest ${TIERS[S.best]}` : ''}, ${diversityWord(S.diversity)}`), all);
   }
   const boosts = el('div', 'sc-boosts');
-  boosts.append(el('span', 'sc-sub', 'Gene boosts (hover for what each does)'));
+  boosts.append(el('span', 'sc-sub', `Gene boosts (${typeof TOUCHY !== 'undefined' && TOUCHY ? 'hold one' : 'hover'} for what each does)`));
   for (const [key, e] of Object.entries(ENHANCE)) {
     const b = el('button', 'boost');
     b.type = 'button';

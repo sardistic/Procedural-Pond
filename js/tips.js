@@ -69,7 +69,7 @@ function placeTip(x, y) {
   if (top + h > innerHeight - 6) top = Math.max(6, y - h - 12);
   box.style.left = `${Math.round(left)}px`; box.style.top = `${Math.round(top)}px`;
 }
-function hideTip() { if (TIP.el) TIP.el.hidden = true; TIP.target = null; TIP.world = false; clearTimeout(TIP.show); }
+function hideTip() { if (TIP.el) TIP.el.hidden = true; TIP.target = null; TIP.world = false; TIP.held = false; clearTimeout(TIP.show); }
 
 // Every title becomes a tip (now, and whenever code sets one later).
 const TITLE = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'title');
@@ -113,6 +113,7 @@ setInterval(() => {
   if (n.dataset.tip && n.dataset.tip !== TIP.text) renderTip(n.dataset.tip);
 }, 150);
 document.addEventListener('pointerout', (e) => {
+  if (e.pointerType !== 'mouse') return; // (a finger lifting leaves too: a held tip stays until the next touch)
   if (!TIP.target || TIP.world || (e.relatedTarget && TIP.target.contains(e.relatedTarget))) return;
   // (Leaving for another element with a tip: the pointerover above takes it from here.)
   if (e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('[data-tip]')) return;
@@ -120,6 +121,48 @@ document.addEventListener('pointerout', (e) => {
 });
 document.addEventListener('pointerdown', () => { if (!TIP.world) hideTip(); }, true);
 addEventListener('scroll', hideTip, true);
+
+// ---- on a touchscreen: press and hold for the tip ------------------------------------------------------------
+// There's no hover on a phone: holding a control for half a second shows its tip (and letting go then doesn't press
+// it); holding the pond on something that has no card says what it is. Taps work as they always did.
+const TOUCHY = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+const forTouch = (s) => (TOUCHY && s ? String(s).replace(/\bclick\b/g, 'tap').replace(/\bClick\b/g, 'Tap').replace(/scroll to zoom/g, 'pinch to zoom').replace(/\bRight-click or long-press\b/g, 'Press and hold') : s);
+let held = null;
+function showHeldTip(text, x, y, world = false) {
+  renderTip(forTouch(text));
+  tipBox().hidden = false;
+  placeTip(x, Math.max(8, y - 60));
+  TIP.world = world;
+  TIP.held = true;
+  clearTimeout(TIP.hideT);
+  TIP.hideT = setTimeout(hideTip, 4500);
+}
+document.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse') return;
+  clearTimeout(held && held.timer);
+  const t = e.target.closest && e.target.closest('[data-tip], button[aria-label]');
+  if (!t || t.tagName === 'CANVAS' && t.id === 'pond') { held = null; return; }
+  const x = e.clientX, y = e.clientY;
+  held = { t, x, y, shown: false, timer: setTimeout(() => {
+    const text = t.dataset.tip || t.getAttribute('aria-label');
+    if (!text || !t.isConnected || !held) return;
+    held.shown = true;
+    TIP.target = t;
+    showHeldTip(text, x, y);
+  }, 480) };
+}, true);
+document.addEventListener('pointermove', (e) => { if (held && !held.shown && Math.hypot(e.clientX - held.x, e.clientY - held.y) > 10) clearTimeout(held.timer); }, true);
+document.addEventListener('pointerup', () => { if (held && !held.shown) clearTimeout(held.timer); }, true);
+document.addEventListener('pointercancel', () => { if (held) clearTimeout(held.timer); held = null; }, true);
+document.addEventListener('click', (e) => { if (held && held.shown && held.t.contains(e.target)) { e.preventDefault(); e.stopPropagation(); held = null; } }, true);
+document.addEventListener('contextmenu', (e) => { if (held && held.shown) e.preventDefault(); }, true);
+// The pond held on something without a card (litter, a fossil, a rock, the reef…): what it is.
+function touchWorldTip(x, y, sx, sy) {
+  const text = typeof worldTipAt === 'function' && worldTipAt(x, y);
+  if (!text) return false;
+  showHeldTip(text, sx, sy, true);
+  return true;
+}
 
 // ---- in the pond ------------------------------------------------------------------------------------------
 function worldTipAt(x, y) {
@@ -155,7 +198,7 @@ function worldTipAt(x, y) {
 }
 const pondEl = document.getElementById('pond');
 pondEl.addEventListener('pointermove', (e) => {
-  if (e.pointerType !== 'mouse' || e.buttons) { if (TIP.world) hideTip(); return; }
+  if (e.pointerType !== 'mouse' || e.buttons) { if (TIP.world && !TIP.held) hideTip(); return; }
   const text = worldTipAt(world.pointer.x, world.pointer.y);
   if (!text) { if (TIP.world) hideTip(); return; }
   if (!TIP.world || TIP.text !== text) {
@@ -168,7 +211,7 @@ pondEl.addEventListener('pointermove', (e) => {
   TIP.x = e.clientX; TIP.y = e.clientY;
   if (TIP.el && !TIP.el.hidden) placeTip(e.clientX, e.clientY);
 });
-pondEl.addEventListener('pointerleave', () => { if (TIP.world) hideTip(); });
+pondEl.addEventListener('pointerleave', (e) => { if (TIP.world && (e.pointerType === 'mouse' || !TIP.held)) hideTip(); }); // (a lifted finger leaves too)
 
 // ---- the controls' own words ------------------------------------------------------------------------------
 for (const b of document.querySelectorAll('#tools [data-tool], #builds [data-tool]')) { const t = TOOLS[b.dataset.tool]; if (t) b.title = toolTip(b.dataset.tool, t); }

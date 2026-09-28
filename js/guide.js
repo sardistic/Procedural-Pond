@@ -621,7 +621,10 @@ function chapterKeys() {
   const K = [['Click', 'look (with the pointer), or use the picked action'], ['Esc', 'back to the pointer'], ['Drag', 'move an animal, or pan the water'], ['Scroll, + / −', 'zoom'], ['Arrows / WASD', 'pan'], ['0', 'reset the view'], ['F', 'follow the animal under the pointer'],
     ['T', 'tour: the camera wanders between animals'], ['C', 'the census'], ['J', 'the journal'], ['P', 'the score and leaderboard'], ['L', 'change the light'], ['B', 'bones: the spines and legs'],
     ['Space', 'pause'], ['M', 'sound'], ['N', 'music'], ['H', 'the menu'], ['G', 'this guide'], ['Right-click / long-press', 'a plant’s traits']];
-  return [{ title: 'Controls', entries: K.map(([k, v]) => ({ key: `k:${k}`, name: k, text: gCap(v) })) }];
+  const T = [['Tap', 'look, or use the picked action (like a click)'], ['Drag', 'pan the water, or move an animal'], ['Pinch', 'zoom'], ['Follow', 'from the animal’s card (the view keeps it clear of the card)'],
+    ['Press and hold', 'a button: what it does (letting go then doesn’t press it); the pond: the card of what’s there, or what it is'], ['▦', 'show or hide the map (beside the zoom)'], ['The news line', 'tap it for the journal']];
+  return [{ title: 'Controls', entries: K.map(([k, v]) => ({ key: `k:${k}`, name: k, text: gCap(v) })) },
+    { title: 'On a phone or tablet', note: 'Windows come up from the bottom (or down the side, held sideways); × or a tap on the water closes them.', entries: T.map(([k, v]) => ({ key: `kt:${k}`, name: k, text: gCap(v) })) }];
 }
 
 const GUIDE_BUILD = {

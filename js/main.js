@@ -153,7 +153,7 @@ function layout(regen, deferBake = false) {
   world.maxPop = world.maxPopBase + (world.maxPopBonus || 0); // what's built in the deep lets it hold more
   // The minimap keeps the pond's shape.
   mini.height = clamp(Math.round(mini.width * (view.r % 2 ? W / H : H / W)), 54, 200);
-  mini.style.height = `${mini.height}px`;
+  mini.style.aspectRatio = `${mini.width} / ${mini.height}`; // (the page sizes it: smaller on a phone)
   if (regen) buildPond();
   if (deferBake) {
     // (The floor's buffers, blank: the caller paints what's on screen and queues the rest.)
@@ -945,9 +945,24 @@ function useTool(x, y) {
   }
 }
 
+// What's under the pointer: the pond's animals before the gnats and fireflies drifting over them.
 function creatureAt(x, y) {
-  let best = null;
-  for (const c of world.creatures) if (c.hit(x, y) && (!best || c.z > best.z)) best = c;
+  let best = null, flier = null;
+  for (const c of world.creatures) {
+    if (!c.hit(x, y)) continue;
+    if (!c.life && (c.species === 'gnat' || c.species === 'firefly')) { flier = flier || c; continue; }
+    if (!best || c.z > best.z) best = c;
+  }
+  return best || flier;
+}
+// A fingertip is wider than a pixel: the nearest animal within r of the tap, if the tap itself missed.
+function creatureNear(x, y, r) {
+  let best = null, bd = Infinity;
+  for (const c of world.creatures) {
+    if (!c.life || c.leaving || c.dying) continue;
+    const d = Math.hypot(c.x - x, c.y - y) - (c.body ? Math.max(...c.body.w) : 2);
+    if (d < r && d < bd) { bd = d; best = c; }
+  }
   return best;
 }
 
@@ -1103,7 +1118,7 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
   if (world.tool === 'net') { removeAt(x, y); noteToolUse('net'); return; }
-  const c = creatureAt(x, y);
+  const c = creatureAt(x, y) || (e.pointerType !== 'mouse' && world.tool === 'pointer' ? creatureNear(x, y, 14 / view.k) : null);
   if (c && !c.noGrab) {
     world.grab = c;
     c.grabbed = true;
@@ -1114,7 +1129,7 @@ canvas.addEventListener('pointerdown', (e) => {
     press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x, y, panning: false };
     view.reach = viewAtEnds();
     // A long press opens the card of whatever is there (plants too).
-    press.longT = setTimeout(() => { if (press && !press.panning) press.done = openThingAt(x, y); }, 550);
+    press.longT = setTimeout(() => { if (press && !press.panning) press.done = openThingAt(x, y) || (e.pointerType !== 'mouse' && typeof touchWorldTip === 'function' && touchWorldTip(x, y, e.clientX, e.clientY)); }, 550);
   }
 });
 
@@ -1173,7 +1188,7 @@ function beyondDown(e) {
   press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x: world.pointer.x, y: world.pointer.y, panning: false, beyond: true };
 }
 
-let tap = null;
+let tap = null, lastTap = null;
 function pointerEnd(e) {
   touches.delete(e.pointerId);
   if (touches.size < 2) pinch = null;
@@ -1206,8 +1221,13 @@ function pointerEnd(e) {
   }
   // A quick click on an animal (not a drag) opens its card.
   if (tap && e.type === 'pointerup' && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 6 && performance.now() - tap.t < 350) {
-    if (tap.c.life) showCreature(tap.c);
-    else if (tap.c.note) showTicker(tap.c.note(world));
+    // (A second tap on the same animal, on a touchscreen, follows it: the double-click there.)
+    if (e.pointerType !== 'mouse' && lastTap && lastTap.c === tap.c && performance.now() - lastTap.t < 450 && tap.c.life) { cam.tour = false; $('tour').setAttribute('aria-pressed', false); follow(tap.c); lastTap = null; }
+    else {
+      if (tap.c.life) { showCreature(tap.c); if (e.pointerType !== 'mouse') revealFromCard(tap.c); }
+      else if (tap.c.note) showTicker(tap.c.note(world));
+      lastTap = { c: tap.c, t: performance.now() };
+    }
   }
   tap = null;
   press = null;
@@ -1262,11 +1282,31 @@ function updateCamera(dt) {
   }
   const c = cam.follow;
   if (!c) return;
-  const k = view.k, e = Math.min(1, dt * 3);
-  cam.fx += (innerWidth / 2 - c.x * k - cam.fx) * e;
-  cam.fy += (innerHeight / 2 - c.y * k - cam.fy) * e;
+  const k = view.k, e = Math.min(1, dt * 3), [fx, fy] = viewFocus();
+  cam.fx += (fx - c.x * k - cam.fx) * e;
+  cam.fy += (fy - c.y * k - cam.fy) * e;
   view.tx = cam.fx; view.ty = cam.fy;
   applyView();
+}
+
+// Where the eye goes: the middle of the screen, or of what an animal's (or a thing's) card leaves showing: above it
+// when it comes up from the bottom (a phone held upright), beside it when it runs down the side.
+function viewFocus() {
+  let x1 = innerWidth, y1 = innerHeight;
+  for (const id of ['creature', 'object']) {
+    const el = document.getElementById(id);
+    if (!el || el.hidden) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width > innerWidth * 0.8) { if (r.top > innerHeight * 0.2) y1 = Math.min(y1, r.top); } else if (r.left > innerWidth * 0.4) x1 = Math.min(x1, r.left);
+  }
+  return [x1 / 2 + (x1 < innerWidth ? 24 : 0), Math.max(80, y1 / 2 + (y1 < innerHeight ? 20 : 0))];
+}
+// A card opened on a touchscreen: ease the view so the animal isn't under it.
+function revealFromCard(c) {
+  if (!c || cam.follow) return;
+  const [sx, sy] = worldToScreen(c.x, c.y), [fx, fy] = viewFocus();
+  if (Math.abs(fx - innerWidth / 2) < 2 && Math.abs(fy - innerHeight / 2) < 2) return; // (nothing in the way)
+  view.glide = { tx: view.tx + fx - sx, ty: view.ty + fy - sy };
 }
 
 let chipName = '';
@@ -1364,6 +1404,7 @@ function setMiniLayer(i) {
 }
 
 function drawMinimap() {
+  if (!mini.getClientRects().length) return; // (put away, on a phone)
   const [mw, mh] = miniDims(), sx = mw / world.W, sy = mh / world.H;
   refreshMinimapBackground();
   mctx.setTransform(...miniMatrix());
@@ -1392,6 +1433,21 @@ function miniJump(e) {
 }
 mini.addEventListener('pointerdown', (e) => { mini.setPointerCapture(e.pointerId); miniJump(e); });
 mini.addEventListener('pointermove', (e) => { if (e.buttons) miniJump(e); });
+// On a phone the map comes and goes with a button beside the zoom (shown at first when the screen is short and
+// wide, or big enough; remembered once you choose).
+{
+  const btn = document.getElementById('map-toggle');
+  const set = (on, keep) => {
+    document.body.classList.toggle('map-open', on);
+    btn.setAttribute('aria-pressed', on);
+    if (keep) try { localStorage.setItem('pond.map', on ? '1' : '0'); } catch { /* storage unavailable */ }
+    if (on) requestAnimationFrame(() => drawMinimap());
+  };
+  let was = null;
+  try { was = localStorage.getItem('pond.map'); } catch { /* storage unavailable */ }
+  set(was != null ? was === '1' : innerHeight <= 500 || innerWidth > 760, false);
+  btn.addEventListener('click', () => set(!document.body.classList.contains('map-open'), true));
+}
 document.getElementById('map-layer').addEventListener('click', () => {
   const layers = MINI_LAYERS.filter(([k]) => k !== 'water' || world.opts.habitat === 'mixed');
   setMiniLayer(layers.indexOf(MINI_LAYERS[miniLayer]) + 1);
@@ -1841,7 +1897,7 @@ function setTool(name) {
   world.tool = name;
   const t = TOOLS[name];
   for (const b of document.querySelectorAll('button[data-tool]')) b.setAttribute('aria-pressed', b.dataset.tool === name);
-  $('hint').textContent = t.hint || [`click to place ${t.label.toLowerCase()} (${t.price} pearls)`, t.likedBy && likedByText(t.likedBy)].filter(Boolean).join(' · ');
+  $('hint').textContent = (typeof forTouch === 'function' ? forTouch : (s) => s)(t.hint || [`click to place ${t.label.toLowerCase()} (${t.price} pearls)`, t.likedBy && likedByText(t.likedBy)].filter(Boolean).join(' · '));
 }
 // Each tool, plant and build is a tile in the actions panel, under its kind: an icon, its price,
 // and (on hover) a + to pin it to the bar. Its name is in its tooltip.

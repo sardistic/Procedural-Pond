@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Procedural Pond · a living pixel-art aquarium</title>
   <meta name="description" content="A free virtual aquarium in your browser: a living pixel-art pond where procedural koi, frogs, octopus and new fish species hunt, breed and migrate.">
   <link rel="canonical" href="https://pond.nz/">
@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=33">
+  <link rel="stylesheet" href="style.css?v=34">
 
   <script type="application/ld+json">
   {
@@ -401,6 +401,7 @@
     </div>
 
     <div class="corner">
+      <button type="button" id="map-toggle" class="map-toggle" aria-pressed="false" aria-label="Map" title="Map&#10;Show or hide the map of the whole pond and the side view">&#9638;</button>
       <div class="zoom" role="group" aria-label="Zoom">
         <button type="button" id="zoom-in" class="icon" aria-label="Zoom in" title="Zoom in (+)">+</button>
         <button type="button" id="zoom-level" title="Reset zoom (0)">2×</button>
@@ -414,59 +415,59 @@
     </div>
   </div>
 
-  <script src="js/core.js?v=41"></script>
-  <script src="js/raster.js?v=41"></script>
-  <script src="js/creatures.js?v=41"></script>
-  <script src="js/critters.js?v=41"></script>
-  <script src="js/wildlife.js?v=41"></script>
-  <script src="js/wildfish.js?v=41"></script>
-  <script src="js/sound.js?v=41"></script>
-  <script src="js/life.js?v=41"></script>
-  <script src="js/plants.js?v=41"></script>
-  <script src="js/scene.js?v=41"></script>
-  <script src="js/structures.js?v=41"></script>
-  <script src="js/erosion.js?v=41"></script>
-  <script src="js/sky.js?v=41"></script>
-  <script src="js/ecology.js?v=41"></script>
-  <script src="js/game.js?v=41"></script>
-  <script src="js/deep.js?v=41"></script>
-  <script src="js/remains.js?v=41"></script>
-  <script src="js/eldritch.js?v=41"></script>
-  <script src="js/coast.js?v=41"></script>
-  <script src="js/gulls.js?v=41"></script>
-  <script src="js/shore.js?v=41"></script>
-  <script src="js/traits.js?v=41"></script>
-  <script src="js/save.js?v=41"></script>
-  <script src="js/link.js?v=41"></script>
-  <script src="js/abyss.js?v=41"></script>
-  <script src="js/quirks.js?v=41"></script>
-  <script src="js/hunters.js?v=41"></script>
-  <script src="js/mastery.js?v=41"></script>
-  <script src="js/habitats.js?v=41"></script>
-  <script src="js/artifacts.js?v=41"></script>
-  <script src="js/story.js?v=41"></script>
-  <script src="js/lineage.js?v=41"></script>
-  <script src="js/depths.js?v=41"></script>
-  <script src="js/sand.js?v=41"></script>
-  <script src="js/heavens.js?v=41"></script>
-  <script src="js/nature.js?v=41"></script>
-  <script src="js/pollution.js?v=41"></script>
-  <script src="js/prehistoric.js?v=41"></script>
-  <script src="js/alien.js?v=41"></script>
-  <script src="js/bestiary.js?v=41"></script>
-  <script src="js/land.js?v=41"></script>
-  <script src="js/isles.js?v=41"></script>
-  <script src="js/cycle.js?v=41"></script>
-  <script src="js/arrivals.js?v=41"></script>
-  <script src="js/interact.js?v=41"></script>
-  <script src="js/net.js?v=41"></script>
-  <script src="js/account.js?v=41"></script>
-  <script src="js/wander.js?v=41"></script>
-  <script src="js/hinterland.js?v=41"></script>
-  <script src="js/hud.js?v=41"></script>
-  <script src="js/main.js?v=44"></script>
-  <script src="js/guide.js?v=41"></script>
-  <script src="js/music.js?v=41"></script>
-  <script src="js/tips.js?v=41"></script>
+  <script src="js/core.js?v=42"></script>
+  <script src="js/raster.js?v=42"></script>
+  <script src="js/creatures.js?v=42"></script>
+  <script src="js/critters.js?v=42"></script>
+  <script src="js/wildlife.js?v=42"></script>
+  <script src="js/wildfish.js?v=42"></script>
+  <script src="js/sound.js?v=42"></script>
+  <script src="js/life.js?v=42"></script>
+  <script src="js/plants.js?v=42"></script>
+  <script src="js/scene.js?v=42"></script>
+  <script src="js/structures.js?v=42"></script>
+  <script src="js/erosion.js?v=42"></script>
+  <script src="js/sky.js?v=42"></script>
+  <script src="js/ecology.js?v=42"></script>
+  <script src="js/game.js?v=42"></script>
+  <script src="js/deep.js?v=42"></script>
+  <script src="js/remains.js?v=42"></script>
+  <script src="js/eldritch.js?v=42"></script>
+  <script src="js/coast.js?v=42"></script>
+  <script src="js/gulls.js?v=42"></script>
+  <script src="js/shore.js?v=42"></script>
+  <script src="js/traits.js?v=42"></script>
+  <script src="js/save.js?v=42"></script>
+  <script src="js/link.js?v=42"></script>
+  <script src="js/abyss.js?v=42"></script>
+  <script src="js/quirks.js?v=42"></script>
+  <script src="js/hunters.js?v=42"></script>
+  <script src="js/mastery.js?v=42"></script>
+  <script src="js/habitats.js?v=42"></script>
+  <script src="js/artifacts.js?v=42"></script>
+  <script src="js/story.js?v=42"></script>
+  <script src="js/lineage.js?v=42"></script>
+  <script src="js/depths.js?v=42"></script>
+  <script src="js/sand.js?v=42"></script>
+  <script src="js/heavens.js?v=42"></script>
+  <script src="js/nature.js?v=42"></script>
+  <script src="js/pollution.js?v=42"></script>
+  <script src="js/prehistoric.js?v=42"></script>
+  <script src="js/alien.js?v=42"></script>
+  <script src="js/bestiary.js?v=42"></script>
+  <script src="js/land.js?v=42"></script>
+  <script src="js/isles.js?v=42"></script>
+  <script src="js/cycle.js?v=42"></script>
+  <script src="js/arrivals.js?v=42"></script>
+  <script src="js/interact.js?v=42"></script>
+  <script src="js/net.js?v=42"></script>
+  <script src="js/account.js?v=42"></script>
+  <script src="js/wander.js?v=42"></script>
+  <script src="js/hinterland.js?v=42"></script>
+  <script src="js/hud.js?v=42"></script>
+  <script src="js/main.js?v=45"></script>
+  <script src="js/guide.js?v=42"></script>
+  <script src="js/music.js?v=42"></script>
+  <script src="js/tips.js?v=42"></script>
 </body>
 </html>

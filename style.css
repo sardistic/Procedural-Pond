@@ -1253,3 +1253,73 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
 .rail-btn.crown { font-size: 15px; color: #ffd24a; }
 .rail-btn.crown.has-new::after { content: attr(data-new); position: absolute; top: -6px; right: -6px; min-width: 14px; padding: 1px 3px; font-size: 8px; line-height: 12px; text-align: center; color: #1a1400; background: #ffd166; border: 1px solid #7a5a10; box-shadow: 1px 1px 0 var(--ink); pointer-events: none; }
 @media (max-width: 760px) { #paragons { left: 60px; transform: none; width: calc(100vw - 72px); } }
+
+/* ---- phones and small screens: the bottom bar, the map, windows, and touch ------------------------------------
+   Portrait: cards and lists come up from the bottom as sheets (thumb-high), menus drop beside the rail.
+   Landscape (short screens): windows take the height of the screen beside the rail, and the rail's buttons shrink so
+   the pins fit. Either way windows are solid and above the rail and the bottom bar, the news is one line, and the map
+   comes and goes with a button beside the zoom. */
+.minimap { height: auto; }
+.slice { height: auto; aspect-ratio: 192 / 44; }
+.map-toggle { display: none; }
+@media (max-width: 760px), (max-height: 500px) {
+  .map-toggle { display: flex; align-self: flex-end; width: 34px; height: 32px; padding: 0; font-size: 14px; }
+  body:not(.map-open) .mini-wrap { display: none; }
+  body.map-open .map-toggle { color: var(--hot); border-color: var(--hot); background: #5a4a14; }
+  .minimap, .slice { display: block; }
+  .log-line .txt { -webkit-line-clamp: 1; }
+  .log-line { padding: 6px 8px; }
+  .pop, .spawn-card, #hud { background: rgb(8, 26, 34); }
+  .bottom { z-index: 6; }
+  .sky { z-index: 7; }
+  .creature, .object, .spawn-card, #hud, .actions, #guide, #wild, #paragons, .evo, .hatch, .nb-ask, .signin-nudge { z-index: 9; }
+  .pop-head .icon, .cr-head .icon, .sc-head .icon { min-width: 34px; min-height: 34px; }
+  button, .rail-btn { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  /* (Out from under a notch or the rounded corners.) */
+  .rail { top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); }
+  .bottom { left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); }
+  .sky { top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); }
+  .score { top: max(12px, env(safe-area-inset-top)); }
+}
+@media (max-width: 760px) {
+  /* Sheets from the bottom: the animal's card, a plant's or structure's, the census, the journal, a spawn. */
+  .creature, .object { top: auto; bottom: max(8px, env(safe-area-inset-bottom)); left: 8px; right: 8px; width: auto; max-height: 62vh; }
+  .census, .log-panel { position: fixed; top: auto; bottom: max(8px, env(safe-area-inset-bottom)); left: 8px; right: 8px; width: auto; transform: none; max-height: 66vh; }
+  .spawn-card { top: auto !important; bottom: max(8px, env(safe-area-inset-bottom)) !important; left: 8px !important; right: 8px; width: auto; max-height: 66vh; }
+  .score-panel { max-height: calc(100vh - 90px); }
+  .hatch { top: 60px; left: 8px; right: 8px; width: auto; transform: none; max-height: calc(100vh - 80px); }
+  .evo { left: 8px !important; right: 8px; width: auto !important; transform: none !important; }
+  /* The map floats above the news at the right, when it's shown. */
+  body.map-open .mini-wrap { position: fixed; right: max(8px, env(safe-area-inset-right)); bottom: 164px; z-index: 1; } /* (above the news line) */
+  .minimap, .slice { width: 176px; }
+  .corner { gap: 4px; }
+}
+@media (max-height: 500px) {
+  .rail { gap: 4px; max-height: calc(100vh - 64px); }
+  .rail-btn, .rail-pins > button { width: 36px; height: 36px; }
+  .rail-pins { gap: 4px; }
+  .rail-pins .ticon { width: 24px; height: 24px; }
+  #hud, .actions { top: 8px; left: 56px; max-height: calc(100vh - 16px); }
+  /* (Under the pond's bar, which stays in view.) */
+  #guide, #wild, #paragons, .hatch, .evo { top: 56px !important; left: 56px !important; transform: none !important; width: min(600px, calc(100vw - 68px)) !important; max-height: calc(100vh - 64px) !important; }
+  .creature, .object { top: 56px; bottom: auto; left: auto; right: max(8px, env(safe-area-inset-right)); width: min(380px, calc(100vw - 68px)); max-height: calc(100vh - 64px); }
+  .census, .log-panel { position: fixed; top: 56px; bottom: auto; left: 56px; right: auto; width: min(560px, calc(100vw - 68px)); transform: none; max-height: calc(100vh - 64px); }
+  .spawn-card { top: 56px !important; bottom: auto !important; max-height: calc(100vh - 64px); }
+  .score-panel { max-height: calc(100vh - 70px); }
+  .sky-panel { max-height: calc(100vh - 70px); overflow-y: auto; }
+  .bottom { gap: 8px; }
+  .log { flex: 0 1 280px; }
+  .animals { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; overflow-y: hidden; max-height: none; scrollbar-width: none; }
+  .ani { flex: none; width: 40px; height: 40px; }
+  .dock-bar { padding: 4px; gap: 4px; }
+  .census-btn, .wild-dock { min-width: 40px; height: 40px; align-self: center; }
+  .minimap, .slice { width: 150px; }
+  .corner .zoom button, .map-toggle { width: 32px; height: 30px; }
+  .banner { top: 56px; }
+  .narrator { top: 100px; }
+}
+/* No hover on a touchscreen: the actions' pins show all the time (+ to pin, − to take off). */
+@media (hover: none) {
+  .act-grid > button > .pin { display: flex; width: 20px; height: 20px; top: -8px; right: -8px; font-size: 13px; }
+}
+
