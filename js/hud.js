@@ -10,7 +10,7 @@ const byId = (id) => document.getElementById(id);
 // closes it (the actions panel and the menu are tools, not windows, and stay).
 const WINDOWS = [
   ['creature', () => hideCreature()], ['object', () => hideObject()], ['spawn-card', () => closeSpawnCard()], ['hatchery', () => setHatchery(false)],
-  ['evo', () => setEvo(false)], ['census', () => setCensus(false)], ['wild', () => setWild(false)], ['log-panel', () => setJournal(false)], ['score-panel', () => setScore(false)], ['sky-panel', () => setSky(false)],
+  ['evo', () => setEvo(false)], ['census', () => setCensus(false)], ['wild', () => setWild(false)], ['paragons', () => setParagons(false)], ['log-panel', () => setJournal(false)], ['score-panel', () => setScore(false)], ['sky-panel', () => setSky(false)],
 ];
 function closeWindows(except = null) {
   for (const [id, close] of WINDOWS) { const e = byId(id); if (id !== except && e && !e.hidden) close(); }
@@ -169,6 +169,14 @@ const toolIcon = (name) => drawnIcon(`tool/${name}`, (w, c) => {
     const tiny = t.food === 'snow' || t.food === 'offering', m = t.food === 'snow' ? SNOW_MAT : OFFER_MAT;
     const fs = [[0, 0], [3, 1], [-2, 2.5], [1.5, -2.5], [-3, -1]].map(([dx, dy], i) => { const f = new Food(c + dx, c + dy, 2 + i * 0.2, t.food); f.life = 30; return f; });
     return (r) => { for (const f of fs) if (tiny) r.ellipsoid(f.x, f.y, 0.7, 0.7, 0, f.z, 0.6, m, FOOD_ID); else f.draw(r); };
+  }
+  if (name === 'pointer') {
+    const m = mat('#8a8a8a', '#c8c8c8', '#ececec', '#ffffff'), id = newId(outlineOf(m));
+    return (r) => {
+      r.tube(c - 4, c - 4, 0.9, 2, c + 4, c + 5, 0.9, 2, 1, m, id); // the shaft
+      r.tube(c - 4, c - 4, 0.9, 2, c + 2, c - 3.5, 0.8, 2, 1, m, id); // the head
+      r.tube(c - 4, c - 4, 0.9, 2, c - 3.5, c + 2, 0.8, 2, 1, m, id);
+    };
   }
   if (name === 'net') {
     const rim = newId(outlineOf(NET_RIM)), mesh = newId(outlineOf(NET_MESH));
@@ -496,15 +504,26 @@ function renderCensus() {
 // ---- journal: one line of recent activity that opens into the full log ------------------------
 
 const CATS = { all: 'All', story: 'Story', life: 'Life', rare: 'Rare', hunt: 'Hunts', come: 'Comings & goings', sky: 'Sky & tide' };
-const journalUi = { open: false, filter: 'all', list: null, lastSeq: 0, queue: [], current: null, until: 0, shownText: null };
+const journalUi = { open: false, repeats: false, filter: 'all', list: null, lastSeq: 0, queue: [], current: null, until: 0, shownText: null };
 const TICKER_QUEUE = 4;                      // lines waiting at most; the least important are dropped
 const TICKER_DWELL = [3500, 4500, 6000, 8000]; // least time on screen, by priority (ms)
 
+// A chip that shows what the repeat filter keeps out of the journal (routine by now).
+function repeatsChip() {
+  const box = byId('log-filters');
+  if (!box || box.querySelector('.chip.reps')) return;
+  const b = el('button', 'chip reps', 'Repeats');
+  b.type = 'button';
+  b.title = 'Repeats\nThings that keep happening drop out of the news after the first few times each pond day. Show them here too.';
+  b.setAttribute('aria-pressed', 'false');
+  b.addEventListener('click', () => { journalUi.repeats = !journalUi.repeats; b.setAttribute('aria-pressed', journalUi.repeats); world.journalDirty = true; renderJournal(); });
+  box.append(b);
+}
 function setJournal(open) {
   journalUi.open = open;
   byId('log-panel').hidden = !open;
   byId('log-line').setAttribute('aria-expanded', open);
-  if (open) { world.journalDirty = true; renderJournal(); closeWindows('log-panel'); }
+  if (open) { repeatsChip(); world.journalDirty = true; renderJournal(); closeWindows('log-panel'); }
 }
 
 // The big news gets a banner under the pond bar for a few seconds, and the narrator a strip below it.
@@ -579,11 +598,12 @@ function feedTicker() {
   const now = performance.now(), fresh = world.journal.filter((e) => e.seq > journalUi.lastSeq).reverse();
   for (const e of fresh) {
     journalUi.lastSeq = Math.max(journalUi.lastSeq, e.seq);
-    if ((e.pri ?? 1) >= 3 && e.cat !== 'story' && world.t - e.t < 5) showBanner(e.text); // the big news, big
+    if ((e.pri ?? 1) >= 3 && e.cat !== 'story' && !e.routine && world.t - e.t < 5) showBanner(e.text); // the big news, big
     if (e === journalUi.current && now < journalUi.until) continue;
     if (journalUi.queue.includes(e)) continue;
     const busy = now < journalUi.until || journalUi.queue.length > 0;
     if (busy && (e.pri ?? 1) === 0) continue;
+    if (e.routine && (busy || (e.pri ?? 1) === 0)) continue; // (routine by now: the journal has it)
     journalUi.queue.push(e);
     journalUi.queue.sort((a, b) => (b.pri ?? 1) - (a.pri ?? 1)); // stable: same priority keeps its order
     journalUi.queue.length = Math.min(journalUi.queue.length, TICKER_QUEUE);
@@ -616,7 +636,7 @@ function renderJournal() {
   if (more.textContent !== waiting) more.textContent = waiting;
   if (!journalUi.open || !world.journalDirty) return;
   world.journalDirty = false;
-  const list = world.journal.filter((e) => journalUi.filter === 'all' || e.cat === journalUi.filter).slice(0, 80);
+  const list = world.journal.filter((e) => (journalUi.filter === 'all' || e.cat === journalUi.filter) && (journalUi.repeats || !e.routine)).slice(0, 80);
   byId('journal').replaceChildren(...list.map((e) => {
     const li = el('li', `cat-${e.cat}`);
     li.append(el('i', 'dot'), el('time', null, entryTime(e)), colored('span', null, e.text));
@@ -978,14 +998,11 @@ function renderSpawnCard() {
   let supers = null;
   if (sups.length) {
     supers = el('div', 'sc-supers');
-    supers.append(el('span', 'sc-sub', `Super spawns earned by your lines (${sups.length}): a Paragon, free, and it always settles`));
-    for (const [S, i] of sups) {
-      const b = el('button', 'super');
-      b.type = 'button';
-      b.append(colored('b', null, `♛ Paragon ${byRarity(S.traits).slice(0, 3).join(' ')} ${SPECIES[kind].label.toLowerCase()}`.replace(/\s+/g, ' ')));
-      b.addEventListener('click', () => { if (claimSuper(world, i)) renderSpawnCard(); });
-      supers.append(b);
-    }
+    const b = el('button', 'super');
+    b.type = 'button';
+    b.append(colored('b', null, `♛ ${sups.length === 1 ? 'A Paragon' : `${sups.length} Paragons`} of this kind ${sups.length === 1 ? 'is' : 'are'} waiting: open Paragons`));
+    b.addEventListener('click', () => { closeSpawnCard(); setParagons(true); });
+    supers.append(b);
   }
   box.replaceChildren(...[head, supers, facts, have, boosts, grades, ancient, buy].filter(Boolean));
   box.hidden = false;
@@ -1587,7 +1604,7 @@ function updateScoreHud() {
   if (key === scoreUi.shown) return;
   const was = scoreUi.shown ? +scoreUi.shown.split('|')[0] : null;
   scoreUi.shown = key;
-  byId('bar-name').textContent = world.seed;
+  byId('bar-name').textContent = pondTitle(world);
   byId('bar-rank').textContent = rank;
   byId('score-points').textContent = `${fmtShort(depth)} fm`;
   byId('score-pearls').textContent = fmtShort(G.pearls);
@@ -1628,7 +1645,7 @@ function renderStoryBits() {
   if (sig === box.dataset.sig) return;
   box.dataset.sig = sig;
   const parts = [colored('p', 'note', `The narrator: ${STORY_STAGES[S.stage]}. Light and dark: ${lightWord(lm)} (madness ×${lm.toFixed(1)}).`)];
-  if (sup.length) {
+  if (false && sup.length) { // (the Paragons have their own window now: the rail's ♛)
     const list = el('div', 'sc-supers');
     list.append(el('span', 'sc-sub', 'Super spawns waiting'));
     sup.forEach((s, i) => {
@@ -1644,8 +1661,30 @@ function renderStoryBits() {
   box.replaceChildren(...parts);
 }
 
+// The ponds either side along the beach, to walk to.
+function renderNeighbours() {
+  const box = byId('sp-neighbours');
+  if (!box || typeof BEACH === 'undefined') return;
+  const rows = [];
+  for (const dir of ['west', 'east']) {
+    const B = BEACH[dir];
+    if (!B) continue;
+    const info = B.info || {}, row = el('div', 'nb-row'), go = el('button', null, `${nbScreenDir(dir)} Walk there`);
+    go.type = 'button';
+    go.addEventListener('click', () => { setScore(false); askNeighbour(dir); });
+    row.append(el('b', null, B.home ? 'Your pond' : info.title || B.id), colored('span', 'note', B.home ? 'home, along the beach' : [info.by ? `${info.by}'s pond` : '', `${fmt(info.depth || 1)} fm`, HABITATS[info.habitat] || ''].filter(Boolean).join(' · ')), go);
+    rows.push(row);
+  }
+  box.replaceChildren(...(rows.length ? rows : [el('p', 'note', 'No other ponds along the beach yet.')]));
+}
+
 function renderScorePanel(force = false) {
   if (!scoreUi.open || !world.game) return;
+  renderNeighbours();
+  if (byId('sp-rename-form').hidden) {
+    byId('sp-title').textContent = pondTitle(world);
+    byId('sp-rename').hidden = !!world.observe;
+  }
   const G = world.game, plan = fireflyPlan(world);
   const E = world.erosion || newErosion();
   byId('sp-depth').textContent = `${fmt(pondFathoms(world))} fathoms`;
@@ -1702,7 +1741,7 @@ function renderScorePanel(force = false) {
     const li = el('li', p.id === mine ? 'me' : ''), btn = el('button', 'board-row');
     btn.type = 'button';
     btn.title = p.id === mine ? 'Your pond' : `Visit ${p.id}`;
-    btn.append(el('span', 'rk', `#${i + 1}`), el('b', null, p.id), el('span', 'pt', `${fmt(p.depth || 1)} fm`),
+    btn.append(el('span', 'rk', `#${i + 1}`), el('b', null, p.title || p.id), el('span', 'pt', `${fmt(p.depth || 1)} fm`),
       el('span', 'mt', [p.by && `${p.by}'s`, p.best && `${TIERS[p.best.tier]} ${findLabel(p.best)}`, `${fmt(p.points)} points`, `${p.animals} animals`, `day ${Math.floor(p.days) + 1}`].filter(Boolean).join(' · ')));
     if (p.best) btn.querySelector('.mt').style.color = TIER_COLOR[p.best.tier];
     btn.addEventListener('click', () => visitPond(p.id));
@@ -1870,6 +1909,7 @@ function initHud() {
 
 let hudCountTimer = 0;
 function hudTick(dt) {
+  if ((hudTick.pt = (hudTick.pt || 0) - dt) <= 0) { hudTick.pt = 1; refreshParagonBadge(); if (parUi.open) renderParagons(); }
   hudCountTimer -= dt;
   if (hudCountTimer <= 0) { hudCountTimer = 0.5; updateCounts(); }
   census.timer -= dt;
@@ -1901,3 +1941,96 @@ function hudTick(dt) {
   evoUi.timer -= dt;
   if (evoUi.timer <= 0) { evoUi.timer = 0.25; drawSlice(); renderEvo(); }
 }
+
+// ---- the pond's own name --------------------------------------------------------------------------------------
+// A name the owner gives it (checked by the server: namefilter.js), or else its seed name.
+const pondTitle = (w) => (w.game && w.game.title) || w.seed;
+{
+  const form = byId('sp-rename-form'), input = byId('sp-title-in'), note = byId('sp-rename-note');
+  byId('sp-rename').addEventListener('click', () => {
+    form.hidden = false; byId('sp-rename').hidden = true;
+    input.value = world.game.title || '';
+    note.textContent = 'Up to 24 letters, numbers and a little punctuation. Leave it empty to go back to its seed name.';
+    input.focus();
+  });
+  byId('sp-rename-cancel').addEventListener('click', () => { form.hidden = true; byId('sp-rename').hidden = false; renderScorePanel(true); });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const v = input.value.replace(/\s+/g, ' ').trim();
+    if (!v) { world.game.title = null; world.gameDirty = true; form.hidden = true; byId('sp-rename').hidden = false; afterRename(); return; }
+    if (!Net.base) { note.textContent = 'Naming a pond needs pond.nz (this copy runs offline).'; return; }
+    note.textContent = 'Checking…';
+    let res = null;
+    try { res = await api('POST', '/title-check', { title: v }); } catch { /* offline */ }
+    if (!res) { note.textContent = "Couldn't reach pond.nz to check the name; try again in a moment."; return; }
+    if (!res.ok) { note.textContent = "That name isn't allowed (hateful or obscene words, or characters other than letters, numbers and simple punctuation)."; return; }
+    world.game.title = res.title; world.gameDirty = true;
+    form.hidden = true; byId('sp-rename').hidden = false;
+    afterRename();
+    logEvent(world, `You named the pond ${res.title}`, null, { cat: 'pond', pri: 1 });
+  });
+}
+function afterRename() {
+  byId('bar-name').textContent = pondTitle(world);
+  renderScorePanel(true);
+  if (typeof syncSoon === 'function') syncSoon();
+}
+
+// ---- the Paragons: what they are, the ones waiting, and how close the next are ----------------------------------
+const parUi = { open: false, sig: '' };
+function setParagons(open) {
+  parUi.open = open;
+  byId('paragons').hidden = !open;
+  byId('rail-paragons').setAttribute('aria-expanded', open);
+  if (open) { closeWindows('paragons'); parUi.sig = ''; renderParagons(); }
+}
+function renderParagons() {
+  if (!parUi.open || !world.game) return;
+  const G = world.game, sup = G.supers || [];
+  const sig = JSON.stringify([sup.map((s) => s.k + s.traits.join()), G.lines, G.spPts && Object.values(G.spPts).map((v) => Math.floor(v / 10)), !!world.observe]);
+  if (sig === parUi.sig) return;
+  parUi.sig = sig;
+  const wait = sup.map((S, i) => {
+    const b = el('button', 'super'), ic = el('span', 'ic');
+    b.type = 'button';
+    ic.append(iconImg(speciesIcon(S.k), 26));
+    b.append(ic, colored('b', null, `♛ Paragon ${byRarity(S.traits).slice(0, 3).join(' ')} ${(SINGULAR[S.k] || S.k).toLowerCase()}`.replace(/\s+/g, ' ')), el('span', 'go', 'Claim'));
+    b.title = 'Claim it\nIt arrives now, with a few of its kind (Superb), wherever there is room.';
+    b.disabled = !!world.observe;
+    b.addEventListener('click', () => { if (claimSuper(world, i)) { parUi.sig = ''; renderParagons(); refreshParagonBadge(); } });
+    return b;
+  });
+  byId('paragons-waiting').replaceChildren(...(wait.length ? wait : [el('p', 'note', 'None waiting yet. Breed a rare line (the same rare traits in the same kind) and keep breeding it.')]));
+  const rows = [];
+  // Rare lines, the most bred first: how many times, and the next step.
+  const lines = Object.entries(G.lines || {}).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  for (const [key, n] of lines) {
+    const [sp, tr] = key.split('|'), next = LINE_MILESTONES.find((m) => m > n);
+    if (!SINGULAR[sp] && sp !== 'wild') continue;
+    const li = el('li');
+    li.append(colored('b', null, `${tr.split('+').filter(Boolean).join(' ')} ${sp === 'wild' ? 'wild fish' : (SINGULAR[sp] || sp).toLowerCase()}`), el('span', 'note', next ? `bred ${n} times · a Paragon at ${next}` : `bred ${n} times · every milestone reached`));
+    if (next) { const bar = el('span', 'gbar'), f = el('i'); f.style.width = `${Math.round(clamp(n / next, 0, 1) * 100)}%`; bar.append(f); li.append(bar); }
+    rows.push(li);
+  }
+  // Kinds that have scored for you: points, and the next step.
+  const pts = Object.entries(G.spPts || {}).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  for (const [k, p] of pts) {
+    if (!SINGULAR[k]) continue;
+    const next = SPECIES_MILESTONE((G.spHit && G.spHit[k]) || 0), li = el('li');
+    li.append(colored('b', null, `${SINGULAR[k]}: ${fmt(p)} points`), el('span', 'note', `a Paragon at ${fmt(next)}`));
+    const bar = el('span', 'gbar'), f = el('i'); f.style.width = `${Math.round(clamp(p / next, 0, 1) * 100)}%`; bar.append(f); li.append(bar);
+    rows.push(li);
+  }
+  byId('paragons-progress').replaceChildren(...(rows.length ? rows : [el('li', 'note', 'Nothing yet: rare births start a line, and every birth scores for its kind.')]));
+}
+function refreshParagonBadge() {
+  const b = byId('rail-paragons');
+  if (!b || !world.game) return;
+  const n = (world.game.supers || []).length;
+  b.dataset.new = n || '';
+  b.classList.toggle('has-new', n > 0);
+  b.hidden = !!world.observe;
+}
+byId('rail-paragons').addEventListener('click', () => setParagons(!parUi.open));
+byId('paragons-close').addEventListener('click', () => setParagons(false));
+

@@ -135,7 +135,7 @@ const GUIDE_OTHERS = [
   ['Gnat', 'Clouds of them over the water by day: food for frogs and fish at the surface.'],
   ['Gull', 'Visits any pond with a beach by day: it circles, walks the sand, and dives for frogs, crabs and dragonflies (a third of the time it catches one). It would rather scavenge remains, and leaves at dusk or in heavy rain.'],
   ['Wanderers', 'Fierce animals that leave one pond sometimes turn up in another, on rare occasions, to terrorize the natives.'],
-  ['Paragons', 'Breed a rare line again and again (3, 8, 20 and 50 times), or score well with a species, and it earns a Paragon: free, Pristine, carrying its line’s traits and a gift, with a crown of light.'],
+  ['Paragons', 'The finest of a line: breed a rare line again and again (3, 8, 20 and 50 times), or score well with a species, and it earns a Paragon: free, Pristine, carrying its line’s traits and a gift, with a crown of light. The rail’s ♛ lists the ones waiting and how close the next are.'],
 ];
 
 // ---- the looks: rare colours and forms ------------------------------------------------------------------
@@ -288,7 +288,8 @@ function chapterStart() {
   return [
     { title: 'A living pond', entries: [
       { key: 's:life', name: 'It lives on its own', text: 'Animals hatch, feed, grow up, breed, grow old and move on; new fish species are invented as you watch; plants grow, seed and die back; the surf slowly wears the pond deeper. You look after it, and it pays you back.' },
-      { key: 's:feed', name: 'Feed', text: 'Click the water to drop pellets (free). Well-fed animals grow, breed and stay; hungry ones wander off. Better food is in the actions.' },
+      { key: 's:pointer', name: 'The pointer', text: 'The arrow, first on the rail, is for looking: click an animal, a plant or a structure for its card; clicking the water does nothing. Pick a food, a plant, a build or the Net to use it instead, and Esc brings the pointer back.' },
+      { key: 's:feed', name: 'Feed', text: 'Pick Pellets (free) and click the water to drop them. Well-fed animals grow, breed and stay; hungry ones wander off. Better food is in the actions.' },
       { key: 's:touch', name: 'Look closer', text: 'Click an animal for its card (genes, traits, family, what it’s doing, and boosts to buy); drag one to move it. Click a plant or a structure to read about it and grow its traits. Point at almost anything for a tip.' },
       { key: 's:rail', name: 'The rail and the actions', text: 'Down the left: ☰ the menu, then your pinned actions, then ▸ for all of them (food, tools, plants, builds and creatures). Hover one and press + to pin it. NEW marks what just opened up.' },
       { key: 's:dock', name: 'The dock', text: 'The animals along the bottom: click one to spawn it for essence (its card lets you add boosts and a grade). Deep species join the dock once you unlock them in the depths. The number at the end is the census.' },
@@ -386,7 +387,7 @@ function chapterBreeding() {
       { key: 'br:pairs', name: 'Pairs', text: 'Two grown, well-fed animals of a kind in breeding condition lay eggs (on plants, the floor, rocks or the surface, by kind). Brine shrimp, krill and bloodworms bring them straight into condition. The young inherit their parents’ genes, and the rare ones pass on.' },
       { key: 'br:caps', name: 'Crowding', text: 'Each kind breeds up to a cap for the pond’s size. Crowded species fight and sicken; the last few of a kind are always spared.' },
       { key: 'br:hab', name: 'Breeding habitats', text: 'Some kinds breed only at a habitat (the spawning gravel, the amphibian pool, the reef nursery, the brood chamber), and every kind lays more at its own. What stands around one shapes the young: glowing plants, springs and corals for better; litter, carrion and the idol for worse.' },
-      { key: 'br:lines', name: 'Lines and Paragons', text: 'Breed the same rare again and each one is worth 25% more, up to 3×. Breed a line 3, 8, 20 and 50 times, or score well with a species, and it earns a Paragon, free.' },
+      { key: 'br:lines', name: 'Lines and Paragons', text: 'Breed the same rare again and each one is worth 25% more, up to 3×. Breed a line 3, 8, 20 and 50 times, or score well with a species, and it earns a Paragon, free: the finest of its line. The rail’s ♛ has them, and how close the next are.' },
       { key: 'br:keep', name: 'Keep safe', text: 'Mark an animal Keep safe on its card and nothing recycles it until you unmark it.' },
     ] },
     { title: 'The hatchery', note: 'A build (one of a kind): up to five breeding pens, fed by clicking, taking turns; its broods lean toward the trait you pick.', entries: [
@@ -584,14 +585,15 @@ function chapterPonds() {
       { key: 'p:new', name: 'More than one', text: 'Start a New pond from Your ponds; the old one stays saved, and you can switch back.' },
     ] },
     { title: 'Neighbours', entries: [
-      { key: 'p:beach', name: 'One long beach', text: 'All ponds share one beach: the next player’s pond lies right past the end of yours. Drag on past the end to walk into it: you can look around but not touch, walk on, or come home the same way.' },
+      { key: 'p:beach', name: 'One long beach', text: 'All ponds share one beach: the next player’s pond lies right past the end of yours. The little arrows either side of the pond’s name say who’s there (the score panel lists them too); click one, or drag on past the end of the beach, to walk over: you can look around but not touch, walk on, or come home the same way.' },
+      { key: 'p:name', name: 'Naming your pond', text: 'Open the score (the pond’s name at the top) and choose Name it: up to 24 letters, shown on the bar, the leaderboard and the beach. Hateful or obscene names aren’t allowed.' },
       { key: 'p:wander', name: 'Wanderers', text: 'Fierce animals that leave one pond sometimes turn up in another to terrorize the natives.' },
     ] },
   ];
 }
 
 function chapterKeys() {
-  const K = [['Click', 'feed (or use the picked action)'], ['Drag', 'move an animal, or pan the water'], ['Scroll, + / −', 'zoom'], ['Arrows / WASD', 'pan'], ['0', 'reset the view'], ['F', 'follow the animal under the pointer'],
+  const K = [['Click', 'look (with the pointer), or use the picked action'], ['Esc', 'back to the pointer'], ['Drag', 'move an animal, or pan the water'], ['Scroll, + / −', 'zoom'], ['Arrows / WASD', 'pan'], ['0', 'reset the view'], ['F', 'follow the animal under the pointer'],
     ['T', 'tour: the camera wanders between animals'], ['C', 'the census'], ['J', 'the journal'], ['P', 'the score and leaderboard'], ['L', 'change the light'], ['B', 'bones: the spines and legs'],
     ['Space', 'pause'], ['M', 'sound'], ['N', 'music'], ['H', 'the menu'], ['G', 'this guide'], ['Right-click / long-press', 'a plant’s traits']];
   return [{ title: 'Controls', entries: K.map(([k, v]) => ({ key: `k:${k}`, name: k, text: gCap(v) })) }];

@@ -324,6 +324,10 @@ function logEvent(world, text, subject = null, opts = {}) {
     t: now, clock: world.clock, day: Math.floor(world.days || 0) + 1, text, subject, cat, key, n: 1, pri,
     data: data !== undefined ? [data] : [], seq: (world.journalSeq = (world.journalSeq || 0) + 1),
   };
+  // Something that keeps happening is news only the first few times: after that it's routine (still
+  // in the journal, but not on the ticker or the banner). Judged by its wording, names and numbers aside.
+  const rep = newsRepeat(world, text);
+  if (rep > 3) { e.routine = true; e.pri = rep > 6 ? 0 : Math.min(e.pri, 1); }
   world.journal.unshift(e);
   if (world.journal.length > 150) world.journal.pop();
   world.journalDirty = true;
@@ -332,6 +336,17 @@ function logEvent(world, text, subject = null, opts = {}) {
 }
 
 const who = (c) => (c.life ? `${c.life.name} the ${describe(c).label}` : `a ${describe(c).label.toLowerCase()}`);
+// How often something worded like this has been said in the last pond day (animals' names and
+// numbers left out, so "Zonosu the Koi died of old age" and "Pira the Koi died of old age" are one).
+const newsSig = (text) => text.toLowerCase().replace(/[✦❝⚠]/g, '').replace(/\b[\w'’-]+ the (?=[a-z])/g, '* the ').replace(/[0-9][0-9,.]*/g, '#').replace(/\s+/g, ' ').trim().slice(0, 90);
+function newsRepeat(world, text) {
+  const M = world.newsSeen || (world.newsSeen = new Map()), sig = newsSig(text), day = world.days || 0;
+  const times = (M.get(sig) || []).filter((d) => day - d < 1);
+  times.push(day);
+  M.set(sig, times);
+  if (M.size > 400) for (const [k, v] of M) if (!v.length || day - v[v.length - 1] > 1) M.delete(k);
+  return times.length;
+}
 const plural = (label, n) => (n === 1 || /fish|shrimp|koi|sh$|is$/i.test(label) ? label : /[^aeiou]y$/i.test(label) ? label.slice(0, -1) + 'ies'
   : /(ch|x|ss|us)$/i.test(label) && !/branch$/i.test(label) ? label + 'es' : label + 's');
 const aOrN = (n, label) => (n === 1 ? `${/^[aeiou]/i.test(label) ? 'an' : 'a'} ${label}` : `${n} ${plural(label, n)}`);

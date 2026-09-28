@@ -238,7 +238,9 @@ class Raster {
     }
     const fogK = 64 / SURFACE_Z;
     const wx = wob ? wob.x : null, wy = wob ? wob.y : null;
-    const shore = s.shore || null, bgDry = s.bgDry, tideL = (s.tide ?? 1) * 255;
+    const shore = s.shore || null, bgDry = s.bgDry, tideL = (s.tide ?? 1) * 255, RM = s.riverMask || null;
+    // (The river's channels up the beach: the surf breaks at the sea, not in them.)
+    const inland = (x, y) => !!RM && x >= RM.x0 && y >= RM.y0 && x < RM.x0 + RM.w && y < RM.y0 + RM.h && RM.data[(x - RM.x0) + (y - RM.y0) * RM.w] === 1;
     const surf = s.surf || 0, wave = s.wave || 0, surfReach = 30 + 70 * surf, foamW = 0.05 + 0.07 * surf;
     // The depths: deep water swallows the light (up to ~90%), except things that make their own.
     const depthMap = s.depth || null, dc = s.deepColor || 0xff0e0402, dc2 = s.deepColor2 ?? dc, deepK = s.deepK ?? 1;
@@ -373,7 +375,7 @@ class Raster {
                   }
                 }
               }
-              if (se) {
+              if (se && !(RM && inland(x, y))) {
                 // Foam at the water's edge, and waves that roll in toward it.
                 const d = tideL - se;
                 if (d < 2.5) { c = (x + y) & 1 ? FOAM : FOAM_SOFT; fogScale = 0; }

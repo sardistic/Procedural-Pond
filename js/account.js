@@ -99,3 +99,25 @@ function renderAccount() {
   cb.addEventListener('change', () => { G.showName = cb.checked; world.gameDirty = true; saveNow(); syncPond(true); });
   box.replaceChildren(row, note, show);
 }
+
+// A note by the menu pointing out signing in, and what it's for: shown when sign-in is on and you're
+// not signed in, not on someone else's pond, and not put off lately.
+function maybeNudgeSignIn() {
+  const box = document.getElementById('signin-nudge');
+  if (!box || !Account.auth || Account.user || (typeof world !== 'undefined' && world.observe)) return;
+  let later = 0;
+  try { later = +localStorage.getItem('pond.nudgeLater') || 0; } catch { /* storage unavailable */ }
+  if (Date.now() < later) return;
+  box.hidden = false;
+}
+{
+  const box = document.getElementById('signin-nudge');
+  if (box) {
+    document.getElementById('nudge-signin').addEventListener('click', () => { box.hidden = true; signIn(); });
+    document.getElementById('nudge-later').addEventListener('click', () => {
+      box.hidden = true;
+      try { localStorage.setItem('pond.nudgeLater', String(Date.now() + 3 * 86400000)); } catch { /* storage unavailable */ }
+    });
+  }
+}
+

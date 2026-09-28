@@ -25,7 +25,8 @@ function earnSuper(world, kind, traits, why) {
   if (!G || !canSuper(world, kind)) return;
   G.supers = [...(G.supers || []), { k: kind, traits: (traits || []).filter((t) => t !== 'paragon').slice(0, 5) }];
   const what = `a paragon ${[...traits].slice(0, 3).join(' ')} ${SINGULAR[kind] || kind}`.replace(/\s+/g, ' ');
-  logEvent(world, `✦ Super spawn earned: ${what} (${why}). Claim it from its spawn card`, null, { cat: 'rare', pri: 3 });
+  logEvent(world, `✦ A Paragon earned: ${what} (${why}). Claim it from ♛ Paragons on the left`, null, { cat: 'rare', pri: 3 });
+  if (typeof refreshParagonBadge === 'function') refreshParagonBadge();
   if (typeof narrate === 'function') narrate(world, 'super', { what: capFirst(what) });
 }
 

@@ -19,6 +19,7 @@ const MUSIC_KEEP = 4; // decoded files kept (each about 8 MB)
 const Music = {
   on: false, ctx: null, out: null, filter: null, manifest: null, cache: new Map(), loading: new Map(),
   voice: null, pending: null, restUntil: 0, recent: [], last: null, lastAt: -1e9, tick: 0,
+  busy: false, live: new Set(), // (a phrase loading; every source still sounding, so none is ever left playing untracked)
 
   // The output: a lowpass (the deep muffles it) into a gain (the level), into the speakers.
   start() {
@@ -78,11 +79,11 @@ const Music = {
 
   // Something happened: maybe a phrase. strength 0..1 is how much it matters.
   cue(mood, strength = 0.3, why = '') {
-    if (!this.on || !this.atoms || !this.ctx || document.hidden) return;
+    if (!this.on || !this.atoms || !this.ctx || document.hidden || this.busy) return;
     const now = this.ctx.currentTime;
     if (this.voice && now < this.voice.end) {
       // Only something bigger breaks into a phrase already playing; the rest wait a little.
-      if (strength >= 0.8 && this.voice.strength < 0.6 && now - this.voice.t0 > 4) { this.stop(3); this.play(mood, strength, why); return; }
+      if (strength >= 0.8 && this.voice.strength < 0.6 && now - this.voice.t0 > 4) { this.play(mood, strength, why); return; } // (play fades the other out first)
       if (!this.pending || strength > this.pending.strength) this.pending = { mood, strength, why, until: now + 15 };
       return;
     }
@@ -115,19 +116,25 @@ const Music = {
   },
 
   async play(mood, strength, why) {
+    if (this.busy) return;
     const atom = this.choose(mood, strength >= 0.75);
     if (!atom) return;
     const now0 = this.ctx.currentTime;
+    this.busy = true;
     this.restUntil = now0 + 6; // (claimed while it loads)
     let buf;
-    try { buf = await this.load(atom.file); } catch (e) { console.warn('music', e); return; }
+    try { buf = await this.load(atom.file); } catch (e) { console.warn('music', e); this.busy = false; return; }
+    this.busy = false;
     if (!this.on || this.ctx.currentTime - now0 > 8) return; // took too long: the moment's gone
+    // One voice at a time: anything still sounding fades out first, and this waits for it
+    // (two phrases at once, often of the same bars, is what sounded like an echo).
+    const still = this.fadeAll(1.2);
     // How long: two bars for small things, four for most, eight for the big ones (on into the next piece).
     const bar = atom.dur / 4, bars = strength < 0.3 ? 2 : strength < 0.75 ? 4 : 8;
     let off = atom.at + (bars === 2 && Math.random() < 0.5 ? 2 * bar : 0);
     let len = Math.min(bars * bar, buf.duration - off - 0.5);
     if (bars === 8 && atom.i === 1) { off = atom.at; len = Math.min(atom.dur, buf.duration - off - 0.5); } // (the file's last piece: four bars and its tail)
-    const ctx = this.ctx, t = ctx.currentTime + 0.05, src = ctx.createBufferSource(), g = ctx.createGain();
+    const ctx = this.ctx, t = ctx.currentTime + 0.05 + still, src = ctx.createBufferSource(), g = ctx.createGain();
     src.buffer = buf;
     // Loud pieces are brought down and soft ones up, part way, so each sits at about the same level.
     const peak = clamp(Math.pow(10, ((-15 - atom.db) / 20) * 0.6), 0.55, 2) * (0.75 + 0.25 * strength);
@@ -146,18 +153,27 @@ const Music = {
     this.recent = [atom.key, ...this.recent].slice(0, 8);
     // Then a rest, a minute or two (a little less after a big moment), so it stays out of the way.
     this.restUntil = end + (strength >= 0.8 ? 30 : 55) + Math.random() * 60;
-    src.onended = () => { if (this.voice && this.voice.src === src) this.voice = null; };
+    this.live.add({ src, g });
+    src.onended = () => { for (const v of this.live) if (v.src === src) this.live.delete(v); if (this.voice && this.voice.src === src) this.voice = null; };
   },
 
-  stop(fade = 2) {
-    const v = this.voice;
-    if (!v || !this.ctx) return;
+  stop(fade = 2) { this.fadeAll(fade); },
+  // Fade out everything still sounding; returns how long until it's quiet.
+  fadeAll(fade) {
+    if (!this.ctx) return 0;
     const t = this.ctx.currentTime;
-    v.g.gain.cancelScheduledValues(t);
-    v.g.gain.setValueAtTime(Math.max(0.0001, v.g.gain.value), t);
-    v.g.gain.linearRampToValueAtTime(0.0001, t + fade);
-    try { v.src.stop(t + fade + 0.05); } catch { /* already stopped */ }
+    let quiet = 0;
+    for (const v of this.live) {
+      if (v.fading) { quiet = Math.max(quiet, v.fading - t); continue; }
+      v.g.gain.cancelScheduledValues(t);
+      v.g.gain.setValueAtTime(Math.max(0.0001, v.g.gain.value), t);
+      v.g.gain.linearRampToValueAtTime(0.0001, t + fade);
+      try { v.src.stop(t + fade + 0.05); } catch { /* already stopped */ }
+      v.fading = t + fade;
+      quiet = Math.max(quiet, fade);
+    }
     this.voice = null;
+    return quiet;
   },
 
   // Once a second: the deep muffles it; waiting cues get their turn; and in a long quiet, a phrase of its own.
@@ -175,7 +191,7 @@ const Music = {
     this.filter.frequency.setTargetAtTime(clamp(7000 * (1 - 0.75 * deep) * (1 - 0.25 * (world.darkness || 0)), 900, 9000), now, 1.5);
     if (this.voice && now >= this.voice.end) this.voice = null;
     if (this.pending && now > this.pending.until) this.pending = null;
-    if (!this.voice && this.pending && now >= this.restUntil - (this.pending.strength >= 0.6 ? 15 : 0)) {
+    if (!this.voice && !this.busy && this.pending && now >= this.restUntil - (this.pending.strength >= 0.6 ? 15 : 0)) {
       const p = this.pending;
       this.pending = null;
       this.play(p.mood, p.strength, p.why);

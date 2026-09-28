@@ -46,7 +46,7 @@ function pondMeta(world) {
     points: G.points, erosion: world.erosion ? Math.round(world.erosion.e * 1000) / 1000 : 0, depth: typeof pondFathoms === 'function' ? pondFathoms(world) : 1,
     animals: alive.length, species: new Set(alive.map((c) => (c.species === 'wild' ? `w${c.sp.id}` : c.species))).size,
     rares: alive.filter((c) => c.life.traits.length).length, gen: world.records ? world.records.gen : 0,
-    days: Math.round(world.days * 100) / 100, habitat: world.opts.habitat, board: !!G.board, lock: !!G.lock, showName: !!G.showName,
+    days: Math.round(world.days * 100) / 100, habitat: world.opts.habitat, board: !!G.board, lock: !!G.lock, showName: !!G.showName, title: G.title || null,
     best: G.best ? { tier: G.best.tier, species: G.best.species, traits: G.best.traits, how: G.best.how } : null,
     finds: G.finds.map((f) => ({ tier: f.tier, species: f.species, traits: f.traits, how: f.how })),
   };

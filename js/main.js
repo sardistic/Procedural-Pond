@@ -58,7 +58,7 @@ const world = {
   weather: { rain: 0, target: 0, next: rand(60, 140), gust: 0 },
   current: { s: 0, angle: 0, base: rand(-PI, PI), x: 0, y: 0 },
   pointer: { x: -999, y: -999, inside: false },
-  grab: null, bones: false, paused: false, tool: 'feed',
+  grab: null, bones: false, paused: false, tool: 'pointer',
   opts: loadOpts(),
 
   nearestFood(x, y, range, filter) {
@@ -611,7 +611,7 @@ function render(full = false) {
     outline: OUTLINE, emissive: EMISSIVE, fade: FADE, thick: THICK, anyThick, tint: light.tint,
     caustics: o.caustics && light.caustics && q < 2, causticT: water.caustic, shadows: o.shadows, outlines: o.outlines,
     fog: { color: fogColor, amount: (water.fog + (bloom ? 0.12 : 0)) * (glass ? 0.3 : 1) }, wob, deepK: glass ? 0.5 : 1,
-    shore: world.shore, bgDry: world.bgDry, tide: world.tide.level, surf: world.tide.surf, wave: world.tide.wave,
+    shore: world.shore, bgDry: world.bgDry, riverMask: world.riverMask || null, tide: world.tide.level, surf: world.tide.surf, wave: world.tide.wave,
     depth: world.depth, deepColor: DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed,
     voidSkin: world.eldMarks && world.eldMarks.length || world.plants.some((p) => p.tr && p.tr.eld) ? VOID_SKIN : null,
     swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6], clouds: q < 1 ? world.clouds : null, sky: typeof heavensSky === 'function' ? heavensSky(world, skyReflection(light)) : skyReflection(light), skyK: glass ? 1.4 : typeof heavenNow === 'function' && heavenNow(world, 'aurora') ? 1.6 : 1 - world.weather.rain * 0.7,
@@ -723,6 +723,7 @@ const plantTool = (kind, label, list = 'plants') => ({
   place: (x, y) => { const p = sprouting(makePlant(kind, world, x, y), 0.3); p.born = world.days; world[list].push(p); }, // it grows from a seedling
 });
 const TOOLS = {
+  pointer: { label: 'Look', hint: 'click an animal, plant or structure to see it · drag animals · scroll to zoom · drag the water to pan' },
   feed: { label: 'Pellets', food: 'pellet', price: 0, hint: 'click to feed (free) · drag animals · scroll to zoom · drag water to pan' },
   spirulina: { label: 'Spirulina', food: 'spirulina', price: FOOD_PRICE.spirulina, hint: 'spirulina: keeps animals well fed five times longer, so they age slower and stay' },
   brine: { label: 'Brine', food: 'brine', price: FOOD_PRICE.brine, hint: 'live brine shrimp: a big meal that brings animals straight into breeding condition' },
@@ -1145,7 +1146,7 @@ function onPointerMove(e) {
   const over = creatureAt(world.pointer.x, world.pointer.y);
   world.hover = over;
   hoverAt = [e.clientX, e.clientY];
-  canvas.style.cursor = world.tool === 'net' ? (over ? 'pointer' : 'crosshair') : over ? 'grab' : world.tool === 'feed' ? 'crosshair' : 'copy';
+  canvas.style.cursor = world.tool === 'net' ? (over ? 'pointer' : 'crosshair') : over ? 'grab' : world.tool === 'pointer' ? 'default' : world.tool === 'feed' ? 'crosshair' : 'copy';
 }
 // A press on the picture of the next pond along (while you're looking over the edge) only pans.
 function beyondDown(e) {
@@ -1179,8 +1180,12 @@ function pointerEnd(e) {
     else if (fo) collectFossil(world, fo);
     else if (rm) collectRemains(world, rm);
     else if (st && st.kind === 'hatchery') setHatchery(true);
-    else if (st && world.tool === 'feed') showObject(st);
-    else useTool(press.x, press.y);
+    else if (st && (world.tool === 'feed' || world.tool === 'pointer')) showObject(st);
+    else if (world.tool === 'pointer') {
+      // The pointer looks: a plant's card (an animal's opens below), and nothing at all on open water.
+      const p = [...world.pads, ...world.plants].reverse().find((q) => q.hit && q.hit(press.x, press.y));
+      if (p && !creatureAt(press.x, press.y)) showObject(p);
+    } else useTool(press.x, press.y);
   }
   // A quick click on an animal (not a drag) opens its card.
   if (tap && e.type === 'pointerup' && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 6 && performance.now() - tap.t < 350 && tap.c.life) showCreature(tap.c);
@@ -1584,7 +1589,7 @@ function crossTo(side) {
     updateLink();
     logEvent(world, 'You walked back along the beach, home to your own pond', null, { cat: 'pond', pri: 1 });
   } else {
-    $('observe-name').textContent = B.info && B.info.by ? `${B.id} · ${B.info.by}'s pond` : B.id;
+    $('observe-name').textContent = `${(B.info && B.info.title) || B.id}${B.info && B.info.by ? ` · ${B.info.by}'s pond` : ''}`;
     $('observe-bar').hidden = false;
     history.replaceState(null, '', `/${B.id}?observe=1`);
     logEvent(world, `You walked along the beach into ${B.id}, someone else's pond. Look around; nothing here is yours to touch`, null, { cat: 'pond', pri: 2 });
@@ -1627,14 +1632,15 @@ async function walkTo(side) {
 function edgeHints() {
   const ax = beachAxisX(), ends = viewAtEnds();
   for (const dir of ['west', 'east']) {
-    const el = $(`edge-${dir}`), B = BEACH[dir];
-    el.hidden = !B;
+    const el = $(`edge-${dir}`), B = BEACH[dir], arrow = $(`nb-${dir}`);
+    // (The ends of the beach are shown by little arrows by the pond's name now; the tabs stay hidden.)
+    el.hidden = true;
+    arrow.hidden = !B || HOME !== '/';
     if (!B) continue;
-    el.classList.toggle('vertical', !ax);
-    const info = B.info || {};
-    el.querySelector('b').textContent = B.home ? 'your pond' : B.id;
-    el.querySelector('span').textContent = B.home ? 'drag on past the end to walk home' : `${info.by ? `${info.by}'s pond · ` : ''}${(info.depth || 1).toLocaleString()} fm · ${HABITATS[info.habitat] || ''} · drag on past the end to walk over`;
-    el.classList.toggle('near', ends[dir]);
+    const up = nbScreenDir(dir), info = B.info || {};
+    arrow.textContent = up;
+    arrow.classList.toggle('near', !!ends[dir]);
+    arrow.title = B.home ? 'Your pond\nWalk back home along the beach' : `${info.title || B.id}\n${[info.by ? `${info.by}'s pond` : '', `${(info.depth || 1).toLocaleString()} fm`, HABITATS[info.habitat] || ''].filter(Boolean).join(' · ')}. Click to walk over (you can look, not touch), or drag on past the end of the beach.`;
     if (ends[dir]) ensureBeyond(dir); // near the end: draw what's beyond it
   }
   placeEdgeTabs();
@@ -1702,6 +1708,12 @@ document.getElementById('nb-go').addEventListener('click', async () => {
 });
 document.getElementById('nb-stay').addEventListener('click', () => { document.getElementById('nb-ask').hidden = true; });
 for (const d of ['west', 'east']) document.getElementById(`edge-${d}`).addEventListener('click', () => askNeighbour(d));
+for (const d of ['west', 'east']) document.getElementById(`nb-${d}`).addEventListener('click', () => askNeighbour(d));
+// Which way a neighbour lies on screen (the beach may run across the screen or up it, and the view turns).
+function nbScreenDir(dir) {
+  const [a, b] = beachAxisX() ? ['◂', '▸'] : ['▴', '▾'];
+  return dir === 'west' ? a : b;
+}
 
 document.getElementById('observe-home').addEventListener('click', () => goHome());
 function goHome() {
@@ -1801,7 +1813,7 @@ function setTool(name) {
 }
 // Each tool, plant and build is a tile in the actions panel, under its kind: an icon, its price,
 // and (on hover) a + to pin it to the bar. Its name is in its tooltip.
-const toolCat = (name, t) => (t.build ? 'build' : t.food ? 'food' : name === 'net' ? 'tools' : 'plants');
+const toolCat = (name, t) => (t.build ? 'build' : t.food ? 'food' : name === 'net' || name === 'pointer' ? 'tools' : 'plants');
 const pinMark = () => Object.assign(document.createElement('span'), { className: 'pin', textContent: '+', title: 'Pin to the bar' });
 for (const [name, t] of Object.entries(TOOLS)) {
   const b = document.createElement('button');
@@ -1861,10 +1873,10 @@ try { const p = JSON.parse(localStorage.getItem(PIN_KEY) || 'null'); pins = Arra
 const actionTile = (k) => document.querySelector(k.startsWith('life:') ? `#act-life [data-spawn="${k.slice(5)}"]` : `#actions [data-tool="${k}"]`);
 const pinUsable = (k) => { if (k.startsWith('life:')) { const kind = k.slice(5); return !!SPECIES[kind] && fitsHabitat(world, SPECIES_HABITAT[kind]) && deepAvailable(world, kind) && deepUnlocked(world, kind); } const b = actionTile(k); return !!TOOLS[k] && !!b && !b.hidden; };
 function barKeys() {
-  if (pins) return pins.filter(pinUsable);
+  if (pins) return ['pointer', ...pins.filter((k) => k !== 'pointer' && pinUsable(k))];
   const pick = Object.keys(toolUse).filter((n) => TOOLS[n] && pinUsable(n)).sort((a, b) => toolUse[b] - toolUse[a]).slice(0, QUICK_N);
   for (const n of QUICK_DEFAULT) if (pick.length < QUICK_N && !pick.includes(n) && pinUsable(n)) pick.push(n);
-  return pick;
+  return ['pointer', ...pick.filter((k) => k !== 'pointer')];
 }
 function togglePin(k) {
   const cur = pins || barKeys();
@@ -2211,6 +2223,8 @@ const IS_BOT = /bot|crawl|spider|slurp|lighthouse|pagespeed|preview|facebookexte
 // Every pond gets its own short link a few seconds after it opens, and the
 // server's copy behind it is kept up to date from then on.
 let syncWarned = false;
+// Sync at the next chance (a pond renamed, say).
+function syncSoon() { syncTimer = Math.min(syncTimer, 2); }
 async function syncPond(force = false) {
   if (syncing || world.noSave || !world.raster || !world.game || !Net.base) return false;
   if (!world.link && IS_BOT && !force) return false;
@@ -2374,7 +2388,7 @@ addEventListener('keydown', (e) => {
   else if (e.key === 't' || e.key === 'T') $('tour').click();
   else if (e.key === 'm' || e.key === 'M') $('sound').click();
   else if (e.key === 'p' || e.key === 'P') setScore(!scoreUi.open);
-  else if (e.key === 'Escape') { stopFollow(); $('nb-ask').hidden = true; }
+  else if (e.key === 'Escape') { stopFollow(); $('nb-ask').hidden = true; if (world.tool !== 'pointer') setTool('pointer'); }
 });
 
 addEventListener('resize', () => applyView());
@@ -2394,7 +2408,7 @@ function syncControls() {
 //  - ?pond=<name> you have saved: yours. One you don't have starts on day 1.
 //  - no link: the pond you last had open, or a brand-new one.
 async function boot() {
-  setTool('feed');
+  setTool('pointer');
   initHud();
   const meP = Net.base ? fetchMe() : Promise.resolve(Account); // (who's signed in, if anyone)
   const code = (/(?:^#|&)s=([A-Za-z0-9._-]+)/.exec(location.hash) || [])[1];
@@ -2409,7 +2423,7 @@ async function boot() {
     try { home = JSON.parse(sessionStorage.getItem('pond.home') || 'null'); } catch { /* none */ }
     if (got && !(home && home.id === pathId)) {
       resume = got.save;
-      observe = { id: pathId, updated: got.updated, home: home || { path: '/', id: null }, homeId: home && home.id, seed: got.save.seed, by: (got.meta && got.meta.by) || null };
+      observe = { id: pathId, updated: got.updated, home: home || { path: '/', id: null }, homeId: home && home.id, seed: got.save.seed, by: (got.meta && got.meta.by) || null, title: (got.meta && got.meta.title) || null };
     }
   }
   if (observe) { /* nothing more to decide */ } else if (!linked && pathId) {
@@ -2424,7 +2438,7 @@ async function boot() {
       } else if (got && got.meta && got.meta.lock) {
         // Its owner lets visitors look only: watch it, don't take a copy.
         resume = got.save;
-        observe = { id: pathId, updated: got.updated, home: { path: '/', id: null }, homeId: null, seed: got.save.seed, locked: true, by: got.meta.by || null };
+        observe = { id: pathId, updated: got.updated, home: { path: '/', id: null }, homeId: null, seed: got.save.seed, locked: true, by: got.meta.by || null, title: got.meta.title || null };
         history.replaceState(null, '', `/${pathId}?observe=1`);
       } else if (got) { linked = got.save; shortId = pathId; }
     }
@@ -2470,7 +2484,7 @@ async function boot() {
   world.linkAdopt = false;
   if (edge === 'west' || edge === 'east') startAtEdge(edge);
   if (observe) {
-    $('observe-name').textContent = observe.by ? `${observe.id} · ${observe.by}'s pond` : observe.id;
+    $('observe-name').textContent = `${observe.title || observe.id}${observe.by ? ` · ${observe.by}'s pond` : ''}`;
     $('observe-bar').hidden = false;
     logEvent(world, `You walked along the beach into ${observe.id}, someone else's pond. Look around; nothing here is yours to touch`, null, { cat: 'pond', pri: 2 });
   }
@@ -2479,7 +2493,12 @@ async function boot() {
   if (pathId && !linked && !(world.link && world.link.id === pathId)) {
     showTicker(`No pond called ${pathId} was found (links left unused for a long while are cleared), so here is yours`);
   }
-  if (innerWidth < 600) setHud(false); // on phones the pond comes first; ☰ opens the panel
+  // The menu opens by itself (at Your ponds) only the very first time; after that ☰ opens it.
+  let firstVisit = false;
+  try { firstVisit = !localStorage.getItem('pond.visited'); localStorage.setItem('pond.visited', '1'); } catch { /* storage unavailable */ }
+  if (innerWidth < 600 || !firstVisit || observe) setHud(false); else $('ponds').open = true;
+  // A word about signing in, once the pond has had a little while (and not again for a few days if put off).
+  setTimeout(() => { if (typeof maybeNudgeSignIn === 'function') maybeNudgeSignIn(); }, firstVisit ? 90000 : 20000);
   if (location.hash === '#bones') setBones(true);
   if (observe) { /* keep the address: it names the pond you're looking at */ } else if (HOME === '/') updateLink(); else history.replaceState(null, '', `${HOME}${new URL(shareUrl()).search}`);
   syncTimer = world.link ? 30 : adopt ? 2 : 8; // a pond without a link gets one in a few seconds

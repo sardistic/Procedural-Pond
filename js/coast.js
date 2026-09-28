@@ -51,12 +51,24 @@ const RIVER_FOAM = mat('#6aa8b8', '#9ccad6', '#cce6ee', '#f4fcff');
 
 // The pond's age as the river knows it: whole days, so it only reshapes at dawn.
 const riverDay = (world) => Math.floor(world.days || 0) + 0.5;
-// How wide the river runs now: it grows as the pond ages and deepens, and swells in the wet season (half-pixel steps).
+// How much water it's carrying today: wet and dry seasons, and now and then a flood (a day or two
+// of it running high, wide and fast) or a drought (down to a trickle), all from the pond's seed.
+function riverFlow(world) {
+  const days = riverDay(world), d = Math.floor(days), seed = hashString(`${world.seed}/flow`) % 997;
+  const season = 1 + 0.3 * Math.sin(days / 17 * TAU + (hashString(`${world.seed}/season`) % 628) / 100);
+  let event = 1, kind = null;
+  for (let back = 0; back < 3; back++) {
+    const h = hash2(d - back, seed, 71);
+    if (h < 0.07 && back < 2) { event = 1.9 - 0.35 * back; kind = 'flood'; break; }
+    if (h > 0.9) { event = 0.45 + 0.1 * back; kind = 'drought'; break; }
+  }
+  return { k: season * event, kind };
+}
+// How wide the river runs now: it grows as the pond ages and deepens, and with its flow (half-pixel steps).
 function riverWidth(world) {
   const hab = world.opts.habitat || 'mixed', E = world.erosion, days = riverDay(world);
   const age = clamp((E ? E.e : 0) / 22 + days / 90, 0, 2.2);
-  const season = 1 + 0.14 * Math.sin(days / 17 * TAU + (hashString(`${world.seed}/season`) % 628) / 100);
-  return Math.round(RIVER_BASE[hab] * (1 + RIVER_GROW[hab] * age) * season * 2) / 2;
+  return Math.round(RIVER_BASE[hab] * (1 + RIVER_GROW[hab] * age) * clamp(riverFlow(world).k, 0.45, 2) * 2) / 2;
 }
 
 // Each course the river takes (the first is the one it always had). It keeps one for a while, then
@@ -87,8 +99,14 @@ function applyRiver(world) {
   if (!shore || world.riverOff) return;
   const hab = world.opts.habitat || 'mixed', band = beachBand(world), reach = band * 1.35 + 30;
   const w = world.riverW || (world.riverW = riverWidth(world));
-  // The bed sits below the lowest tide (so it's always wet), deeper as it widens.
-  const bed = Math.round(clamp(0.13 - 0.05 * (w / RIVER_BASE[hab] - 1), 0.02, 0.13) * 255);
+  // The bed sits below the lowest tide (so it's always wet), deeper as it widens, and deeper still
+  // down its middle the longer it has run this course.
+  const R = riverState(world);
+  const bed = Math.round(clamp(0.13 - 0.05 * (w / RIVER_BASE[hab] - 1) - 0.04 * R.f, 0.01, 0.13) * 255);
+  // The inland water (the channels up the beach), so the surf breaks at the sea and not in them.
+  const [mx0, my0, mx1, my1] = beachRect(world), M = { x0: mx0, y0: my0, w: mx1 - mx0 + 1, h: my1 - my0 + 1 };
+  M.data = new Uint8Array(M.w * M.h);
+  const mouthD = band * 0.95;
   const cut = (C, width, bedAt, keep) => {
     const pts = [];
     for (let d = 0; d <= reach; d++) {
@@ -97,31 +115,39 @@ function applyRiver(world) {
         const [x, y] = coastXY(world, d, u);
         if (x < 0 || y < 0 || x >= world.W || y >= world.H) continue;
         const p = x + y * world.W, dist = Math.abs(u - uc);
-        const v = dist <= half ? bedAt : Math.round(lerp(bedAt, shore[p], clamp((dist - half) / 3, 0, 1)));
+        // (A deeper line down the middle: the channel's floor dips toward its centre.)
+        const v = dist <= half ? Math.round(bedAt * (0.55 + 0.45 * (dist / Math.max(1, half)) ** 2)) : Math.round(lerp(bedAt, shore[p], clamp((dist - half) / 3, 0, 1)));
         if (v < shore[p]) shore[p] = v;
+        if (d < mouthD && x >= M.x0 && y >= M.y0 && x < M.x0 + M.w && y < M.y0 + M.h) M.data[(x - M.x0) + (y - M.y0) * M.w] = 1;
       }
       if (keep && d % 3 === 0) pts.push(coastXY(world, d, uc));
     }
     return pts;
   };
-  const R = riverState(world);
-  // The old course, silting up: shallower and narrower each day until it's gone.
-  if (R.old > 0) cut(riverCourse(world, R.k - 1), w * (0.5 + 0.4 * R.old), Math.round(lerp(0.4 * 255, bed + 10, R.old)), false);
+  // Old courses linger as creeks, silting up slowly over the next few courses (the last one fastest to go).
+  for (let back = 3; back >= 1; back--) {
+    if (R.k - back < 0) continue;
+    const age = (back - 1 + R.f) / 3; // 0: just left, 1: gone
+    if (age >= 1) continue;
+    cut(riverCourse(world, R.k - back), w * (0.85 - 0.6 * age), Math.round(lerp(bed + 12, 0.46 * 255, age)), false);
+  }
   // The new one breaking through: a thin shallow channel, cutting deeper.
   if (R.next > 0) cut(riverCourse(world, R.k + 1), w * (0.25 + 0.5 * R.next), Math.round(lerp(0.36 * 255, bed + 8, R.next)), false);
   const pts = cut(riverCourse(world, R.k), w, bed, true);
+  world.riverMask = M;
   const mi = Math.min(pts.length - 1, Math.round(band * 0.95 / 3)), mouth = pts[mi];
-  world.river = { pts: pts.slice(0, mi + 1), w, mouth, spot: { x: mouth[0], y: mouth[1], r: 8 + w }, k: R.k };
+  const flow = riverFlow(world);
+  world.river = { pts: pts.slice(0, mi + 1), w, mouth, spot: { x: mouth[0], y: mouth[1], r: 8 + w }, k: R.k, flow: flow.k, event: flow.kind };
 }
 
 // Flow: flecks of foam riding the current down the channel.
 function drawRiver(r, world, t) {
   const R = world.river;
   if (!R || R.pts.length < 2) return;
-  const pts = R.pts, n = pts.length, flecks = Math.round(n * (1.2 + R.w / 8));
+  const pts = R.pts, n = pts.length, flow = R.flow || 1, flecks = Math.round(n * (1.2 + R.w / 8) * clamp(flow, 0.4, 1.8));
   r.castShadows = false;
   for (let k = 0; k < flecks; k++) {
-    const s = (k / flecks + t * (0.018 + 0.004 * R.w) * (1 + hash2(k, 3, 5) * 0.5)) % 1, fi = s * (n - 1), i = fi | 0, f = fi - i;
+    const s = (k / flecks + t * (0.018 + 0.004 * R.w) * clamp(flow, 0.5, 2.2) * (1 + hash2(k, 3, 5) * 0.5)) % 1, fi = s * (n - 1), i = fi | 0, f = fi - i;
     const a = pts[i], b = pts[Math.min(n - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], dl = Math.hypot(dx, dy) || 1;
     const off = (hash2(k, 7, 3) - 0.5) * R.w * 0.8;
     r.dot(lerp(a[0], b[0], f) - dy / dl * off, lerp(a[1], b[1], f) + dx / dl * off, SURFACE_Z - 1, RIVER_FOAM, FX_ID);
@@ -473,14 +499,16 @@ function dawnCoast(world) {
   if (!world.blight && world.opts.life !== false && Math.random() < blightRisk(world)) startBlight(world);
   const islandRects = []; // (islands swell and shrink a little day to day: only round them is redrawn)
   if (world.shore) {
-    const w = riverWidth(world), R = riverState(world), was = world.riverAt;
-    if (world.riverW && w > world.riverW + 0.25) logEvent(world, `The river has cut its channel wider${w > (world.riverW || 0) + 1 ? ' and deeper' : ''}`, null, { cat: 'pond', pri: 1, key: 'river-wide' });
+    const w = riverWidth(world), R = riverState(world), was = world.riverAt, flow = riverFlow(world);
+    if (flow.kind === 'flood' && (!was || was.event !== 'flood') && !world.riverOff) logEvent(world, '✦ The river is in flood: running high, wide and fast, and carrying the land down to the sea', null, { cat: 'pond', pri: 2 });
+    else if (flow.kind === 'drought' && (!was || was.event !== 'drought') && !world.riverOff) logEvent(world, 'A drought: the river has dropped to a trickle', null, { cat: 'pond', pri: 1 });
+    else if (world.riverW && w > world.riverW + 0.25) logEvent(world, `The river has cut its channel wider${w > (world.riverW || 0) + 1 ? ' and deeper' : ''}`, null, { cat: 'pond', pri: 0, key: 'river-wide' });
     else if (world.riverW && w < world.riverW - 0.75) logEvent(world, 'The dry season: the river runs lower and narrower', null, { cat: 'pond', pri: 0, key: 'river-dry' });
     if (was && R.k > was.k && !world.riverOff) {
-      logEvent(world, '✦ The river has broken its banks and cut a new course to the sea; its old channel will silt up', null, { cat: 'pond', pri: 3 });
+      logEvent(world, '✦ The river has broken its banks and cut a new course to the sea; its old channel lingers as a creek, silting up', null, { cat: 'pond', pri: 3 });
       if (typeof narrate === 'function') narrate(world, 'river');
     } else if (was && R.next > 0 && !was.next && !world.riverOff) logEvent(world, 'The river is breaking through its bank: a new channel is opening beside the old', null, { cat: 'pond', pri: 2 });
-    world.riverAt = { k: R.k, next: R.next };
+    world.riverAt = { k: R.k, next: R.next, event: flow.kind };
     if (w !== world.riverW) world.riverW = w;
     world.beachDaily = true; // (the bends creep and the sand moves a little every day: see below)
     const islands = (world.structures || []).filter((s) => s.kind === 'island');

@@ -20,6 +20,7 @@ const crypto = require('node:crypto');
 const zlib = require('node:zlib');
 const { DatabaseSync } = require('node:sqlite');
 const WORDS = require('./words.js');
+const { cleanTitle } = require('./namefilter.js');
 
 const PORT = +process.env.PORT || 8080;
 const DB_PATH = process.env.DB_PATH || './pond.db';
@@ -207,6 +208,7 @@ function cleanMeta(m) {
     habitat: HABITATS.has(m.habitat) ? m.habitat : 'mixed', board: m.board !== false, best: cleanFind(m.best),
     lock: m.lock === true, // the owner lets visitors look only (no copies of their own)
     showName: m.showName === true, // a signed-in owner shows their name on it (the name itself comes from the account, never from here)
+    title: cleanTitle(m.title), // a name the owner gave it (null if none, or not allowed: see namefilter.js)
     finds: Array.isArray(m.finds) ? m.finds.slice(0, 5).map(cleanFind).filter((f) => f && f.tier >= 2) : [],
   };
 }
@@ -286,7 +288,7 @@ async function createPond(req) {
     q.insert.run(id, hashKey(key), now, now, now, points, meta.board ? 1 : 0, JSON.stringify(publicMeta({ ...meta, points, erosion, depth })), save, erosion, depth);
     addFinds(id, meta.finds, now);
     boardCache = null;
-    return [201, { id, key, points, depth, views: 0, rank: rankOf({ board: meta.board, points, depth }), high: board().high }];
+    return [201, { id, key, points, depth, views: 0, rank: rankOf({ board: meta.board, points, depth }), high: board().high, title: meta.title }];
   }
   throw new HttpError(503, 'no free link, try again');
 }
@@ -306,7 +308,7 @@ async function updatePond(req, id) {
   q.update.run(now, points, meta.board ? 1 : 0, JSON.stringify(publicMeta({ ...meta, points, erosion, depth })), save, erosion, depth, id);
   addFinds(id, meta.finds, now);
   if (meta.board) boardCache = null;
-  return [200, { ok: true, points, depth, views: row.views || 0, rank: rankOf({ board: meta.board, points, depth }), high: board().high }];
+  return [200, { ok: true, points, depth, views: row.views || 0, rank: rankOf({ board: meta.board, points, depth }), high: board().high, title: meta.title }];
 }
 
 // One view per address per pond every six hours (observers re-fetch every minute).
@@ -344,7 +346,7 @@ function neighbours(id) {
   const side = (r) => {
     if (!r || r.id === id) return null;
     const m = JSON.parse(r.meta);
-    return { id: r.id, depth: r.depth, points: r.points, habitat: m.habitat, animals: m.animals, by: m.by };
+    return { id: r.id, depth: r.depth, points: r.points, habitat: m.habitat, animals: m.animals, by: m.by, title: m.title || null };
   };
   if (!n) return { west: null, east: null };
   if (i < 0) return { west: side(rows[n - 1]), east: side(rows[0]) };
@@ -357,7 +359,7 @@ function board() {
   if (boardCache && Date.now() - boardCache.at < 15000) return boardCache.data;
   const top = q.top.all().map((r) => {
     const m = JSON.parse(r.meta);
-    return { id: r.id, points: r.points, depth: r.depth, updated: r.updated, animals: m.animals, species: m.species, rares: m.rares, gen: m.gen, days: m.days, habitat: m.habitat, best: m.best, by: m.by };
+    return { id: r.id, points: r.points, depth: r.depth, updated: r.updated, animals: m.animals, species: m.species, rares: m.rares, gen: m.gen, days: m.days, habitat: m.habitat, best: m.best, by: m.by, title: m.title || null };
   });
   const finds = q.finds.all().map((f) => ({ at: f.at, pond: f.pond, tier: f.tier, species: f.species, traits: f.traits.split(','), how: f.how }));
   const data = { top, high: top.length >= 10 ? top[9].depth : 0, finds, ponds: q.count.get().n };
@@ -547,6 +549,11 @@ async function takeWanderer(req) {
 async function route(req) {
   const url = new URL(req.url, 'http://pond'), path = url.pathname;
   if (path === '/api/health' && req.method === 'GET') return [200, { ok: true }];
+  // Is a pond name allowed? (Asked as the owner types one; every save is checked again anyway.)
+  if (path === '/api/title-check' && req.method === 'POST') {
+    const body = await readJson(req), t = cleanTitle(body && body.title);
+    return [200, { ok: !!t, title: t }];
+  }
   if (path === '/api/auth/discord' && req.method === 'GET') return authStart(url);
   if (path === '/api/auth/discord/callback' && req.method === 'GET') return authCallback(req, url);
   if (path === '/api/me' && req.method === 'GET') return getMe(req);

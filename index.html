@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=31">
+  <link rel="stylesheet" href="style.css?v=32">
 
   <script type="application/ld+json">
   {
@@ -79,7 +79,7 @@
       <h1>Procedural Pond</h1>
       <button type="button" id="collapse" class="icon" aria-label="Hide panel" title="Hide panel (H)">–</button>
     </header>
-    <p class="hint" id="hint">click to feed · drag animals · scroll to zoom</p>
+    <p class="hint" id="hint">click to look · drag animals · scroll to zoom</p>
     <p class="seed">pond <b id="seed-name"></b> · <span id="save-status">saving…</span></p>
     <div class="seg" role="group" aria-label="Habitat">
       <button type="button" data-hab="fresh" title="Freshwater: koi, frogs, ducks, lily pads">Fresh</button>
@@ -90,7 +90,7 @@
     <details id="ponds">
       <summary>Your ponds</summary>
       <div id="account" class="account" hidden></div>
-      <p class="note">Your pond saves itself in this browser and is here when you come back. The address bar holds its short link: bookmark it or share it, and it opens this pond as it grows. Friends who open it get their own copy.</p>
+      <p class="note ponds-help">Saved here, and at its own link <button type="button" class="help-q" title="Your pond saves itself&#10;It saves itself in this browser and is here when you come back. The address bar holds its short link: bookmark it or share it, and it opens this pond as it grows. Friends who open it get their own copy. Sign in with Discord to keep your ponds in your account and carry on from any browser." aria-label="How saving works">?</button></p>
       <ol class="pond-list" id="pond-list"></ol>
       <label class="check" title="Look only\nWhoever opens this pond's link can watch it, but can't take a copy to grow as their own. Your pond stays the only one."><input type="checkbox" id="pond-lock"> Visitors can only look (no copies)</label>
       <div class="grid2">
@@ -161,10 +161,16 @@
     </div>
     <p class="keys">Arrows/WASD pan · +/− zoom · F follow · T tour · C animals · J journal · P score · L light · B bones · Space pause · M sound · N music · G guide · H menu (actions are on the rail down the left: ▸ for all of them, + to pin one)</p>
   </aside>
+  <div id="signin-nudge" class="signin-nudge" hidden role="dialog" aria-label="Sign in">
+    <b>Keep this pond safe</b>
+    <p>Sign in with Discord to keep your ponds in your account, carry on from any browser, and put your name on the leaderboard if you like.</p>
+    <div class="grid2"><button type="button" id="nudge-signin" class="discord">Sign in with Discord</button><button type="button" id="nudge-later">Not now</button></div>
+  </div>
   <nav id="rail" class="rail" aria-label="Actions">
     <button type="button" id="show-hud" class="rail-btn menu" aria-pressed="false" aria-label="Menu" title="Menu (H)&#10;Your ponds, the scene, sound, sharing and the rest">☰</button>
     <div id="quickbar" class="rail-pins" aria-label="Pinned actions"></div>
     <button type="button" id="rail-more" class="rail-btn more" aria-expanded="false" aria-controls="actions" title="All actions&#10;Food, tools, plants, builds and creatures. Hover one and press + to pin it to this bar">▸</button>
+    <button type="button" id="rail-paragons" class="rail-btn crown" aria-expanded="false" aria-controls="paragons" aria-label="Paragons" title="Paragons&#10;The finest of your lines, earned by breeding: what they are, the ones waiting for you, and how close the next are">♛</button>
     <button type="button" id="rail-guide" class="rail-btn ask" aria-expanded="false" aria-controls="guide" aria-label="Guide" title="Guide (G)&#10;Everything in the game: every animal, plant, build, trait, event and control">?</button>
   </nav>
   <section id="actions" class="pop actions" hidden aria-label="All actions">
@@ -209,6 +215,7 @@
   </div>
 
   <div id="score" class="score">
+    <button type="button" id="nb-west" class="nb-arrow west" hidden aria-label="The pond one way along the beach">◂</button>
     <button type="button" id="score-btn" class="score-btn" aria-expanded="false" aria-controls="score-panel" title="This pond: points, pearls and the leaderboard (P)">
       <b id="bar-name" class="nm"></b>
       <span class="pts" title="Depth: the pond's deepest point, your score"><i aria-hidden="true">⚓</i><b id="score-points">0</b></span>
@@ -218,8 +225,18 @@
       <span class="rk" id="bar-rank" title="Place on the leaderboard"></span>
       <span class="caret" aria-hidden="true">▾</span>
     </button>
+    <button type="button" id="nb-east" class="nb-arrow east" hidden aria-label="The pond the other way along the beach">▸</button>
     <section id="score-panel" class="pop score-panel" hidden aria-label="Score and leaderboard">
       <header class="pop-head"><b>Score</b><button type="button" id="score-close" class="icon" aria-label="Close score">×</button></header>
+      <div class="sp-name">
+        <b id="sp-title"></b>
+        <button type="button" id="sp-rename" title="Name this pond&#10;Give it a name of your own (up to 24 letters): it shows on the bar, the leaderboard and the beach. Hateful or obscene names aren't allowed.">✎ Name it</button>
+      </div>
+      <form id="sp-rename-form" class="sp-rename" hidden>
+        <input id="sp-title-in" maxlength="24" autocomplete="off" spellcheck="false" aria-label="Pond name">
+        <button type="submit">Save</button><button type="button" id="sp-rename-cancel">Cancel</button>
+        <p class="note" id="sp-rename-note"></p>
+      </form>
       <div class="score-depth"><b id="sp-depth">0</b><span id="sp-zone"></span></div>
       <p class="note" id="sp-parts"></p>
       <div id="sp-story" class="sp-story"></div>
@@ -236,6 +253,8 @@
       <p class="note best" id="sp-best"></p>
       <h3>Lately</h3>
       <ol class="earn-list" id="sp-recent"></ol>
+      <h3>Along the beach</h3>
+      <div class="nb-list" id="sp-neighbours"></div>
       <h3>Leaderboard</h3>
       <ol class="board" id="sp-board"></ol>
       <h3>Rare finds in every pond</h3>
@@ -309,6 +328,15 @@
     <p id="nb-ask-text"></p>
     <div class="grid2"><button type="button" id="nb-go">Go</button><button type="button" id="nb-stay">Stay here</button></div>
   </div>
+  <section id="paragons" class="pop paragons" hidden aria-label="Paragons">
+    <header class="pop-head"><b>♛ Paragons</b><button type="button" id="paragons-close" class="icon" aria-label="Close">×</button></header>
+    <p class="note">A Paragon is the finest animal a line of yours can produce: <b>free</b>, graded <b>Pristine</b>, carrying its line's rare traits plus a gift, hardier and longer-lived than its kind, with a crown of light over its head. It always settles in, and the rest of its spawn come Superb.</p>
+    <p class="note">You earn one by breeding: each time a rare line (the same rare traits in the same kind) has been bred <b>3, 8, 20 and 50</b> times, and each time a kind's births and finds have scored you <b>150, 600, 2,400…</b> points (four times the last).</p>
+    <h3>Waiting for you</h3>
+    <div class="sc-supers" id="paragons-waiting"></div>
+    <h3>Coming along</h3>
+    <ol class="par-progress" id="paragons-progress"></ol>
+  </section>
   <section id="guide" class="pop guide" hidden aria-label="Guide">
     <header class="pop-head">
       <div class="g-top">
@@ -386,55 +414,55 @@
     </div>
   </div>
 
-  <script src="js/core.js?v=38"></script>
-  <script src="js/raster.js?v=38"></script>
-  <script src="js/creatures.js?v=38"></script>
-  <script src="js/critters.js?v=38"></script>
-  <script src="js/wildlife.js?v=38"></script>
-  <script src="js/wildfish.js?v=38"></script>
-  <script src="js/sound.js?v=38"></script>
-  <script src="js/life.js?v=38"></script>
-  <script src="js/plants.js?v=38"></script>
-  <script src="js/scene.js?v=38"></script>
-  <script src="js/structures.js?v=38"></script>
-  <script src="js/erosion.js?v=38"></script>
-  <script src="js/sky.js?v=38"></script>
-  <script src="js/ecology.js?v=38"></script>
-  <script src="js/game.js?v=38"></script>
-  <script src="js/deep.js?v=38"></script>
-  <script src="js/remains.js?v=38"></script>
-  <script src="js/eldritch.js?v=38"></script>
-  <script src="js/coast.js?v=38"></script>
-  <script src="js/gulls.js?v=38"></script>
-  <script src="js/traits.js?v=38"></script>
-  <script src="js/save.js?v=38"></script>
-  <script src="js/link.js?v=38"></script>
-  <script src="js/abyss.js?v=38"></script>
-  <script src="js/quirks.js?v=38"></script>
-  <script src="js/hunters.js?v=38"></script>
-  <script src="js/habitats.js?v=38"></script>
-  <script src="js/artifacts.js?v=38"></script>
-  <script src="js/story.js?v=38"></script>
-  <script src="js/lineage.js?v=38"></script>
-  <script src="js/depths.js?v=38"></script>
-  <script src="js/sand.js?v=38"></script>
-  <script src="js/heavens.js?v=38"></script>
-  <script src="js/nature.js?v=38"></script>
-  <script src="js/pollution.js?v=38"></script>
-  <script src="js/prehistoric.js?v=38"></script>
-  <script src="js/alien.js?v=38"></script>
-  <script src="js/bestiary.js?v=38"></script>
-  <script src="js/land.js?v=38"></script>
-  <script src="js/cycle.js?v=38"></script>
-  <script src="js/arrivals.js?v=38"></script>
-  <script src="js/interact.js?v=38"></script>
-  <script src="js/net.js?v=38"></script>
-  <script src="js/account.js?v=38"></script>
-  <script src="js/wander.js?v=38"></script>
-  <script src="js/hud.js?v=38"></script>
-  <script src="js/main.js?v=41"></script>
-  <script src="js/guide.js?v=38"></script>
-  <script src="js/music.js?v=38"></script>
-  <script src="js/tips.js?v=38"></script>
+  <script src="js/core.js?v=39"></script>
+  <script src="js/raster.js?v=39"></script>
+  <script src="js/creatures.js?v=39"></script>
+  <script src="js/critters.js?v=39"></script>
+  <script src="js/wildlife.js?v=39"></script>
+  <script src="js/wildfish.js?v=39"></script>
+  <script src="js/sound.js?v=39"></script>
+  <script src="js/life.js?v=39"></script>
+  <script src="js/plants.js?v=39"></script>
+  <script src="js/scene.js?v=39"></script>
+  <script src="js/structures.js?v=39"></script>
+  <script src="js/erosion.js?v=39"></script>
+  <script src="js/sky.js?v=39"></script>
+  <script src="js/ecology.js?v=39"></script>
+  <script src="js/game.js?v=39"></script>
+  <script src="js/deep.js?v=39"></script>
+  <script src="js/remains.js?v=39"></script>
+  <script src="js/eldritch.js?v=39"></script>
+  <script src="js/coast.js?v=39"></script>
+  <script src="js/gulls.js?v=39"></script>
+  <script src="js/traits.js?v=39"></script>
+  <script src="js/save.js?v=39"></script>
+  <script src="js/link.js?v=39"></script>
+  <script src="js/abyss.js?v=39"></script>
+  <script src="js/quirks.js?v=39"></script>
+  <script src="js/hunters.js?v=39"></script>
+  <script src="js/habitats.js?v=39"></script>
+  <script src="js/artifacts.js?v=39"></script>
+  <script src="js/story.js?v=39"></script>
+  <script src="js/lineage.js?v=39"></script>
+  <script src="js/depths.js?v=39"></script>
+  <script src="js/sand.js?v=39"></script>
+  <script src="js/heavens.js?v=39"></script>
+  <script src="js/nature.js?v=39"></script>
+  <script src="js/pollution.js?v=39"></script>
+  <script src="js/prehistoric.js?v=39"></script>
+  <script src="js/alien.js?v=39"></script>
+  <script src="js/bestiary.js?v=39"></script>
+  <script src="js/land.js?v=39"></script>
+  <script src="js/cycle.js?v=39"></script>
+  <script src="js/arrivals.js?v=39"></script>
+  <script src="js/interact.js?v=39"></script>
+  <script src="js/net.js?v=39"></script>
+  <script src="js/account.js?v=39"></script>
+  <script src="js/wander.js?v=39"></script>
+  <script src="js/hud.js?v=39"></script>
+  <script src="js/main.js?v=42"></script>
+  <script src="js/guide.js?v=39"></script>
+  <script src="js/music.js?v=39"></script>
+  <script src="js/tips.js?v=39"></script>
 </body>
 </html>

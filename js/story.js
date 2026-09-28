@@ -261,6 +261,10 @@ function narrate(world, kind, info = {}, force = false) {
   const S = storyState(world), T = STORY[kind];
   if (!T || world.observe || world.quietRestore) return null;
   if (!force && !STORY_KEY_ALWAYS.has(kind) && world.t - S.last < 25) return null; // don't talk over itself
+  // (Nor keep saying the same kind of thing: a few times a pond day at most, the big moments aside.)
+  const day = Math.floor(world.days || 0), K = S.kinds && S.kinds.day === day ? S.kinds : (S.kinds = { day });
+  if (!force && !STORY_KEY_ALWAYS.has(kind) && (K[kind] || 0) >= 2) return null;
+  K[kind] = (K[kind] || 0) + 1;
   const pool = T[Math.min(S.stage, T.length - 1)].filter(Boolean);
   if (!pool.length) return null;
   const line = pick(pool).replace(/\{(\w+)\}/g, (m, k) => (info[k] != null ? String(info[k]) : ''));
