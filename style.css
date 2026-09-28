@@ -22,6 +22,16 @@ html, body {
   font-family: 'Silkscreen', ui-monospace, monospace;
 }
 
+/* The land up the beach, past the pond's landward edge (hinterland.js): panned like the pond. */
+.hinter {
+  position: fixed;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  image-rendering: pixelated;
+  touch-action: none;
+  cursor: default;
+}
 .beyond {
   position: fixed;
   left: 0;

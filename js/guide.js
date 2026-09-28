@@ -405,6 +405,7 @@ function chapterGenes() {
     { title: 'Looks', note: 'Colours and forms, inherited like real genes: recessive, dominant or incompletely dominant.', entries: Object.entries(LOOK_NOTES).filter(([k]) => TRAIT_RARITY[k] !== undefined).map(([k, n]) => trait(k, n)) },
     { title: 'Working genes', note: 'Every animal carries these; boost them on its card, or breed for them.', entries: Object.entries(GENE_NOTES).map(([k, n]) => ({ key: `gn:${k}`, name: GENE_INFO[k] ? GENE_INFO[k].label : gCap(k), color: GENE_INFO[k] && GENE_INFO[k].color, text: gCap(n) })) },
     { title: 'Boosts', note: 'Bought for a new spawn (its card) or an animal in the pond, with essence.', entries: Object.entries(ENHANCE).map(([k, E]) => ({ key: `en:${k}`, name: E.label, text: gCap(E.note || '') })) },
+    { title: 'Built all the way', note: 'An animal whose working gene is raised to its last level (ten, on its card) shows it, subtly and on the move.', entries: typeof MASTERY_LOOKS === 'undefined' ? [] : ANIMAL_TRAITS.filter((k) => MASTERY_LOOKS[k]).map((k) => ({ key: `ms:${k}`, name: (ENHANCE[k] && ENHANCE[k].label) || gCap(k), tags: [['level 10', '#ffd166']], text: `${gCap(MASTERY_LOOKS[k])}.` })) },
     { title: 'Gifts', note: 'Rarer than anything before them, and they pass on.', entries: Object.keys(GIFTS).map((k) => trait(k, TRAIT_NOTES[k])) },
     { title: 'Curses', note: 'They pass on too, far oftener if you run the pond fast or shorten its days.', entries: Object.keys(CURSES).map((k) => trait(k, TRAIT_NOTES[k], [['curse', '#ef6f6c']])) },
     { title: 'Ancient genes', note: 'From fossils: a rare trait to give a new spawn or a brood.', entries: [{ key: 'tr:ancient-genes', name: 'In the fossils', text: `${gCap(gList(ANCIENT_GENES.map((g) => (Array.isArray(g) ? g[0] : g)), 12))}. The rarer the fossil, the rarer the gene.` }] },
@@ -454,6 +455,20 @@ function chapterLand() {
       { key: 'cy:dens', name: 'Dens', text: 'Hermit crabs, octopuses and crayfish move into bottles and cans (morays and eels into tyres): a home, and one less piece of litter.' },
       { key: 'cy:nets', name: 'Nets and tyres', text: 'Small scavengers pick ghost nets apart; an old tyre left long enough grows over into a little reef.' },
       { key: 'cy:grow', name: 'The pond keeps growing', text: 'It reaches a little further out every dawn (faster the deeper it has gone and the more it has scored), and a long way at each new depth.' },
+    ] },
+    { title: 'Up the beach', note: 'Past the top of your beach the land carries on. Pan up past the sand to see it: a little shows at first, and the haze lifts further as the pond ages and deepens. It isn’t part of the pond (nothing is kept or built there yet); click it to hear what it is.', entries: [
+      { key: 'up:sand', name: 'The upper beach', text: 'Dry sand above the tides, with the weed, shells and driftwood the storms threw up.' },
+      { key: 'up:dunes', name: 'Dunes', text: 'Ridges the wind heaps up, held by marram grass, with ghost crabs’ holes; the river cuts down between them.' },
+      { key: 'up:scrub', name: 'Scrub', text: 'Shrubs and palms (willows and reeds by fresh water) where the river comes down. A heron fishes its edge by day; fireflies come out over it at night.' },
+      { key: 'up:river', name: 'The river', text: 'It runs on up the land from wherever its course meets your beach, winding back into the valley it has always come down, and on into the trees.' },
+      { key: 'up:jungle', name: 'The jungle', tags: [['a long way up', '#8a9ae0']], text: 'At last, a jungle: dark under its canopy and black further in. Eyes look out of it, a few by day and many at night; they blink, and slip away when you come near. Nothing has come out of it. Yet.' },
+    ] },
+    { title: 'On the beach', note: 'Animals of the beach itself: not the pond’s (no genes, not in the census, not yours to net or carry off), but they live off it. Click one to hear what it is.', entries: [
+      { key: 'bc:turtle', name: 'Sea turtles', tags: [['salt and both waters', '#bfe0e0'], ['night', '#8a9ae0']], text: 'On some dark nights a turtle comes in from the sea and hauls herself up the beach, leaving a track like a tyre’s. Above the high-water mark she digs, lays her eggs, covers them and goes back to the sea. The tide washes the track away.' },
+      { key: 'bc:nest', name: 'Nests and hatchlings', text: 'A nest hatches two or three pond days after it was laid, at the next dusk or dawn: the hatchlings come up out of the sand and run for the sea. Gulls and ghost crabs take some; each that makes it is worth an essence. Click a nest to see when it’s due.' },
+      { key: 'bc:ghost', name: 'Ghost crabs', tags: [['salt and both waters', '#bfe0e0']], text: 'Pale crabs with burrows high up the beach. Out at dusk and through the night they dash and freeze and dash, chase hatchlings, and run for their holes when anything comes near; peering out, they hold still and watch you.' },
+      { key: 'bc:pipers', name: 'Sandpipers', tags: [['day', '#ffd166']], text: 'A little flock that runs the water’s edge after the waves, probing the wet sand. Come close (or let a gull come down) and they all take off low along the beach. They leave at dusk.' },
+      { key: 'bc:gulls', name: 'Gulls', tags: [['day', '#ffd166']], text: 'They wheel over the water, walk the sand, scavenge what washes up and dive for frogs, crabs, dragonflies and hatchlings.' },
     ] },
   ];
 }
@@ -556,7 +571,7 @@ function chapterTogether() {
 function chapterHunters() {
   return [
     { title: 'Building a hunter', note: `Any predator (and any swimmer you wake to the hunt, for ${AWAKEN.essence} essence and ${AWAKEN.corruption} corruption) can be built up on its card: ten levels in each of eight ways, each dearer than the last. Built up far enough, a hunter takes anything smaller than itself.`, entries: Object.entries(HUNT).map(([k, H]) => ({
-      key: `hn:${k}`, name: H.label, tags: [[H.cur, CLASS_COLOR[H.cur] || '#3aff9a']], text: `${gCap(H.note)}.`,
+      key: `hn:${k}`, name: H.label, tags: [[H.cur, CLASS_COLOR[H.cur] || '#3aff9a']], text: `${gCap(H.note)}.${typeof MASTERY_LOOKS !== 'undefined' && MASTERY_LOOKS[k] ? ` Built all the way (level ${HUNT_MAX}): ${MASTERY_LOOKS[k]}.` : ''}`,
     })) },
   ];
 }

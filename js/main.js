@@ -458,6 +458,7 @@ function update(dt) {
   updateEldritch(world, dt);
   updateCoast(world, dt);
   updateGulls(world, dt);
+  if (typeof updateShoreLife === 'function') updateShoreLife(world, dt);
   updateQuirks(world, dt);
   updateBalance(world, dt);
   updateVertical(world, dt);
@@ -559,6 +560,7 @@ function render(full = false) {
   for (const p of world.plants) if (near(p.x, p.y, 50)) drawGrown(r, p, t);
   for (const s of world.structures) { if (!near(s.x, s.y, 60 + (s.R || STRUCTURES[s.kind].size || 20) * 3)) continue; if (s.anim) drawBuildAnim(r, s, t); else if (DRAW[s.kind]) DRAW[s.kind](r, s, t, world); }
   drawRiver(r, world, t);
+  if (typeof drawShoreLife === 'function') drawShoreLife(r, world, t, rect);
   for (const l of world.litter) l.draw(r, t, world);
   drawSlicks(r, world, t, rect);
   drawTar(r, world, t);
@@ -695,6 +697,7 @@ function frame(now) {
   updateCamera(dt);
   updateGlide(dt);
   render();
+  if (typeof hinterTick === 'function') hinterTick(world, dt);
   updateCard(dt);
   Sound.update(world, world.paused ? 0 : dt, visibleRect(), view.k);
   if (typeof Music !== 'undefined') Music.update(dt);
@@ -773,6 +776,9 @@ function expandWorldPx(px, why, quiet = false) {
   const cx = (innerWidth / 2 - view.tx) / view.k + sx, cy = (innerHeight / 2 - view.ty) / view.k + sy;
   const d = serializePond(world);
   shiftSave(d, sx, sy);
+  // (The beach's own animals aren't in saves: they carry on as they were, moved with the pond.)
+  const beach = world.creatures.filter((c) => c.ambient && !c.gone && !c.caught);
+  if (typeof shiftShoreLife === 'function') shiftShoreLife(world, sx, sy, beach);
   world.expandPx = (world.expandPx || 0) + add;
   d.expandPx = world.expandPx;
   d.size = axisX ? [world.W + add, world.H] : [world.W, world.H + add];
@@ -782,6 +788,7 @@ function expandWorldPx(px, why, quiet = false) {
   // Whatever you were following or looking at carries on (the pond is rebuilt, so they're found again).
   const was = cam.follow && cam.follow.seed, card = creatureUi.c && creatureUi.c.seed, obj = objUi.o && objUi.o.seed, k0 = view.k;
   layout(false, true);
+  world.creatures.push(...beach);
   view.k = Math.max(minK(), k0); // (the rebuild resets the view: keep the zoom you had)
   centerOn(cx, cy);
   bakeVisibleFirst();
@@ -949,6 +956,7 @@ function removeAt(x, y) {
   const xa = xenoAt(world, x, y);
   if (xa) { breakXeno(world, xa); return; }
   const c = creatureAt(x, y);
+  if (c && c.noGrab) { if (c.note) showTicker(c.note(world)); return; } // (the beach's own: not yours to net)
   if (c) { recycle(c); return; }
   const st = structureAt(world, x, y);
   if (st) { demolish(st); return; }
@@ -1003,20 +1011,24 @@ const minK = () => (view.minK ? Math.min(view.minK, coverK()) : coverK());
 function applyView() {
   if (view.k < minK()) view.k = minK();
   const [w, h] = screenSize(), ax = beachAxisX(), perpFree = view.glide && view.glide.perp;
-  const across = (len, scr, v) => (len <= scr ? Math.round((scr - len) / 2) : Math.round(clamp(v, scr - len, 0)));
+  // Across the beach the view keeps to the pond, and on up the land past its landward edge as far as
+  // that shows (pre: before the pond on screen, post: after it; hinterland.js).
+  const up = typeof hinterSpan === 'function' ? hinterSpan() * view.k : 0, ds = displaySide(world.shoreSide ?? 3);
+  const across = (len, scr, v, pre, post) => (len + pre + post <= scr ? Math.round((scr - len - pre - post) / 2 + pre) : Math.round(clamp(v, scr - len - post, pre)));
   if (ax) {
     const [lo, hi] = beachRange(w, innerWidth, view.lastTx);
     view.tx = Math.round(clamp(view.tx, lo, hi));
-    view.ty = perpFree ? Math.round(view.ty) : across(h, innerHeight, view.ty);
+    view.ty = perpFree ? Math.round(view.ty) : across(h, innerHeight, view.ty, ds === 2 ? up : 0, ds === 3 ? up : 0);
   } else {
     const [lo, hi] = beachRange(h, innerHeight, view.lastTy);
     view.ty = Math.round(clamp(view.ty, lo, hi));
-    view.tx = perpFree ? Math.round(view.tx) : across(w, innerWidth, view.tx);
+    view.tx = perpFree ? Math.round(view.tx) : across(w, innerWidth, view.tx, ds === 0 ? up : 0, ds === 1 ? up : 0);
   }
   view.lastTx = view.tx; view.lastTy = view.ty;
   canvas.style.transform = canvasTransform(view.tx, view.ty, view.k, view.r, world.W, world.H);
   zoomLabel.textContent = `${view.k}×`;
   if (typeof placeBeyond === 'function') { placeBeyond(); edgePull(); }
+  if (typeof placeHinter === 'function') placeHinter();
 }
 
 function zoomTo(k, cx = innerWidth / 2, cy = innerHeight / 2) {
@@ -1091,12 +1103,13 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   if (world.tool === 'net') { removeAt(x, y); noteToolUse('net'); return; }
   const c = creatureAt(x, y);
-  if (c) {
+  if (c && !c.noGrab) {
     world.grab = c;
     c.grabbed = true;
     canvas.style.cursor = 'grabbing';
     tap = { x: e.clientX, y: e.clientY, t: performance.now(), c };
   } else {
+    if (c) tap = { x: e.clientX, y: e.clientY, t: performance.now(), c }; // (a beach animal: not to be carried off; a drag pans)
     press = { cx: e.clientX, cy: e.clientY, tx: view.tx, ty: view.ty, x, y, panning: false };
     view.reach = viewAtEnds();
     // A long press opens the card of whatever is there (plants too).
@@ -1146,7 +1159,7 @@ function onPointerMove(e) {
   const over = creatureAt(world.pointer.x, world.pointer.y);
   world.hover = over;
   hoverAt = [e.clientX, e.clientY];
-  canvas.style.cursor = world.tool === 'net' ? (over ? 'pointer' : 'crosshair') : over ? 'grab' : world.tool === 'pointer' ? 'default' : world.tool === 'feed' ? 'crosshair' : 'copy';
+  canvas.style.cursor = over && over.noGrab ? 'help' : world.tool === 'net' ? (over ? 'pointer' : 'crosshair') : over ? 'grab' : world.tool === 'pointer' ? 'default' : world.tool === 'feed' ? 'crosshair' : 'copy';
 }
 // A press on the picture of the next pond along (while you're looking over the edge) only pans.
 function beyondDown(e) {
@@ -1167,7 +1180,9 @@ function pointerEnd(e) {
   // Let go and the view stays where it is: no spring back, no settling.
   if (press) view.reach = { west: false, east: false };
   if (press && press.done) press = null; // a long press opened a card
-  if (press && !press.panning && !press.beyond && e.type === 'pointerup') {
+  if (press && press.hinter && !press.panning && e.type === 'pointerup' && typeof hinterClick === 'function') hinterClick(world, press.x, press.y);
+  const ambient = tap && tap.c && tap.c.noGrab; // (a beach animal that isn't the pond's: a click says what it is, and uses no tool)
+  if (press && !press.panning && !press.beyond && !ambient && e.type === 'pointerup') {
     closeWindows(); // (one window at a time: a click in the pond closes the one that's open)
     // Clicking the hatchery opens it (with any tool but the Net); feeding over
     // another structure tells you about it.
@@ -1175,6 +1190,7 @@ function pointerEnd(e) {
     const rm = world.tool !== 'net' && remainsAt(world, press.x, press.y), fo = world.tool !== 'net' && fossilAt(world, press.x, press.y);
     const li = litterAt(world, press.x, press.y), sl = !li && slickAt(world, press.x, press.y);
     if (world.observe) { /* someone else's pond: look only */ }
+    else if (typeof nestAt === 'function' && nestAt(world, press.x, press.y)) showTicker(nestNote(world, nestAt(world, press.x, press.y)));
     else if (li) haulLitter(world, li);
     else if (sl && world.tool !== 'net' && !creatureAt(press.x, press.y)) skimSlick(world, sl);
     else if (fo) collectFossil(world, fo);
@@ -1188,7 +1204,10 @@ function pointerEnd(e) {
     } else useTool(press.x, press.y);
   }
   // A quick click on an animal (not a drag) opens its card.
-  if (tap && e.type === 'pointerup' && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 6 && performance.now() - tap.t < 350 && tap.c.life) showCreature(tap.c);
+  if (tap && e.type === 'pointerup' && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 6 && performance.now() - tap.t < 350) {
+    if (tap.c.life) showCreature(tap.c);
+    else if (tap.c.note) showTicker(tap.c.note(world));
+  }
   tap = null;
   press = null;
   release();
@@ -1533,6 +1552,18 @@ for (const side of ['west', 'east']) {
   cv.addEventListener('pointermove', onPointerMove);
   cv.addEventListener('pointerup', pointerEnd);
   cv.addEventListener('pointercancel', pointerEnd);
+}
+// The land up the beach (hinterland.js): dragged like the pond, and a click says what's there.
+{
+  const hc = typeof hinterInit === 'function' ? hinterInit(canvas) : null;
+  if (hc) {
+    hc.addEventListener('pointerdown', (e) => { beyondDown(e); if (press) press.hinter = true; });
+    hc.addEventListener('pointermove', onPointerMove);
+    hc.addEventListener('pointerup', pointerEnd);
+    hc.addEventListener('pointercancel', pointerEnd);
+    hc.addEventListener('wheel', (e) => { e.preventDefault(); canvas.dispatchEvent(new WheelEvent('wheel', e)); }, { passive: false }); // (zooms as the pond does)
+    hc.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
 }
 function placeBeyond() {
   const ax = beachAxisX(), [w, h] = screenSize(), ds = displaySide(world.shoreSide ?? 3);

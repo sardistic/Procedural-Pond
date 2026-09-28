@@ -1020,6 +1020,8 @@ function renderSpawnCard() {
 }
 
 // ---- creature card: everything about one animal ------------------------------------------------
+// What a trait built all the way looks like (mastery.js), for its button's tip.
+const masteryTip = (k, lv, max) => (typeof MASTERY_LOOKS === 'undefined' || !MASTERY_LOOKS[k] ? '' : lv >= max ? `. Built all the way: ${MASTERY_LOOKS[k]}` : `. At level ${max} it shows: ${MASTERY_LOOKS[k]}`);
 // Opened by clicking an animal, and shown automatically while following or touring.
 
 const creatureUi = { c: null, auto: false, timer: 0, rec: null };
@@ -1178,7 +1180,7 @@ function renderCreature() {
     const tree = el('div', 'trait-tree');
     for (const key of ANIMAL_TRAITS) {
       const E = ENHANCE[key], lv = animalLevel(c, key), cost = animalTraitCost(c, key);
-      tree.append(traitButton(E.label, 'essence', lv < ANIMAL_MAX ? cost : null, `${E.label}: ${E.note}`, lv >= ANIMAL_MAX, () => buyAnimalTrait(world, c, key), pips(lv, ANIMAL_MAX), (GENE_INFO[E.buff] || {}).color, renderCreature));
+      tree.append(traitButton(E.label, 'essence', lv < ANIMAL_MAX ? cost : null, `${E.label}: ${E.note}${masteryTip(key, lv, ANIMAL_MAX)}`, lv >= ANIMAL_MAX, () => buyAnimalTrait(world, c, key), pips(lv, ANIMAL_MAX), (GENE_INFO[E.buff] || {}).color, renderCreature));
     }
     const eldKeys = Object.entries(ELD_TRAITS).filter(([, T]) => T.ok(c) && (!T.path || eldPath(world, T.path)));
     for (const [k, T] of eldKeys) tree.append(traitButton(T.label, 'corruption', T.cost(c), T.note, false, () => buyEldTrait(world, c, k), null, '#3aff9a', renderCreature));
@@ -1189,7 +1191,7 @@ function renderCreature() {
       const hunt = el('div', 'trait-tree');
       for (const [k, H] of Object.entries(HUNT)) {
         const lv = huntLv(c, k);
-        hunt.append(traitButton(H.label, H.cur, lv < HUNT_MAX ? huntCost(c, k) : null, H.note, lv >= HUNT_MAX, () => buyHunt(world, c, k), pips(lv, HUNT_MAX), H.cur === 'corruption' ? '#3aff9a' : '#ef6f6c', renderCreature));
+        hunt.append(traitButton(H.label, H.cur, lv < HUNT_MAX ? huntCost(c, k) : null, `${H.note}${masteryTip(k, lv, HUNT_MAX)}`, lv >= HUNT_MAX, () => buyHunt(world, c, k), pips(lv, HUNT_MAX), H.cur === 'corruption' ? '#3aff9a' : '#ef6f6c', renderCreature));
       }
       parts.push(hunt);
     } else if (canBeHunter(c)) {

@@ -222,6 +222,7 @@ function drawQuirks(r, c, t) {
   const L = c.life, b = c.body;
   if (!L || !b) return;
   if (L.paragon && typeof drawParagon === 'function') drawParagon(r, c, t);
+  if ((L.boosts || L.hunt) && typeof drawMastery === 'function') drawMastery(r, c, t); // traits built all the way (mastery.js)
   if ((L.para || L.genome.xeno) && typeof drawPara === 'function') drawPara(r, c, t); // parasites, and the evolved (alien.js)
   const z = (c.zBody ?? c.z ?? 1) + 1;
   if (L.genome.starry) {

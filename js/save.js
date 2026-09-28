@@ -214,6 +214,7 @@ function shiftSave(d, dx, dy) {
   d.boneBeds = (d.boneBeds || []).map(([x, y, ...rest]) => [x + dx, y + dy, ...rest]);
   d.detritus = (d.detritus || []).map(([x, y, ...rest]) => [x + dx, y + dy, ...rest]);
   if (d.isleJoins) for (const j of Object.values(d.isleJoins)) { j.x += dx; j.y += dy; }
+  if (d.game && d.game.nests) d.game = { ...d.game, nests: d.game.nests.map((n) => ({ ...n, x: n.x + dx, y: n.y + dy })) }; // (turtles' nests: shore.js)
   return d;
 }
 

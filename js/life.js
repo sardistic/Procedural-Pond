@@ -1267,6 +1267,7 @@ function describe(c) {
   else if (c.inflate > 0.3) mood = 'puffed up';
   else if (L && L.energy < 0.35) mood = 'hungry';
   else if (L && L.scale < 0.9) mood = 'growing';
+  if (!L && c.doing && !c.grabbed) mood = c.doing(); // (the beach's own animals say what they're up to)
   const stage = !L ? '' : L.scale < 0.6 ? 'young' : L.age > L.lifespan * 0.8 ? 'elder' : 'adult';
   const temper = !L ? [] : [L.vigor > 1.12 ? 'hardy' : L.vigor < 0.9 ? 'frail' : '', L.wander > 0.6 ? 'restless' : L.wander < 0.15 ? 'homebody' : ''].filter(Boolean);
   return {
