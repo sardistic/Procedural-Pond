@@ -692,10 +692,11 @@ const STAIN_FRESH = hexToInt('#34461c'), STAIN_SALT = hexToInt('#6e3a5e'), STAIN
 let STAIN_BUF = null;
 function applyStains(world, rect = null) {
   if (!world.bgBase) return;
-  const { W, H } = world;
-  if (!STAIN_BUF || STAIN_BUF.length !== W * H) STAIN_BUF = new Float32Array(W * H);
-  const stain = STAIN_BUF, [qx0, qy0, qx1, qy1] = rect || [0, 0, W - 1, H - 1];
-  if (rect) for (let y = qy0; y <= qy1; y++) stain.fill(0, qx0 + y * W, qx1 + 1 + y * W); else stain.fill(0);
+  const { W, H } = world, [qx0, qy0, qx1, qy1] = rect || [0, 0, W - 1, H - 1], RW = qx1 - qx0 + 1, RH = qy1 - qy0 + 1;
+  // (A buffer just the size of the part being repainted, not the whole pond.)
+  if (!STAIN_BUF || STAIN_BUF.length < RW * RH) STAIN_BUF = new Float32Array(RW * RH);
+  const stain = STAIN_BUF;
+  stain.fill(0, 0, RW * RH);
   // (Not around rocks or the wreck: a halo round them read as a glow. Living things and warm or
   // mineral-rich structures stain the ground; stone and old timber don't.)
   const sources = [
@@ -712,29 +713,24 @@ function applyStains(world, rect = null) {
         const d = Math.hypot(x + 0.5 - sx, y + 0.5 - sy);
         if (d >= R) continue;
         const v = (1 - d / R) * depth * (0.55 + 0.9 * vnoise(x * 0.14, y * 0.14, seed % 71));
-        const p = x + y * W;
-        if (v > stain[p]) stain[p] = v;
-        if (x + 1 < W && v > stain[p + 1]) stain[p + 1] = v;
-        if (y + 1 < H) { if (v > stain[p + W]) stain[p + W] = v; if (x + 1 < W && v > stain[p + W + 1]) stain[p + W + 1] = v; }
+        const p = (x - qx0) + (y - qy0) * RW, rx = x + 1 <= qx1, ry = y + 1 <= qy1;
+        if (x >= qx0 && y >= qy0 && v > stain[p]) stain[p] = v;
+        if (rx && y >= qy0 && v > stain[p + 1]) stain[p + 1] = v;
+        if (ry) { if (x >= qx0 && v > stain[p + RW]) stain[p + RW] = v; if (rx && v > stain[p + RW + 1]) stain[p + RW + 1] = v; }
       }
     }
   }
-  const bg = world.bg, bgL = world.bgLight, bgD = world.bgDry, shore = world.shore;
+  const bg = world.bg;
   // What the land remembers (land.js) tints the bare floor under the stains (not the things standing on it).
   if (typeof landTints === 'function' && world.land && (world.land.dirty || !world.land.tint)) { landTints(world, world.land); world.land.dirty = false; }
   const land = typeof landTintAt === 'function' && world.land && world.land.any, zb = world.raster && world.raster.zBase;
   for (let y = qy0; y <= qy1; y++) {
-    for (let x = qx0, p = qx0 + y * W; x <= qx1; x++, p++) {
+    for (let x = qx0, p = qx0 + y * W, sp = (y - qy0) * RW; x <= qx1; x++, p++, sp++) {
       // Dithered into a few steps, so stains read as pixel art rather than a smear.
-      const v = Math.floor((stain[p] + dither(x, y) * 0.12) * 8) / 8, bare = land && !(zb && zb[p] > 0.6);
+      const v = Math.floor((stain[sp] + dither(x, y) * 0.12) * 8) / 8, bare = land && !(zb && zb[p] > 0.6);
       const base = bare ? landTintAt(world, x, y, world.bgBase[p]) : world.bgBase[p];
-      const lite = bare ? landTintAt(world, x, y, world.bgLightBase[p]) : world.bgLightBase[p];
-      const dry = bgD ? (bare && shore && shore[p] ? landTintAt(world, x, y, world.bgDryBase[p], true) : world.bgDryBase[p]) : 0;
-      if (v <= 0) { bg[p] = base; bgL[p] = lite; if (bgD) bgD[p] = dry; continue; }
-      const col = saltAt(world, x, y) > 0 ? STAIN_SALT : STAIN_FRESH;
-      bg[p] = mixColor(base, col, v);
-      bgL[p] = mixColor(lite, col, v * 0.8);
-      if (bgD && shore && shore[p]) bgD[p] = mixColor(dry, STAIN_DRY, v * 0.6);
+      if (v <= 0) { bg[p] = base; continue; }
+      bg[p] = mixColor(base, saltAt(world, x, y) > 0 ? STAIN_SALT : STAIN_FRESH, v);
     }
   }
 }

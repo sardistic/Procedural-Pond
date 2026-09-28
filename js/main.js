@@ -135,7 +135,7 @@ function queueStains(w) {
   for (let y = 0; y < w.H; y += rows) { const r = [0, y, w.W - 1, Math.min(w.H - 1, y + rows - 1)]; queueJob(() => applyStains(w, r)); }
 }
 
-function layout(regen) {
+function layout(regen, deferBake = false) {
   jobGen++; JOBS.length = 0; // (whatever was queued was for the pond as it was)
   const [W, H] = worldDims();
   if (W !== world.W || H !== world.H) {
@@ -155,9 +155,27 @@ function layout(regen) {
   mini.height = clamp(Math.round(mini.width * (view.r % 2 ? W / H : H / W)), 54, 200);
   mini.style.height = `${mini.height}px`;
   if (regen) buildPond();
-  bakeBackground(world);
-  paintMinimapBackground();
+  if (deferBake) {
+    // (The floor's buffers, blank: the caller paints what's on screen and queues the rest.)
+    world.bgBase = new Uint32Array(W * H); world.bg = new Uint32Array(W * H); world.bgLight = world.bgDry = null;
+  } else {
+    bakeBackground(world);
+    paintMinimapBackground();
+  }
   resetView();
+}
+// What's on screen first (with a margin), then the rest of the floor a band at a time, then the map.
+function bakeVisibleFirst() {
+  const [x0, y0, x1, y1] = visibleRect(), m = 96, { W, H } = world;
+  const v = [Math.max(0, Math.floor(x0 - m)), Math.max(0, Math.floor(y0 - m)), Math.min(W - 1, Math.ceil(x1 + m)), Math.min(H - 1, Math.ceil(y1 + m))];
+  bakeBackground(world, v);
+  const rest = [];
+  if (v[1] > 0) rest.push([0, 0, W - 1, v[1] - 1]);
+  if (v[3] < H - 1) rest.push([0, v[3] + 1, W - 1, H - 1]);
+  if (v[0] > 0) rest.push([0, v[1], v[0] - 1, v[3]]);
+  if (v[2] < W - 1) rest.push([v[2] + 1, v[1], W - 1, v[3]]);
+  for (const r of rest) queueBake(world, r);
+  queueJob(() => paintMinimapBackground());
 }
 
 // Somewhere open for new arrivals: in the water, clear of rocks, and the least crowded of a dozen tries.
@@ -589,7 +607,7 @@ function render(full = false) {
   // (A glass day: the surface still, and the water clear far down into the deep.)
   const swell = glass ? 0.02 : clamp(0.3 + world.tide.surf * 0.35 + Math.max(0, world.weather.gust) * 0.45 + world.weather.rain * 0.15, 0, 1.2) * (hab === 'fresh' ? 0.7 : 1);
   r.compose(out, {
-    bg: world.bg, bgLight: world.bgLight, caustic: world.caustic, t,
+    bg: world.bg, bgLight: world.bgLight, lightTint: world.lightTint, caustic: world.caustic, t,
     outline: OUTLINE, emissive: EMISSIVE, fade: FADE, thick: THICK, anyThick, tint: light.tint,
     caustics: o.caustics && light.caustics && q < 2, causticT: water.caustic, shadows: o.shadows, outlines: o.outlines,
     fog: { color: fogColor, amount: (water.fog + (bloom ? 0.12 : 0)) * (glass ? 0.3 : 1) }, wob, deepK: glass ? 0.5 : 1,
@@ -749,7 +767,7 @@ function expandWorld(frac, why) {
 // (In pixels: the dawn's small steps (cycle.js) come quietly; a new depth tier is news.)
 function expandWorldPx(px, why, quiet = false) {
   const axisX = deepAxisX(world.shoreSide);
-  const add = Math.min(px, MAX_DEEP_PX - (world.expandPx || 0)), [sx, sy] = deepShifts(world.shoreSide) ? (axisX ? [add, 0] : [0, add]) : [0, 0];
+  const add = Math.min(px, maxDeepPx(world) - (world.expandPx || 0)), [sx, sy] = deepShifts(world.shoreSide) ? (axisX ? [add, 0] : [0, add]) : [0, 0];
   if (add <= 0) return;
   const cx = (innerWidth / 2 - view.tx) / view.k + sx, cy = (innerHeight / 2 - view.ty) / view.k + sy;
   const d = serializePond(world);
@@ -761,9 +779,11 @@ function expandWorldPx(px, why, quiet = false) {
   world.silentRestore = why;
   world.quietExpand = quiet;
   // Whatever you were following or looking at carries on (the pond is rebuilt, so they're found again).
-  const was = cam.follow && cam.follow.seed, card = creatureUi.c && creatureUi.c.seed, obj = objUi.o && objUi.o.seed;
-  layout();
+  const was = cam.follow && cam.follow.seed, card = creatureUi.c && creatureUi.c.seed, obj = objUi.o && objUi.o.seed, k0 = view.k;
+  layout(false, true);
+  view.k = Math.max(minK(), k0); // (the rebuild resets the view: keep the zoom you had)
   centerOn(cx, cy);
+  bakeVisibleFirst();
   const again = (seed) => seed != null && world.creatures.find((c) => c.seed === seed);
   if (cam.follow) stopFollow();
   if (again(was)) follow(again(was));
@@ -1243,6 +1263,7 @@ const miniBg = document.createElement('canvas');
 // Layers: the pond, how tense the water is, and (with both waters) where it runs fresh or salt.
 const MINI_LAYERS = [['map', 'Map'], ['tension', 'Tension: red is aggressive water'], ['water', 'Water: green fresh, blue salt'], ['land', 'Land: what the floor has become']];
 let miniLayer = 0, miniKey = '', miniCell = null, miniWet = null, miniDry = null;
+const SUN_DRY = hexToInt('#fff0d2'); // (the sunlit dry beach, as the renderer blends it)
 const TENSION = hexToInt('#ef3a3a'), FRESH_TINT = hexToInt('#5ad25a'), SALT_TINT = hexToInt('#3a8aff');
 
 // Each minimap pixel averages a 3x3 sample of its patch of pond, once as water and
@@ -1271,7 +1292,7 @@ function paintMinimapBackground() {
           const p = Math.min(W - 1, Math.floor((i + (sx + 0.5) / 3) / mw * W)) + Math.min(H - 1, Math.floor((j + (sy + 0.5) / 3) / mh * H)) * W;
           cells.push(p);
           wet.push(bg[p]);
-          dry.push(bgDry && shore && shore[p] ? bgDry[p] : bg[p]);
+          dry.push(shore && shore[p] ? (bgDry ? bgDry[p] : mixColor(bg[p], SUN_DRY, 0.18)) : bg[p]);
         }
       }
       miniCell[k] = Math.min(W - 1, Math.floor((i + 0.5) / mw * W)) + Math.min(H - 1, Math.floor((j + 0.5) / mh * H)) * W;
@@ -1453,7 +1474,7 @@ function snapshotPond(save) {
     cv.width = W; cv.height = H;
     const g = cv.getContext('2d'), img = g.createImageData(W, H), px = new Uint32Array(img.data.buffer), water = WATERS[pw.opts.water] || WATERS.teal, light = world.light || lighting();
     r.compose(px, {
-      bg: pw.bg, bgLight: pw.bgLight, caustic: world.caustic, t, outline: OUTLINE, emissive: EMISSIVE, fade: FADE, thick: THICK, anyThick: false, tint: light.tint,
+      bg: pw.bg, bgLight: pw.bgLight, lightTint: pw.lightTint, caustic: world.caustic, t, outline: OUTLINE, emissive: EMISSIVE, fade: FADE, thick: THICK, anyThick: false, tint: light.tint,
       caustics: false, causticT: water.caustic, shadows: true, outlines: true, fog: { color: pw.waterColor, amount: water.fog }, wob: null,
       shore: pw.shore, bgDry: pw.bgDry, tide: pw.tide.level, surf: 0, wave: 0, depth: pw.depth, deepColor: DEEP_COLOR[pw.opts.habitat] || DEEP_COLOR.mixed,
       voidSkin: null, swell: 0.3, swellDir: pw.shoreN || [0, 1],

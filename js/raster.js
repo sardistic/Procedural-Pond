@@ -217,6 +217,11 @@ class Raster {
   compose(out, s, rect = [0, 0, this.W - 1, this.H - 1]) {
     const { W, H, id, col, z, zBase, sh } = this;
     const { bg, bgLight, caustic, outline, emissive, tint, fade, thick, wob, fog } = s;
+    // The floor where the caustics light it, and the sunlit dry beach: blended from the floor as it's
+    // drawn (a pond-sized copy of each cost 8 bytes a pixel), unless a copy is handed in.
+    const lc = s.lightTint ?? 0xffd2fff0, lcr = lc & 255, lcg = (lc >> 8) & 255, lcb = (lc >>> 16) & 255;
+    const lit = (c) => { const r = c & 255, g = (c >> 8) & 255, b = (c >>> 16) & 255; return 0xff000000 | ((b + (((lcb - b) * 36) >> 8)) << 16) | ((g + (((lcg - g) * 36) >> 8)) << 8) | (r + (((lcr - r) * 36) >> 8)); };
+    const dryLit = (c) => { const r = c & 255, g = (c >> 8) & 255, b = (c >>> 16) & 255; return 0xff000000 | ((b + (((0xd2 - b) * 46) >> 8)) << 16) | ((g + (((0xf0 - g) * 46) >> 8)) << 8) | (r + (((0xff - r) * 46) >> 8)); };
     const doCaustics = s.caustics, doShadows = s.shadows, doOutlines = s.outlines, anyThick = s.anyThick && thick;
     const mr = tint ? Math.round(tint[0] * 256) : 256, mg = tint ? Math.round(tint[1] * 256) : 256, mb = tint ? Math.round(tint[2] * 256) : 256;
     const sr = (mr + 256) >> 1, sg = (mg + 256) >> 1, sb = (mb + 256) >> 1;
@@ -294,12 +299,12 @@ class Raster {
             const se = shore ? shore[q] : 0;
             if (se > tideL) {
               // Beach above the waterline: sunlit dry sand, darker where the water just left.
-              c = se < tideL + 9 ? shadeColor(bg[q]) : bgDry[q];
+              c = se < tideL + 9 ? shadeColor(bg[q]) : bgDry ? bgDry[q] : dryLit(bg[q]);
               if (doShadows && sh[p] > zb + 1.5) c = shadeColor(c);
               depth = 0;
             } else {
               c = doCaustics && caustic[((x + o1x) & TM) | (((y + o1y) & TM) << 7)] +
-                  caustic[((y + o2y) & TM) | (((x + o2x) & TM) << 7)] < causticT ? bgLight[q] : bg[q];
+                  caustic[((y + o2y) & TM) | (((x + o2x) & TM) << 7)] < causticT ? (bgLight ? bgLight[q] : lit(bg[q])) : bg[q];
               if (doShadows && sh[p] > zb + 1.5) c = shadeColor(c);
               depth = zBase[q];
               if (swell > 0) {

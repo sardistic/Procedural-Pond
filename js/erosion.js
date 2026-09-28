@@ -19,7 +19,15 @@ const DEPTH_TIERS = [
   { erosion: 22, salt: 'The abyss', fresh: 'The drowned cathedral', depth: 1, expand: 0.22 },
 ];
 // How far out the pond may grow along the deep, all told: past this the tiers go on in the dark, with no more room.
-const MAX_DEEP_PX = 6000; // (the pond grows every dawn (cycle.js) and at each new depth, up to this)
+const MAX_DEEP_PX = 15000; // (the pond grows every dawn (cycle.js) and at each new depth, up to this)
+// ...and within a budget of pixels (about 35 bytes each across the buffers), less on a phone: a pond
+// that's wide across can't reach as far.
+const PX_BUDGET = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent || '') ? 5e6 : 1e7;
+function maxDeepPx(world) {
+  if (typeof baseSize !== 'function' || typeof deepAxisX !== 'function') return MAX_DEEP_PX;
+  const [W0, H0] = baseSize(world), axisX = deepAxisX(world.shoreSide), cross = axisX ? H0 : W0, along = axisX ? W0 : H0;
+  return Math.max(0, Math.min(MAX_DEEP_PX, Math.floor(PX_BUDGET / Math.max(1, cross)) - along));
+}
 const DEEP_COLOR = { salt: hexToInt('#02040e'), fresh: hexToInt('#050806'), mixed: hexToInt('#03050c') };
 
 // ---- depth is the score -------------------------------------------------------------------------
@@ -136,19 +144,31 @@ function depthIn(world, depth, rect, src) {
     const [W0, H0] = baseSize(world), tiers = (world.erosion ? world.erosion.tier : 0);
     const maxD = DEPTH_TIERS[Math.min(tiers, DEPTH_TIERS.length - 1)].depth || 0.4;
     const seed = hashString(world.seed || 'pond') % 97;
+    // A ragged drop-off that wanders well either side of the old edge (no straight seam): worked out
+    // once for each line across the pond.
+    const a0 = axisX ? y0 : x0, lips = new Float32Array((axisX ? y1 - y0 : x1 - x0) + 1);
+    for (let i = 0; i < lips.length; i++) { const along = a0 + i; lips[i] = 12 + (fbm(along * 0.011, seed, 31) - 0.5) * 80 + (fbm(along * 0.05, seed, 33) - 0.5) * 22; }
+    // The shelves' and the lip's unevenness: worked out every fourth pixel along a row and blended
+    // between (it's broad: features of 20-30 px), the same whatever part is being redone.
+    const n1 = (x, y) => fbm(x * 0.03, y * 0.03, 32), n2 = (x, y) => fbm(x * 0.06, y * 0.06, 34);
     for (let y = y0; y <= y1; y++) {
+      let xa = -99, na0 = 0, nb0 = 0, na1 = 0, nb1 = 0;
       for (let x = x0, p = x0 + y * W; x <= x1; x++, p++) {
         // Distance past the original edge of the pond, into the deep band.
         const into = axisX ? (shifts ? ex - x : x - (W0 - 1)) : (shifts ? ex - y : y - (H0 - 1));
-        const along = axisX ? y : x;
-        // A ragged drop-off that wanders well either side of the old edge (no straight seam),
-        // a slope down from it, then terraces whose risers slope into each other.
-        const lip = 12 + (fbm(along * 0.011, seed, 31) - 0.5) * 80 + (fbm(along * 0.05, seed, 33) - 0.5) * 22;
-        const t = (into + lip) / (ex + lip);
+        if (into < -80) continue; // (well short of any lip: the pond as it began)
+        const lip = lips[(axisX ? y : x) - a0], t = (into + lip) / (ex + lip);
         if (t <= 0) continue;
-        const s = t * 4 + (fbm(x * 0.03, y * 0.03, 32) - 0.5) * 0.9, f = s - Math.floor(s);
+        const xs = x & ~3;
+        if (xs !== xa) {
+          if (xs === xa + 4) { na0 = na1; nb0 = nb1; } else { na0 = n1(xs, y); nb0 = n2(xs, y); }
+          na1 = n1(xs + 4, y); nb1 = n2(xs + 4, y); xa = xs;
+        }
+        const u = (x - xs) / 4, a = na0 + (na1 - na0) * u, b = nb0 + (nb1 - nb0) * u;
+        // A slope down from the lip, then terraces whose risers slope into each other.
+        const s = t * 4 + (a - 0.5) * 0.9, f = s - Math.floor(s);
         const shelf = (Math.floor(s) + smoothstep(0.7, 1, f)) / 4;
-        const slope = smoothstep(0, 0.2, t) * (0.85 + 0.3 * fbm(x * 0.06, y * 0.06, 34)); // the lip: down gently, unevenly
+        const slope = smoothstep(0, 0.2, t) * (0.85 + 0.3 * b); // the lip: down gently, unevenly
         depth[p] = Math.round(clamp((0.25 + 0.75 * clamp(shelf, 0, 1)) * slope, 0, 1) * maxD * 255);
       }
     }
@@ -219,7 +239,7 @@ function updateErosion(world, dt) {
   if (next && E.e >= next.erosion) {
     E.tier++;
     if (typeof refreshSpeciesButtons === 'function') setTimeout(refreshSpeciesButtons, 0); // new builds, foods and plants
-    if (next.expand && typeof expandWorld === 'function' && (world.expandPx || 0) < MAX_DEEP_PX - 8) expandWorld(next.expand, `${tierName(world, E.tier)} opens beyond the drop-off`);
+    if (next.expand && typeof expandWorld === 'function' && (world.expandPx || 0) < maxDeepPx(world) - 8) expandWorld(next.expand, `${tierName(world, E.tier)} opens beyond the drop-off`);
     else logEvent(world, `The pond has deepened: ${tierName(world, E.tier).toLowerCase()}`, null, { cat: 'rare', pri: 3 });
     if (typeof narrateTier === 'function') narrateTier(world, E.tier);
     if (typeof award === 'function') award(world, 150 * E.tier * E.tier, 'reaching the depths');

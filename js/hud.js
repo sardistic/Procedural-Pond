@@ -1406,7 +1406,7 @@ function drawSlice() {
     let r = 0, gr = 0, b = 0, n = 0;
     for (const f of [0.3, 0.5, 0.7]) {
       const [x, y] = at(a, f), p = clamp(Math.round(x), 0, W - 1) + clamp(Math.round(y), 0, world.H - 1) * W;
-      const c = bg ? (bgDry && world.shore && world.shore[p] > tide * 255 ? bgDry[p] : bg[p]) : SLICE_SAND;
+      const c = bg ? (world.shore && world.shore[p] > tide * 255 ? (bgDry ? bgDry[p] : mixColor(bg[p], SUN_DRY, 0.18)) : bg[p]) : SLICE_SAND;
       r += c & 255; gr += (c >> 8) & 255; b += (c >>> 16) & 255; n++;
     }
     return (0xff000000 | (Math.round(b / n) << 16) | (Math.round(gr / n) << 8) | Math.round(r / n)) >>> 0;
