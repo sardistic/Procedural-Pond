@@ -116,6 +116,7 @@ function buildLights(world, rect) {
   }
   for (const f of world.fossils || []) if (f.kind === 'relic') splat(M, f.x, f.y, 14, 0xff8ad03a, 0.8, 0, 0, big);
   if (typeof xenoLights === 'function') xenoLights(M, world, big);
+  if (typeof landLights === 'function') landLights(M, world, big);
   return M.any ? M : null;
 }
 

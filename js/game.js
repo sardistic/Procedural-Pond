@@ -302,6 +302,7 @@ function updateComfort(world) {
   for (const p of world.pads) if (!p.dead) (spots.lily || (spots.lily = [])).push(p);
   for (const s of world.structures || []) (spots[s.kind] || (spots[s.kind] = [])).push(s);
   spots.remains = world.remains || [];
+  spots.detritus = world.detritus || [];
   spots.river = world.river ? [world.river.spot] : [];
   world.likeSpots = spots;
   const litter = (world.litter && world.litter.length) || (world.slicks && world.slicks.length), blight = world.blight;
@@ -323,6 +324,7 @@ function updateComfort(world) {
     for (const l of lights) if (l !== c && (l.x - c.x) ** 2 + (l.y - c.y) ** 2 < 1600) { target += 0.15; break; }
     if (litter) target -= 0.8 * pollutionAt(world, c.x, c.y); // litter spoils the water
     if (blight) target -= blightComfort(world, c);
+    if (typeof landComfort === 'function') target += landComfort(world, c);
     L.comfort += (clamp(target, 0, 1) - L.comfort) * 0.2;
   }
 }

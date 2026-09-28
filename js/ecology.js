@@ -96,6 +96,7 @@ function updateZones(world, dt, instant = false) {
   }
   for (const s of world.structures || []) structureZones(world, s, put, tA, infl);
   if (typeof riverZones === 'function') riverZones(world, put, tA, infl);
+  if (typeof landZones === 'function') landZones(world, put, tA);
   if (mixed) {
     // Animals out of place raise tempers around them.
     for (const c of world.creatures) {

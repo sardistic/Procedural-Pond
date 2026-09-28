@@ -179,7 +179,7 @@ const GENE_NOTES = {
 const guideUi = { open: false, chapter: 'start', q: '', here: false, cache: {} };
 const GUIDE_CHAPTERS = [
   ['start', 'Start here'], ['animals', 'Animals'], ['plants', 'Plants & rocks'], ['food', 'Food & tools'], ['builds', 'Builds'],
-  ['breeding', 'Breeding'], ['genes', 'Genes & traits'], ['depths', 'The depths'], ['sky', 'Sky & sea'], ['dark', 'Blood & the dark'],
+  ['breeding', 'Breeding'], ['genes', 'Genes & traits'], ['depths', 'The depths'], ['land', 'The land & the cycle'], ['sky', 'Sky & sea'], ['dark', 'Blood & the dark'],
   ['eldritch', 'The eldritch'], ['alien', 'The alien'], ['hunters', 'Hunters'], ['score', 'Score & ledger'], ['ponds', 'Ponds & friends'], ['keys', 'Controls'],
 ];
 WINDOWS.push(['guide', () => setGuide(false)]);
@@ -431,6 +431,30 @@ function chapterDepths() {
   ];
 }
 
+function chapterLand() {
+  const col = (k) => (typeof LAND_COL !== 'undefined' ? hex6(LAND_COL[k]) : null);
+  return [
+    { title: 'The land remembers', note: 'Over the days the floor takes on the character of what lives, dies, grows and stands on it. The map’s Land layer shows it.', entries: [
+      { key: 'ln:how', name: 'What marks it', text: 'Animals leave their nature where they spend their time (the thriving, the marked, the mad, the parasite-ridden, the mythic, the prehistoric, the glowing). Skeletons sink into the sand and enrich it by what they were. Plants add to it as they grow and as they die. Structures, artifacts, blood, oil and fossils mark it too. Each dawn it fades a little and spreads a little.' },
+      { key: 'ln:slow', name: 'Slowly', text: 'The floor is repainted a patch at a time; formations, island plants and sinking bones grow and fade through the day, not all at once.' },
+      ...Object.entries(LAND).map(([k, D]) => ({ key: `ln:${k}`, name: gCap(D.name), color: col(k), text: `${gCap(D.note)}.` })),
+    ] },
+    { title: 'Formations', note: 'Where the land holds strongly, it grows its own features over the days, and loses them if it fades.', entries: Object.entries(FORMS).map(([k, F]) => ({ key: `fm:${k}`, name: F.name, color: col(k), tags: [[LAND[k].name, col(k) || '#bfe0e0']], text: `${gCap(F.note)}.` })) },
+    { title: 'Islands', note: 'Each island has its own character from its seed, and its own plants that sprout, grow, die and come back, leaning toward what the land around it has become.', entries: [
+      ...Object.entries(ISLE_KINDS).map(([k, K]) => ({ key: `is:${k}`, name: gCap(K.name), tags: [[K.water === 'deep' ? 'over the deep' : K.water === 'any' ? 'any water' : `${K.water} water`, '#bfe0e0']], text: `Grows ${gList(Object.keys(K.flora).map((f) => ({ palm: 'palms', bush: 'bushes', flower: 'flowers', grass: 'grass', shrub: 'shrubs', moss: 'moss', pine: 'pines', reed: 'reeds', willow: 'willows', fern: 'ferns' }[f] || f)), 6).replace(/, (?=[^,]*$)/, ' and ')}.` })),
+      { key: 'is:evo', name: 'As the land turns', text: `An island takes on the land around it: ${Object.entries(ISLE_EVO).map(([k, v]) => `${LAND[k].name}: ${v}`).join('; ')}.` },
+    ] },
+    { title: 'Islands that join', note: 'Islands close to each other grow a sandbar between them over about ten days, under water at first, then dry. What they become together depends on what each has become.', entries: Object.entries(ISLE_JOINS).map(([k, J]) => ({ key: `ij:${k}`, name: gCap(J.name), text: `${gCap(J.note)}.` })) },
+    { title: 'The cycle', entries: [
+      { key: 'cy:det', name: 'Detritus', text: 'Bits of dead plant, picked-over carcass and old food left on the floor.' },
+      { key: 'cy:scav', name: 'Scavengers', text: `${gCap(gList([...SCAVENGE].filter((k) => SINGULAR[k]).map((k) => plural(SINGULAR[k], 2).toLowerCase()), 20).replace(/, (?=[^,]*$)/, ' and '))} seek it out and eat it: it feeds them, and the rest goes back into the floor as richness, so plants grow better where they work. What nobody eats rots into the floor, slower.` },
+      { key: 'cy:dens', name: 'Dens', text: 'Hermit crabs, octopuses and crayfish move into bottles and cans (morays and eels into tyres): a home, and one less piece of litter.' },
+      { key: 'cy:nets', name: 'Nets and tyres', text: 'Small scavengers pick ghost nets apart; an old tyre left long enough grows over into a little reef.' },
+      { key: 'cy:grow', name: 'The pond keeps growing', text: 'It reaches a little further out every dawn (faster the deeper it has gone and the more it has scored), and a long way at each new depth.' },
+    ] },
+  ];
+}
+
 function chapterSky() {
   const moon = typeof MOON_PHASES !== 'undefined' ? MOON_PHASES : [];
   return [
@@ -555,7 +579,7 @@ function chapterKeys() {
 
 const GUIDE_BUILD = {
   start: chapterStart, animals: chapterAnimals, plants: chapterPlants, food: chapterFood, builds: chapterBuilds, breeding: chapterBreeding, genes: chapterGenes,
-  depths: chapterDepths, sky: chapterSky, dark: chapterDark, eldritch: chapterEldritch, alien: chapterAlien, hunters: chapterHunters, score: chapterScore, ponds: chapterPonds, keys: chapterKeys,
+  depths: chapterDepths, land: chapterLand, sky: chapterSky, dark: chapterDark, eldritch: chapterEldritch, alien: chapterAlien, hunters: chapterHunters, score: chapterScore, ponds: chapterPonds, keys: chapterKeys,
 };
 // A chapter's sections (built once; they read the tables, not the pond, so they keep).
 function guideChapter(id) {

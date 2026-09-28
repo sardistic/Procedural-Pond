@@ -138,7 +138,7 @@ function worldTipAt(x, y) {
   if (rm) return `Remains\nWhat's left of an animal. Click for essence and points before the scavengers pick it clean.`;
   const st = typeof structureAt === 'function' && structureAt(world, x, y);
   if (st) {
-    const d = STRUCTURES[st.kind], extra = st.kind === 'island' ? ` Level ${st.stack || 1} of ${ISLAND_MAX}${st.branch ? `, ${st.branch === 'life' ? 'lanterns of life' : 'the whispering stone'} ${st.blv || 1}` : ''}.` : '';
+    const d = STRUCTURES[st.kind], extra = st.kind === 'island' ? ` Level ${st.stack || 1} of ${ISLAND_MAX}${st.branch ? `, ${st.branch === 'life' ? 'lanterns of life' : 'the whispering stone'} ${st.blv || 1}` : ''}.${typeof isleSummary === 'function' ? ` ${isleSummary(world, st)}` : ''}` : '';
     return `${d.label}\n${capFirst(d.desc)}.${extra} Click for its card.`;
   }
   const eg = (world.eggs || []).find((g) => Math.hypot(g.x - x, g.y - y) < 4);
@@ -147,6 +147,8 @@ function worldTipAt(x, y) {
   if (p) return `${(typeof PLANT_NAMES !== 'undefined' && PLANT_NAMES[p.make]) || capFirst(p.make)}\n${plantTip(p.make)} Right-click or long-press for its traits.`;
   const rk = (world.rocks || []).find((r) => ((x - r.x) / (r.a || 5)) ** 2 + ((y - r.y) / (r.b || 5)) ** 2 < 1);
   if (rk) return `A rock\n${plantTip('rock')}`;
+  const lt = typeof landTipAt === 'function' && landTipAt(world, x, y);
+  if (lt) return lt;
   const T = world.trench, px = Math.floor(x) + Math.floor(y) * world.W;
   if (T && T[px] && (T[px] & 127) > 40) return 'A trench\nThe floor falls away here into the dark, further than the light goes. Things glint along its rim.';
   return null;

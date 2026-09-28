@@ -116,6 +116,7 @@ function eldRate(world, c) {
     if (DEEP[m.species] && DEEP[m.species].mythic && Math.hypot(m.x - c.x, m.y - c.y) < 160) { k *= 2; break; }
   }
   if (typeof eldStructRate === 'function') k *= eldStructRate(world, c); // the gate, the cradle
+  if (typeof landDarkRate === 'function') k *= landDarkRate(world, c); // the ashen floor
   return L.bound ? 0 : k;
 }
 

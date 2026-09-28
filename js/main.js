@@ -294,6 +294,7 @@ function buildPond() {
     litter: [], blight: null, riverW: 0, islandKey: null, scourKey: null, deepPlaced: 0, maxPopBonus: 0, pollution: 0,
     // (A new pond starts clean of the last one's oil, sky, blood, fights, story and weather; a saved one restores its own.)
     slicks: [], tar: null, heavens: null, bloodSpots: [], natureDay: null, story: null, darkAvg: null, meta: null, xeno: [], parasites: [], xenoShards: [],
+    land: null, forms: [], boneBeds: [], isleJoins: {}, landSeen: {}, formSeen: {}, landArea: null, detritus: [],
     weather: { rain: 0, target: 0, next: 30, gust: 0 },
     days: 0.4, clock: 0.4, spawning: 0, spawnNight: -1, records: null, moon: null,
     tide: { level: 0.5, range: 0, rising: true, flow: 0, surf: 0, wave: 0 },
@@ -330,8 +331,10 @@ function buildPond() {
   if (resume && world.quietRestore) {
     // (an observed pond brought up to date: nothing to announce)
   } else if (resume && world.silentRestore) {
-    logEvent(world, `✦ The pond has deepened: ${world.silentRestore}`, null, { cat: 'rare', pri: 3 });
+    if (world.quietExpand) logEvent(world, world.silentRestore, null, { cat: 'pond', pri: 0, key: 'reach', merge: (e) => `The pond has reached further out ${e.n} times lately` });
+    else logEvent(world, `✦ The pond has deepened: ${world.silentRestore}`, null, { cat: 'rare', pri: 3 });
     world.silentRestore = null;
+    world.quietExpand = false;
   } else if (resume) {
     const animals = world.creatures.length, rares = world.creatures.filter((c) => c.life && c.life.traits.length).length;
     const summary = `day ${Math.floor(world.days) + 1}, ${animals} animals${rares ? `, ${rares} rare` : ''}`;
@@ -439,6 +442,8 @@ function update(dt) {
   updateNature(world, dt);
   updatePollution(world, dt);
   updateAlien(world, dt);
+  if (typeof updateLand === 'function') updateLand(world, dt);
+  if (typeof updateCycle === 'function') updateCycle(world, dt);
   updateDark(world, dt);
   updateStory(world, dt);
   updateZones(world, dt);
@@ -534,6 +539,7 @@ function render(full = false) {
   drawSlicks(r, world, t, rect);
   drawTar(r, world, t);
   drawXeno(r, world, t, rect);
+  if (typeof drawDetritus === 'function') drawDetritus(r, world, rect);
   for (const rm of world.remains) rm.draw(r, t);
   for (const f of world.fossils) f.draw(r, t);
   for (const p of world.pads) if (near(p.x, p.y, 30)) drawGrown(r, p, t);
@@ -730,7 +736,13 @@ for (const [kind, def] of Object.entries(STRUCTURES)) {
 // the view keeps looking at the same place.
 function expandWorld(frac, why) {
   const axisX = deepAxisX(world.shoreSide), [W0, H0] = baseSize(world);
-  const add = Math.min(Math.round((axisX ? W0 : H0) * frac), MAX_DEEP_PX - (world.expandPx || 0)), [sx, sy] = deepShifts(world.shoreSide) ? (axisX ? [add, 0] : [0, add]) : [0, 0];
+  expandWorldPx(Math.round((axisX ? W0 : H0) * frac), why);
+}
+// (In pixels: the dawn's small steps (cycle.js) come quietly; a new depth tier is news.)
+function expandWorldPx(px, why, quiet = false) {
+  const axisX = deepAxisX(world.shoreSide);
+  const add = Math.min(px, MAX_DEEP_PX - (world.expandPx || 0)), [sx, sy] = deepShifts(world.shoreSide) ? (axisX ? [add, 0] : [0, add]) : [0, 0];
+  if (add <= 0) return;
   const cx = (innerWidth / 2 - view.tx) / view.k + sx, cy = (innerHeight / 2 - view.ty) / view.k + sy;
   const d = serializePond(world);
   shiftSave(d, sx, sy);
@@ -739,10 +751,16 @@ function expandWorld(frac, why) {
   d.size = axisX ? [world.W + add, world.H] : [world.W, world.H + add];
   world.resume = d;
   world.silentRestore = why;
-  const follow = cam.follow;
+  world.quietExpand = quiet;
+  // Whatever you were following or looking at carries on (the pond is rebuilt, so they're found again).
+  const was = cam.follow && cam.follow.seed, card = creatureUi.c && creatureUi.c.seed, obj = objUi.o && objUi.o.seed;
   layout();
   centerOn(cx, cy);
-  if (follow) stopFollow();
+  const again = (seed) => seed != null && world.creatures.find((c) => c.seed === seed);
+  if (cam.follow) stopFollow();
+  if (again(was)) follow(again(was));
+  if (card != null) { if (again(card)) showCreature(again(card), creatureUi.auto); else hideCreature(); }
+  if (obj != null) { const o = [...world.structures, ...world.plants, ...world.pads].find((q) => q.seed === obj); if (o) showObject(o); else hideObject(); }
   saveNow();
 }
 
@@ -1215,7 +1233,7 @@ function updateChip() {
 const mini = document.getElementById('minimap'), mctx = mini.getContext('2d');
 const miniBg = document.createElement('canvas');
 // Layers: the pond, how tense the water is, and (with both waters) where it runs fresh or salt.
-const MINI_LAYERS = [['map', 'Map'], ['tension', 'Tension: red is aggressive water'], ['water', 'Water: green fresh, blue salt']];
+const MINI_LAYERS = [['map', 'Map'], ['tension', 'Tension: red is aggressive water'], ['water', 'Water: green fresh, blue salt'], ['land', 'Land: what the floor has become']];
 let miniLayer = 0, miniKey = '', miniCell = null, miniWet = null, miniDry = null;
 const TENSION = hexToInt('#ef3a3a'), FRESH_TINT = hexToInt('#5ad25a'), SALT_TINT = hexToInt('#3a8aff');
 
@@ -1272,6 +1290,7 @@ function refreshMinimapBackground() {
     if (!dry && layer !== 'map') {
       const x = p % world.W, y = (p / world.W) | 0;
       if (layer === 'tension') c = mixColor(c, TENSION, Math.min(1, aggressionAt(world, x, y)) * 0.7);
+      else if (layer === 'land') c = typeof landMiniColor === 'function' ? landMiniColor(world, x, y, c) : c;
       else { const s = saltAt(world, x, y); c = mixColor(c, s < 0 ? FRESH_TINT : SALT_TINT, Math.min(1, Math.abs(s)) * 0.55); }
     }
     px[k] = c;

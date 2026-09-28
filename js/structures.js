@@ -228,12 +228,14 @@ const BAKE = {
   island(r, s, next) {
     const { x, y, R } = s;
     const dark = s.branch === 'dark', zAt = (ox, oy) => (typeof islandTopAt === 'function' ? islandTopAt(s, ox, oy) : 0);
+    // Each island has its own character (land.js): its sand and grass, and a palm or its own kind of tree.
+    const IK = typeof isleLook === 'function' ? isleLook(s) : { palm: true, sand: SM.sand, grass: SM.grass };
     // A raised island stands in terraces, a step for each level: a ring of dark soil at
     // each edge, sand low down, then grass (or, on the stone's island, dead black moss).
     if (typeof islandTerraces === 'function') {
       const T = islandTerraces(s);
       T.forEach(([tx, ty, rr, ang, top], i) => {
-        const z0 = top - TERRACE_STEP, m = i < T.length / 3 ? SM.sand : dark && i >= T.length / 2 ? SM.moss2 : SM.grass;
+        const z0 = top - TERRACE_STEP, m = i < T.length / 3 ? IK.sand : dark && i >= T.length / 2 ? SM.moss2 : IK.grass;
         r.ellipsoid(x + tx, y + ty, rr + 1.3, (rr + 1.3) * 0.92, ang, z0 - 0.2, TERRACE_STEP * 0.7, SM.soil, next(SM.soil));
         r.ellipsoid(x + tx, y + ty, rr, rr * 0.92, ang, z0, TERRACE_STEP, m, next(m));
       });
@@ -246,21 +248,21 @@ const BAKE = {
         r.ellipsoid(x + Math.cos(a) * d, y + Math.sin(a) * d, sz, sz * 0.8, a, 0, sz * (1 + s.deep), SM.basalt, cid);
       }
     }
-    const grassId = next(SM.grass);
-    for (const [ox, oy, a] of s.tufts) r.ellipsoid(x + ox, y + oy, a, a * 0.8, ox, zAt(ox, oy), a * 0.9, SM.grass, grassId);
+    const grassId = next(IK.grass);
+    for (const [ox, oy, a] of s.tufts) r.ellipsoid(x + ox, y + oy, a, a * 0.8, ox, zAt(ox, oy), a * 0.9, IK.grass, grassId);
     const rockId = next(SM.stone);
     for (const [ox, oy, a] of s.rocks) r.ellipsoid(x + ox, y + oy, a, a * 0.8, oy, zAt(ox, oy), a * 0.7, SM.stone, rockId);
-    // The palm: a leaning, ringed trunk, fronds drooping from the top, coconuts.
+    // The palm: a leaning, ringed trunk, fronds drooping from the top, coconuts (or the island's own tree).
     const trunkId = next(SM.trunk);
     let px = x + s.palm[0], py = y + s.palm[1], pz = zAt(s.palm[0], s.palm[1]);
-    const la = s.lean, steps = 7, ring = (u) => ((u * 16) % 1 < 0.28 ? SM.trunkRing : SM.trunk);
+    const la = s.lean, steps = 7, ring = (u) => ((u * 16) % 1 < 0.28 ? SM.trunkRing : SM.trunk), frondId = next(SM.frond);
+    if (IK.palm) {
     for (let i = 0; i < steps; i++) {
       const k = i / steps, lean = 1.4 * (1 - k * 0.5);
       const nx = px + Math.cos(la) * lean, ny = py + Math.sin(la) * lean, nz = pz + s.h / steps;
       r.tube(px, py, lerp(1.9, 1.2, k), pz, nx, ny, lerp(1.9, 1.2, k + 1 / steps), nz, 0.9, ring, trunkId, k, k + 1 / steps);
       px = nx; py = ny; pz = nz;
     }
-    const frondId = next(SM.frond);
     for (let k = 0; k < 7; k++) {
       const a = k / 7 * TAU + s.seed % 7;
       for (let j = 0; j < 3; j++) {
@@ -272,6 +274,7 @@ const BAKE = {
       const a = k * 2.1 + 0.5;
       r.ellipsoid(px + Math.cos(a) * 1.3, py + Math.sin(a) * 1.3, 1, 1, 0, pz - 1.5, 1, SM.coconut, frondId);
     }
+    } else if (typeof isleAnchor === 'function') isleAnchor(r, s, px, py, pz, 0, next);
     // Raised islands (traits.js) grow lusher: more grass, a second and third palm, flowers.
     // (Drawn after the rest, so the island's first shape never changes.)
     const lush = (s.stack || 1) - 1, G = typeof islandGrow === 'function' ? islandGrow(s.stack || 1) : 1;
@@ -284,6 +287,7 @@ const BAKE = {
     for (let k = 1; k <= Math.min(7, lush); k++) {
       const a = s.lean + k * 2.2, dd = R * G * (k <= 2 ? 0.35 : 0.2 + 0.08 * (k % 4)), bx = x + Math.cos(a) * dd, by = y + Math.sin(a) * dd;
       const z0 = zAt(bx - x, by - y), h = z0 + s.h * (0.7 + 0.1 * (k % 3));
+      if (!IK.palm) { if (typeof isleAnchor === 'function') isleAnchor(r, s, bx, by, z0, k, next); continue; }
       r.tube(bx, by, 1.5, z0, bx + Math.cos(a) * 3, by + Math.sin(a) * 3, 1, h, 0.9, ring, trunkId);
       for (let f = 0; f < 6; f++) {
         const fa = f / 6 * TAU + k, tx = bx + Math.cos(a) * 3, ty = by + Math.sin(a) * 3;
@@ -299,6 +303,7 @@ const BAKE = {
       const sid = next(SM.idol), z0 = zAt(0, -0.5), h = z0 + 14 + 4 * (s.blv || 1);
       r.tube(x - 0.8, y - 0.5, 2.4, z0, x + 0.8, y - 0.5, 1.2, h, 1, SM.idol, sid);
     }
+    if (typeof bakeFlora === 'function') bakeFlora(r, s, next); // (its living flora: land.js)
   },
   vent(r, s, next) {
     const { x, y, h, R } = s, id = next(SM.basalt);
@@ -573,6 +578,9 @@ function dawnStructures(world) {
   if (typeof dawnAbyss === 'function') dawnAbyss(world);
   if (typeof dawnQuirks === 'function') dawnQuirks(world);
   if (typeof dawnHeavens === 'function') dawnHeavens(world);
+  if (typeof dawnLand === 'function') dawnLand(world);
+  // The pond reaches a little further out (between frames: it rebuilds the pond).
+  if (typeof dawnExpand === 'function' && typeof window !== 'undefined') setTimeout(() => dawnExpand(world), 0);
 }
 
 // Plants take root around structures, rocks and plants that have been there a while.
@@ -636,13 +644,14 @@ function updatePlantLife(world, dt) {
       p.age += step;
       // Litter nearby stunts it (hardy plants mind less).
       const foul = (world.litter && world.litter.length) || (world.slicks && world.slicks.length) ? Math.min(0.8, pollutionAt(world, p.x, p.y) * 1.5 * (1 - 0.3 * ((p.tr && p.tr.hardy) || 0))) : 0;
-      if (p.age < p.span) p.growth = Math.min(1, p.growth + rate * step * (1 - foul));
+      if (p.age < p.span) p.growth = Math.min(1, p.growth + rate * step * (1 - foul) * (typeof landGrow === 'function' ? landGrow(world, p.x, p.y) : 1));
       else p.growth -= 0.4 * step; // dying back
       if (p.growth < 0.12) {
         if (p.oi != null) (list === world.pads ? world.removed.pads : world.removed.plants).push(p.oi);
         p.dead = true;
         list.splice(i, 1);
         died++;
+        if (typeof landHumus === 'function') landHumus(world, p); // (it goes back into the floor)
         continue;
       }
       biomass += p.growth;
@@ -709,15 +718,21 @@ function applyStains(world, rect = null) {
     }
   }
   const bg = world.bg, bgL = world.bgLight, bgD = world.bgDry, shore = world.shore;
+  // What the land remembers (land.js) tints the bare floor under the stains (not the things standing on it).
+  if (typeof landTints === 'function' && world.land && (world.land.dirty || !world.land.tint)) { landTints(world, world.land); world.land.dirty = false; }
+  const land = typeof landTintAt === 'function' && world.land && world.land.any, zb = world.raster && world.raster.zBase;
   for (let y = qy0; y <= qy1; y++) {
     for (let x = qx0, p = qx0 + y * W; x <= qx1; x++, p++) {
       // Dithered into a few steps, so stains read as pixel art rather than a smear.
-      const v = Math.floor((stain[p] + dither(x, y) * 0.12) * 8) / 8;
-      if (v <= 0) { bg[p] = world.bgBase[p]; bgL[p] = world.bgLightBase[p]; if (bgD) bgD[p] = world.bgDryBase[p]; continue; }
+      const v = Math.floor((stain[p] + dither(x, y) * 0.12) * 8) / 8, bare = land && !(zb && zb[p] > 0.6);
+      const base = bare ? landTintAt(world, x, y, world.bgBase[p]) : world.bgBase[p];
+      const lite = bare ? landTintAt(world, x, y, world.bgLightBase[p]) : world.bgLightBase[p];
+      const dry = bgD ? (bare && shore && shore[p] ? landTintAt(world, x, y, world.bgDryBase[p], true) : world.bgDryBase[p]) : 0;
+      if (v <= 0) { bg[p] = base; bgL[p] = lite; if (bgD) bgD[p] = dry; continue; }
       const col = saltAt(world, x, y) > 0 ? STAIN_SALT : STAIN_FRESH;
-      bg[p] = mixColor(world.bgBase[p], col, v);
-      bgL[p] = mixColor(world.bgLightBase[p], col, v * 0.8);
-      if (bgD && shore && shore[p]) bgD[p] = mixColor(world.bgDryBase[p], STAIN_DRY, v * 0.6);
+      bg[p] = mixColor(base, col, v);
+      bgL[p] = mixColor(lite, col, v * 0.8);
+      if (bgD && shore && shore[p]) bgD[p] = mixColor(dry, STAIN_DRY, v * 0.6);
     }
   }
 }

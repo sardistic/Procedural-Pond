@@ -191,7 +191,7 @@ function applyIslands(world) {
         if (v > shore[p]) shore[p] = v;
       }
     }
-  }
+  }  if (typeof applyIsleBars === 'function') applyIsleBars(world); // (islands close together grow a bar between them: land.js)
 }
 
 // Island lights (the life branch): little lanterns and glowing caps that come on at dusk.

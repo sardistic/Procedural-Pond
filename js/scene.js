@@ -215,7 +215,7 @@ class Food {
       this.x = clamp(this.x + (cur.x * 5 + Math.sin(world.t * 0.8 + this.ph) * 1.2) * dt, 1, world.W - 1);
       this.y = clamp(this.y + (cur.y * 5 + Math.cos(world.t * 0.7 + this.ph) * 1.2) * dt, 1, world.H - 1);
       this.life -= dt;
-      if (this.life <= 0) this.eaten = true;
+      if (this.life <= 0) { this.eaten = true; if (typeof foodToDetritus === 'function') foodToDetritus(world, this); }
       return;
     }
     if (this.kind === 'brine') { // live brine shrimp swim in little jerks as they sink
@@ -228,7 +228,7 @@ class Food {
       this.y = clamp(this.y + cur.y * 4 * dt, 1, world.H - 1);
     } else {
       this.life -= dt;
-      if (this.life <= 0) this.eaten = true;
+      if (this.life <= 0) { this.eaten = true; if (typeof foodToDetritus === 'function') foodToDetritus(world, this); }
     }
   }
 
@@ -486,6 +486,7 @@ function bakeBackground(world, rect = null) {
   let sid = 5000;
   const nextS = (m) => { const i = Math.min(8190, sid++); outline[i] = outlineOf(m); return i; };
   for (const s of world.structures || []) if (!s.anim) withSeed(`bake/${s.seed}`, () => BAKE[s.kind](r, s, nextS)); // same shape every bake (not while it's still arriving)
+  if (typeof bakeLand === 'function' && world.game) bakeLand(r, world, nextS); // what the land has grown (land.js)
   const bg = part ? world.bgBase : new Uint32Array(W * H), bgLight = part ? world.bgLightBase : new Uint32Array(W * H), bgDry = shore ? (part ? world.bgDryBase : new Uint32Array(W * H)) : null;
   const { id, z, col, sh } = r;
   for (let y = ry0; y <= ry1; y++) {

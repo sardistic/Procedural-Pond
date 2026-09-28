@@ -100,12 +100,17 @@ function serializePond(world) {
     t: r2(world.t), days: world.days, moon0: world.moon0, tide0: world.tide0,
     weather: { rain: r2(world.weather.rain), target: r2(world.weather.target), next: r2(world.weather.next), blood: world.weather.blood || undefined },
     heavens: world.heavens || null,
+    land: typeof landPack === 'function' ? landPack(world) : null, landSeen: world.landSeen || null, formSeen: world.formSeen || null, isleJoins: world.isleJoins || null,
+    forms: (world.forms || []).map((f) => [f.k, r2(f.x), r2(f.y), f.seed, r2(f.born), r2(f.g), r2(f.gs || 0)]),
+    boneBeds: (world.boneBeds || []).map((b) => [r2(b.x), r2(b.y), r2(b.ang), r2(b.len), r2(b.w), b.seed, r2(b.born), b.k]),
+    detritus: (world.detritus || []).map((d) => [r2(d.x), r2(d.y), d.k, r2(d.v), r2(d.born)]),
     xeno: world.xeno || [], parasites: (world.parasites || []).map((p) => ({ x: r2(p.x), y: r2(p.y), z: r2(p.z), kind: p.kind, gen: p.gen, t: r2(p.t) })), xenoShards: world.xenoShards || [],
     slicks: (world.slicks || []).map((s) => ({ x: r2(s.x), y: r2(s.y), r: r2(s.r), oil: r2(s.oil), seed: s.seed, t: s.fromTar ? 1 : undefined })), tar: world.tar || null,
     currentBase: world.current.base, records: world.records, spawnNight: world.spawnNight,
     targets: world.targets, eco: { ...ECO }, journalSeq: world.journalSeq,
     game: world.game, lineage: world.lineage ? [...world.lineage.values()] : [], link: world.link || null,
-    structures: (world.structures || []).map((s) => ({ k: s.kind, x: r2(s.x), y: r2(s.y), s: s.seed, born: r2(s.born), lv: s.lv, stack: s.stack, branch: s.branch, blv: s.blv, deep: s.deep || undefined, w: s.worth || undefined })),
+    structures: (world.structures || []).map((s) => ({ k: s.kind, x: r2(s.x), y: r2(s.y), s: s.seed, born: r2(s.born), lv: s.lv, stack: s.stack, branch: s.branch, blv: s.blv, deep: s.deep || undefined, w: s.worth || undefined,
+      fl: s.flora && s.flora.length ? s.flora.map((f) => [f.t, f.x, f.y, r2(f.b), r2(f.span), r2(f.g), f.s, f.dead ? 1 : 0]) : undefined })),
     story: world.story || null, darkAvg: world.darkAvg ?? null,
     litter: (world.litter || []).map((l) => ({ k: l.k, x: r2(l.x), y: r2(l.y), b: r2(l.born), hp: l.hp, s: l.seed })),
     blight: world.blight || null,
@@ -202,6 +207,13 @@ function shiftSave(d, dx, dy) {
   d.pebbles = (d.pebbles || []).map(([x, y, s, m]) => [x + dx, y + dy, s, m]);
   for (const s of d.schools || []) { s.tx += dx; s.ty += dy; }
   if (d.erosion) (d.erosion.lagoons || []).forEach(mv);
+  (d.xeno || []).forEach(mv); (d.xenoShards || []).forEach(mv); (d.parasites || []).forEach(mv); (d.slicks || []).forEach(mv); if (d.tar) mv(d.tar);
+  // What the land remembers moves with it (the grid by whole cells, when it's unpacked).
+  if (d.land) { d.land.sx = (d.land.sx || 0) + dx; d.land.sy = (d.land.sy || 0) + dy; }
+  d.forms = (d.forms || []).map(([k, x, y, ...rest]) => [k, x + dx, y + dy, ...rest]);
+  d.boneBeds = (d.boneBeds || []).map(([x, y, ...rest]) => [x + dx, y + dy, ...rest]);
+  d.detritus = (d.detritus || []).map(([x, y, ...rest]) => [x + dx, y + dy, ...rest]);
+  if (d.isleJoins) for (const j of Object.values(d.isleJoins)) { j.x += dx; j.y += dy; }
   return d;
 }
 
@@ -227,12 +239,18 @@ function restorePond(world, d) {
   world.erosion = { ...newErosion(), ...(d.erosion || {}), next: 0 };
   // Structures first: islands shape the beach that makeShore builds.
   world.structures = (d.structures || []).filter((s) => STRUCTURES[s.k]).map((s) => Object.assign(makeStructure(s.k, world, s.x, s.y, s.s, s.born ?? world.days),
-    s.lv ? { lv: s.lv } : {}, s.stack ? { stack: s.stack } : {}, s.branch ? { branch: s.branch, blv: s.blv || 1 } : {}, s.deep ? { deep: s.deep } : {}, s.w ? { worth: s.w } : {}));
+    s.lv ? { lv: s.lv } : {}, s.stack ? { stack: s.stack } : {}, s.branch ? { branch: s.branch, blv: s.blv || 1 } : {}, s.deep ? { deep: s.deep } : {}, s.w ? { worth: s.w } : {},
+    s.fl ? { flora: s.fl.map(([t, x, y, b, span, g, sd, dead]) => ({ t, x, y, b, span, g, gs: g, s: sd, ...(dead ? { dead: 1 } : {}) })) } : {}));
   if (typeof growWreck === 'function') for (const s of world.structures) growWreck(s); // (a wreck the size of how deep it went down)
   world.story = d.story || null;
   world.heavens = d.heavens || null;
   world.slicks = (d.slicks || []).map(({ t, ...s }) => (t ? { ...s, fromTar: true } : { ...s }));
   world.tar = d.tar || null;
+  if (typeof landUnpack === 'function') landUnpack(world, d.land, d.land && d.land.sx, d.land && d.land.sy);
+  world.landSeen = d.landSeen || {}; world.formSeen = d.formSeen || {}; world.isleJoins = d.isleJoins || {};
+  world.forms = (d.forms || []).filter((f) => typeof FORMS !== 'undefined' && FORMS[f[0]]).map(([k, x, y, seed, born, g, gs]) => ({ k, x, y, seed, born, g, gs, baked: gs }));
+  world.boneBeds = (d.boneBeds || []).map(([x, y, ang, len, w, seed, born, k]) => ({ x, y, ang, len, w, seed, born, k, gs: clamp(((d.days ?? world.days) - born) / 12, 0, 1) }));
+  world.detritus = (d.detritus || []).map(([x, y, k, v, born]) => ({ x, y, k, v, born, ph: Math.random() * 6.3 }));
   world.xeno = (d.xeno || []).filter((a) => a && PARASITES[a.kind]);
   world.parasites = (d.parasites || []).filter((p) => p && PARASITES[p.kind]).map((p) => ({ ...p, h: rand(-PI, PI), ph: rand(0, TAU) }));
   world.xenoShards = (d.xenoShards || []).filter((s) => s && PARASITES[s.kind]);

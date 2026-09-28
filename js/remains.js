@@ -56,6 +56,8 @@ class Remains {
     this.tier = c.life ? tierOf(c.life.traits) : 0;
     this.name = c.life ? c.life.name : '';
     this.label = describe(c).label;
+    this.nature = typeof landNature === 'function' ? landNature(c) : {}; // (what it leaves in the sand: land.js)
+    this.thick = b ? Math.max(0.5, Math.min(2.5, b.w[Math.floor(n / 3)] / 2.5)) : 1;
     this.life = REMAINS_LIFE;
     this.id = newId(outlineOf(REMAINS_BONE));
     this.sparkT = rand(0.5, 2);
@@ -72,9 +74,11 @@ class Remains {
         if (s.life && SCAVENGERS.has(s.species) && (s.x - this.x) ** 2 + (s.y - this.y) ** 2 < 400) {
           this.life -= 10;
           s.life.energy = Math.min(1, s.life.energy + 0.05);
+          if (typeof dropDetritus === 'function' && Math.random() < 0.35) dropDetritus(world, this.x + rand(-4, 4), this.y + rand(-4, 4), 'bone', 0.6); // (scraps)
         }
       }
     }
+    if (this.life <= 0 && typeof landBones === 'function') landBones(world, this); // it sinks into the sand
     this.sparkT -= dt;
     if (this.sparkT <= 0 && this.life > 12) {
       this.sparkT = rand(1.8, 3.5);
@@ -105,6 +109,7 @@ const remainsAt = (world, x, y) => (world.remains || []).find((rm) => rm.hit(x, 
 
 function collectRemains(world, rm) {
   world.remains.splice(world.remains.indexOf(rm), 1);
+  if (typeof landBones === 'function') landBones(world, rm, 0.35); // (a little of it stays in the sand)
   const ess = gainEssence(world, rm.value, 'remains', rm), pts = award(world, 2 + TIER_VALUE[rm.tier], 'remains', rm, { quiet: true });
   floatAward(rm.x, rm.y + 4, `+${pts}`);
   logEvent(world, `Recovered ${rm.name}'s remains: +${ess} essence, +${pts} points`, null, {

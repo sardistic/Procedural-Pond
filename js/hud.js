@@ -1661,6 +1661,7 @@ function renderScorePanel(force = false) {
     litter ? `litter on the beach: ${litter} (the water ${Math.round((world.pollution || 0) * 100)}% fouled; click it to clear)` : 'the beach is clean',
     world.blight ? `${capFirst(BLIGHTS[world.blight.k].label(world))} is in the pond` : `risk of a blight at dawn: ${risk}%`,
     world.river ? `the river runs ${world.river.w} wide` : '',
+    G.recycled ? `the scavengers have recycled ${fmt(G.recycled)} bits of waste and litter` : '',
     G.corruptionEarned ? `corruption: ${Math.floor(G.corruption || 0)}` : '',
   ].filter(Boolean).join(' · ') + '. Popular, high-scoring ponds draw more litter; aerators make blights rarer.'));
   // What's been invested, and what it pays.
@@ -1774,6 +1775,7 @@ function renderObject() {
       tree.append(traitButton(T.label, 'pearls', lv < T.max ? T.cost(o, lv) : null, T.note, lv >= T.max, () => buyStructTrait(world, o, k), pips(lv, T.max), null, renderObject));
     }
     if (o.kind === 'island') {
+      if (typeof isleSummary === 'function') parts.push(colored('p', 'note', isleSummary(world, o)));
       const st = o.stack || 1, rc = raiseCost(o);
       tree.append(traitButton('Raise the island', 'pearls', st < ISLAND_MAX ? rc.pearls : null, `a terrace higher: bigger, and lusher, with more palms (and ${rc.essence} essence)`, st >= ISLAND_MAX, () => raiseIsland(world, o), pips(st, ISLAND_MAX), '#7cc44c', renderObject));
       if (st >= 3) {

@@ -186,7 +186,7 @@ function updateAlien(world, dt) {
       // In the lamp's light it lets go, now and then.
       if (q && Math.random() < 0.02 * step) { detach(c); logEvent(world, `The quarantine lamp drove a ${D.label} off ${who(c)}`, c, { cat: 'life', key: 'para-off', merge: (e) => `The quarantine lamp drove off ${e.n} parasites` }); continue; }
       // It breeds in its host, and the strain grows older as it passes on.
-      if (!q && Math.random() < 0.0008 * (1 + 0.2 * L.para.gen) * (night ? 1.5 : 1) * step) releaseLarva(world, c.x, c.y, k, L.para.gen + (Math.random() < 0.5 ? 1 : 0));
+      if (!q && Math.random() < 0.0008 * (1 + 0.2 * L.para.gen) * (night ? 1.5 : 1) * (typeof landAlienRate === 'function' ? landAlienRate(world, c) : 1) * step) releaseLarva(world, c.x, c.y, k, L.para.gen + (Math.random() < 0.5 ? 1 : 0));
       // Its contagion.
       if (!q && Math.random() < 0.004 * step) infect(world, c, D.ill, `from its ${D.label}`);
     }
