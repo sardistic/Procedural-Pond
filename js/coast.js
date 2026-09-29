@@ -5,7 +5,7 @@
 //
 //  - River: seeded from the pond, so it runs the same way every time the pond
 //    regrows. It comes in from the landward edge and cuts across the beach into
-//    the pond: wide in fresh water, middling with both, a trickle in salt. It
+//    the pond: wide in fresh water, middling with both, narrower in salt. It
 //    widens and cuts deeper as the pond ages and deepens (and swells and shrinks
 //    with the wet and dry seasons), its bends grow and creep downstream, and
 //    every so often it breaks its banks and cuts a new course to the sea while
@@ -46,7 +46,7 @@ function beachRect(world) {
 }
 
 // ---- the river ------------------------------------------------------------------------------------
-const RIVER_BASE = { fresh: 8, mixed: 5.5, salt: 3 }, RIVER_GROW = { fresh: 1.5, mixed: 1, salt: 0.55 };
+const RIVER_BASE = { fresh: 13, mixed: 9, salt: 5 }, RIVER_GROW = { fresh: 1.1, mixed: 0.75, salt: 0.45 }; // (a young pond's river runs wide enough to see; it grows less)
 const RIVER_FOAM = mat('#6aa8b8', '#9ccad6', '#cce6ee', '#f4fcff');
 
 // The pond's age as the river knows it: whole days, so it only reshapes at dawn.
@@ -159,7 +159,7 @@ function drawRiver(r, world, t) {
 function riverZones(world, put, tA, infl) {
   const R = world.river;
   if (!R) return;
-  const [mx, my] = R.mouth, k = R.w / 6;
+  const [mx, my] = R.mouth, k = Math.min(3, R.w / 8);
   put(tA, mx, my, -0.07 * k);
   if (world.opts.habitat === 'mixed') {
     put(infl, mx, my, -1.4 * k);
@@ -470,7 +470,7 @@ function updateCoast(world, dt) {
   plantTraitTick(world);
   // The river feeds the water at its mouth.
   const R = world.river;
-  if (R && Math.random() < 0.15 * R.w / 6) {
+  if (R && Math.random() < 0.15 * Math.min(3, R.w / 8)) {
     const [mx, my] = R.mouth;
     world.food.push(new Food(mx + rand(-R.w, R.w), my + rand(-R.w, R.w), rand(4, 26), 'plankton'));
   }

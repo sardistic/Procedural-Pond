@@ -246,13 +246,16 @@ function* hinterPaint(world, geo) {
 }
 
 // ---- showing it: lit with the pond's light, and hazed past what shows yet ---------------------------------
-function hinterTint(dd0, dd1) {
+// (Lit exactly as the pond is, in the same 1/256 steps, so the two never part at the seam as the light changes.
+// Only part of it (on screen) when just the light has moved: the rest is done when the view moves.)
+function hinterTint(dd0, dd1, rect = null) {
   const H = HINTER, G = H.geo, { s, cw, ch } = G, M = HINTER_MAX, base = H.base, out = H.px, shown = H.shown;
   if (!base) return;
   dd0 = clamp(Math.floor(dd0), 0, M - 1); dd1 = clamp(Math.ceil(dd1), 0, M - 1);
   const tr = Math.round(H.tint[0] * 256), tg = Math.round(H.tint[1] * 256), tb = Math.round(H.tint[2] * 256), haze = HL.haze;
   let x0 = 0, x1 = cw - 1, y0 = 0, y1 = ch - 1;
   if (s < 2) { x0 = s === 0 ? M - 1 - dd1 : dd0; x1 = s === 0 ? M - 1 - dd0 : dd1; } else { y0 = s === 2 ? M - 1 - dd1 : dd0; y1 = s === 2 ? M - 1 - dd0 : dd1; }
+  if (rect) { x0 = Math.max(x0, rect[0]); y0 = Math.max(y0, rect[1]); x1 = Math.min(x1, rect[2]); y1 = Math.min(y1, rect[3]); if (x1 < x0 || y1 < y0) return; }
   for (let y = y0; y <= y1; y++) {
     for (let x = x0, i = x0 + y * cw; x <= x1; x++, i++) {
       const dd = s === 0 ? M - 1 - x : s === 1 ? x : s === 2 ? M - 1 - y : y;
@@ -303,7 +306,13 @@ function placeHinter() {
   H.cv.hidden = H.sp.hidden = !H.onScreen;
   if (!H.onScreen) return;
   const tf = canvasTransform(x, y, view.k, view.r, cw, ch);
-  if (H.tf !== tf) { H.tf = tf; H.cv.style.transform = H.sp.style.transform = tf; }
+  if (H.tf !== tf) { H.tf = tf; H.cv.style.transform = H.sp.style.transform = tf; if (H.partial) H.dirty = true; }
+}
+// The part of the picture on screen (in its own pixels), with a margin.
+function hinterOnScreen() {
+  const H = HINTER, { cw, ch, ox, oy } = H.geo, a = screenToWorld(0, 0), b = screenToWorld(innerWidth, innerHeight);
+  return [clamp(Math.floor(Math.min(a[0], b[0]) - ox) - 2, 0, cw - 1), clamp(Math.floor(Math.min(a[1], b[1]) - oy) - 2, 0, ch - 1),
+    clamp(Math.ceil(Math.max(a[0], b[0]) - ox) + 2, 0, cw - 1), clamp(Math.ceil(Math.max(a[1], b[1]) - oy) + 2, 0, ch - 1)];
 }
 
 // Each frame: keep the picture current (painting a new one a slice at a time), creep the haze back,
@@ -350,11 +359,11 @@ function hinterTick(world, dt) {
       'At the top of the beach, the haze has lifted off a jungle. It is dark in there, and something is watching the pond'][z];
     if (say && typeof logEvent === 'function' && !world.observe) logEvent(world, say, null, { cat: 'pond', pri: z === 3 ? 3 : 2 });
   }
-  // Relight when the light has moved on (a dusk goes by in a few steps), and redo the haze as it lifts.
-  const T = (world.light && world.light.tint) || [1, 1, 1], now = performance.now();
-  if (H.onScreen && (H.dirty || (now - H.tintT > 400 && T.some((v, j) => Math.abs(v - H.tint[j]) > 0.012)))) {
-    H.tint = T.slice(); H.tintT = now; H.dirty = false;
-    hinterTint(0, HINTER_MAX - 1);
+  // Relight whenever the pond's light moves (it steps in 1/256ths, and so does this), and redo the haze as it lifts.
+  const T = (world.light && world.light.tint) || [1, 1, 1], q = `${Math.round(T[0] * 256)},${Math.round(T[1] * 256)},${Math.round(T[2] * 256)}`;
+  if (H.onScreen && (H.dirty || q !== H.tq)) {
+    H.tint = T.slice(); H.tq = q;
+    if (H.dirty) { H.dirty = false; H.partial = false; hinterTint(0, HINTER_MAX - 1); } else { hinterTint(0, HINTER_MAX - 1, hinterOnScreen()); H.partial = true; }
   } else if (Math.floor(H.shown) !== Math.floor(was)) {
     if (H.onScreen) hinterTint(Math.min(was, H.shown) - 1, Math.max(was, H.shown) + HINTER_HAZE + 1); else H.dirty = true;
   }

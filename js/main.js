@@ -1017,13 +1017,19 @@ const canvasTransform = (tx, ty, k, r, W, H) => (r === 1 ? `translate(${tx + H *
   : r === 2 ? `translate(${tx + W * k}px, ${ty + H * k}px) scale(${k}) rotate(180deg)`
   : r === 3 ? `translate(${tx}px, ${ty + W * k}px) scale(${k}) rotate(270deg)` : `translate(${tx}px, ${ty}px) scale(${k})`);
 const zoomLabel = document.getElementById('zoom-level');
-// Never zoom out past the point where the pond covers the whole window: no empty
-// border, and wheel/pinch gestures always land on the pond.
+// The zoom at which the pond covers the whole window (no border): the view starts one step in from it.
 const coverK = () => { const [w, h] = view.r % 2 ? [world.H, world.W] : [world.W, world.H]; return Math.max(1, Math.ceil(Math.min(16, Math.max(innerWidth / w, innerHeight / h)) - 1e-6)); };
 const defaultK = () => coverK() + 1; // one step in, so the pond carries on past the edges
 
+// Out as far as the beach's whole length fits on screen (a pool with no beach: the whole pond), even if that
+// leaves a border: whichever is further out, that or the pond covering the window.
+const fitK = () => {
+  if (world.shore && world.shoreSide != null) return clamp(Math.floor((beachAxisX() ? innerWidth : innerHeight) / (world.shoreSide < 2 ? world.H : world.W)), 1, 16);
+  const [w, h] = view.r % 2 ? [world.H, world.W] : [world.W, world.H];
+  return clamp(Math.floor(Math.min(innerWidth / w, innerHeight / h)), 1, 16);
+};
 // (Walking the beach keeps the zoom you walked in with, even where a pond is narrower than the screen.)
-const minK = () => (view.minK ? Math.min(view.minK, coverK()) : coverK());
+const minK = () => { const k = Math.min(coverK(), fitK()); return view.minK ? Math.min(view.minK, k) : k; };
 function applyView() {
   if (view.k < minK()) view.k = minK();
   const [w, h] = screenSize(), ax = beachAxisX(), perpFree = view.glide && view.glide.perp;
@@ -1031,14 +1037,17 @@ function applyView() {
   // that shows (pre: before the pond on screen, post: after it; hinterland.js).
   const up = typeof hinterSpan === 'function' ? hinterSpan() * view.k : 0, ds = displaySide(world.shoreSide ?? 3);
   const across = (len, scr, v, pre, post) => (len + pre + post <= scr ? Math.round((scr - len - pre - post) / 2 + pre) : Math.round(clamp(v, scr - len - post, pre)));
+  // (An animal's or a thing's card over part of the screen: room to bring what's under it out from under it,
+  // past the pond's edge if need be.)
+  const [cr, cb] = cardCover();
   if (ax) {
     const [lo, hi] = beachRange(w, innerWidth, view.lastTx);
-    view.tx = Math.round(clamp(view.tx, lo, hi));
-    view.ty = perpFree ? Math.round(view.ty) : across(h, innerHeight, view.ty, ds === 2 ? up : 0, ds === 3 ? up : 0);
+    view.tx = Math.round(clamp(view.tx, lo - cr, hi));
+    view.ty = perpFree ? Math.round(view.ty) : across(h, innerHeight, view.ty, ds === 2 ? up : 0, (ds === 3 ? up : 0) + cb);
   } else {
     const [lo, hi] = beachRange(h, innerHeight, view.lastTy);
-    view.ty = Math.round(clamp(view.ty, lo, hi));
-    view.tx = perpFree ? Math.round(view.tx) : across(w, innerWidth, view.tx, ds === 0 ? up : 0, ds === 1 ? up : 0);
+    view.ty = Math.round(clamp(view.ty, lo - cb, hi));
+    view.tx = perpFree ? Math.round(view.tx) : across(w, innerWidth, view.tx, ds === 0 ? up : 0, (ds === 1 ? up : 0) + cr);
   }
   view.lastTx = view.tx; view.lastTy = view.ty;
   canvas.style.transform = canvasTransform(view.tx, view.ty, view.k, view.r, world.W, world.H);
@@ -1289,6 +1298,18 @@ function updateCamera(dt) {
   applyView();
 }
 
+// How much of the screen an open card covers: [at the right, at the bottom] (a sheet from the bottom, or a panel
+// down the right side).
+function cardCover() {
+  let r = 0, b = 0;
+  for (const id of ['creature', 'object']) {
+    const el = document.getElementById(id);
+    if (!el || el.hidden) continue;
+    const q = el.getBoundingClientRect();
+    if (q.width > innerWidth * 0.8) { if (q.top > innerHeight * 0.2) b = Math.max(b, innerHeight - q.top); } else if (q.left > innerWidth * 0.4) r = Math.max(r, innerWidth - q.left);
+  }
+  return [Math.round(r), Math.round(b)];
+}
 // Where the eye goes: the middle of the screen, or of what an animal's (or a thing's) card leaves showing: above it
 // when it comes up from the bottom (a phone held upright), beside it when it runs down the side.
 function viewFocus() {

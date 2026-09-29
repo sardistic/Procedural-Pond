@@ -8,6 +8,8 @@
 // things, four for most, eight for the big ones), in a mood that suits it, faded in and out, quietly,
 // under the soundscape, with long rests between. Phrases tend to carry on where the last one left off,
 // so over an evening the pieces unfold. The deeper the view, the more muffled it sounds.
+// And in the lulls, now and then, the beat alone: a groove from the pieces with everything but its low
+// pulse filtered away, quieter still, faded in and out slowly; anything that happens takes over from it.
 
 const MUSIC_V = 1; // bump when the cut changes (audio/music.json and its files)
 const MUSIC_FALLBACK = {
@@ -20,6 +22,7 @@ const Music = {
   on: false, ctx: null, out: null, filter: null, manifest: null, cache: new Map(), loading: new Map(),
   voice: null, pending: null, restUntil: 0, recent: [], last: null, lastAt: -1e9, tick: 0,
   busy: false, live: new Set(), // (a phrase loading; every source still sounding, so none is ever left playing untracked)
+  beat: null, beatNext: 0, // (the undercurrent in a lull, and when to think about the next)
 
   // The output: a lowpass (the deep muffles it) into a gain (the level), into the speakers.
   start() {
@@ -157,6 +160,37 @@ const Music = {
     src.onended = () => { for (const v of this.live) if (v.src === src) this.live.delete(v); if (this.voice && this.voice.src === src) this.voice = null; };
   },
 
+  // The beat, low and quiet, in a lull: a piece of the groove through a steep lowpass (the kick and the bass
+  // are what's left), about a third as loud as a phrase, eight bars faded in and out slowly.
+  async playBeat() {
+    if (this.busy || this.voice || this.beat || !this.atoms) return;
+    const pool = this.atoms.filter((a) => (a.mood === 'surge' || a.mood === 'rise') && a.i === 0);
+    const atom = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+    if (!atom) return;
+    const now0 = this.ctx.currentTime;
+    this.beat = { pending: true };
+    let buf;
+    try { buf = await this.load(atom.file); } catch (e) { this.beat = null; return; }
+    if (!this.on || this.voice || this.busy || this.ctx.currentTime - now0 > 8) { this.beat = null; return; } // (something happened meanwhile)
+    const ctx = this.ctx, t = ctx.currentTime + 0.05, src = ctx.createBufferSource(), lp = ctx.createBiquadFilter(), hp = ctx.createBiquadFilter(), g = ctx.createGain();
+    src.buffer = buf;
+    lp.type = 'lowpass'; lp.frequency.value = 170; lp.Q.value = 0.9;
+    hp.type = 'highpass'; hp.frequency.value = 38; hp.Q.value = 0.7;
+    const bar = atom.dur / 4, len = Math.min(8 * bar, buf.duration - atom.at - 0.5), peak = clamp(Math.pow(10, ((-15 - atom.db) / 20) * 0.6), 0.55, 2) * 0.34;
+    const fade = Math.min(7, len * 0.35), end = t + len;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(peak, t + fade);
+    g.gain.setValueAtTime(peak, end - fade);
+    g.gain.linearRampToValueAtTime(0.0001, end);
+    src.connect(hp).connect(lp).connect(g).connect(this.filter);
+    src.start(t, atom.at, len + 0.1);
+    const v = { src, g, beat: true };
+    this.live.add(v);
+    this.beat = { src, g, lp, peak, t0: t, end, atom };
+    this.beatNext = end + 40 + Math.random() * 70;
+    src.onended = () => { this.live.delete(v); if (this.beat && this.beat.src === src) this.beat = null; };
+  },
+
   stop(fade = 2) { this.fadeAll(fade); },
   // Fade out everything still sounding; returns how long until it's quiet.
   fadeAll(fade) {
@@ -173,6 +207,7 @@ const Music = {
       quiet = Math.max(quiet, fade);
     }
     this.voice = null;
+    this.beat = null;
     return quiet;
   },
 
@@ -191,6 +226,12 @@ const Music = {
     this.filter.frequency.setTargetAtTime(clamp(7000 * (1 - 0.75 * deep) * (1 - 0.25 * (world.darkness || 0)), 900, 9000), now, 1.5);
     if (this.voice && now >= this.voice.end) this.voice = null;
     if (this.pending && now > this.pending.until) this.pending = null;
+    if (this.beat && this.beat.end && now >= this.beat.end + 0.5) this.beat = null;
+    // A lull (nothing playing, the last phrase a while gone): now and then, the beat alone.
+    if (!this.voice && !this.busy && !this.beat && !this.pending && !world.paused && now > this.lastAt + 12 && now >= this.beatNext) {
+      this.beatNext = now + 20 + Math.random() * 25;
+      if (Math.random() < 0.35) this.playBeat();
+    }
     if (!this.voice && !this.busy && this.pending && now >= this.restUntil - (this.pending.strength >= 0.6 ? 15 : 0)) {
       const p = this.pending;
       this.pending = null;
