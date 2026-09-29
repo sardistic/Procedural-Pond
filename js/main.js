@@ -1021,12 +1021,11 @@ const zoomLabel = document.getElementById('zoom-level');
 const coverK = () => { const [w, h] = view.r % 2 ? [world.H, world.W] : [world.W, world.H]; return Math.max(1, Math.ceil(Math.min(16, Math.max(innerWidth / w, innerHeight / h)) - 1e-6)); };
 const defaultK = () => coverK() + 1; // one step in, so the pond carries on past the edges
 
-// Out as far as the beach's whole length fits on screen (a pool with no beach: the whole pond), even if that
-// leaves a border: whichever is further out, that or the pond covering the window.
+// Out as far as the pond exactly covers the window: no border anywhere, and edge to edge along one side. The one
+// zoom that needn't be a whole number (the rest are, so the art stays crisp); never below 1×.
 const fitK = () => {
-  if (world.shore && world.shoreSide != null) return clamp(Math.floor((beachAxisX() ? innerWidth : innerHeight) / (world.shoreSide < 2 ? world.H : world.W)), 1, 16);
   const [w, h] = view.r % 2 ? [world.H, world.W] : [world.W, world.H];
-  return clamp(Math.floor(Math.min(innerWidth / w, innerHeight / h)), 1, 16);
+  return clamp(Math.max(innerWidth / w, innerHeight / h), 1, 16);
 };
 // (Walking the beach keeps the zoom you walked in with, even where a pond is narrower than the screen.)
 const minK = () => { const k = Math.min(coverK(), fitK()); return view.minK ? Math.min(view.minK, k) : k; };
@@ -1051,7 +1050,7 @@ function applyView() {
   }
   view.lastTx = view.tx; view.lastTy = view.ty;
   canvas.style.transform = canvasTransform(view.tx, view.ty, view.k, view.r, world.W, world.H);
-  zoomLabel.textContent = `${view.k}×`;
+  zoomLabel.textContent = Number.isInteger(view.k) ? `${view.k}×` : 'fit'; // (zoomed all the way out, the pond just covering the window)
   if (typeof placeBeyond === 'function') { placeBeyond(); edgePull(); }
   if (typeof placeHinter === 'function') placeHinter();
 }
@@ -1064,7 +1063,8 @@ function zoomTo(k, cx = innerWidth / 2, cy = innerHeight / 2) {
   applyView();
 }
 
-const zoomStep = (dir, cx, cy) => zoomTo(view.k + dir, cx, cy);
+// (From the fitted zoom, in goes to the next whole one, crisp again.)
+const zoomStep = (dir, cx, cy) => zoomTo(dir > 0 ? Math.floor(view.k + 1e-6) + 1 : Math.ceil(view.k - 1e-6) - 1, cx, cy);
 
 function centerOn(x, y) {
   const [sx, sy] = worldToScreen(x, y);
