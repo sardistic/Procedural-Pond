@@ -381,11 +381,11 @@ function generateScenery(world) {
   const clusters = Math.round(area / 18000) + 2;
   for (let c = 0; c < clusters; c++) {
     const cx = rand(W * 0.05, W * 0.95), cy = rand(H * 0.05, H * 0.95);
-    const m = pick(ROCK_MATS);
+    const m = typeof rockFor === 'function' ? rockFor(world, pick(ROCK_MATS.slice(0, 3))) : pick(ROCK_MATS);
     const count = randi(1, 3);
     for (let k = 0; k < count; k++) {
-      const off = k === 0 ? 0 : rand(6, 12), oa = rand(-PI, PI);
-      rocks.push(makeRock(cx + Math.cos(oa) * off, cy + Math.sin(oa) * off, k === 0 ? rand(6, 11) : rand(3, 6), m));
+      const off = k === 0 ? 0 : rand(6, 12), oa = rand(-PI, PI), rk = makeRock(cx + Math.cos(oa) * off, cy + Math.sin(oa) * off, k === 0 ? rand(6, 11) : rand(3, 6), m);
+      rocks.push(typeof shapeRock === 'function' ? shapeRock(world, rk) : rk); // (this pond's rock, lying its own way: character.js)
     }
     for (let k = 0; k < 8; k++) {
       const a = rand(0, TAU), d = rand(8, 22);
@@ -428,18 +428,28 @@ function generateScenery(world) {
   if (world.shore) makeShore(world);
 }
 
-// The deep band: boulders tumbled along the drop-off, and pale stalks on the deep floor.
+// The deep band: boulders tumbled along the drop-off, and pale stalks on the deep floor. One chance in each
+// 26 px cell of the pond as it began (and on out), each cell its own, so as the pond grows nothing already
+// there moves: only the new edge gets its own.
 const DEEP_SILT = hexToInt('#2a2e34');
 const DEEP_ROCKS = [mat('#101216', '#1c2026', '#2c3038', '#40464e'), mat('#16120e', '#241e18', '#362c24', '#4a3e32')];
 const DEEP_STALK = mat('#6a6a7a', '#9a9aaa', '#c8c8d4', '#eeeef4');
+const DEEP_CELL = 26;
 function deepDecor(world, d) {
-  const { W, H } = world, depth = world.depth;
-  for (let i = 0; i < W * H / 700; i++) {
-    const x = rand(0, W), y = rand(0, H), v = depth[(y | 0) * W + (x | 0)];
-    if (!v) continue;
-    if (v < 110 && Math.random() < 0.7) d.stone(x, y, rand(3, 7), pick(DEEP_ROCKS));
-    else if (Math.random() < 0.25) d.pebble(x, y, rand(1.5, 3), pick(DEEP_ROCKS));
-    else if (v > 150 && Math.random() < 0.3) d.rubble(x, y, rand(3, 6), DEEP_STALK);
+  const { W, H } = world, depth = world.depth, [ox, oy] = world.expandPx ? originOf(world) : [0, 0], C = DEEP_CELL, seed = hashString(world.seed || 'pond') % 9973;
+  for (let cj = Math.floor(-oy / C); cj * C + oy < H; cj++) {
+    for (let ci = Math.floor(-ox / C); ci * C + ox < W; ci++) {
+      const x = ox + (ci + hash2(ci, cj, seed + 1)) * C, y = oy + (cj + hash2(ci, cj, seed + 2)) * C;
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      const v = depth[(y | 0) * W + (x | 0)];
+      if (!v) continue;
+      const h = hash2(ci, cj, seed + 3);
+      withSeed(`${seed}/deep/${ci},${cj}`, () => {
+        if (v < 110 && h < 0.7) d.stone(x, y, rand(3, 7), pick(DEEP_ROCKS));
+        else if (h < 0.78) d.pebble(x, y, rand(1.5, 3), pick(DEEP_ROCKS));
+        else if (v > 150 && h > 0.85) d.rubble(x, y, rand(3, 6), DEEP_STALK);
+      });
+    }
   }
 }
 
@@ -452,7 +462,8 @@ function bakeBackground(world, rect = null) {
   const key = FLOOR_ALIASES[world.opts.floor] || world.opts.floor;
   const floor = FLOORS[key] || FLOORS.sand, water = WATERS[world.opts.water] || WATERS.teal;
   const light = hexToInt(water.light), black = hexToInt('#000000');
-  world.waterColor = hexToInt(water.color);
+  world.waterColor = typeof charWater === 'function' ? charWater(world, hexToInt(water.color)) : hexToInt(water.color); // (this pond's own: character.js)
+  const tintF = typeof floorTintFn === 'function' && key !== 'tiles' ? floorTintFn(world) : (c) => c;
   world.lightTint = light;
   if (world.motes) world.motes.mat = solid(water.mote);
   if (key === 'tiles') world.shore = null;           // a pool has no beach
@@ -487,7 +498,7 @@ function bakeBackground(world, rect = null) {
     for (const k of Object.keys(dec)) shifted[k] = (x, y, ...rest) => dec[k](x + ox, y + oy, ...rest);
     withSeed(`${world.seed}/floor/${key}`, () => floor.decor(shifted, W0, H0));
   }
-  if (world.depth) withSeed(`${world.seed}/deep/${world.expandPx}`, () => deepDecor(world, makeDecor(r, outline)));
+  if (world.depth) deepDecor(world, makeDecor(r, outline));
   // Structures' solid parts (see structures.js), with outline ids from 5000 up.
   let sid = 5000;
   const nextS = (m) => { const i = Math.min(8190, sid++); outline[i] = outlineOf(m); return i; };
@@ -518,6 +529,7 @@ function bakeBackground(world, rect = null) {
         } else {
           c = floor.color(x - ox, y - oy);
           if (world.sand && world.sand[p]) c = sandOver(world, c, world.sand[p], x, y);
+          c = tintF(c);
           if (world.depth && world.depth[p]) c = mixColor(c, DEEP_SILT, Math.min(1, world.depth[p] / 160));
           if (sh[p] > 1.2) c = shadeColor(c);
         }

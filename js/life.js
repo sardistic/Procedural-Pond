@@ -905,26 +905,32 @@ function updateGnats(world, dt) {
 // ---- weather --------------------------------------------------------------------
 
 function updateWeather(world, dt) {
-  const w = world.weather;
+  const w = world.weather, calm = typeof deadCalm === 'function' && deadCalm(world);
+  // This pond's climate (wetter or drier), and a cursed or alien pond's storms (character.js).
+  const M = typeof weatherMood === 'function' ? weatherMood(world) : { wet: 1, hard: 0, ash: 0, glass: 0 };
   w.next -= dt;
-  if (world.opts.weather === false) w.target = 0;
+  if (world.opts.weather === false || calm) { w.target = 0; w.fall = null; }
   else if (w.next <= 0) {
     if (w.target === 0) {
-      w.target = rand(0.45, 1); w.next = rand(20, 50);
+      w.target = Math.min(1, rand(0.45, 1) + M.hard); w.next = rand(20, 50) * (1 + M.hard * 1.5);
       // Rain that falls red: when the stars are right, under a blood moon, or on a pond steeped in corruption.
       const dark = 1 - 1 / (1 + ((world.game && world.game.corruptionEarned) || 0) / 600);
       w.blood = typeof heavenNow === 'function' && (!!heavenNow(world, 'stars') || (!!heavenNow(world, 'bloodmoon') && Math.random() < 0.5) || Math.random() < 0.12 * dark);
-      logEvent(world, w.blood ? '✦ The clouds are the wrong colour. It is raining blood' : w.target > 0.8 ? 'Dark clouds roll in: a downpour' : 'Clouds roll in and it starts to rain', null, { cat: 'sky', pri: w.blood ? 3 : 1 });
+      // Over a cursed pond ash falls instead, now and then; over an alien one, rain like glass.
+      w.fall = w.blood ? null : Math.random() < 0.35 * M.ash ? 'ash' : Math.random() < 0.35 * M.glass ? 'glass' : null;
+      logEvent(world, w.blood ? '✦ The clouds are the wrong colour. It is raining blood' : w.fall === 'ash' ? 'The sky has gone the colour of a bruise, and ash is falling on the pond'
+        : w.fall === 'glass' ? '✦ It is raining, but the drops ring like glass where they land' : w.target > 0.8 ? 'Dark clouds roll in: a downpour' : 'Clouds roll in and it starts to rain', null, { cat: 'sky', pri: w.blood || w.fall ? 3 : 1 });
       if (w.blood && typeof narrate === 'function') narrate(world, 'bloodrain');
-    } else { w.target = 0; w.next = rand(150, 420); w.blood = false; logEvent(world, 'The rain eases off', null, { cat: 'sky' }); } // (clear spells run long)
+    } else { w.target = 0; w.next = rand(150, 420) / M.wet; w.blood = false; w.fall = null; logEvent(world, 'The rain eases off', null, { cat: 'sky' }); } // (clear spells run long; shorter in a wet climate)
   }
   if (typeof metaWeather === 'function') metaWeather(world, w); // the storm glass
   w.rain += (w.target - w.rain) * Math.min(1, dt * 0.12);
-  w.gust = world.opts.weather === false ? 0 : (vnoise(world.t * 0.15, 3, 77) - 0.5) * 2;
+  w.gust = world.opts.weather === false || calm ? 0 : (vnoise(world.t * 0.15, 3, 77) - 0.5) * 2 * (1 + M.hard);
   if (typeof metaNow === 'function' && metaNow(world, 'weather') === 'storm') w.gust = Math.max(w.gust, 0.6 + 0.4 * Math.sin(world.t * 0.7));
   // Raindrops land as small ripples all over the surface.
   let drops = w.rain * world.W * world.H / 1800 * dt;
-  while (Math.random() < drops) { addRipple(world, rand(0, world.W), rand(0, world.H), rand(0.2, 0.6), true, w.blood ? BLOOD_RIPPLE : null); drops -= 1; }
+  const drop = w.blood ? BLOOD_RIPPLE : w.fall === 'ash' ? ASH_RIPPLE : w.fall === 'glass' ? GLASS_RIPPLE : null;
+  while (Math.random() < drops) { addRipple(world, rand(0, world.W), rand(0, world.H), rand(0.2, 0.6), true, drop); drops -= 1; }
 }
 
 // ---- the tick ---------------------------------------------------------------------
@@ -1125,6 +1131,7 @@ function breed(world) {
     const key = breedKey(c), rule = BREED[c.species];
     const cap = c.species === 'wild' ? (c.sp.schooling ? 14 : 5) : rule.cap;
     if ((counts[key] || 0) >= cap) continue;
+    if (hardMode(world) && Math.random() < 0.35) continue; // (hard mode: fewer broods)
     const mate = world.creatures.find((m) => m !== c && breedKey(m) === key && ready(m) && (m.x - c.x) ** 2 + (m.y - c.y) ** 2 < 1600);
     if (!mate) continue;
     let x = (c.x + mate.x) / 2, y = (c.y + mate.y) / 2, z = 0.6;
@@ -1175,7 +1182,7 @@ function migrate(world) {
   for (const [kind, target] of Object.entries(world.targets)) {
     const n = pop[kind] || 0;
     // Groups arrive together, so wait until a group's worth is missing. Hostile ponds draw fewer.
-    if (n < target && (!GROUPS.has(kind) || n <= target * 0.6) && Math.random() < 0.5 * calm) arrive(world, kind);
+    if (n < target && (!GROUPS.has(kind) || n <= target * 0.6) && Math.random() < 0.5 * calm * (hardMode(world) ? 0.45 : 1)) arrive(world, kind); // (hard mode: fewer come back)
   }
   // Animals leave when restless and ill at ease, when the water around them turns
   // hostile, or when they're stuck in the wrong water; care and good genes hold them.
@@ -1196,7 +1203,7 @@ function migrate(world) {
   if (world.erosion && world.erosion.tier >= 1 && Math.random() < 0.02 * (1 + 0.4 * (world.deepPlaced || 0)) * (1 + deepLure) * eye && typeof arriveDeep === 'function') arriveDeep(world);
   const activeWild = new Set(world.creatures.filter((c) => c.species === 'wild').map((c) => c.sp)).size;
   const young = world.succession && typeof SUCCESSION === 'object' && (world.maturity ?? 0) < SUCCESSION.wild; // a new pond isn't ready for them yet
-  if (activeWild < 4 && !young && Math.random() < 0.025 && (typeof canDiscover !== 'function' || canDiscover(world, 'wild'))) {
+  if (activeWild < 4 && !young && Math.random() < 0.025 * (hardMode(world) ? 0.5 : 1) && (typeof canDiscover !== 'function' || canDiscover(world, 'wild'))) {
     const g = arrive(world, 'wild', true);
     if (g && typeof knows === 'function' && !knows(world, 'wild')) discover(world, 'wild', g[0]);
   }

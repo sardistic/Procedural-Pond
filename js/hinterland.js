@@ -22,11 +22,15 @@ const HINTER = {
   gaps: [], riv: null, eyes: [], flies: [], flecks: [], heron: null, spT: 0, tf: '',
 };
 
-// How far up the beach shows: a little at first, more with every pond day and as the pond deepens.
+// How far up the beach shows: a little at first, then slowly, a pixel or so a pond day and a little more as the pond
+// deepens (the dunes after a month or so, the jungle after half a year), and far faster the more cursed the pond is
+// (character.js): the land shows what's coming. What has shown stays shown (game.landReach).
 function hinterReach(world) {
   if (!world.shore || world.shoreSide == null || !world.W) return 0;
-  const E = world.erosion;
-  return clamp(40 + 5.5 * (world.days || 0) + 3 * (E ? E.e || 0 : 0), 40, HINTER_MAX);
+  const E = world.erosion, G = world.game, cur = typeof curseLevel === 'function' ? curseLevel(world) : 0;
+  const now = 30 + 1.3 * (world.days || 0) + 0.8 * (E ? E.e || 0 : 0) + 240 * cur;
+  if (G && !world.observe && now > (G.landReach || 0)) G.landReach = Math.round(now * 10) / 10;
+  return clamp(Math.max(now, (G && G.landReach) || 0), 30, HINTER_MAX);
 }
 
 // Where the picture sits: a strip along the landward edge, in the pond's own coordinates.
@@ -54,7 +58,20 @@ const HL = {
   soil: hexToInt('#5e5034'), grass: hexToInt('#4e6a2c'), jfloor: hexToInt('#0a120a'), black: hexToInt('#020402'),
   dune: hexToInt('#f4e6c6'), lit: hexToInt('#fff6de'), lee: hexToInt('#8a7652'), wet: hexToInt('#6a5e44'),
   shell: hexToInt('#efe6d6'), wrack: hexToInt('#3c3a1c'), hole: hexToInt('#2a2216'), haze: hexToInt('#aab8b2'), sun: hexToInt('#fff0d2'),
+  // (What grows by the pond's climate: character.js.)
+  cactus: [hexToInt('#1a3a1a'), hexToInt('#2a5a2a'), hexToInt('#3e7a3a'), hexToInt('#5a9a4a')], agave: [hexToInt('#2a4038'), hexToInt('#3e5e50'), hexToInt('#5a8270'), hexToInt('#80a894')],
+  fern: [hexToInt('#12381a'), hexToInt('#1e5a26'), hexToInt('#2e8038'), hexToInt('#4aa652')], bamboo: [hexToInt('#2a4a10'), hexToInt('#46701a'), hexToInt('#6a9a2a'), hexToInt('#94c440')],
+  pine: [hexToInt('#0a1a14'), hexToInt('#12281e'), hexToInt('#1c3a2a'), hexToInt('#2a4e38')], birch: [hexToInt('#2a4a14'), hexToInt('#46701e'), hexToInt('#6a962e'), hexToInt('#94bc4a')],
+  mangrove: [hexToInt('#0a200e'), hexToInt('#143618'), hexToInt('#1e4c22'), hexToInt('#2e6630')],
+  blooms: [hexToInt('#f07ac8'), hexToInt('#ffd84a'), hexToInt('#f4f0e8'), hexToInt('#b08aff'), hexToInt('#ff6a4a')], root: hexToInt('#3a2a18'), bark: hexToInt('#e8e4dc'),
 };
+// What grows up the beach besides, by this pond's climate: always wildflowers; cactus and agave where it's dry; ferns,
+// bamboo and flowering bushes where it's warm and wet; pines and birches where it's cold; mangroves where the river
+// meets warm salt water.
+function hinterClimate(world) {
+  const C = typeof pondChar === 'function' ? pondChar(world) : { temp: 0, wet: 1 };
+  return { dry: C.wet < 0.85, lush: C.temp > 0.2 && C.wet > 0.95, cold: C.temp < -0.3, salt: world.opts.habitat !== 'fresh', warm: C.temp > 0.2 };
+}
 const hDry = (c) => mixColor(c, HL.sun, 46 / 256); // (the sunlit dry beach, as the renderer lights the pond's)
 
 // The river's course up the land: where it meets the pond it runs the way its course runs there;
@@ -80,7 +97,7 @@ function* hinterPaint(world, geo) {
   const fk = FLOOR_ALIASES[world.opts.floor] || world.opts.floor, floor = FLOORS[fk] || FLOORS.sand;
   const [fx, fy] = world.expandPx && typeof originOf === 'function' ? originOf(world) : [0, 0];
   const hab = world.opts.habitat || 'mixed', S = hashString(`${world.seed}/hinter`) % 997, riv = hinterRiver(world);
-  const water = world.waterColor || hexToInt('#2a6a78');
+  const water = world.waterColor || hexToInt('#2a6a78'), tintF = typeof floorTintFn === 'function' ? floorTintFn(world) : (c) => c; // (this pond's sand: character.js)
   // Where the pond's own sand meets the picture, the two blend (the floor's stains and deposits carry on a little).
   const edge = new Uint32Array(along), bg = world.bg;
   if (bg && typeof coastXY === 'function') for (let u = 0; u < along; u++) { const [x, y] = coastXY(world, 0, u), c = bg[x + y * world.W]; edge[u] = c >>> 24 ? hDry(c) : 0; }
@@ -102,7 +119,7 @@ function* hinterPaint(world, geo) {
   for (let py = 0; py < ch; py++) {
     for (let px = 0; px < cw; px++) {
       const [dd, u] = hinterToLocal(s, px, py), i = px + py * cw, L = Lm[i], b = dither(px, py);
-      let c = hDry(floor.color(px + ox - fx, py + oy - fy));
+      let c = hDry(tintF(floor.color(px + ox - fx, py + oy - fy)));
       if (dd < 12 && edge[u]) c = mixColor(edge[u], c, smoothstep(0, 12, dd));
       // Dunes: bright on the faces toward the light (up and left), in shadow behind.
       const e = E[i];
@@ -144,6 +161,19 @@ function* hinterPaint(world, geo) {
     if (riv) for (let dd = 96; dd < 300; dd += rand(8, 16)) P.push(['stone', dd, riv.uc[dd | 0] + rand(-1, 1) * riv.hw[dd | 0], rand(1, 2.2)]);
     for (let k = 0; k < along * 2.6; k++) P.push(['canopy', rand(262, 452), rand(-8, along + 8), rand(5, 13)]);
     for (let k = 0; k < along / 45; k++) P.push(['crown', rand(300, 420), rand(0, along), rand(11, 17)]);
+  });
+  // (By the climate, on its own seed: the rest of the land is as it always was.)
+  withSeed(`${world.seed}/hinter2`, () => {
+    const K = hinterClimate(world);
+    for (let k = 0; k < along * 0.35; k++) P.push(['flowers', rand(40, 260), rand(0, along), randi(0, 4)]);
+    if (K.dry) { for (let k = 0; k < along * 0.12; k++) P.push(['cactus', rand(110, 300), rand(0, along), rand(1.5, 2.8)]); for (let k = 0; k < along * 0.1; k++) P.push(['agave', rand(60, 270), rand(0, along), rand(2.5, 4)]); }
+    if (K.lush) {
+      for (let k = 0; k < along * 0.22; k++) P.push(['fern', rand(150, 330), rand(0, along), rand(2.5, 4.5)]);
+      for (let k = 0; k < along * 0.07; k++) P.push(['bloom', rand(140, 300), rand(0, along), rand(2.5, 4)]);
+      if (riv) for (let dd = 110; dd < 300; dd += rand(10, 22)) P.push(['bamboo', dd, riv.uc[dd | 0] + (Math.random() < 0.5 ? -1 : 1) * (riv.hw[dd | 0] + rand(3, 7))]);
+    }
+    if (K.cold) { for (let k = 0; k < along * 0.08; k++) P.push(['pine', rand(170, 330), rand(0, along), rand(3, 5)]); for (let k = 0; k < along * 0.05; k++) P.push(['birch', rand(160, 300), rand(0, along), rand(2.5, 4)]); }
+    if (K.salt && K.warm && riv) for (let dd = 14; dd < 120; dd += rand(3, 7)) for (const sd of [-1, 1]) if (Math.random() < 0.5) P.push(['mangrove', dd, riv.uc[dd | 0] + sd * (riv.hw[dd | 0] + rand(1, 3)), rand(2.5, 4)]);
   });
   const put = (px, py, c, mark) => { if (px < 0 || py < 0 || px >= cw || py >= ch) return; const i = (px | 0) + (py | 0) * cw; base[i] = c; if (mark) cover[i] = mark; };
   const at = (dd, u) => { const [px, py] = hinterToPx(s, dd | 0, u | 0); return px >= 0 && py >= 0 && px < cw && py < ch ? px + py * cw : -1; };
@@ -221,6 +251,41 @@ function* hinterPaint(world, geo) {
       line(cx, cy, cx + vx * 3 - 0.8, cy + vy * 3 - 1.4, (x, y, f) => put(x, y, HL.reed[f < 0.5 ? 1 : 2 + (hash2(cx, cy, S) < 0.5 ? 1 : 0)]));
     } else if (kind === 'stone') {
       ball(cx, cy, q[3], HL.stone, 2, false);
+    } else if (kind === 'flowers') {
+      // Wildflowers: a few specks of colour in the grass (not under the trees, not in the river).
+      const p = smoothstep(40, 90, L) * (1 - smoothstep(230, 270, L));
+      if (hash2(cx, cy, S + 61) > p * 0.8 || inRiver(dd, u, 2) || cover[i0] === 1) continue;
+      const col = HL.blooms[q[3]];
+      for (let k = 0; k < 4; k++) { const x = cx + ((hash2(k, cx, S + 63) * 5) | 0) - 2, y = cy + ((hash2(k, cy, S + 65) * 5) | 0) - 2, j = (x | 0) + (y | 0) * cw; if (x >= 0 && y >= 0 && x < cw && y < ch && cover[j] !== 1) put(x, y, col); }
+    } else if (kind === 'cactus') {
+      if (L < 100 || L > 300 || inRiver(dd, u, 4) || cover[i0] === 1) continue;
+      ball(cx, cy, q[3], HL.cactus, 1, true);
+      if (hash2(cx, cy, S + 67) < 0.4) put(cx, cy - 1, HL.blooms[0], 1);
+    } else if (kind === 'agave' || kind === 'fern') {
+      if (L < (kind === 'fern' ? 140 : 50) || L > (kind === 'fern' ? 330 : 280) || inRiver(dd, u, 3) || cover[i0] === 1) continue;
+      // A star of stiff leaves (agave), or of feathered fronds (ferns).
+      const pal = kind === 'agave' ? HL.agave : HL.fern, n = kind === 'agave' ? 8 : 6, len = q[3];
+      put(cx + 1, cy + 1, mixColor(base[i0], HL.black, 0.35));
+      for (let k = 0; k < n; k++) {
+        const a = k / n * TAU + hash2(k, cx, S + 71) * 0.4, l = len * (0.7 + 0.3 * hash2(k, cy, S + 73)), lit = Math.cos(a) + Math.sin(a) < 0 ? 1 : 0;
+        line(cx, cy, cx + Math.cos(a) * l, cy + Math.sin(a) * l, (x, y, f) => { put(x, y, pal[f > 0.8 ? 1 : 2 + lit], 1); if (kind === 'fern' && f > 0.3 && f < 0.85 && ((f * l) | 0) % 2 === 0) put(x + Math.cos(a + 1.4), y + Math.sin(a + 1.4), pal[1 + lit], 1); });
+      }
+    } else if (kind === 'bloom') {
+      if (L < 130 || L > 305 || inRiver(dd, u, q[3] + 1)) continue;
+      ball(cx, cy, q[3], HL.shrub, 1, true);
+      for (let k = 0; k < 5; k++) put(cx + (hash2(k, cx, S + 75) - 0.5) * q[3] * 1.6, cy + (hash2(k, cy, S + 77) - 0.5) * q[3] * 1.6, HL.blooms[hash2(cx, cy, S + 79) < 0.5 ? 0 : 4], 1);
+    } else if (kind === 'bamboo') {
+      if (inRiver(dd, u, 1)) continue;
+      for (let k = 0; k < 7; k++) { const x = cx + (hash2(k, cx, S + 81) - 0.5) * 6, y = cy + (hash2(k, cy, S + 83) - 0.5) * 6; put(x + 1, y + 1, mixColor(base[i0], HL.black, 0.4)); put(x, y, HL.bamboo[2 + (k & 1)], 1); put(x + 1, y, HL.bamboo[1], 1); }
+    } else if (kind === 'pine' || kind === 'birch') {
+      if (L < 150 || L > 335 || inRiver(dd, u, q[3] + 1)) continue;
+      ball(cx, cy, q[3], kind === 'pine' ? HL.pine : HL.birch, 1, true);
+      if (kind === 'pine') put(cx, cy, HL.pine[0], 1); else put(cx + 1, cy + 1, HL.bark, 1);
+    } else if (kind === 'mangrove') {
+      ball(cx, cy, q[3], HL.mangrove, 1, true);
+      // Its roots arching down into the water.
+      const rc = riv ? riv.uc[dd | 0] : u, [rx, ry] = hinterToPx(s, dd, rc);
+      for (let k = 0; k < 3; k++) line(cx, cy, lerp(cx, rx, 0.6) + k - 1, lerp(cy, ry, 0.6) + k - 1, (x, y, f) => { if (f > 0.5) put(x, y, HL.root); });
     } else if (kind === 'canopy' || kind === 'crown') {
       // The jungle: thick and dark, darker the further in. (Its trees over the river too: it goes under.)
       if (L < (kind === 'crown' ? 290 : 262) + (hash2(cx, cy, S + 51) - 0.5) * 30) continue;
@@ -271,7 +336,7 @@ function hinterTint(dd0, dd1, rect = null) {
 // one of any of those, and the old picture goes at once), and its size and today's river (a new picture
 // is painted while the old one stays up: growing out doesn't change the land, only where it sits).
 const hinterHardKey = (world) => `${world.seed}|${world.shoreSide < 2 ? world.H : world.W}|${world.shoreSide}|${world.opts.floor}|${world.opts.habitat}|${world.opts.water}`;
-const hinterKey = (world) => `${hinterHardKey(world)}|${world.W}x${world.H}|${world.river ? `${world.river.k}:${world.river.w}` : '-'}|${Math.floor(world.days || 0)}`;
+const hinterKey = (world) => `${hinterHardKey(world)}|${world.W}x${world.H}|${world.river ? `${world.river.k}:${world.river.w}` : '-'}|${Math.floor(world.days || 0)}|${typeof floorCurse === 'function' ? floorCurse(world) : 0}`;
 
 // The two canvases (the land, and what moves over it), set just under the pond's own.
 function hinterInit(pond) {
@@ -436,6 +501,7 @@ function hinterSprites(world) {
       dot(x, y, cs); dot(across ? x + 2 : x, across ? y : y + 2, cs);
     }
   } else H.eyes.length = 0;
+  if (typeof impSprites === 'function') impSprites(world, dot, css); // (what comes out of the jungle: imps.js)
 }
 
 // A point in the pond's coordinates (it may be past the edge) as (dd, u) up the beach.
@@ -456,7 +522,7 @@ function hinterClick(world, x, y) {
     text = [
       'The upper beach\nDry sand above the tides, and what the storms threw up: weed, shells, driftwood. The land carries on up from here.',
       'Dunes\nThe wind heaps the sand into ridges, and marram grass holds them. Ghost crabs dig their holes here.',
-      `Scrub\n${world.opts.habitat === 'fresh' ? 'Willows and reeds' : 'Palms and shrubs'} where the river comes down to the beach. Herons fish its edges by day; fireflies come out over it at night.`,
+      `Scrub\n${(() => { const K = hinterClimate(world); return K.dry ? 'Cactus, agave and thorny scrub' : K.lush ? 'Ferns, bamboo and flowering bushes' : K.cold ? 'Pines and birches' : world.opts.habitat === 'fresh' ? 'Willows and reeds' : 'Palms and shrubs'; })()} where the river comes down to the beach, and wildflowers in the grass. Herons fish its edges by day; fireflies come out over it at night.`,
       'The jungle\nIt is dark in there, and it goes on further than you can see. Something is watching the beach. Nothing has come out of it… yet.',
       'Eyes\nSomething in the jungle, watching the pond. It shuts its eyes and slips away when you come near. It hasn’t come out. Yet.',
     ][z];

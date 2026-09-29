@@ -12,14 +12,14 @@
 //    a summons (essence) brings it at the next dawn, ready or not. The Wildlife window (the dock's
 //    ? button) lists what hasn't come yet, how likely each is here, and what's due next.
 
-const FIND_GAP = (n) => 1.1 + 0.3 * Math.max(0, n - 5); // pond days to wait after a first arrival, by how many are known
+const FIND_GAP = (n, world) => (1.1 + 0.3 * Math.max(0, n - 5)) * (world && hardMode(world) ? 1.6 : 1); // pond days to wait after a first arrival, by how many are known (longer in hard mode)
 const kindHash = (k) => hashString(k) % 9973;
 
 // This pond's odds for a kind: about 0.2 (rare here) to 1.8 (common here), drifting with the seasons.
 function kindOdds(world, k) {
   const s = hashString(world.seed || 'pond') % 9967, h = hash2(s, kindHash(k), 41);
   const period = 16 + 36 * hash2(kindHash(k), 7, 13), phase = hash2(s % 887, kindHash(k), 5) * TAU;
-  return (0.2 + 1.6 * h * h) * (1 + 0.45 * Math.sin(TAU * (world.days || 0) / period + phase));
+  return (0.2 + 1.6 * h * h) * (1 + 0.45 * Math.sin(TAU * (world.days || 0) / period + phase)) * (typeof tempOdds === 'function' ? tempOdds(world, k) : 1); // (and the water's warmth: character.js)
 }
 const oddsWord = (o) => (o > 1.25 ? 'common here' : o > 0.75 ? 'fair odds here' : o > 0.4 ? 'unlikely here' : 'rare here');
 
@@ -57,7 +57,7 @@ function canDiscover(world, k) {
   if (!G || knows(world, k)) return true;
   if (G.summon === k) return true;
   const lured = G.lures && G.lures[k] > world.days;
-  if (world.days < (G.nextFind || 0) - (lured ? FIND_GAP(G.known.length) * 0.7 : 0)) return false;
+  if (world.days < (G.nextFind || 0) - (lured ? FIND_GAP(G.known.length, world) * 0.7 : 0)) return false;
   return Math.random() < Math.min(1, 0.35 * kindOdds(world, k) * (lured ? 8 : 1));
 }
 // A kind has found its way in for the first time: it's known now, and the next has to wait.
@@ -65,10 +65,10 @@ function discover(world, k, subject = null) {
   const G = world.game;
   if (!G || !G.known || G.known.includes(k)) return;
   G.known.push(k);
-  G.nextFind = world.days + FIND_GAP(G.known.length) * rand(0.75, 1.3);
+  G.nextFind = world.days + FIND_GAP(G.known.length, world) * rand(0.75, 1.3);
   if (G.lures) delete G.lures[k];
   if (G.summon === k) G.summon = null;
-  logEvent(world, `✦ New to the pond: ${plural(SINGULAR[k] || k, 2).toLowerCase()}. You can spawn them from the dock now`, subject, { cat: 'rare', pri: 3 });
+  logEvent(world, `✦ New to the pond: ${plural(SINGULAR[k] || k, 2).toLowerCase()}.${hardMode(world) ? ' Keep them, and more may come' : ' You can spawn them from the dock now'}`, subject, { cat: 'rare', pri: 3 });
   if (typeof refreshSpeciesButtons === 'function') setTimeout(refreshSpeciesButtons, 0);
   if (typeof wildUi !== 'undefined' && wildUi.open) renderWild();
 }
@@ -128,7 +128,8 @@ function renderWild() {
     lure.title = 'A lure\nFor two days this kind is far likelier to be the next to come, and it can come a little sooner.';
     sum.title = 'A summons\nIt comes at the next dawn, whatever the odds (and whether or not the pond is ready).';
     lure.disabled = !!world.observe || lured || G.pearls < lurePrice(world, k);
-    sum.disabled = !!world.observe || summoned || (G.essence || 0) < summonPrice(world, k);
+    sum.disabled = !!world.observe || summoned || (G.essence || 0) < summonPrice(world, k) || hardMode(world);
+    if (hardMode(world)) sum.title = 'A summons\nNot in hard mode: here, animals only come of their own accord (a lure helps).';
     lure.addEventListener('click', () => {
       if (!spend(world, lurePrice(world, k), 'life')) return;
       G.lures = { ...(G.lures || {}), [k]: world.days + 2 };

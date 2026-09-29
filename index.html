@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=34">
+  <link rel="stylesheet" href="style.css?v=35">
 
   <script type="application/ld+json">
   {
@@ -86,6 +86,7 @@
       <button type="button" data-hab="mixed" title="Everything together">Both</button>
       <button type="button" data-hab="salt" title="Saltwater: reef fish, corals, starfish, octopus">Salt</button>
     </div>
+    <label class="check hard-check" title="Hard mode&#10;For this pond: animals can't be bought or summoned, only drawn in by the habitat you build and plant (and lures). Fewer come and fewer breed, it starts with fewer, and time runs slower. Points count half again. New ponds start the way you leave this."><input type="checkbox" id="opt-hard"> Hard mode: no spawning</label>
 
     <details id="ponds">
       <summary>Your ponds</summary>
@@ -159,23 +160,40 @@
       <button type="button" id="open-hatchery" title="The hatchery (build one first)">Hatchery</button>
       <button type="button" id="open-guide" class="span3" title="Everything in the game, in one place (G)">Guide</button>
     </div>
-    <p class="keys">Arrows/WASD pan · +/− zoom · F follow · T tour · C animals · J journal · P score · L light · B bones · Space pause · M sound · N music · G guide · H menu (actions are on the rail down the left: ▸ for all of them, + to pin one)</p>
+    <p class="keys">Arrows/WASD pan · +/− zoom · F follow · T tour · C animals · J journal · P score · L light · B bones · Space pause · M sound · N music · G guide · H menu (the animals are down the left; food, tools, plants and builds along the bottom: ▴ for all of them, + to pin one)</p>
   </aside>
   <div id="signin-nudge" class="signin-nudge" hidden role="dialog" aria-label="Sign in">
     <b>Keep this pond safe</b>
     <p>Sign in with Discord to keep your ponds in your account, carry on from any browser, and put your name on the leaderboard if you like.</p>
     <div class="grid2"><button type="button" id="nudge-signin" class="discord">Sign in with Discord</button><button type="button" id="nudge-later">Not now</button></div>
   </div>
-  <nav id="rail" class="rail" aria-label="Actions">
+  <nav id="rail" class="rail" aria-label="The menu and the animals">
     <button type="button" id="show-hud" class="rail-btn menu" aria-pressed="false" aria-label="Menu" title="Menu (H)&#10;Your ponds, the scene, sound, sharing and the rest">☰</button>
-    <div id="quickbar" class="rail-pins" aria-label="Pinned actions"></div>
-    <button type="button" id="rail-more" class="rail-btn more" aria-expanded="false" aria-controls="actions" title="All actions&#10;Food, tools, plants, builds and creatures. Hover one and press + to pin it to this bar">▸</button>
+    <div class="dock-bar">
+      <button type="button" id="census-btn" class="census-btn" aria-expanded="false" aria-controls="census" title="Details about the animals in the pond (C)">
+        <b id="census-count">0</b><span class="caret" aria-hidden="true">▸</span>
+      </button>
+      <div id="animals" class="animals" role="group" aria-label="The animals: add more, or read about them"></div>
+      <button type="button" id="wild-btn" class="wild-dock" hidden aria-label="Wildlife: kinds that haven't come yet"><span aria-hidden="true">?</span><b>0</b></button>
+      <button type="button" id="hatch-btn" class="hatch-dock" hidden aria-label="Hatchery"><span class="egg" aria-hidden="true"></span></button>
+    </div>
     <button type="button" id="rail-paragons" class="rail-btn crown" aria-expanded="false" aria-controls="paragons" aria-label="Paragons" title="Paragons&#10;The finest of your lines, earned by breeding: what they are, the ones waiting for you, and how close the next are">♛</button>
     <button type="button" id="rail-guide" class="rail-btn ask" aria-expanded="false" aria-controls="guide" aria-label="Guide" title="Guide (G)&#10;Everything in the game: every animal, plant, build, trait, event and control">?</button>
   </nav>
+  <section id="census" class="pop census" hidden aria-label="Animals in the pond">
+    <header class="pop-head">
+      <b id="census-summary"></b>
+      <button type="button" id="census-close" class="icon" aria-label="Close animal details">×</button>
+    </header>
+    <p class="note" id="census-stats"></p>
+    <ol class="census-rows" id="census-rows"></ol>
+    <h3>Wild species <span id="wild-count"></span></h3>
+    <ul class="wild-cards" id="wild-cards"></ul>
+    <button type="button" id="clear" class="wide">Clear animals</button>
+  </section>
   <section id="actions" class="pop actions" hidden aria-label="All actions">
     <header class="pop-head"><b>Actions</b><button type="button" id="actions-close" class="icon" aria-label="Close actions">×</button></header>
-    <p class="note">Click one to use it. Hover one and press + to pin it to the bar on the left (− takes it off).</p>
+    <p class="note">Click one to use it. Hover one and press + to pin it to the bar along the bottom (− takes it off).</p>
     <div id="tools">
       <div class="act-cat" data-cat="food"><button type="button" class="act-head" aria-expanded="true">Food <span class="caret">▾</span></button><div class="act-grid"></div></div>
       <div class="act-cat" data-cat="tools"><button type="button" class="act-head" aria-expanded="true">Tools <span class="caret">▾</span></button><div class="act-grid"></div></div>
@@ -190,6 +208,7 @@
     <button type="button" id="sky-btn" class="sky-btn" aria-expanded="false" aria-controls="sky-panel" aria-label="Time, moon and tide">
       <canvas id="sky-icon" width="16" height="16"></canvas>
     </button>
+    <b id="sky-day" class="sky-day" aria-hidden="true">Day 1</b>
     <section id="sky-panel" class="pop sky-panel" hidden aria-label="Time, moon and tide">
       <div class="sky-head">
         <canvas id="sky-big" width="16" height="16" aria-hidden="true"></canvas>
@@ -203,6 +222,7 @@
       <div class="tide-row"><span>Tide</span><div class="tidebar"><i id="tide-fill"></i></div></div>
       <p class="note" id="tide-text"></p>
       <p class="note" id="surf-text"></p>
+      <p class="note" id="water-text"></p>
       <p class="note heavens-line" id="heavens-text" hidden></p>
       <div id="sky-artifacts" class="sky-artifacts" hidden></div>
       <div class="fields">
@@ -217,7 +237,7 @@
   <div id="score" class="score">
     <button type="button" id="nb-west" class="nb-arrow west" hidden aria-label="The pond one way along the beach">◂</button>
     <button type="button" id="score-btn" class="score-btn" aria-expanded="false" aria-controls="score-panel" title="This pond: points, pearls and the leaderboard (P)">
-      <b id="bar-name" class="nm"></b>
+      <b id="bar-name" class="nm"></b><span id="bar-hard" class="hard-tag" hidden title="Hard mode: nothing bought, only lured in · points ×1.5">Hard</span>
       <span class="pts" title="Depth: the pond's deepest point, your score"><i aria-hidden="true">⚓</i><b id="score-points">0</b></span>
       <span class="prl" title="Pearls: for plants, food and structures"><i class="pearl" aria-hidden="true"></i><b id="score-pearls">0</b></span>
       <span class="ess" title="Essence: for new animals and gene boosts"><i class="essence" aria-hidden="true"></i><b id="score-essence">0</b></span>
@@ -247,6 +267,7 @@
         <div><b id="sp-rank">–</b><span id="sp-rank-note">rank</span></div>
       </div>
       <p class="note" id="sp-mode"></p>
+      <p class="note" id="sp-char"></p>
       <p class="note" id="sp-flies"></p>
       <p class="note" id="sp-coast"></p>
       <p class="note" id="sp-invest"></p>
@@ -379,24 +400,9 @@
     </div>
 
     <div class="dock">
-      <section id="census" class="pop census" hidden aria-label="Animals in the pond">
-        <header class="pop-head">
-          <b id="census-summary"></b>
-          <button type="button" id="census-close" class="icon" aria-label="Close animal details">×</button>
-        </header>
-        <p class="note" id="census-stats"></p>
-        <ol class="census-rows" id="census-rows"></ol>
-        <h3>Wild species <span id="wild-count"></span></h3>
-        <ul class="wild-cards" id="wild-cards"></ul>
-        <button type="button" id="clear" class="wide">Clear animals</button>
-      </section>
-      <div class="dock-bar">
-        <div id="animals" class="animals" role="group" aria-label="Add animals"></div>
-        <button type="button" id="wild-btn" class="wild-dock" hidden aria-label="Wildlife: kinds that haven't come yet"><span aria-hidden="true">?</span><b>0</b></button>
-        <button type="button" id="hatch-btn" class="hatch-dock" hidden aria-label="Hatchery"><span class="egg" aria-hidden="true"></span></button>
-        <button type="button" id="census-btn" class="census-btn" aria-expanded="false" aria-controls="census" title="Details about the animals in the pond (C)">
-          <b id="census-count">0</b><span class="caret" aria-hidden="true">▴</span>
-        </button>
+      <div class="item-bar">
+        <div id="quickbar" class="rail-pins" aria-label="Pinned actions"></div>
+        <button type="button" id="rail-more" class="rail-btn more" aria-expanded="false" aria-controls="actions" title="All actions&#10;Food, tools, plants, builds and creatures. Hover one and press + to pin it to this bar">▴</button>
       </div>
     </div>
 
@@ -408,66 +414,69 @@
         <button type="button" id="zoom-out" class="icon" aria-label="Zoom out" title="Zoom out (-)">−</button>
       </div>
       <div class="mini-wrap">
-        <canvas id="slice" class="slice" width="192" height="44" aria-label="The pond from the side: the beach, the floor and the depths; click for the evolution tree"></canvas>
-        <canvas id="minimap" class="minimap" width="192" height="108" aria-label="Map of the whole pond; click to jump"></canvas>
+        <canvas id="slice" class="slice" width="211" height="48" aria-label="The pond from the side: the beach, the floor and the depths; click for the evolution tree"></canvas>
+        <canvas id="minimap" class="minimap" width="211" height="119" aria-label="Map of the whole pond; click to jump"></canvas>
         <button type="button" id="map-layer" class="map-layer" title="Map layer: click to switch">Map</button>
       </div>
     </div>
   </div>
 
-  <script src="js/core.js?v=44"></script>
-  <script src="js/raster.js?v=44"></script>
-  <script src="js/creatures.js?v=44"></script>
-  <script src="js/critters.js?v=44"></script>
-  <script src="js/wildlife.js?v=44"></script>
-  <script src="js/wildfish.js?v=44"></script>
-  <script src="js/sound.js?v=44"></script>
-  <script src="js/life.js?v=44"></script>
-  <script src="js/plants.js?v=44"></script>
-  <script src="js/scene.js?v=44"></script>
-  <script src="js/structures.js?v=44"></script>
-  <script src="js/erosion.js?v=44"></script>
-  <script src="js/sky.js?v=44"></script>
-  <script src="js/ecology.js?v=44"></script>
-  <script src="js/game.js?v=44"></script>
-  <script src="js/deep.js?v=44"></script>
-  <script src="js/remains.js?v=44"></script>
-  <script src="js/eldritch.js?v=44"></script>
-  <script src="js/coast.js?v=44"></script>
-  <script src="js/gulls.js?v=44"></script>
-  <script src="js/shore.js?v=44"></script>
-  <script src="js/traits.js?v=44"></script>
-  <script src="js/save.js?v=44"></script>
-  <script src="js/link.js?v=44"></script>
-  <script src="js/abyss.js?v=44"></script>
-  <script src="js/quirks.js?v=44"></script>
-  <script src="js/hunters.js?v=44"></script>
-  <script src="js/mastery.js?v=44"></script>
-  <script src="js/habitats.js?v=44"></script>
-  <script src="js/artifacts.js?v=44"></script>
-  <script src="js/story.js?v=44"></script>
-  <script src="js/lineage.js?v=44"></script>
-  <script src="js/depths.js?v=44"></script>
-  <script src="js/sand.js?v=44"></script>
-  <script src="js/heavens.js?v=44"></script>
-  <script src="js/nature.js?v=44"></script>
-  <script src="js/pollution.js?v=44"></script>
-  <script src="js/prehistoric.js?v=44"></script>
-  <script src="js/alien.js?v=44"></script>
-  <script src="js/bestiary.js?v=44"></script>
-  <script src="js/land.js?v=44"></script>
-  <script src="js/isles.js?v=44"></script>
-  <script src="js/cycle.js?v=44"></script>
-  <script src="js/arrivals.js?v=44"></script>
-  <script src="js/interact.js?v=44"></script>
-  <script src="js/net.js?v=44"></script>
-  <script src="js/account.js?v=44"></script>
-  <script src="js/wander.js?v=44"></script>
-  <script src="js/hinterland.js?v=44"></script>
-  <script src="js/hud.js?v=44"></script>
-  <script src="js/main.js?v=48"></script>
-  <script src="js/guide.js?v=44"></script>
-  <script src="js/music.js?v=44"></script>
-  <script src="js/tips.js?v=44"></script>
+  <script src="js/core.js?v=45"></script>
+  <script src="js/raster.js?v=45"></script>
+  <script src="js/creatures.js?v=45"></script>
+  <script src="js/critters.js?v=45"></script>
+  <script src="js/wildlife.js?v=45"></script>
+  <script src="js/wildfish.js?v=45"></script>
+  <script src="js/sound.js?v=45"></script>
+  <script src="js/life.js?v=45"></script>
+  <script src="js/plants.js?v=45"></script>
+  <script src="js/scene.js?v=45"></script>
+  <script src="js/character.js?v=45"></script>
+  <script src="js/structures.js?v=45"></script>
+  <script src="js/erosion.js?v=45"></script>
+  <script src="js/sky.js?v=45"></script>
+  <script src="js/ecology.js?v=45"></script>
+  <script src="js/game.js?v=45"></script>
+  <script src="js/deep.js?v=45"></script>
+  <script src="js/remains.js?v=45"></script>
+  <script src="js/eldritch.js?v=45"></script>
+  <script src="js/coast.js?v=45"></script>
+  <script src="js/gulls.js?v=45"></script>
+  <script src="js/shore.js?v=45"></script>
+  <script src="js/traits.js?v=45"></script>
+  <script src="js/save.js?v=45"></script>
+  <script src="js/link.js?v=45"></script>
+  <script src="js/abyss.js?v=45"></script>
+  <script src="js/quirks.js?v=45"></script>
+  <script src="js/hunters.js?v=45"></script>
+  <script src="js/mastery.js?v=45"></script>
+  <script src="js/habitats.js?v=45"></script>
+  <script src="js/artifacts.js?v=45"></script>
+  <script src="js/story.js?v=45"></script>
+  <script src="js/lineage.js?v=45"></script>
+  <script src="js/depths.js?v=45"></script>
+  <script src="js/sand.js?v=45"></script>
+  <script src="js/heavens.js?v=45"></script>
+  <script src="js/nature.js?v=45"></script>
+  <script src="js/pollution.js?v=45"></script>
+  <script src="js/prehistoric.js?v=45"></script>
+  <script src="js/alien.js?v=45"></script>
+  <script src="js/bestiary.js?v=45"></script>
+  <script src="js/land.js?v=45"></script>
+  <script src="js/isles.js?v=45"></script>
+  <script src="js/flora.js?v=45"></script>
+  <script src="js/cycle.js?v=45"></script>
+  <script src="js/arrivals.js?v=45"></script>
+  <script src="js/interact.js?v=45"></script>
+  <script src="js/net.js?v=45"></script>
+  <script src="js/account.js?v=45"></script>
+  <script src="js/wander.js?v=45"></script>
+  <script src="js/hinterland.js?v=45"></script>
+  <script src="js/imps.js?v=45"></script>
+  <script src="js/hud.js?v=45"></script>
+  <script src="js/main.js?v=49"></script>
+  <script src="js/guide.js?v=45"></script>
+  <script src="js/music.js?v=45"></script>
+  <script src="js/tips.js?v=45"></script>
 </body>
 </html>

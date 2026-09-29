@@ -370,7 +370,7 @@ output {
 .caret { flex: none; color: var(--muted); transition: transform 0.15s; }
 [aria-expanded="true"] > .caret { transform: rotate(180deg); }
 
-/* ---- bottom bar: journal, animal dock, map ---- */
+/* ---- bottom bar: journal, the item bar, map ---- */
 
 .bottom {
   position: fixed;
@@ -479,25 +479,29 @@ output {
 .journal li.link { cursor: pointer; }
 .journal li.link:hover span { color: var(--hot); }
 
+/* The animals: a column in the rail down the left (the census on top, then one button per kind, then
+   the wildlife still to come and the hatchery). A big bestiary scrolls; the padding leaves room for NEW badges. */
 .dock-bar {
   display: flex;
-  align-items: stretch;
-  gap: 6px;
-  max-width: 100%;
-  padding: 6px;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-height: 0;
+  padding: 3px;
   background: var(--panel);
   border: 2px solid var(--edge);
-  box-shadow: 4px 4px 0 var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
 }
-
-.animals { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; min-width: 0; }
-/* A big bestiary: the dock keeps to two rows and scrolls (the padding leaves room for NEW badges). */
-.animals { max-height: 99px; overflow-y: auto; padding: 6px 2px 0 6px; margin: -6px -2px 0 -6px; scrollbar-width: thin; scrollbar-color: var(--btn-edge) transparent; }
+.animals { display: flex; flex-direction: column; flex-wrap: nowrap; align-items: center; gap: 4px; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 6px 0 2px 6px; margin: -6px 0 -2px -6px; scrollbar-width: none; }
+/* The item bar: food, tools, plants and builds pinned along the bottom, and ▴ for all of them. */
+.item-bar { display: flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; padding: 6px; background: var(--panel); border: 2px solid var(--edge); box-shadow: 4px 4px 0 var(--ink); }
 
 .ani {
   position: relative;
-  width: 44px;
-  height: 44px;
+  flex: none;
+  width: 40px;
+  height: 40px;
   padding: 0;
   background: #0f2c38;
   box-shadow: none;
@@ -525,15 +529,16 @@ output {
 .census-btn {
   flex: none;
   flex-direction: column;
-  gap: 2px;
-  min-width: 44px;
-  padding: 0 8px;
+  gap: 1px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
   font-size: 11px;
   color: var(--hot);
 }
 
 .census-btn b { margin: 0; font-weight: 400; color: var(--hot); }
-.census { left: 50%; transform: translateX(-50%); width: min(700px, calc(100vw - 24px)); }
+.census { position: fixed; top: 60px; left: 64px; bottom: auto; z-index: 8; width: min(620px, calc(100vw - 80px)); max-height: calc(100vh - 200px); } /* (beside the animals down the left, under the pond's bar) */
 .census h3 { margin: 14px 0 6px; font-size: 11px; font-weight: 400; color: var(--hot); }
 .census h3 span { color: var(--muted); }
 
@@ -623,8 +628,8 @@ output {
 .zoom #zoom-level { font-size: 10px; color: var(--hot); }
 
 .minimap {
-  width: 192px;
-  height: 108px;
+  width: 211px;
+  height: 119px;
   image-rendering: pixelated;
   border: 2px solid var(--edge);
   box-shadow: 3px 3px 0 var(--ink);
@@ -967,7 +972,7 @@ body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, bo
 .pair .val { display: flex; align-items: center; color: #c38bff; }
 .pair:hover { border-color: var(--hot); }
 /* The dock's egg: opens the hatchery, with its brood filling as a ring. */
-.hatch-dock { flex: none; align-self: center; width: 44px; height: 44px; padding: 0; background: linear-gradient(to top, #8a6a24 var(--p, 0%), #0f2c38 0); } /* fills as the brood's food comes in */
+.hatch-dock { flex: none; align-self: center; width: 40px; height: 40px; padding: 0; background: linear-gradient(to top, #8a6a24 var(--p, 0%), #0f2c38 0); } /* fills as the brood's food comes in */
 .hatch-dock .egg { width: 20px; height: 26px; border-radius: 50% 50% 46% 46% / 60% 60% 40% 40%; background: radial-gradient(circle at 35% 30%, #fff8dc, #e0d4a4 55%, #8a7a50); box-shadow: 1px 1px 0 var(--ink); }
 .hatch-dock.ready { animation: bump 1.2s ease-out infinite; }
 .hatch-ups li { display: grid; grid-template-columns: 1fr 30px 70px; grid-template-areas: "nm lv b" "n n n"; align-items: center; gap: 1px 6px; }
@@ -982,7 +987,7 @@ body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, bo
 
 .mini-wrap { position: relative; display: grid; gap: 4px; }
 .map-layer { position: absolute; bottom: 4px; right: 4px; padding: 2px 5px; font-size: 8px; box-shadow: none; opacity: 0.85; }
-.slice { width: 192px; height: 44px; image-rendering: pixelated; border: 2px solid var(--edge); box-shadow: 3px 3px 0 var(--ink); background: var(--ink); cursor: pointer; }
+.slice { width: 211px; height: 48px; image-rendering: pixelated; border: 2px solid var(--edge); box-shadow: 3px 3px 0 var(--ink); background: var(--ink); cursor: pointer; }
 
 /* ---- the depths ---- */
 
@@ -1017,6 +1022,13 @@ body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, bo
 }
 
 .sky-btn canvas { width: 32px; height: 32px; }
+/* Hard mode: the switch under the habitat, the tag on the pond's bar, and the spawn card's word instead of a price. */
+.hard-check { margin: 6px 0 0; font-size: 9px; }
+.hard-tag { align-self: center; padding: 0 3px; font-size: 8px; line-height: 12px; color: #1a0a0a; background: #ef6f6c; border: 1px solid #7a2a2a; }
+.sc-buy.hard { color: #ffb0a8; border-color: #ef6f6c; background: #3a1616; }
+/* The pond's day, under the sun or moon. */
+.sky { display: flex; flex-direction: column; align-items: flex-end; }
+.sky-day { display: block; min-width: 48px; margin-top: 4px; padding: 2px 4px; font-size: 9px; font-weight: 400; line-height: 1.3; text-align: center; white-space: nowrap; color: var(--hot); background: var(--panel); border: 2px solid var(--edge); box-shadow: 2px 2px 0 var(--ink); pointer-events: none; }
 .sky-panel { top: calc(100% + 8px); bottom: auto; right: 0; width: 280px; }
 
 .sky-head { display: flex; align-items: center; gap: 10px; }
@@ -1068,9 +1080,7 @@ body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, bo
   .dock { order: 2; flex: 1 1 0; }
   .corner { order: 3; align-self: flex-end; }
   .minimap, .slice { display: none; }
-  .animals { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; overflow-y: hidden; max-height: none; scrollbar-width: none; }
-  .dock-bar { width: 100%; }
-  .ani { flex: none; width: 42px; height: 42px; }
+  .item-bar { width: 100%; }
   .census { left: 0; transform: none; width: calc(100vw - 24px); }
   .follow { top: auto; bottom: 150px; }
   .sky { top: 12px; right: 12px; }
@@ -1106,10 +1116,10 @@ button.discord:hover { background: #4752c4; }
 .rail-btn.menu { font-size: 16px; }
 .rail-btn.more { font-size: 13px; }
 .rail-btn.more[aria-expanded="true"] { background: #5a4a14; border-color: var(--hot); color: var(--hot); }
-.rail-pins { display: flex; flex-direction: column; gap: 6px; min-height: 0; overflow-y: auto; overflow-x: visible; scrollbar-width: none; padding: 0 6px 0 0; margin-right: -6px; }
+.rail-pins { display: flex; gap: 6px; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; padding: 8px 8px 0 0; margin: -8px -8px 0 0; } /* (a row along the bottom; the padding leaves room for the pins) */
 .rail-pins[hidden] { display: none; }
 .rail-pins .ticon, .rail-pins img { image-rendering: pixelated; }
-.actions { position: fixed; top: 16px; left: 64px; bottom: auto; z-index: 8; width: min(320px, calc(100vw - 80px)); max-height: calc(100vh - 150px); font-size: 10px; color: var(--muted); }
+.actions { position: fixed; top: auto; bottom: 80px; left: 50%; transform: translateX(-50%); z-index: 8; width: min(440px, calc(100vw - 24px)); max-height: calc(100vh - 170px); font-size: 10px; color: var(--muted); } /* (above the item bar: placed exactly by setActions) */
 .act-cat { margin-top: 8px; }
 #actions .act-head { width: 100%; flex-direction: row; justify-content: space-between; padding: 5px 8px; font-size: 10px; line-height: 1.2; color: var(--hot); text-align: left; }
 .act-head[aria-expanded="false"] + .act-grid, .act-head[aria-expanded="false"] + .act-body { display: none; }
@@ -1129,7 +1139,8 @@ button:hover > .pin, button:focus-visible > .pin { display: flex; }
 .pop > header, .spawn-card > .sc-head { position: sticky; top: -10px; z-index: 3; margin: -10px -12px 8px; padding: 10px 12px 6px; background: rgb(8, 26, 34); border-bottom: 1px solid var(--btn-edge); } /* (opaque: the panel colour lets scrolled text show through) */
 @media (max-width: 760px) {
   #hud { left: 60px; }
-  .actions { top: 60px; left: 60px; width: calc(100vw - 72px); max-height: calc(100vh - 230px); }
+  .rail { max-height: calc(100vh - 180px); } /* (clear of the news, the item bar and the zoom) */
+  .actions { top: auto; bottom: max(8px, env(safe-area-inset-bottom)); left: 8px; right: 8px; width: auto; transform: none; max-height: 66vh; }
 }
 
 /* ---- new since you last looked, and one-of-a-kind builds already built ---- */
@@ -1181,7 +1192,7 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
 .grid3 > .span3 { grid-column: 1 / -1; }
 
 /* ---- wildlife: the kinds that haven't come yet ---- */
-.wild-dock { position: relative; flex: none; align-self: center; flex-direction: column; gap: 0; width: 44px; height: 44px; padding: 0; font-size: 14px; color: #bff4ff; border-style: dashed; }
+.wild-dock { position: relative; flex: none; align-self: center; flex-direction: column; gap: 0; width: 40px; height: 40px; padding: 0; font-size: 14px; color: #bff4ff; border-style: dashed; }
 .wild-dock b { font-size: 8px; font-weight: 400; color: var(--muted); }
 #wild { position: fixed; top: 60px; left: 50%; bottom: auto; transform: translateX(-50%); z-index: 9; width: min(520px, calc(100vw - 24px)); max-height: calc(100vh - 200px); font-size: 10px; color: var(--muted); }
 .wild-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
@@ -1260,7 +1271,7 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
    the pins fit. Either way windows are solid and above the rail and the bottom bar, the news is one line, and the map
    comes and goes with a button beside the zoom. */
 .minimap { height: auto; }
-.slice { height: auto; aspect-ratio: 192 / 44; }
+.slice { height: auto; aspect-ratio: 211 / 48; }
 .map-toggle { display: none; }
 @media (max-width: 760px), (max-height: 500px) {
   .map-toggle { display: flex; align-self: flex-end; width: 34px; height: 32px; padding: 0; font-size: 14px; }
@@ -1296,10 +1307,11 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
 }
 @media (max-height: 500px) {
   .rail { gap: 4px; max-height: calc(100vh - 64px); }
-  .rail-btn, .rail-pins > button { width: 36px; height: 36px; }
+  .rail-btn, .rail-pins > button, .ani, .census-btn, .wild-dock, .hatch-dock { width: 36px; height: 36px; }
   .rail-pins { gap: 4px; }
   .rail-pins .ticon { width: 24px; height: 24px; }
-  #hud, .actions { top: 8px; left: 56px; max-height: calc(100vh - 16px); }
+  #hud { top: 8px; left: 56px; max-height: calc(100vh - 16px); }
+  .actions { top: 8px; bottom: auto !important; left: 56px; transform: none; width: min(440px, calc(100vw - 68px)); max-height: calc(100vh - 16px); }
   /* (Under the pond's bar, which stays in view.) */
   #guide, #wild, #paragons, .hatch, .evo { top: 56px !important; left: 56px !important; transform: none !important; width: min(600px, calc(100vw - 68px)) !important; max-height: calc(100vh - 64px) !important; }
   .creature, .object { top: 56px; bottom: auto; left: auto; right: max(8px, env(safe-area-inset-right)); width: min(380px, calc(100vw - 68px)); max-height: calc(100vh - 64px); }
@@ -1309,10 +1321,8 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
   .sky-panel { max-height: calc(100vh - 70px); overflow-y: auto; }
   .bottom { gap: 8px; }
   .log { flex: 0 1 280px; }
-  .animals { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; overflow-y: hidden; max-height: none; scrollbar-width: none; }
-  .ani { flex: none; width: 40px; height: 40px; }
-  .dock-bar { padding: 4px; gap: 4px; }
-  .census-btn, .wild-dock { min-width: 40px; height: 40px; align-self: center; }
+  .item-bar { padding: 4px; gap: 4px; }
+  .dock-bar { padding: 2px; }
   .minimap, .slice { width: 150px; }
   .corner .zoom button, .map-toggle { width: 32px; height: 30px; }
   .banner { top: 56px; }

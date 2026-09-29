@@ -239,7 +239,13 @@ function updateErosion(world, dt) {
   if (next && E.e >= next.erosion) {
     E.tier++;
     if (typeof refreshSpeciesButtons === 'function') setTimeout(refreshSpeciesButtons, 0); // new builds, foods and plants
-    if (next.expand && typeof expandWorld === 'function' && (world.expandPx || 0) < maxDeepPx(world) - 8) expandWorld(next.expand, `${tierName(world, E.tier)} opens beyond the drop-off`);
+    // The new depth shows at once; the room it opens beyond the drop-off comes a pixel at a time (growTick in main.js).
+    if (next.expand && typeof expandWorldPx === 'function' && (world.expandPx || 0) < maxDeepPx(world) - 8) {
+      const [W0, H0] = baseSize(world), room = Math.round((deepAxisX(world.shoreSide) ? W0 : H0) * next.expand);
+      const now = typeof window !== 'undefined' && window.__TEST_GROW_NOW ? room : 1; // (the test harness: all at once)
+      queueGrowth(world, room - now);
+      expandWorldPx(now, `${tierName(world, E.tier)} opens beyond the drop-off`);
+    }
     else logEvent(world, `The pond has deepened: ${tierName(world, E.tier).toLowerCase()}`, null, { cat: 'rare', pri: 3 });
     if (typeof narrateTier === 'function') narrateTier(world, E.tier);
     if (typeof award === 'function') award(world, 150 * E.tier * E.tier, 'reaching the depths');

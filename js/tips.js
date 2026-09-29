@@ -26,6 +26,7 @@ const PLANT_TIPS = {
   weepmoss: 'weeping moss of the roots: it glows faintly, and deep life gathers by it',
   starweed: 'star-weed of the drowned city: it glows, and the Deep Ones (and the Sleeper) are drawn to it',
 };
+if (typeof FLORA_PLANTS !== 'undefined') for (const [k, F] of Object.entries(FLORA_PLANTS)) PLANT_TIPS[k] = F.tip; // (flora.js)
 const plantTip = (kind) => {
   const likes = typeof likedByText === 'function' ? likedByText(kind) : '';
   return `${capFirst(PLANT_TIPS[kind] || 'a plant')}${likes ? `. ${capFirst(likes)}` : ''}`.replace(/([^.…])$/, '$1.');

@@ -116,7 +116,8 @@ function packPond(world) {
   const added = [...world.plants, ...world.pads].filter((p) => p.oi == null && p.make && PLANT_CODES.includes(p.make));
   w.vu(added.length);
   for (const p of added) {
-    w.u8(PLANT_CODES.indexOf(p.make) | (p.make === 'weed' ? [null, 'fresh', 'salt'].indexOf(p.args.habitat ?? null) << 4 : 0));
+    const ci = PLANT_CODES.indexOf(p.make); // (the kind's low four bits, a weed's water in the next two, the kind's high bits in the top two)
+    w.u8((ci & 15) | (p.make === 'weed' ? [null, 'fresh', 'salt'].indexOf(p.args.habitat ?? null) << 4 : 0) | ((ci >> 4) << 6));
     w.vu(p.seed); w.u16(Math.round(p.x)); w.u16(Math.round(p.y));
   }
   const rocks = world.rocks.filter((r) => r.oi == null);
@@ -294,7 +295,7 @@ function unpackV2(r, v = 2) {
   for (const key of ['plants', 'pads', 'rocks']) { s.removed[key] = []; for (let n = r.vu(); n > 0; n--) s.removed[key].push(r.vu()); }
   s.addedPlants = [];
   for (let n = r.vu(); n > 0; n--) {
-    const b = r.u8(), k = PLANT_CODES[b & 15], h = b >> 4, seed = r.vu(), x = r.u16(), y = r.u16();
+    const b = r.u8(), k = PLANT_CODES[(b & 15) | ((b >> 6) << 4)], h = (b >> 4) & 3, seed = r.vu(), x = r.u16(), y = r.u16();
     if (k) s.addedPlants.push({ k, s: seed, x, y, a: k === 'weed' && h ? { habitat: h === 1 ? 'fresh' : 'salt' } : {} });
   }
   s.addedRocks = [];

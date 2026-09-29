@@ -7,7 +7,7 @@ const OPTS_KEY = 'procedural-pond.opts';
 const DEFAULT_OPTS = {
   v: 4, world: 'auto', habitat: 'mixed', floor: 'sand', water: 'teal', light: 'cycle', dayLength: 180,
   current: 25, speed: 1, caustics: true, shadows: true, outlines: true, life: true, weather: true, sound: false,
-  music: false, musicLevel: 40,
+  music: false, musicLevel: 40, hard: false, // (hard: new ponds start in hard mode)
 };
 // The pond is a fixed-size world, larger than the screen at the default zoom.
 // "Fit screen" makes it the window at 2x pixels, so zoom 2 fills the screen exactly.
@@ -111,6 +111,7 @@ function lighting() {
   const rain = world.weather.rain;
   if (rain > 0.01) tint = tint.map((v, j) => v * (1 - rain * [0.24, 0.2, 0.1][j])); // overcast
   if (typeof heavensLight === 'function') tint = heavensLight(world, tint); // eclipses, the blood moon, blood rain
+  if (typeof castTint === 'function') tint = castTint(world, tint); // a cursed pond's sickly light, an alien one's violet, a dead one's grey
   const lum = (tint[0] + tint[1] + tint[2]) / 3;
   return { tint: lum > 0.995 ? null : tint, darkness: clamp((0.92 - lum) / 0.48, 0, 1), caustics: lum > 0.8 && rain < 0.3 };
 }
@@ -224,6 +225,7 @@ function spawn(kind, x, y, how = 'founder') {
 // that don't fade away and half their share comes back.
 function buyAnimal(kind, enh = [], ancient = null, grade = 0) {
   const price = Math.round(spawnPrice(kind, enh) * GRADE_PRICE[grade]); // a guaranteed grade costs more
+  if (hardMode(world)) { showTicker('Hard mode: animals can’t be bought. Build and plant what they like, and they find their way in'); return false; }
   if (world.creatures.length >= world.maxPop + 60) { showTicker('The pond is full: no room for more'); return false; }
   if (!spendEssence(world, price, 'life')) { notEnough(price, 'essence'); return false; }
   const [x, y] = openSpot();
@@ -328,6 +330,7 @@ function buildPond() {
   } else {
     world.inst = newInst();
     world.game = newGame();
+    if (world.opts.hard) world.game.hard = true; // (hard mode: see ecology.js)
     world.lineage = new Map();
     world.link = null;
     world.erosion = newErosion();
@@ -359,8 +362,10 @@ function buildPond() {
     const summary = `day ${Math.floor(world.days) + 1}, ${animals} animals${rares ? `, ${rares} rare` : ''}`;
     if (world.linkAdopt) {
       // Someone else's pond becomes your own copy, with its own score and link.
+      const hard = hardMode(world);
       world.inst = newInst();
       world.game = newGame();
+      if (hard) world.game.hard = true;
       world.link = null;
       logEvent(world, `You opened ${world.seed} from a link: ${summary}. This copy is yours, with its own score`, null, { cat: 'pond' });
     } else {
@@ -401,7 +406,7 @@ function succession() {
     const min = SUCCESSION[kind] ?? 0.3, have = world.targets[kind] || 0;
     if (have >= want) continue;
     left++;
-    if (m < min || Math.random() > 0.05) continue;
+    if (m < min || Math.random() > (hardMode(world) ? 0.025 : 0.05)) continue; // (hard mode: slower to come)
     // (A kind that's never been here waits its turn: arrivals.js.)
     const fresh = typeof knows === 'function' && !knows(world, kind);
     if (fresh && !canDiscover(world, kind)) continue;
@@ -428,9 +433,12 @@ function populate() {
     if (!fitsHabitat(world, SPECIES_HABITAT[kind])) continue;
     const n = per * m * (pure ? 1.4 : 1) * (kind === 'wild' && world.opts.habitat === 'salt' ? 2 : 1);
     const count = Math.floor(n) + (Math.random() < n % 1 ? 1 : 0);
-    // Only pioneers at first (and fewer of them); the rest wait for the pond to mature.
-    if (world.succession && (SUCCESSION[kind] ?? 0.3) > 0) { if (count) world.succession.want[kind] = count; continue; }
-    for (let i = 0; i < Math.ceil(count * (world.succession ? 0.6 : 1)); i++) spawn(kind);
+    // Only pioneers at first (and fewer of them); the rest wait for the pond to mature. (In hard mode, fewer
+    // still: a few pioneers, and fewer to come.)
+    const hard = hardMode(world);
+    if (world.succession && (SUCCESSION[kind] ?? 0.3) > 0) { const want = hard ? Math.round(count * 0.6) : count; if (want) world.succession.want[kind] = want; continue; }
+    const n0 = hard ? Math.floor(count * 0.3 + Math.random() * 0.8) : Math.ceil(count * (world.succession ? 0.6 : 1));
+    for (let i = 0; i < n0; i++) spawn(kind);
   }
 }
 
@@ -439,7 +447,7 @@ function populate() {
 function update(dt) {
   world.t += dt;
   const cur = world.current;
-  cur.s = world.opts.current / 100 * (1 + Math.max(0, world.weather.gust) * 0.8 + world.weather.rain * 0.4);
+  cur.s = world.opts.current / 100 * (1 + Math.max(0, world.weather.gust) * 0.8 + world.weather.rain * 0.4) * (typeof deadCalm === 'function' && deadCalm(world) ? 0.05 : 1); // (a dead pond lies still)
   cur.angle = cur.base + Math.sin(world.t * 0.05) * 0.8;
   cur.x = Math.cos(cur.angle) * cur.s;
   cur.y = Math.sin(cur.angle) * cur.s;
@@ -467,6 +475,8 @@ function update(dt) {
   updateNature(world, dt);
   updatePollution(world, dt);
   updateAlien(world, dt);
+  if (typeof updateCharacter === 'function') updateCharacter(world, dt);
+  if (typeof updateImps === 'function') updateImps(world, dt);
   if (typeof updateLand === 'function') updateLand(world, dt);
   if (typeof updateCycle === 'function') updateCycle(world, dt);
   if (typeof updateInteract === 'function') updateInteract(world, dt);
@@ -648,7 +658,7 @@ function skyReflection(light) {
 function drawGrown(r, p, t) {
   const g = (p.growth ?? 1) * (1 + 0.15 * ((p.tr && p.tr.lush) || 0)); // lush plants grow bigger
   const scaled = Math.abs(g - 1) > 0.001;
-  if (scaled) r.setScale(p.x, p.y, Math.max(0.1, g), p.make === 'lily' || p.make === 'duckweed' ? 1 : Math.max(0.1, g)); // floating plants stay at the surface
+  if (scaled) r.setScale(p.x, p.y, Math.max(0.1, g), p.make === 'lily' || p.make === 'duckweed' || (typeof FLORA_FLOAT !== 'undefined' && FLORA_FLOAT.has(p.make)) ? 1 : Math.max(0.1, g)); // floating plants stay at the surface
   p.draw(r, t, world);
   if (scaled) r.setScale();
   if (p.tr) drawPlantExtras(r, p, t, world);
@@ -693,8 +703,9 @@ function frame(now) {
   // The first rAF timestamp can predate the load-time performance.now(); never step backwards.
   const dt = clamp((now - last) / 1000, 0, 0.05);
   last = now;
-  if (!world.paused) update(dt * world.opts.speed);
+  if (!world.paused) update(dt * world.opts.speed * (hardMode(world) ? HARD_PACE : 1)); // (hard mode runs slower)
   runJobs();
+  growTick(now);
   updateCamera(dt);
   updateGlide(dt);
   render();
@@ -752,9 +763,10 @@ const TOOLS = {
   weepmoss: { ...plantTool('weepmoss', 'Weeping moss'), habitat: 'fresh', tier: 6, deepMin: 0.6 },
   starweed: { ...plantTool('starweed', 'Star-weed'), tier: 7, deepMin: 0.6 },
   offering: { label: 'Offering', food: 'offering', price: 120, tier: 7, n: 4, spread: 5, hint: 'offerings: the marked that eat them change faster, and the pond yields corruption' },
+  ...floraTools(plantTool), // (reeds, lotus, kelp, sea fans and the rest: flora.js)
   rock: {
     label: 'Rock', price: PLANT_PRICE.rock, likedBy: 'rock',
-    place: (x, y) => { const rk = makeRock(x, y, rand(5, 10)); rk.born = world.days; world.rocks.push(rk); bakeBackground(world); paintMinimapBackground(); },
+    place: (x, y) => { const rk = shapeRock(world, makeRock(x, y, rand(5, 10), rockFor(world, pick(ROCK_MATS.slice(0, 3))))); rk.born = world.days; world.rocks.push(rk); bakeBackground(world); paintMinimapBackground(); },
   },
 };
 // Structures (the Build section): bought with pearls, some also with essence.
@@ -769,7 +781,7 @@ function expandWorld(frac, why) {
   const axisX = deepAxisX(world.shoreSide), [W0, H0] = baseSize(world);
   expandWorldPx(Math.round((axisX ? W0 : H0) * frac), why);
 }
-// (In pixels: the dawn's small steps (cycle.js) come quietly; a new depth tier is news.)
+// (In pixels: a new depth tier is news. The pond's steady creep outward doesn't come this way: see growInPlace.)
 function expandWorldPx(px, why, quiet = false) {
   const axisX = deepAxisX(world.shoreSide);
   const add = Math.min(px, maxDeepPx(world) - (world.expandPx || 0)), [sx, sy] = deepShifts(world.shoreSide) ? (axisX ? [add, 0] : [0, add]) : [0, 0];
@@ -801,6 +813,139 @@ function expandWorldPx(px, why, quiet = false) {
   saveNow();
 }
 
+// The pond's creep outward, done in place: its buffers grow by a pixel, and everything in it carries on just as it
+// was (nothing is rebuilt: the animals mid-stride, the food you dropped, the ripples, the skeletons, what's open on
+// a card), moved over by the growth when the pond grows left or up. Only what hangs on the pond's size is redone:
+// the beach and all that shapes it (sand, the river, islands, pools, the depths), the floor's new edge, and the
+// ecology and land grids (a cell over at a time, as the growth adds up).
+function growInPlace(add) {
+  const axisX = deepAxisX(world.shoreSide);
+  add = Math.min(add, maxDeepPx(world) - (world.expandPx || 0));
+  if (add <= 0 || !world.bgBase || !world.bg || world.bgBase.length !== world.W * world.H) return false;
+  const [sx, sy] = deepShifts(world.shoreSide) ? (axisX ? [add, 0] : [0, add]) : [0, 0];
+  const cx = (innerWidth / 2 - view.tx) / view.k + sx, cy = (innerHeight / 2 - view.ty) / view.k + sy;
+  const old = { W: world.W, H: world.H, bg: world.bg, base: world.bgBase, z: world.raster.zBase, sand: world.sand };
+  if (sx || sy) shiftWorld(world, sx, sy);
+  world.expandPx = (world.expandPx || 0) + add;
+  const [W, H] = worldDims();
+  world.W = W; world.H = H;
+  canvas.width = W; canvas.height = H;
+  canvas.style.width = `${W}px`;
+  canvas.style.height = `${H}px`;
+  world.raster = new Raster(W, H);
+  world.wob = { x: new Int8Array(H), y: new Int8Array(W) };
+  image = ctx.createImageData(W, H);
+  out = new Uint32Array(image.data.buffer);
+  world.maxPopBase = Math.min(460, Math.round(W * H / 2400));
+  world.maxPop = world.maxPopBase + (world.maxPopBonus || 0);
+  mini.height = clamp(Math.round(mini.width * (view.r % 2 ? W / H : H / W)), 54, 200);
+  mini.style.aspectRatio = `${mini.width} / ${mini.height}`;
+  if (old.sand && old.sand.length === old.W * old.H) { world.sand = new Uint8Array(W * H); copyGrid(old.sand, old.W, old.H, world.sand, W, H, sx, sy); } // (the sand the water has moved)
+  world.bgBase = new Uint32Array(W * H); world.bg = new Uint32Array(W * H); world.bgLight = world.bgDry = null;
+  world.islandKey = world.scourKey = null;
+  makeShore(world); // (the beach, and all that shapes it, at the new size: the depths with it)
+  regridZones(sx, sy);
+  regridLand(sx, sy);
+  carryFloor(old, sx, sy);
+  if (view.glide) { view.glide.tx -= view.k * sx; view.glide.ty -= view.k * sy; }
+  centerOn(cx, cy);
+  return true;
+}
+// A grid the size of the pond, copied into the bigger one (moved over by the growth).
+function copyGrid(src, sw, sh, dst, dw, dh, sx, sy) {
+  const rows = Math.min(sh, dh - sy), cols = Math.min(sw, dw - sx);
+  for (let y = 0; y < rows; y++) dst.set(src.subarray(y * sw, y * sw + cols), sx + (y + sy) * dw);
+}
+// Everything in the pond that has a place in it, moved over (the pond grew left or up). Things that move on their
+// own (feet, arms, targets) only need to be close: they catch up; things that stand still are moved exactly.
+function shiftWorld(w, dx, dy) {
+  const mv = (o) => { if (!o) return; if (typeof o.x === 'number') { o.x += dx; o.y += dy; } if (typeof o.tx === 'number' && typeof o.ty === 'number') { o.tx += dx; o.ty += dy; } };
+  const pt = (v) => (Array.isArray(v) && typeof v[0] === 'number' ? [v[0] + dx, v[1] + dy] : v);
+  const schools = new Set();
+  for (const c of w.creatures) {
+    mv(c);
+    if (c.body && c.body.x) for (let i = 0; i < c.body.n; i++) { c.body.x[i] += dx; c.body.y[i] += dy; }
+    for (const L of c.legs || []) for (const [a, b] of [['fx', 'fy'], ['sx', 'sy'], ['ex', 'ey'], ['dfx', 'dfy']]) if (typeof L[a] === 'number') { L[a] += dx; L[b] += dy; }
+    for (const k of ['home', 'nest', 'lastTrack', 'roost', 'door']) if (Array.isArray(c[k])) c[k] = pt(c[k]);
+    if (c.school) schools.add(c.school);
+  }
+  for (const s of schools) mv(s);
+  if (typeof shiftShoreLife === 'function') shiftShoreLife(w, dx, dy, []); // (the beach's tracks, nests-to-be and burrows)
+  for (const list of [w.plants, w.pads, w.rocks, w.pebbles, w.structures, w.food, w.effects, w.eggs, w.fossils, w.remains, w.xeno, w.xenoShards, w.parasites,
+    w.litter, w.slicks, w.forms, w.boneBeds, w.detritus, w.swarms, w.bloodSpots, w.glints, w.acts, w.erosion && w.erosion.lagoons, w.game && w.game.nests]) for (const o of list || []) mv(o);
+  for (const p of [...w.plants, ...w.pads]) if (p.segs) for (const s of p.segs) { s[0] += dx; s[1] += dy; s[4] += dx; s[5] += dy; } // (a staghorn's branches)
+  for (const r of w.remains || []) for (const b of r.bones || []) { b[0] += dx; b[1] += dy; }
+  for (const j of Object.values(w.isleJoins || {})) mv(j);
+  mv(w.tar); mv(w.blight);
+  if (w.motes) for (let i = 0; i < w.motes.x.length; i++) { w.motes.x[i] += dx; w.motes.y[i] += dy; }
+}
+// The ecology's grid (32 px cells) and the land's memory (16 px cells): bigger as the pond grows, and moved over a
+// whole cell at a time as the growth to the left or up adds up to one.
+function regridZones(sx, sy) {
+  const z = world.zones;
+  if (!z) return;
+  const acc = world.zoneShift || (world.zoneShift = [0, 0]);
+  acc[0] += sx; acc[1] += sy;
+  const dcx = Math.floor(acc[0] / ZONE), dcy = Math.floor(acc[1] / ZONE), cols = Math.max(1, Math.ceil(world.W / ZONE)), rows = Math.max(1, Math.ceil(world.H / ZONE));
+  if (cols === z.cols && rows === z.rows && !dcx && !dcy) return;
+  acc[0] -= dcx * ZONE; acc[1] -= dcy * ZONE;
+  const n = cols * rows, nz = { ...z, cols, rows, aggr: new Float32Array(n), heat: new Float32Array(n), salt: new Float32Array(n) };
+  for (let j = 0; j < z.rows; j++) for (let i = 0; i < z.cols; i++) {
+    const ni = i + dcx, nj = j + dcy;
+    if (ni < 0 || nj < 0 || ni >= cols || nj >= rows) continue;
+    const a = i + j * z.cols, b = ni + nj * cols;
+    nz.aggr[b] = z.aggr[a]; nz.heat[b] = z.heat[a]; nz.salt[b] = z.salt[a];
+  }
+  world.zones = nz;
+}
+function regridLand(sx, sy) {
+  const L = world.land;
+  if (!L || typeof LAND_KEYS === 'undefined') return;
+  const acc = world.landShift || (world.landShift = [0, 0]);
+  acc[0] += sx; acc[1] += sy;
+  const dcx = Math.floor(acc[0] / LAND_CELL), dcy = Math.floor(acc[1] / LAND_CELL), cols = Math.max(1, Math.ceil(world.W / LAND_CELL)), rows = Math.max(1, Math.ceil(world.H / LAND_CELL));
+  if (cols === L.cols && rows === L.rows && !dcx && !dcy) return;
+  acc[0] -= dcx * LAND_CELL; acc[1] -= dcy * LAND_CELL;
+  const N = { ...L, cols, rows, ch: {}, tint: null, dirty: true, paint: null }; // (as landGrid makes one, in full precision)
+  for (const k of LAND_KEYS) {
+    const A = new Float32Array(cols * rows), O = L.ch[k];
+    for (let y = 0; y < L.rows; y++) for (let x = 0; x < L.cols; x++) { const nx = x + dcx, ny = y + dcy; if (nx >= 0 && ny >= 0 && nx < cols && ny < rows) A[nx + ny * cols] = O[x + y * L.cols]; }
+    N.ch[k] = A;
+  }
+  world.land = N;
+}
+// The floor as it was, moved over by the growth (sx, sy), then the new edge drawn; every 24 px or so of creep, the
+// whole floor again in the background (the deep's shelves stretch a little as it grows).
+function carryFloor(old, sx, sy) {
+  const { W, H } = world, rows = Math.min(old.H, H - sy), cols = Math.min(old.W, W - sx), z = world.raster.zBase;
+  for (let y = 0; y < rows; y++) {
+    const from = y * old.W, to = sx + (y + sy) * W;
+    world.bgBase.set(old.base.subarray(from, from + cols), to);
+    world.bg.set(old.bg.subarray(from, from + cols), to);
+    z.set(old.z.subarray(from, from + cols), to);
+  }
+  const axisX = deepAxisX(world.shoreSide), e = 3; // (the new edge, and a little either side of the old one)
+  const edge = deepShifts(world.shoreSide) ? (axisX ? [0, 0, sx + e, H - 1] : [0, 0, W - 1, sy + e]) : axisX ? [old.W - e, 0, W - 1, H - 1] : [0, old.H - e, W - 1, H - 1];
+  bakeBackground(world, edge.map((v, i) => clamp(v, 0, i % 2 ? H - 1 : W - 1)));
+  world.growBaked = (world.growBaked || 0) + 1;
+  if (world.growBaked >= 24) { world.growBaked = 0; queueBake(world, [0, 0, W - 1, H - 1]); }
+  queueJob(() => paintMinimapBackground());
+}
+
+// The pond's steady creep outward: a pixel at a time of what it's owed (game.growDue: the dawn's growth, a new
+// depth's room), when nothing is being done with it, as often as it can without being felt (each step rebuilds
+// the pond: about 20 ms on a young one, more on a big one, so the bigger the pond the longer between).
+let growNext = 0;
+function growTick(now) {
+  const G = world.game;
+  if (!G || !(G.growDue >= 1) || world.observe || world.grab || press || pinch || world.paused || document.hidden || now < growNext) return;
+  if ((world.expandPx || 0) >= maxDeepPx(world) - 8) { G.growDue = 0; return; }
+  const t0 = performance.now();
+  G.growDue -= 1;
+  if (!growInPlace(1)) { G.growDue += 1; growNext = now + 2500; return; }
+  growNext = now + clamp((performance.now() - t0) * 120, 2500, 15000);
+}
+
 // ---- arrivals: each structure comes into the pond in its own way -----------------------------------
 // An island rises out of a boil of bubbles; a ship sinks down from the surface and
 // settles in a cloud of silt; the deep monuments rise slowly out of the dark; the
@@ -824,12 +969,14 @@ function updateBuildAnims(dt) {
     } else if (s.kind === 'ship') {
       if (Math.random() < dt * 14) addBubbles(world, s.x + rand(-R * 0.7, R * 0.7), s.y + rand(-R * 0.4, R * 0.4), 44 * (1 - u) + 2, 1);
       if (A.t < 0.2 && !A.splashed) { A.splashed = true; addRipple(world, s.x, s.y, 3); }
-    } else if (Math.random() < dt * 10) addBubbles(world, s.x + rand(-R, R) * 0.6, s.y + rand(-R, R) * 0.6, 1, 1);
+    } else if (!STRUCTURES[s.kind].dry && Math.random() < dt * 10) addBubbles(world, s.x + rand(-R, R) * 0.6, s.y + rand(-R, R) * 0.6, 1, 1);
     if (A.t >= A.dur) {
       delete s.anim;
-      // It settles: a ring of silt and bubbles, and it's part of the floor now.
-      for (let k = 0; k < 14; k++) { const a = k / 14 * TAU; addBubbles(world, s.x + Math.cos(a) * R, s.y + Math.sin(a) * R, 1, 1); }
-      addRipple(world, s.x, s.y, s.kind === 'ship' || s.kind === 'island' ? 3 : 1.5);
+      // It settles: a ring of silt and bubbles, and it's part of the floor now. (Up on the dry beach, just settles.)
+      if (!STRUCTURES[s.kind].dry) {
+        for (let k = 0; k < 14; k++) { const a = k / 14 * TAU; addBubbles(world, s.x + Math.cos(a) * R, s.y + Math.sin(a) * R, 1, 1); }
+        addRipple(world, s.x, s.y, s.kind === 'ship' || s.kind === 'island' ? 3 : 1.5);
+      }
       structuresChanged(!!STRUCTURES[s.kind].shore);
     }
   }
@@ -2045,14 +2192,23 @@ let lifeTiles = false;
 function setActions(open) {
   $('actions').hidden = !open;
   $('rail-more').setAttribute('aria-expanded', open);
-  $('rail-more').textContent = open ? '◂' : '▸';
+  $('rail-more').textContent = open ? '▾' : '▴';
   if (open) {
-    if (!hud.classList.contains('hidden')) setHud(false); // (one panel down the left at a time)
+    if (!hud.classList.contains('hidden')) setHud(false); // (one big window at a time)
     if (!lifeTiles) buildLifeTiles();
     markPins();
+    placeActions();
   }
   placeEdgeTabs();
 }
+// Up from the item bar along the bottom, just above it (on a phone it's a sheet from the bottom instead).
+function placeActions() {
+  const box = $('actions');
+  if (box.hidden) return;
+  if (matchMedia('(max-width: 760px), (max-height: 500px)').matches) { box.style.bottom = ''; return; }
+  box.style.bottom = `${Math.round(innerHeight - document.querySelector('.item-bar').getBoundingClientRect().top + 8)}px`;
+}
+addEventListener('resize', placeActions);
 // Creatures: the dock's species, to spawn from here (or pin to the bar).
 function buildLifeTiles() {
   lifeTiles = true;
@@ -2147,7 +2303,7 @@ function refreshSpeciesButtons() {
   }
   // Builds, foods and plants of the deep show once the pond is that deep.
   const tier = (world.erosion && world.erosion.tier) || 0;
-  for (const b of $('builds').children) { const d = STRUCTURES[TOOLS[b.dataset.tool].build]; b.hidden = (!!d.habitat && !fitsHabitat(world, d.habitat)) || (d.tier || 0) > tier; }
+  for (const b of $('builds').children) { const d = STRUCTURES[TOOLS[b.dataset.tool].build]; b.hidden = (!!d.habitat && !fitsHabitat(world, d.habitat)) || (d.tier || 0) > tier || (!!d.found && !(world.game && world.game[d.found])); } // (the tribute: once it's been found)
   for (const b of document.querySelectorAll('#tools [data-tool]')) {
     const t = TOOLS[b.dataset.tool], salt = ['anemone', 'coral', 'urchin'].includes(b.dataset.tool), fresh = ['marimo', 'duckweed', 'lily'].includes(b.dataset.tool);
     b.hidden = (salt && !fitsHabitat(world, 'salt')) || (fresh && !fitsHabitat(world, 'fresh')) || (!!t.habitat && !fitsHabitat(world, t.habitat)) || (t.tier || 0) > tier;
@@ -2161,6 +2317,7 @@ function refreshSpeciesButtons() {
   if (typeof renderQuickBar === 'function' && $('quickbar')) renderQuickBar();
   if (typeof markBuilt === 'function') { markBuilt(); markNew(); }
   if (typeof refreshWildButton === 'function') refreshWildButton();
+  syncHard();
 }
 
 function fillSelect(el, entries, value) {
@@ -2213,6 +2370,29 @@ function setHabitat(h) {
 }
 for (const b of document.querySelectorAll('[data-hab]')) b.addEventListener('click', () => setHabitat(b.dataset.hab));
 
+// Hard mode: this pond's own (game.hard), and how new ponds start (opts.hard). See ecology.js.
+const HARD_ASK = 'Hard mode for this pond: animals can’t be bought or summoned, only drawn in by the habitat you build and plant (and lures). ' +
+  'Fewer arrive and fewer breed, and time runs slower. Points count half again. New ponds will start in hard mode too, with fewer animals. Turn it on?';
+function setHard(on) {
+  if (!world.game || world.observe) { syncHard(); return; }
+  if (on && !hardMode(world) && !confirm(HARD_ASK)) { syncHard(); return; }
+  if (on) world.game.hard = true; else delete world.game.hard;
+  setOpt('hard', on);
+  world.gameDirty = true;
+  logEvent(world, on ? 'Hard mode: from now on nothing can be bought here; the pond has to draw its own life in' : 'Hard mode is off: animals can be bought again', null, { cat: 'pond', pri: 2 });
+  refreshSpeciesButtons();
+  updateCounts();
+  if (typeof spawnUi !== 'undefined' && spawnUi.kind) renderSpawnCard();
+}
+function syncHard() {
+  const on = hardMode(world);
+  $('opt-hard').checked = on;
+  $('opt-hard').disabled = !!world.observe;
+  $('bar-hard').hidden = !on;
+  document.body.classList.toggle('hard', on);
+}
+$('opt-hard').addEventListener('change', (e) => setHard(e.target.checked));
+
 function bindRange(id, key, fmt) {
   const input = $(id), output = input.nextElementSibling;
   input.value = world.opts[key];
@@ -2243,7 +2423,8 @@ function setPaused(on) { world.paused = on; $('pause').setAttribute('aria-presse
 function setHud(show) {
   hud.classList.toggle('hidden', !show);
   $('show-hud').setAttribute('aria-pressed', show);
-  if (show && !$('actions').hidden) setActions(false); // (one panel down the left at a time)
+  if (show && typeof census !== 'undefined' && census.open) setCensus(false); // (one window down the left at a time)
+  if (show && !$('actions').hidden) setActions(false); // (and one big window at a time)
   renderQuickBar();
   placeEdgeTabs();
 }

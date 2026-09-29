@@ -52,7 +52,7 @@ function updateSky(world, dt) {
   tide.rising = cos > 0;
   tide.flow = cos * tide.range; // + flooding toward the beach, - ebbing away
   const surf = tidal ? (0.3 + 0.7 * m.spring) * SURF_BASE[hab] + Math.max(0, world.weather.gust) * 0.35 + world.weather.rain * 0.25 : 0;
-  tide.surf = clamp(surf, 0, 1.4);
+  tide.surf = clamp(surf, 0, 1.4) * (typeof deadCalm === 'function' && deadCalm(world) ? 0.05 : 1); // (a dead pond lies still)
   if (tidal && typeof metaTide === 'function') metaTide(world, tide); // the moonstone, the tide bell, the wind conch
   if (typeof isGlass === 'function' && isGlass(world)) { tide.level = 0.5 + (tide.level - 0.5) * 0.15; tide.surf *= 0.05; tide.flow *= 0.1; } // a glass day: the sea holds still
   tide.wave = (tide.wave + dt * (0.13 + tide.surf * 0.08)) % 1000; // (the surf rolls in slowly)

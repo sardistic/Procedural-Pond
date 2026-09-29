@@ -15,7 +15,16 @@ const DIFFICULTY = {
   salt: { label: 'Hard', aggression: 0.2, settle: 0.88, points: 1.3, note: 'surf, big tides and a busier food chain' },
   mixed: { label: 'Difficult', aggression: 0.26, settle: 0.8, points: 1.6, note: 'fresh and salt life fight over the water' },
 };
-const difficulty = (world) => DIFFICULTY[world.opts.habitat] || DIFFICULTY.mixed;
+// Hard mode, a pond's own choice (game.hard): nothing can be bought, only lured in with habitat; fewer
+// come and fewer breed, it starts with fewer, and time runs slower. Its points count half again.
+const HARD_POINTS = 1.5, HARD_PACE = 0.7;
+const hardMode = (world) => !!(world && world.game && world.game.hard);
+const HARD_DIFF = {};
+const difficulty = (world) => {
+  const h = world.opts.habitat, D = DIFFICULTY[h] || DIFFICULTY.mixed;
+  if (!hardMode(world)) return D;
+  return HARD_DIFF[h] || (HARD_DIFF[h] = { ...D, points: Math.round(D.points * HARD_POINTS * 100) / 100, note: `${D.note}, and hard mode: nothing bought, only lured in` });
+};
 
 // Plants that pull the water fresh (-) or salt (+), and how much cover they give.
 const PLANT_WATER = { marimo: -0.8, duckweed: -0.8, lily: -1, anemone: 1, coral: 1, urchin: 0.6 };

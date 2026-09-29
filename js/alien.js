@@ -90,6 +90,7 @@ function landXeno(world, x, y, why, kind = pick(PARA_KEYS), gen = 1) {
   if (x == null) [x, y] = xenoSpot(world);
   const a = { x, y, kind, gen, born: world.days, seed: randi(0, 99999) };
   world.xeno.push(a);
+  if (world.game) world.game.alienFound = true; // (the pond is a little alien from now on: character.js)
   addRipple(world, x, y, 2, true);
   addBubbles(world, x, y, 2, 6);
   for (const o of world.creatures) if (o.life && Math.hypot(o.x - x, o.y - y) < 90) startle(world, o, x, y, 2);
@@ -105,7 +106,8 @@ function breakXeno(world, a) {
   world.xeno.splice(world.xeno.indexOf(a), 1);
   const pts = award(world, 60 + 20 * a.gen, 'alien artifacts'), ess = gainEssence(world, 10 + 5 * a.gen, 'alien artifacts');
   addBubbles(world, a.x, a.y, 2, 8);
-  const shard = Math.random() < 0.45;
+  const shard = Math.random() < 0.3;
+  if (typeof tributeFromBreak === 'function') tributeFromBreak(world, a); // (now and then, inside: the tribute (imps.js))
   if (shard) world.xenoShards.push({ x: a.x, y: a.y, kind: a.kind, gen: a.gen, at: world.days + rand(2, 4) });
   logEvent(world, `You broke up the ${PARASITES[a.kind].thing} · +${pts} points, +${ess} essence${shard ? '. A shard of it lies there still' : ''}`, null, { cat: 'pond', pri: 2 });
   if (typeof floatAward === 'function') floatAward(a.x, a.y, `+${pts}`);
@@ -217,7 +219,8 @@ function dawnAlien(world) {
     world.xenoShards.splice(i, 1);
     if (landXeno(world, s.x, s.y, 'it grew back from a shard', s.kind, s.gen + 1)) break;
   }
-  if (tier >= 9 && Math.random() < Math.min(0.35, 0.04 + 0.05 * (tier - 9))) landXeno(world);
+  if (tier >= 9 && Math.random() < Math.min(0.14, 0.015 + 0.02 * (tier - 9))) landXeno(world); // (sparingly)
+  if (typeof dawnTribute === 'function') dawnTribute(world);
   // The evolved: from a host that has carried an old strain for a day or more (one a dawn at most).
   const ready = world.creatures.filter((c) => c.life && c.life.para && c.life.para.gen >= 3 && world.days - c.life.para.since >= 0.8 && !c.dying && !c.leaving
     && c.make && c.make !== 'tadpole' && CREATE[c.make] && !(DEEP[c.species] && DEEP[c.species].mythic));

@@ -375,9 +375,11 @@ function renderLineage() {
   }
   box.replaceChildren(...parts);
   box.hidden = false;
-  const bar = byId('animals').getBoundingClientRect(), a = lineUi.anchor.getBoundingClientRect(), w = box.offsetWidth;
-  box.style.left = `${Math.round(clamp(a.left + a.width / 2 - w / 2, 8, innerWidth - w - 8))}px`;
-  box.style.bottom = `${Math.round(innerHeight - bar.top + 14)}px`;
+  // (Out to the right of the animals down the left, level with the one pointed at.)
+  const rail = byId('rail').getBoundingClientRect(), a = lineUi.anchor.getBoundingClientRect(), h = box.offsetHeight;
+  box.style.left = `${Math.round(rail.right + 12)}px`;
+  box.style.bottom = 'auto';
+  box.style.top = `${Math.round(clamp(a.top + a.height / 2 - h / 2, 8, innerHeight - h - 8))}px`;
 }
 
 // ---- census: details about the animals in the pond ------------------------------------------
@@ -388,7 +390,7 @@ function setCensus(open) {
   census.open = open;
   byId('census').hidden = !open;
   byId('census-btn').setAttribute('aria-expanded', open);
-  if (open) { renderCensus(); closeWindows('census'); }
+  if (open) { renderCensus(); closeWindows('census'); if (typeof setHud === 'function' && !byId('hud').classList.contains('hidden')) setHud(false); } // (one window down the left at a time)
 }
 
 function el(tag, cls, text) {
@@ -760,6 +762,8 @@ function updateSkyHud() {
   }
   const btn = byId('sky-btn'), label = `Day ${Math.floor(world.days) + 1}, ${clockLabel(world.clock)} · ${m.name}. Click for moon, tide and time.`;
   if (btn.title !== label) btn.title = label;
+  const day = `Day ${(Math.floor(world.days) + 1).toLocaleString('en')}`, dayEl = byId('sky-day');
+  if (dayEl.textContent !== day) dayEl.textContent = day;
 }
 
 function updateSkyPanel() {
@@ -783,6 +787,7 @@ function updateSkyPanel() {
   }
   byId('tide-text').textContent = tideText;
   byId('surf-text').textContent = surfText;
+  byId('water-text').textContent = typeof waterTemp === 'function' ? `Water: ${tempWord(waterTemp(world))}, ${tempC(world)}°C${typeof deadCalm === 'function' && deadCalm(world) ? ' · dead calm' : ''}` : '';
   const hv = typeof heavensLine === 'function' ? heavensLine(world) : '';
   byId('heavens-text').hidden = !hv;
   if (byId('heavens-text').textContent !== hv) byId('heavens-text').textContent = hv;
@@ -987,9 +992,10 @@ function renderSpawnCard() {
   }
   const buy = el('button', 'sc-buy');
   buy.type = 'button';
-  buy.disabled = (G.essence || 0) < price;
+  buy.disabled = (G.essence || 0) < price || hardMode(world);
   buy.append(document.createTextNode(`Spawn ${SPECIES[kind].label.toLowerCase()} for `), el('i', 'essence'), document.createTextNode(fmt(price)));
-  buy.title = buy.disabled ? `You have ${fmt(G.essence || 0)} essence. Recycle animals with the Net for more.` : `Spawn\nThey arrive in a ring of bubbles. Each settles in ${Math.round(settle * 100)}% of the time; those that don't give half their share back.`;
+  if (hardMode(world)) { buy.replaceChildren(document.createTextNode('Hard mode: they come of their own accord')); buy.classList.add('hard'); }
+  buy.title = hardMode(world) ? 'Hard mode\nAnimals can’t be bought here. Plant and build what this kind likes, and lure it from the Wildlife window (?), and it finds its way in.' : buy.disabled ? `You have ${fmt(G.essence || 0)} essence. Recycle animals with the Net for more.` : `Spawn\nThey arrive in a ring of bubbles. Each settles in ${Math.round(settle * 100)}% of the time; those that don't give half their share back.`;
   buy.addEventListener('click', () => {
     const gene = spawnUi.ancient != null ? genes[spawnUi.ancient] : null;
     if (buyAnimal(kind, [...spawnUi.enh], gene, spawnUi.grade || 0)) { spawnUi.ancient = null; renderSpawnCard(); }
@@ -1006,14 +1012,16 @@ function renderSpawnCard() {
   }
   box.replaceChildren(...[head, supers, facts, have, boosts, grades, ancient, buy].filter(Boolean));
   box.hidden = false;
-  const bar = byId('animals').getBoundingClientRect(), a = spawnUi.anchor.getBoundingClientRect(), w = box.offsetWidth;
-  if (spawnUi.anchor.closest('#rail, #actions') && innerWidth > 760) { // (beside what opened it)
-    const side = byId('actions').hidden ? a.right : byId('actions').getBoundingClientRect().right;
-    box.style.left = `${Math.round(Math.min(side + 10, innerWidth - w - 8))}px`;
+  const a = spawnUi.anchor.getBoundingClientRect(), w = box.offsetWidth;
+  if (spawnUi.anchor.closest('#rail, #actions') && innerWidth > 760) { // (beside what opened it: the animals down the left, or all actions)
+    const acts = byId('actions'), R = acts.hidden || !spawnUi.anchor.closest('#actions') ? a : acts.getBoundingClientRect();
+    box.style.left = `${Math.round(R.right + 10 + w < innerWidth - 8 ? R.right + 10 : Math.max(8, R.left - w - 10))}px`;
     box.style.bottom = 'auto';
     box.style.top = `${Math.round(clamp(a.top - 20, 8, innerHeight - box.offsetHeight - 8))}px`;
     return;
   }
+  // (Pinned to the item bar along the bottom: up from it.)
+  const bar = (spawnUi.anchor.closest('.item-bar') || spawnUi.anchor).getBoundingClientRect();
   box.style.top = '';
   box.style.left = `${Math.round(clamp(a.left + a.width / 2 - w / 2, 8, innerWidth - w - 8))}px`;
   box.style.bottom = `${Math.round(innerHeight - bar.top + 14)}px`;
@@ -1395,13 +1403,32 @@ function renderHatchery() {
 
 
 // ---- the depths: a side view of the pond, and the evolution tree ------------------------------------
-// The slice (above the minimap) is the pond cut from the beach to the far side:
-// the beach and the tide, the floor, and the deep shelves erosion has opened,
-// with a dot for each animal at its depth. Clicking it opens the tree: each
-// depth tier on the fresh and salt branches, and the species it lets you spawn.
+// The slice (above the minimap) is the pond cut from the beach to the far side: the beach and the tide,
+// the floor laid down in layers, and the water over it as each depth would look: sunlight slanting into
+// the shallows over the pond's own plants, then whip corals in the twilight, lights in the midnight dark,
+// and in the abyss the vents (salt) or the drowned cathedral's pillars (fresh), and past that the deep
+// past's own (a sunken city, eyes). Everything in it is placed by the pond, so it doesn't flicker; a dot
+// for each animal at its depth. Clicking it opens the tree: each depth tier on the fresh and salt
+// branches, and the species it lets you spawn.
 
 const evoUi = { open: false, timer: 0, sig: '' };
 const SLICE_SKY = hexToInt('#7ec8e0'), SLICE_SAND = hexToInt('#c8b484'), SLICE_ROCK = hexToInt('#2a2e34'), SLICE_WATER = hexToInt('#1b6a7c');
+const SL = {
+  foam: hexToInt('#e8f4f8'), clay: hexToInt('#5e4a34'), stone: hexToInt('#34302c'), bed: hexToInt('#141210'), grit: hexToInt('#a8966e'), pebble: hexToInt('#24201c'),
+  shell: hexToInt('#efe6d6'), bone: hexToInt('#d8ccb0'), ray: hexToInt('#d8f4f0'), snow: hexToInt('#9aaab0'),
+  reed: hexToInt('#6e8a34'), reedHead: hexToInt('#5a3a1a'), weed: hexToInt('#3e7a36'), kelp: hexToInt('#6a6a1e'), pad: hexToInt('#5a9a34'),
+  coral: [hexToInt('#ff7a5a'), hexToInt('#ffb04a'), hexToInt('#c05ae0'), hexToInt('#ff5a9a'), hexToInt('#f0e0a0')], anemone: hexToInt('#ff8ac0'), urchin: hexToInt('#2a1422'), marimo: hexToInt('#3a7a2a'),
+  whip: hexToInt('#7a2a3a'), glow: [hexToInt('#5af0ff'), hexToInt('#7aff9a'), hexToInt('#b08aff')], vent: hexToInt('#0e0a0a'), ember: hexToInt('#ff7a2a'), plume: hexToInt('#2e2a36'),
+  pale: hexToInt('#a8a8b8'), ruin: hexToInt('#2e323c'), lamp: hexToInt('#ffd87a'), eye: hexToInt('#ffd84a'), stal: hexToInt('#24221e'), tube: hexToInt('#e8e0d8'), tubeTip: hexToInt('#e0303a'),
+  hull: hexToInt('#3a2616'), isle: hexToInt('#d8c490'), green: hexToInt('#4a8a2c'), fan: hexToInt('#c04a8a'), sponge: hexToInt('#e0a030'), flower: hexToInt('#f0a0c0'),
+  grape: hexToInt('#5ac44a'), hornwort: hexToInt('#2a6224'),
+};
+// How each plant shows in the side view, a few pixels high: [colour, height, shape]. (flora.js adds its own.)
+const SLICE_PLANT = {
+  weed: ['weed', 4, 'strand'], eelgrass: ['weed', 5, 'strand'], anemone: ['anemone', 2, 'blob'], coral: ['coral', 3, 'blob'], urchin: ['urchin', 1, 'dot'],
+  marimo: ['marimo', 2, 'blob'], duckweed: [null, 0, 'surface'], lily: [null, 0, 'surface'], blackcoral: ['urchin', 4, 'branch'], glowcap: ['glow', 1, 'dot'],
+  tubeworms: ['tube', 4, 'tube'], paleroots: ['pale', 2, 'strand'], sealily: ['pale', 4, 'strand'], weepmoss: ['weed', 3, 'strand'], starweed: ['glow', 4, 'tube'],
+};
 
 function drawSlice() {
   const cv = byId('slice'), g = cv.getContext('2d'), S = cv.width, T = cv.height, img = g.createImageData(S, T), px = new Uint32Array(img.data.buffer);
@@ -1409,7 +1436,7 @@ function drawSlice() {
   // a: distance from the landward edge (0) out to the far side (len); pos: the world coordinate along the axis.
   const posOf = (a) => (side === 0 || side === 2 ? a : len - 1 - a), aOf = (pos) => (side === 0 || side === 2 ? pos : len - 1 - pos);
   const at = (a, f) => { const pos = clamp(posOf(a), 0, len - 1); return axisX ? [pos, cross * f] : [cross * f, pos]; };
-  const tide = world.shore ? world.tide.level : 0.5, surf = 6 + (1 - tide) * 10, toeY = 22, shelfY = 27, abyssY = T - 3;
+  const k = T / 44, tide = world.shore ? world.tide.level : 0.5, surf = Math.round(6 * k + (1 - tide) * 10 * k), toeY = 22 * k, shelfY = 27 * k, abyssY = T - 3;
   // Where the beach ends and where the drop-off begins (across three lines of the pond).
   let beach = 0, lip = len;
   if (world.shore) for (let a = 0; a < len; a += 2) { if ([0.3, 0.5, 0.7].some((f) => shoreAt(world, ...at(a, f)) > 0.02)) beach = a; }
@@ -1418,8 +1445,9 @@ function drawSlice() {
   const share = world.shore && beach > 4 ? Math.max(0.25, beach / len) : 0;
   const toA = (i) => { const u = (i + 0.5) / S; return !share ? u * len : u < share ? u / share * beach : beach + (u - share) / (1 - share) * (len - beach); };
   const toI = (a) => (!share ? a / len : a < beach ? a / beach * share : share + (a - beach) / Math.max(1, len - beach) * (1 - share)) * S;
-  const water = world.waterColor || SLICE_WATER, dark = DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed;
-  const ground = new Float32Array(S), bg = world.bg, bgDry = world.bgDry, W = world.W;
+  const water = world.waterColor || SLICE_WATER, dark = DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed, salt = world.opts.habitat !== 'fresh';
+  const ground = new Float32Array(S), depth = new Float32Array(S), wet = new Uint8Array(S), raw = new Uint32Array(S), topC = new Uint32Array(S);
+  const bg = world.bg, bgDry = world.bgDry, W = world.W, dk = world.darkness || 0, day = 1 - dk, t = world.t || 0, seed = hashString(world.seed || 'pond') % 997;
   // The floor's own colour where the slice cuts it (the beach dry at the top of the tide), darkened by depth as the pond is.
   const floorAt = (a) => {
     let r = 0, gr = 0, b = 0, n = 0;
@@ -1436,23 +1464,121 @@ function drawSlice() {
     for (const f of [0.3, 0.5, 0.7]) { const [x, y] = at(a, f); e += shoreAt(world, x, y) / 3; d += depthAt(world, x, y) / 3; }
     // The beach, then a floor sloping gently down to the drop-off, then the deep shelves.
     const slope = clamp((a - beach) / Math.max(1, lip - beach), 0, 1);
-    ground[i] = e > 0.02 ? 6 + (1 - e) * (toeY - 6) : d > 0.02 ? shelfY + d * (abyssY - shelfY) : toeY + slope * (shelfY - toeY);
-    const top = mixColor(floorAt(a), dark, d * 0.85);
+    ground[i] = e > 0.02 ? 6 * k + (1 - e) * (toeY - 6 * k) : d > 0.02 ? shelfY + d * (abyssY - shelfY) : toeY + slope * (shelfY - toeY);
+    depth[i] = d; wet[i] = e > 0.02 ? 0 : 1;
+    raw[i] = mixColor(floorAt(a), dark, d * 0.85);
+  }
+  // (The floor's colour smoothed along the cut, so it reads as ground, not as stripes.)
+  for (let i = 0; i < S; i++) {
+    let r = 0, gg = 0, b = 0;
+    for (let o = -3; o <= 3; o++) { const c = raw[clamp(i + o, 0, S - 1)]; r += c & 255; gg += (c >> 8) & 255; b += (c >>> 16) & 255; }
+    topC[i] = (0xff000000 | (Math.round(b / 7) << 16) | (Math.round(gg / 7) << 8) | Math.round(r / 7)) >>> 0;
+  }
+  const rain = world.weather ? world.weather.rain : 0, cast = typeof skyCast === 'function' ? skyCast(world) : null;
+  let sky0 = mixColor(SLICE_SKY, 0xff9aa4a8, rain * 0.6), sky1 = mixColor(SLICE_SKY, 0xffe0f0f4, 0.35);
+  if (cast) { sky0 = mixColor(sky0, cast.c, cast.k); sky1 = mixColor(sky1, cast.c, cast.k * 0.7); }
+  for (let i = 0; i < S; i++) {
+    const gnd = ground[i], d = depth[i], wav = (fbm(i * 0.06, 3.1, 61 + seed) - 0.5) * 5;
     for (let j = 0; j < T; j++) {
       let c;
-      // Under the floor: its colour, darkening into the layers below.
-      if (j >= ground[i]) c = mixColor(top, 0xff0a0c10, clamp((j - ground[i]) / 14, 0, 1) * 0.6);
-      else if (j < surf) c = mixColor(SLICE_SKY, 0xff101820, world.darkness * 0.8);
-      else c = mixColor(water, dark, clamp((j - surf) / (abyssY - surf), 0, 1) * 0.95);
+      if (j >= gnd) {
+        // Under the floor: the floor's own colour on top, then what it lies on (sand, clay, stone, bedrock),
+        // the boundaries wandering; grit and pebbles in the layers.
+        const dj = j - gnd, L = dj + wav * 0.6;
+        c = dj < 1.5 ? topC[i] : L < 5 ? mixColor(topC[i], SL.clay, 0.3 + 0.15 * (j & 1)) : L < 9 ? mixColor(SL.clay, SL.stone, 0.55) : mixColor(SL.stone, SL.bed, clamp((L - 9) / 10, 0, 1));
+        if (dj >= 1.5) { const h = hash2(i, j, 11 + seed); if (h < 0.05) c = mixColor(c, SL.grit, 0.45); else if (h > 0.97) c = SL.pebble; }
+        c = mixColor(c, 0xff000000, d * 0.45 + dk * 0.25);
+      } else if (j < surf) {
+        c = mixColor(mixColor(sky1, sky0, j / Math.max(1, surf)), 0xff101820, dk * 0.8);
+        if (dk > 0.5 && hash2(i, j, 5) > 0.985) c = 0xffd8e0f0; // (stars)
+      } else {
+        const u = clamp((j - surf) / (abyssY - surf), 0, 1), under = j - surf;
+        c = mixColor(water, dark, u * 0.95);
+        if (!salt && d >= 0.45 && d < 0.75) c = mixColor(c, 0xff000000, 0.3); // (under the cave's roof)
+        // Sunlight slanting down into the shallows, fading as it goes.
+        if (day > 0.25 && under < 12 * k && d < 0.3 && ((i + j * 0.55 + seed) % 9) < 1.4) c = mixColor(c, SL.ray, (1 - under / (12 * k)) * 0.2 * day);
+      }
       px[i + j * S] = c;
     }
   }
-  // The water's surface, and the erosion toward the next tier along the bottom.
-  for (let i = 0; i < S; i++) if (ground[i] > surf) px[i + Math.floor(surf) * S] = 0xffe8f4f8;
+  const put = (i, j, c) => { i = Math.round(i); j = Math.round(j); if (i >= 0 && i < S && j >= 0 && j < T) px[i + j * S] = c; };
+  const inWater = (i, j) => j > surf && j < ground[clamp(Math.round(i), 0, S - 1)];
+  // The water's surface, lapping.
+  const lap = Math.floor(t * 3);
+  for (let i = 0; i < S; i++) if (ground[i] > surf) put(i, surf, (i + lap) % 7 < 4 ? SL.foam : mixColor(water, SL.foam, 0.5));
+  // What the depths hold, column by column (a hash of the pond and the column decides; the deep past's own at the bottom).
+  const tier = world.erosion ? world.erosion.tier : 0;
+  for (let i = 0; i < S; i++) {
+    const d = depth[i], gnd = Math.floor(ground[i]), h = hash2(i, 3, 19 + seed), h2 = hash2(i, 9, 23 + seed);
+    if (!wet[i]) { if (gnd < surf && h < 0.12) put(i, gnd, h < 0.06 ? SL.shell : SL.bone); continue; } // (shells and bits of bone up the beach)
+    if (d < 0.02) continue; // (the shallow floor: its own plants, below)
+    if (d < 0.45) {
+      // The twilight (the deep lake): whip corals, or long weed; marine snow drifting down.
+      if (h < 0.18) for (let q = 1; q <= 2 + (h2 * 3 | 0); q++) put(i + (q > 2 && h2 > 0.5 ? 1 : 0), gnd - q, mixColor(salt ? SL.whip : SL.weed, dark, 0.35));
+      if (h > 0.8) put(i, surf + 2 + ((h2 * 97 + t * 1.5) % Math.max(1, gnd - surf - 3)), mixColor(SL.snow, dark, 0.4));
+    } else if (d < 0.75) {
+      // The midnight dark (the sunless cave): lights that come and go; in a cave, its roof and the drips hanging from it.
+      if (h < 0.22 && Math.sin(t * (1.2 + h2) + h * 40) > 0.35) { const y = surf + 3 + h2 * (gnd - surf - 5); if (inWater(i, y)) put(i, y, SL.glow[(h * 30 | 0) % 3]); }
+      if (!salt) {
+        const roof = 2 + (h2 < 0.5 ? 1 : 0), drip = h < 0.4 ? 1 + ((h * 40) | 0) % 5 : 0;
+        for (let q = 1; q <= roof + drip; q++) put(i, surf + q, q === roof + drip && drip ? mixColor(SL.stal, SL.pale, 0.3) : SL.stal);
+      }
+    } else {
+      // The abyss: vents smoking (salt) or the drowned cathedral's pale pillars (fresh); past it, a sunken city and eyes.
+      const deepest = tier >= 7 && h2 < 0.25 ? 'city' : tier >= 8 && h2 > 0.93 ? 'eyes' : 'abyss';
+      if (deepest === 'city' && h < 0.5) {
+        const tall = 3 + (h * 12 | 0);
+        for (let q = 1; q <= tall; q++) put(i, gnd - q, SL.ruin);
+        if (Math.sin(t * 0.7 + h * 50) > 0.6) put(i, gnd - tall + 1, SL.lamp);
+      } else if (deepest === 'eyes') {
+        if (Math.sin(t * 0.5 + h * 20) > 0.2) { put(i, gnd - 5, SL.eye); put(i + 2, gnd - 5, SL.eye); }
+      } else if (salt && h < 0.1) {
+        for (let q = 1; q <= 3; q++) put(i, gnd - q, SL.vent);
+        put(i, gnd - 4, (t * 4 + h * 9) % 2 < 1.4 ? SL.ember : SL.vent);
+        for (let q = 5; q < 9; q++) put(i + Math.round(Math.sin(t * 1.5 + q + h * 9) * 0.6), gnd - q, SL.plume);
+      } else if (!salt && h < 0.12) {
+        const tall = 5 + (h2 * 4 | 0);
+        for (let q = 1; q <= tall; q++) put(i, gnd - q, mixColor(SL.pale, dark, 0.3 + 0.2 * (q & 1)));
+        put(i - 1, gnd - tall, SL.pale); put(i + 1, gnd - tall, SL.pale);
+      }
+      if (h > 0.9 && Math.sin(t * 0.9 + h * 30) > 0.5) { const y = surf + 4 + h2 * (gnd - surf - 6); if (inWater(i, y)) put(i, y, SL.glow[0]); }
+    }
+  }
+  // The pond's own plants, islands and wrecks, each at its place along the cut (one plant to a column, the tallest kept).
+  const took = new Int8Array(S), colOf = (x, y) => clamp(Math.floor(toI(aOf(axisX ? x : y))), 0, S - 1);
+  for (const p of [...world.plants, ...world.pads]) {
+    const P = SLICE_PLANT[p.make] || (typeof FLORA_PLANTS !== 'undefined' && FLORA_PLANTS[p.make] && FLORA_PLANTS[p.make].slice);
+    if (!P) continue;
+    const i = colOf(p.x, p.y), [col, hgt, shape] = P, grow = p.growth ?? 1, gnd = Math.floor(ground[i]), H = Math.max(1, Math.round(hgt * grow * k));
+    if (took[i] >= H) continue;
+    took[i] = H;
+    const hh = hash2(p.seed || i, 1, 5), c = col === 'coral' ? SL.coral[(hh * 5) | 0] : col === 'glow' ? SL.glow[(hh * 3) | 0] : SL[col] || SL.weed;
+    if (shape === 'surface') { if (ground[i] > surf) { put(i, surf, SL.pad); put(i + 1, surf, SL.pad); } continue; }
+    if (shape === 'reed') { for (let y = gnd - 1; y >= surf - 3; y--) put(i, y, SL.reed); put(i, surf - 4, SL.reedHead); put(i, surf - 5, SL.reedHead); continue; }
+    if (shape === 'kelp') { for (let y = gnd - 1; y > surf + 1; y--) put(i + ((y + (t * 2 | 0)) % 5 === 0 ? 1 : 0), y, (gnd - y) % 4 === 0 ? mixColor(c, 0xffffffff, 0.25) : c); continue; }
+    if (shape === 'flower') { for (let y = gnd - 1; y >= surf; y--) put(i, y, SL.weed); put(i, surf - 1, c); put(i - 1, surf, SL.pad); put(i + 1, surf, SL.pad); continue; }
+    if (shape === 'fan') { for (let q = 1; q <= H; q++) for (let o = -Math.min(q - 1, 2); o <= Math.min(q - 1, 2); o++) if ((o + q) & 1) put(i + o, gnd - q, c); continue; }
+    for (let q = 1; q <= H; q++) {
+      const x = i + (shape === 'strand' && q > 2 ? Math.round(Math.sin(t * 1.3 + q + hh * 9) * 0.6) : 0);
+      put(x, gnd - q, shape === 'tube' && q === H ? (col === 'glow' ? SL.glow[0] : SL.tubeTip) : c);
+      if ((shape === 'blob' && q === H && H > 1) || (shape === 'branch' && q % 2 === 0)) put(i + 1, gnd - q, c);
+    }
+  }
+  for (const s of world.structures || []) {
+    const i = colOf(s.x, s.y), gnd = Math.floor(ground[i]);
+    if (s.kind === 'island') {
+      const w = Math.max(2, Math.round(islandRadius(world, s) / len * S * (share ? 1 - share : 1)));
+      for (let o = -w; o <= w; o++) { const top = Math.round(surf - 2 + Math.abs(o) / w * 3); for (let y = top; y < Math.floor(ground[clamp(i + o, 0, S - 1)]); y++) put(i + o, y, y === top ? SL.green : SL.isle); }
+    } else if (s.kind === 'ship') {
+      for (let o = -3; o <= 3; o++) { put(i + o, gnd - 1, SL.hull); if (Math.abs(o) < 3) put(i + o, gnd - 2, SL.hull); }
+      for (let q = 3; q < 7; q++) put(i, gnd - q, SL.hull);
+    }
+  }
+  // The erosion toward the next tier along the bottom.
   const E = world.erosion, next = E && DEPTH_TIERS[E.tier + 1];
   if (next) {
-    const prev = DEPTH_TIERS[E.tier].erosion, k = clamp((E.e - prev) / (next.erosion - prev), 0, 1);
-    for (let i = 0; i < Math.round(S * k); i++) px[i + (T - 1) * S] = 0xffff8bc3;
+    const prev = DEPTH_TIERS[E.tier].erosion, kk = clamp((E.e - prev) / (next.erosion - prev), 0, 1);
+    for (let i = 0; i < Math.round(S * kk); i++) px[i + (T - 1) * S] = 0xffff8bc3;
   }
   g.putImageData(img, 0, 0);
   // Animals at their depth.
@@ -1471,7 +1597,6 @@ function drawSlice() {
     g.lineWidth = 1;
     g.strokeRect(i0 + 0.5, 0.5, Math.max(2, i1 - i0) - 1, T - 1);
   }
-  const tier = E ? E.tier : 0;
   cv.title = `${tierName(world, tier)}${next ? ` · next: ${tierName(world, E.tier + 1).toLowerCase()} (erosion ${E.e.toFixed(1)} of ${next.erosion})` : ' · the deepest the pond can go'}. The box is what's on screen. Click for the depths and what lives there.`;
 }
 
@@ -1697,6 +1822,7 @@ function renderScorePanel(force = false) {
   byId('sp-points').textContent = fmt(G.points);
   byId('sp-pearls').textContent = fmt(G.pearls);
   byId('sp-essence').textContent = fmt(G.essence || 0);
+  if (typeof charLine === 'function') { const cl = `This pond: ${charLine(world)}.`; if (byId('sp-char').textContent !== cl) byId('sp-char').textContent = cl; }
   byId('sp-mode').replaceChildren(colorize(`${HABITATS[world.opts.habitat]} water is ${difficulty(world).label.toLowerCase()}: ${difficulty(world).note}. Points ×${difficulty(world).points}.`));
   byId('sp-rank').textContent = world.link && G.board && Net.rank ? `#${Net.rank}` : '–';
   byId('sp-rank-note').textContent = !Net.base ? 'offline' : !G.board ? 'not listed'

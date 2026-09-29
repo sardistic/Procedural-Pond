@@ -397,6 +397,7 @@ function landIslands(world) {
     const weights = { ...K.flora };
     for (const k of LAND_KEYS) if (m[k] > 0.15 && ISLE_BIOME_FLORA[k]) for (const [t, w] of Object.entries(ISLE_BIOME_FLORA[k])) weights[t] = (weights[t] || 0) + w * m[k] * 4;
     if (typeof isleFloraWeights === 'function') isleFloraWeights(s, weights); // (as it matures, bigger trees: isles.js)
+    if (typeof climateFloraWeights === 'function') climateFloraWeights(world, weights); // (and the pond's climate: flora.js)
     for (let n = 0; n < 3 && fl.length < cap; n++) {
       const a = rand(0, TAU), d = Math.sqrt(Math.random()) * R * 0.75, x = Math.cos(a) * d, y = Math.sin(a) * d;
       if (fl.some((f) => (f.x - x) ** 2 + (f.y - y) ** 2 < 16)) continue;

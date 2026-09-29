@@ -124,15 +124,13 @@ function drawDetritus(r, world, rect) {
 }
 
 // ---- the pond keeps growing ------------------------------------------------------------------------------------
-// A little further out each dawn: more the deeper it's gone and the more it's scored.
+// A little further out each dawn: more the deeper it's gone and the more it's scored. It's owed (game.growDue)
+// and paid a pixel at a time through the day (growTick in main.js), so the edge creeps out rather than jumps.
 function dawnExpand(world) {
   if (world.observe || typeof expandWorldPx !== 'function' || (world.expandPx || 0) >= maxDeepPx(world) - 8) return;
   const tier = (world.erosion && world.erosion.tier) || 0, pts = (world.game && world.game.points) || 0;
   const grow = 2 + 0.8 * tier + 0.6 * Math.log10(1 + pts) + (world.landArea ? 0.05 * (world.landArea.cryptid || 0) : 0);
-  const G = world.game;
-  G.expandDue = (G.expandDue || 0) + grow;
-  if (G.expandDue < Math.max(40, 0.02 * (world.expandPx || 0)) || world.grab) return;
-  const add = Math.floor(G.expandDue);
-  G.expandDue = 0;
-  expandWorldPx(add, 'The pond reaches a little further out', true);
+  queueGrowth(world, grow + (world.game.expandDue || 0));
+  world.game.expandDue = 0; // (what an older pond had put by toward its next step)
 }
+const queueGrowth = (world, px) => { if (world.game && px > 0) world.game.growDue = (world.game.growDue || 0) + px; };

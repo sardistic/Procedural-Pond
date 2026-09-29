@@ -134,13 +134,14 @@ const structureAt = (world, x, y) => (world.structures || []).find((s) => Math.h
 
 // Where a structure can go: in water, away from the edges and from other structures.
 function canPlace(world, kind, x, y) {
-  const def = STRUCTURES[kind], big = kind === 'ship' && typeof wreckScale === 'function' ? wreckScale(depthAt(world, x, y)) : 1, m = def.size * big + 6;
+  const def = STRUCTURES[kind], big = kind === 'ship' && typeof wreckScale === 'function' ? wreckScale(depthAt(world, x, y)) : 1, m = def.dry ? def.size + 1 : def.size * big + 6; // (up on the beach it can stand near the top)
   if (x < m || y < m || x > world.W - m || y > world.H - m) return 'too close to the edge';
   if (def.habitat && !fitsHabitat(world, def.habitat)) return `it needs ${def.habitat} water`;
   if (def.shore && !world.shore) return 'a pool has no floor to raise';
   if (def.tier && ((world.erosion && world.erosion.tier) || 0) < def.tier) return `the pond isn't that deep yet (it needs ${tierName(world, def.tier).toLowerCase()})`;
   if (def.deepMin && depthAt(world, x, y) < def.deepMin) return 'it needs deeper water';
-  if (world.shore && shoreAt(world, x, y) > world.tide.level - 0.1) return 'too shallow here';
+  if (def.dry) { if (!world.shore || shoreAt(world, x, y) < 0.7) return 'it has to stand on the dry beach, above the tide'; } // (the tribute)
+  else if (world.shore && shoreAt(world, x, y) > world.tide.level - 0.1) return 'too shallow here';
   for (const s of world.structures || []) {
     if (def.unique && s.kind === kind) return 'you already have one';
     if (Math.hypot(s.x - x, s.y - y) < def.size * big + STRUCTURES[s.kind].size * (s.big || 1)) return 'too close to another structure';
@@ -571,6 +572,7 @@ function dawnStructures(world) {
     if (got) logEvent(world, `Coins turned up in the silt around the wreck: +${got} pearls`, null, { cat: 'pond', pri: 0 });
   }
   if (ess) gainEssence(world, ess, 'the deep structures');
+  if (typeof dawnCharacter === 'function') dawnCharacter(world); // (the curse greys the sand a step at a time)
   sproutAround(world);
   seedPlants(world);
   if (typeof queueStains === 'function') queueStains(world); else applyStains(world); // (in slices, on a big pond)
@@ -604,7 +606,7 @@ function sproutAround(world) {
       if (x < 8 || y < 8 || x > world.W - 8 || y > world.H - 8 || (world.shore && shoreAt(world, x, y) > world.tide.level - 0.25)) continue;
       if (world.plants.filter((p) => (p.x - x) ** 2 + (p.y - y) ** 2 < 400).length >= 3) continue;
       const salt = saltAt(world, x, y) > 0, deep = depthAt(world, x, y) > 0.35;
-      const kind = deep ? (salt ? 'blackcoral' : 'glowcap') : salt ? pick(['coral', 'coral', 'anemone', 'weed']) : pick(['weed', 'weed', 'eelgrass', 'marimo']);
+      const kind = typeof naturalPlant === 'function' ? naturalPlant(world, x, y, salt, deep) : deep ? (salt ? 'blackcoral' : 'glowcap') : salt ? pick(['coral', 'coral', 'anemone', 'weed']) : pick(['weed', 'weed', 'eelgrass', 'marimo']); // (by the pond's water and liking: flora.js)
       const p = sprouting(makePlant(kind, world, x, y, kind === 'weed' ? { habitat: salt ? 'salt' : 'fresh' } : {}));
       p.born = world.days;
       world.plants.push(p);
