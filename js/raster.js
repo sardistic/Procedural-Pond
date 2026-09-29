@@ -238,7 +238,8 @@ class Raster {
     }
     const fogK = 64 / SURFACE_Z;
     const wx = wob ? wob.x : null, wy = wob ? wob.y : null;
-    const shore = s.shore || null, bgDry = s.bgDry, tideL = (s.tide ?? 1) * 255, RM = s.riverMask || null;
+    const shore = s.shore || null, bgDry = s.bgDry, tideL = (s.tide ?? 1) * 255, RM = s.riverMask || null, riverDeep = s.riverDeep ?? 0.5;
+    const rc = s.riverColor ?? (fog ? fog.color : 0), rr = rc & 255, rg = (rc >> 8) & 255, rb = (rc >>> 16) & 255; // (the river's own water: not a bloom's)
     // (The river's channels up the beach: the surf breaks at the sea, not in them.)
     const inland = (x, y) => !!RM && x >= RM.x0 && y >= RM.y0 && x < RM.x0 + RM.w && y < RM.y0 + RM.h && RM.data[(x - RM.x0) + (y - RM.y0) * RM.w] === 1;
     const surf = s.surf || 0, wave = s.wave || 0, surfReach = 30 + 70 * surf, foamW = 0.05 + 0.07 * surf;
@@ -415,6 +416,21 @@ class Raster {
           if (a) {
             const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
             c = (0xff000000 | ((cb + (((fb - cb) * a) >> 8)) << 16) | ((cg + (((fgc - cg) * a) >> 8)) << 8) | (cr + (((fr - cr) * a) >> 8))) >>> 0;
+          }
+        }
+        // A river's channel runs deep: its water as the land up the beach paints it (hinterland.js), full water over
+        // the bed and darkening toward the middle by how deep the river has cut, so it carries on across the join.
+        if (RM && RM.deep && !dry) {
+          const rx = x - RM.x0, ry = y - RM.y0;
+          if (rx >= 0 && ry >= 0 && rx < RM.w && ry < RM.h) {
+            const v = RM.deep[rx + ry * RM.w];
+            if (v) {
+              const e = v / 255, kk = e * e * (3 - 2 * e), fadeIn = Math.min(1, e * 6); // (e: toward the middle, and fading out at the mouth)
+              let wa = (0.66 + 0.3 * kk) * fadeIn, ba = (0.08 + (0.14 + 0.3 * riverDeep) * kk) * fadeIn;
+              if (i) { wa *= 0.4; ba *= 0.4; }
+              const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255, keep = 1 - ba;
+              c = (0xff000000 | (((cb + (rb - cb) * wa) * keep) << 16) | (((cg + (rg - cg) * wa) * keep) << 8) | ((cr + (rr - cr) * wa) * keep)) >>> 0;
+            }
           }
         }
         if (depthMap && !dry) {

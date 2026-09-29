@@ -84,9 +84,9 @@ function hinterRiver(world) {
   for (let dd = 0; dd < HINTER_MAX; dd++) {
     const valley = C0.u * along + 24 * Math.sin(dd * 0.021 + C0.ph) + 9 * Math.sin(dd * 0.057 + C0.ph2);
     uc[dd] = lerp(riverCenter(world, C, -1 - dd), valley, smoothstep(0, 120, dd));
-    hw[dd] = Math.max(1.3, Rv.w * 0.4 * lerp(1, 0.55, clamp(dd / 320, 0, 1)));
+    hw[dd] = Math.max(2.5, Rv.w * 0.42 * lerp(1, 0.8, clamp(dd / 320, 0, 1)));
   }
-  return { uc, hw, flow: Rv.flow || 1 };
+  return { uc, hw, flow: Rv.flow || 1, deep: typeof riverDeepK === 'function' ? riverDeepK(world) : 0.5 };
 }
 
 // ---- painting ----------------------------------------------------------------------------------------
@@ -98,9 +98,28 @@ function* hinterPaint(world, geo) {
   const [fx, fy] = world.expandPx && typeof originOf === 'function' ? originOf(world) : [0, 0];
   const hab = world.opts.habitat || 'mixed', S = hashString(`${world.seed}/hinter`) % 997, riv = hinterRiver(world);
   const water = world.waterColor || hexToInt('#2a6a78'), tintF = typeof floorTintFn === 'function' ? floorTintFn(world) : (c) => c; // (this pond's sand: character.js)
-  // Where the pond's own sand meets the picture, the two blend (the floor's stains and deposits carry on a little).
-  const edge = new Uint32Array(along), bg = world.bg;
-  if (bg && typeof coastXY === 'function') for (let u = 0; u < along; u++) { const [x, y] = coastXY(world, 0, u), c = bg[x + y * world.W]; edge[u] = c >>> 24 ? hDry(c) : 0; }
+  // Where the pond's own sand meets the picture, what's on the pond's side (stains, drifted sand, the land's tint)
+  // carries on a little way up: not its pixels (a row stretched up the land drew a line of dashes), but how far its
+  // colour sits from the plain sand there, smoothed along the beach, fading out over the first 20 px.
+  const EDGE = 20, off = new Float32Array(along * 3), bg = world.bg, tintE = typeof floorTintFn === 'function' ? floorTintFn(world) : (c) => c;
+  if (bg && typeof coastXY === 'function') {
+    const raw = new Float32Array(along * 3);
+    for (let u = 0; u < along; u++) {
+      let n = 0;
+      for (let d = 0; d < 4; d++) {
+        const [x, y] = coastXY(world, d, u), c = bg[x + y * world.W];
+        if (!(c >>> 24)) continue;
+        const f = tintE(floor.color(x - fx, y - fy)), cl = (v, s) => clamp(((c >> s) & 255) - ((f >> s) & 255), -36, 36);
+        raw[u * 3] += cl(0, 0); raw[u * 3 + 1] += cl(0, 8); raw[u * 3 + 2] += cl(0, 16); n++;
+      }
+      if (n) for (let q = 0; q < 3; q++) raw[u * 3 + q] /= n;
+    }
+    for (let u = 0; u < along; u++) {
+      let n = 0;
+      for (let o = -8; o <= 8; o++) { const v = u + o; if (v < 0 || v >= along) continue; for (let q = 0; q < 3; q++) off[u * 3 + q] += raw[v * 3 + q]; n++; }
+      for (let q = 0; q < 3; q++) off[u * 3 + q] /= n;
+    }
+  }
   // 1. How far "in" each point is (a ragged line, not a ruler's), and the dunes' heights.
   for (let py = 0; py < ch; py++) {
     for (let px = 0; px < cw; px++) {
@@ -119,8 +138,12 @@ function* hinterPaint(world, geo) {
   for (let py = 0; py < ch; py++) {
     for (let px = 0; px < cw; px++) {
       const [dd, u] = hinterToLocal(s, px, py), i = px + py * cw, L = Lm[i], b = dither(px, py);
-      let c = hDry(tintF(floor.color(px + ox - fx, py + oy - fy)));
-      if (dd < 12 && edge[u]) c = mixColor(edge[u], c, smoothstep(0, 12, dd));
+      let c = tintF(floor.color(px + ox - fx, py + oy - fy));
+      if (dd < EDGE && u >= 0 && u < along) {
+        const k = 1 - smoothstep(0, EDGE, dd), o = u * 3;
+        c = (0xff000000 | (clamp(Math.round(((c >> 16) & 255) + off[o + 2] * k), 0, 255) << 16) | (clamp(Math.round(((c >> 8) & 255) + off[o + 1] * k), 0, 255) << 8) | clamp(Math.round((c & 255) + off[o] * k), 0, 255)) >>> 0;
+      }
+      c = hDry(c);
       // Dunes: bright on the faces toward the light (up and left), in shadow behind.
       const e = E[i];
       if (e > 0 || (px > 0 && py > 0 && E[i - 1 - cw] > 0)) {
@@ -140,10 +163,10 @@ function* hinterPaint(world, geo) {
       if (riv) {
         const du = Math.abs(u - riv.uc[dd]), hw = riv.hw[dd];
         if (du <= hw) {
-          const k = 1 - du / hw;
-          c = mixColor(mixColor(c, water, 0.5 + 0.28 * k), HL.black, 0.05 + 0.12 * k + jung * 0.5);
+          const k = 1 - du / hw, kk = k * k * (3 - 2 * k);
+          c = mixColor(mixColor(c, water, 0.66 + 0.3 * kk), HL.black, 0.08 + (0.14 + 0.3 * riv.deep) * kk + jung * 0.5);
           cover[i] = 2;
-        } else if (du <= hw + 2.4) c = mixColor(c, HL.wet, 0.5 * (1 - (du - hw) / 2.4) * (1 - jung * 0.5));
+        } else if (du <= hw + 3.5) c = mixColor(c, HL.wet, 0.55 * (1 - (du - hw) / 3.5) * (1 - jung * 0.5));
       }
       base[i] = c;
     }
