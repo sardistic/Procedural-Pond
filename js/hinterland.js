@@ -83,7 +83,7 @@ function hinterRiver(world) {
   const uc = new Float32Array(HINTER_MAX), hw = new Float32Array(HINTER_MAX);
   for (let dd = 0; dd < HINTER_MAX; dd++) {
     const valley = C0.u * along + 24 * Math.sin(dd * 0.021 + C0.ph) + 9 * Math.sin(dd * 0.057 + C0.ph2);
-    uc[dd] = lerp(riverCenter(world, C, -1 - dd), valley, smoothstep(0, 120, dd));
+    uc[dd] = lerp(riverCenter(world, C, -1 - dd), valley, smoothstep(0, 220, dd)); // (easing back into its valley)
     hw[dd] = Math.max(2.5, Rv.w * 0.42 * lerp(1, 0.8, clamp(dd / 320, 0, 1)));
   }
   return { uc, hw, flow: Rv.flow || 1, deep: typeof riverDeepK === 'function' ? riverDeepK(world) : 0.5 };

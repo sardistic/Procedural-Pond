@@ -76,10 +76,13 @@ function riverWidth(world) {
 // Each course the river takes (the first is the one it always had). It keeps one for a while, then
 // breaks out: the new channel breaks through over the last days of the old, which then silts up.
 const riverPeriod = (world) => 9 + 9 * ((hashString(`${world.seed}/period`) % 1000) / 1000);
+// (A new course comes out of the same valley: its mouth wanders a little way either side of the first one's, so up
+// the land it bends back into the valley gently, not in a long diagonal across the beach.)
 function riverCourse(world, k) {
   const C = world.riverCourses && world.riverCourses.seed === world.seed ? world.riverCourses : (world.riverCourses = { seed: world.seed });
+  const u0 = k === 0 ? 0 : riverCourse(world, 0).u;
   if (!C[k]) C[k] = withSeed(k === 0 ? `${world.seed}/river` : `${world.seed}/river/${k}`, () => ({
-    u: rand(0.2, 0.8), A: rand(6, 16), f: rand(0.035, 0.07), ph: rand(0, TAU), A2: rand(2, 6), f2: rand(0.12, 0.2), ph2: rand(0, TAU),
+    u: k === 0 ? rand(0.2, 0.8) : clamp(u0 + (rand(0.2, 0.8) - 0.5) * 0.4, 0.12, 0.88), A: rand(6, 16), f: rand(0.035, 0.07), ph: rand(0, TAU), A2: rand(2, 6), f2: rand(0.12, 0.2), ph2: rand(0, TAU),
   }));
   return C[k];
 }
@@ -110,10 +113,13 @@ function applyRiver(world) {
   M.data = new Uint8Array(M.w * M.h);
   M.deep = new Uint8Array(M.w * M.h); // (the channel: toward its middle, fading out at the mouth; the renderer paints it as river)
   const mouthD = band * 0.95;
-  const cut = (C, width, bedAt, keep, deepAt = 0) => {
+  // (top: where a channel that isn't the river's own now begins: an old one silting up from its head down, a new one
+  // not yet through; it tapers in from there, so nothing ends in a straight cut at the top of the beach.)
+  const cut = (C, width, bedAt, keep, deepAt = 0, top = 0) => {
     const pts = [];
     for (let d = 0; d <= reach; d++) {
-      const uc = riverCenter(world, C, d), half = width / 2 * (0.8 + 0.5 * Math.min(1, d / (band * 1.35))); // it spreads toward the mouth
+      const uc = riverCenter(world, C, d), half = width / 2 * (0.8 + 0.5 * Math.min(1, d / (band * 1.35))) * (top ? smoothstep(top, top + 18, d) : 1); // it spreads toward the mouth
+      if (half < 0.3) { if (keep && d % 3 === 0) pts.push(coastXY(world, d, uc)); continue; }
       const fade = clamp((mouthD * 1.25 - d) / (mouthD * 0.5), 0, 1); // (its depth fades out as it opens into the sea)
       for (let u = Math.floor(uc - half - 3); u <= Math.ceil(uc + half + 3); u++) {
         const [x, y] = coastXY(world, d, u);
@@ -137,10 +143,10 @@ function applyRiver(world) {
     if (R.k - back < 0) continue;
     const age = (back - 1 + R.f) / 3; // 0: just left, 1: gone
     if (age >= 1) continue;
-    cut(riverCourse(world, R.k - back), w * (0.85 - 0.6 * age), Math.round(lerp(bed + 12, 0.46 * 255, age)), false, 0.5 * (1 - age));
+    cut(riverCourse(world, R.k - back), w * (0.85 - 0.6 * age), Math.round(lerp(bed + 12, 0.46 * 255, age)), false, 0.3 * (1 - age), band * (0.18 + 0.45 * age));
   }
   // The new one breaking through: a thin shallow channel, cutting deeper.
-  if (R.next > 0) cut(riverCourse(world, R.k + 1), w * (0.25 + 0.5 * R.next), Math.round(lerp(0.36 * 255, bed + 8, R.next)), false);
+  if (R.next > 0) cut(riverCourse(world, R.k + 1), w * (0.25 + 0.5 * R.next), Math.round(lerp(0.36 * 255, bed + 8, R.next)), false, 0.3 * R.next, Math.max(6, band * 0.35 * (1 - R.next)));
   const pts = cut(riverCourse(world, R.k), w, bed, true, 1);
   world.riverMask = M;
   const mi = Math.min(pts.length - 1, Math.round(band * 0.95 / 3)), mouth = pts[mi];

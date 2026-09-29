@@ -623,6 +623,7 @@ function chapterPonds() {
     ] },
     { title: 'Neighbours', entries: [
       { key: 'p:beach', name: 'One long beach', text: 'All ponds share one beach: the next player’s pond lies right past the end of yours. The little arrows either side of the pond’s name say who’s there (the score panel lists them too); click one, or drag on past the end of the beach, to walk over: you can look around but not touch, walk on, or come home the same way.' },
+      { key: 'p:hide', name: 'Just your pond', text: 'Scene → Neighbours hides the ponds either side: the view keeps to yours and a drag stops at its ends. The arrows by its name still walk you over.' },
       { key: 'p:name', name: 'Naming your pond', text: 'Open the score (the pond’s name at the top) and choose Name it: up to 24 letters, shown on the bar, the leaderboard and the beach. Hateful or obscene names aren’t allowed.' },
       { key: 'p:wander', name: 'Wanderers', text: 'Fierce animals that leave one pond sometimes turn up in another to terrorize the natives.' },
     ] },

@@ -7,7 +7,7 @@ const OPTS_KEY = 'procedural-pond.opts';
 const DEFAULT_OPTS = {
   v: 4, world: 'auto', habitat: 'mixed', floor: 'sand', water: 'teal', light: 'cycle', dayLength: 180,
   current: 25, speed: 1, caustics: true, shadows: true, outlines: true, life: true, weather: true, sound: false,
-  music: false, musicLevel: 40, hard: false, // (hard: new ponds start in hard mode)
+  music: false, musicLevel: 40, hard: false, neighbours: true, // (hard: new ponds start in hard mode; neighbours: the ponds along the beach drawn past each end)
 };
 // The pond is a fixed-size world, larger than the screen at the default zoom.
 // "Fit screen" makes it the window at 2x pixels, so zoom 2 fills the screen exactly.
@@ -1321,7 +1321,7 @@ function onPointerMove(e) {
       view.tx = press.tx + dx; view.ty = press.ty + dy; applyView();
       // Pushing at an end: make sure what's beyond is being drawn, so the next push runs on into it.
       const ax = beachAxisX(), over = ax ? press.tx + dx - view.tx : press.ty + dy - view.ty;
-      if (over) { const side = over > 0 ? 'west' : 'east'; if (BEACH[side] && !BEACH[side].snap) ensureBeyond(side); }
+      if (over && showNeighbours()) { const side = over > 0 ? 'west' : 'east'; if (BEACH[side] && !BEACH[side].snap) ensureBeyond(side); }
       const moved = checkCross();
       if (moved) { press.tx += moved[0]; press.ty += moved[1]; }
     }
@@ -1647,10 +1647,14 @@ function beyondLen(side) {
   const [bw, bh] = screenSize(B.snap.W, B.snap.H, B.snap.r);
   return beachAxisX() ? bw : bh;
 }
+// Whether the ponds along the beach are shown past each end (Scene → Neighbours). Hidden, the view keeps to this
+// pond; a walk over (the arrows by its name) still shows the one it's walking into.
+const showNeighbours = () => world.opts.neighbours !== false || !!(view.glide && view.glide.side);
 // How far the view may go along the beach: the pond's own range, run on past an end that the view
 // may reach (view.reach) or is already past (cur).
 function beachRange(len, scr, cur) {
   const [lo0, hi0] = normalRange(len, scr);
+  if (!showNeighbours()) return [lo0, hi0];
   let lo = lo0, hi = hi0;
   if (view.reach.west || cur > hi0) hi = hi0 + beyondLen('west');
   if (view.reach.east || cur < lo0) lo = lo0 - beyondLen('east');
@@ -1794,7 +1798,7 @@ function placeBeyond() {
   const ax = beachAxisX(), [w, h] = screenSize(), ds = displaySide(world.shoreSide ?? 3);
   for (const side of ['west', 'east']) {
     const B = BEACH[side], el = beyondEl[side];
-    if (!B || !B.snap) { el.hidden = true; continue; }
+    if (!B || !B.snap || !showNeighbours()) { el.hidden = true; continue; }
     const S = B.snap, [bw, bh] = screenSize(S.W, S.H, S.r);
     let x, y;
     if (ax) { x = side === 'west' ? view.tx - bw : view.tx + w; y = ds === 3 ? view.ty + h - bh : view.ty; }
@@ -1897,7 +1901,7 @@ function edgeHints() {
     arrow.textContent = up;
     arrow.classList.toggle('near', !!ends[dir]);
     arrow.title = B.home ? 'Your pond\nWalk back home along the beach' : `${info.title || B.id}\n${[info.by ? `${info.by}'s pond` : '', `${(info.depth || 1).toLocaleString()} fm`, HABITATS[info.habitat] || ''].filter(Boolean).join(' · ')}. Click to walk over (you can look, not touch), or drag on past the end of the beach.`;
-    if (ends[dir]) ensureBeyond(dir); // near the end: draw what's beyond it
+    if (ends[dir] && showNeighbours()) ensureBeyond(dir); // near the end: draw what's beyond it
   }
   placeEdgeTabs();
 }
@@ -2406,7 +2410,7 @@ bindRange('opt-day', 'dayLength', (v) => `${v / 60}m`);
 for (const b of document.querySelectorAll('[data-toggle]')) {
   const key = b.dataset.toggle;
   b.setAttribute('aria-pressed', world.opts[key]);
-  b.addEventListener('click', () => { setOpt(key, !world.opts[key]); b.setAttribute('aria-pressed', world.opts[key]); });
+  b.addEventListener('click', () => { setOpt(key, !world.opts[key]); b.setAttribute('aria-pressed', world.opts[key]); if (key === 'neighbours') { applyView(); edgeHints(); } });
 }
 
 // Light modes: L (or the sky panel) steps through them.
