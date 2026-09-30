@@ -168,7 +168,7 @@ function tryAbsorb(world, c, st, counts) {
   if ((c.life.absorbed || 0) >= 6) return; // it can hold no more
   const n = (counts && counts.get(key)) || 1;
   const target = world.targets[c.species] || n;
-  const over = n > target * 1.15 || world.creatures.length > (world.maxPop || 130) * 0.85;
+  const over = n > target * 1.15 || pondPopulation(world) > (world.maxPop || 130) * 0.85;
   if (Math.random() > (over ? 0.03 : 0.002) * st * (eldPath(world, 'hunger') ? 2 : 1) * (c.life.quirks && c.life.quirks.includes('many-mouthed') ? 2 : 1)) return;
   // The nearest lesser one of its own kind, within reach.
   let best = null, bd = Infinity;

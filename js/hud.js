@@ -208,9 +208,64 @@ function iconImg(icon, box = ICON_CSS) {
   return img;
 }
 
-// ---- dock: one button per species; click to buy one, hover for its family tree -----------
+// ---- creature rail: a short ranked list, or the full list with names -----------
 
 const DOCK_KINDS = Object.keys(SPECIES);
+const dockUi = { expanded: false, capacity: 10 };
+
+// Undiscovered kinds live in the expanded rail too: their card offers a lure or summons.
+function dockSpeciesVisible(w, kind) {
+  if (!fitsHabitat(w, SPECIES_HABITAT[kind] || 'both') || !deepAvailable(w, kind)) return false;
+  if (typeof spawnable === 'function' && spawnable(w, kind)) return true;
+  if (typeof knows === 'function' && !knows(w, kind)) return !DEEP[kind] || !DEEP[kind].mythic;
+  return typeof spawnable === 'function' ? false : deepUnlocked(w, kind);
+}
+
+function dockCapacity() {
+  const rail = byId('rail'), dock = rail.querySelector('.dock-bar'), list = byId('animals');
+  const maxHeight = parseFloat(getComputedStyle(rail).maxHeight) || innerHeight - 150;
+  const gap = parseFloat(getComputedStyle(rail).rowGap) || 0;
+  const outside = [...rail.children].filter((e) => e !== dock && !e.hidden).reduce((n, e) => n + e.offsetHeight, 0);
+  const controls = [...dock.children].filter((e) => e !== list && !e.hidden).reduce((n, e) => n + e.offsetHeight, 0);
+  const dockStyle = getComputedStyle(dock), listStyle = getComputedStyle(list);
+  const edges = parseFloat(dockStyle.paddingTop) + parseFloat(dockStyle.paddingBottom) + parseFloat(dockStyle.borderTopWidth) + parseFloat(dockStyle.borderBottomWidth)
+    + parseFloat(listStyle.paddingTop) + parseFloat(listStyle.paddingBottom);
+  const dockGap = (dock.children.length - 1) * (parseFloat(dockStyle.rowGap) || 0);
+  const first = list.querySelector('.ani'), pitch = (first ? first.offsetHeight : 40) + (parseFloat(listStyle.rowGap) || 4);
+  return clamp(Math.floor((maxHeight - outside - gap * (rail.children.length - 1) - controls - dockGap - edges) / pitch), 1, 10);
+}
+
+function updateDockVisibility() {
+  const box = byId('animals');
+  if (!box) return;
+  dockUi.capacity = dockCapacity();
+  let shown = 0;
+  for (const b of box.children) {
+    const overflow = !b.hidden && shown++ >= dockUi.capacity;
+    b.classList.toggle('dock-overflow', overflow);
+  }
+}
+
+function setDockExpanded(open) {
+  dockUi.expanded = !!open;
+  const animals = byId('animals'), bar = animals.closest('.dock-bar'), toggle = byId('wild-btn');
+  if (dockUi.expanded) {
+    if (typeof setHud === 'function' && !byId('hud').classList.contains('hidden')) setHud(false);
+    if (typeof setActions === 'function' && !byId('actions').hidden) setActions(false);
+    if (census.open) setCensus(false);
+  }
+  bar.classList.toggle('expanded', dockUi.expanded);
+  if (!dockUi.expanded) animals.scrollTop = 0;
+  toggle.setAttribute('aria-expanded', dockUi.expanded);
+  toggle.setAttribute('aria-controls', 'animals');
+  toggle.setAttribute('aria-label', dockUi.expanded ? 'Collapse creature list' : 'Expand creature list');
+  toggle.querySelector('span').textContent = dockUi.expanded ? '◂' : '▸';
+  if (typeof setWild === 'function' && wildUi.open) setWild(false);
+  hideLineage();
+  closeSpawnCard();
+  updateDockVisibility();
+  refreshWildButton();
+}
 
 function buildDock() {
   const box = byId('animals');
@@ -219,8 +274,10 @@ function buildDock() {
     b.type = 'button';
     b.className = 'ani';
     b.dataset.spawn = kind;
-    b.setAttribute('aria-label', `Spawn ${SPECIES[kind].label.toLowerCase()}`);
-    b.append(Object.assign(document.createElement('i'), { className: 'gem' }), iconImg(speciesIcon(kind)), Object.assign(document.createElement('b'), { textContent: '0' }));
+    b.setAttribute('aria-label', SPECIES[kind].label);
+    b.append(Object.assign(document.createElement('i'), { className: 'gem' }), iconImg(speciesIcon(kind)),
+      Object.assign(document.createElement('span'), { className: 'ani-label', textContent: SPECIES[kind].label }),
+      Object.assign(document.createElement('b'), { textContent: '0' }));
     b.addEventListener('click', () => openSpawnCard(kind, b));
     b.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') showLineage(kind, b); });
     b.addEventListener('pointerleave', hideLineage);
@@ -228,6 +285,7 @@ function buildDock() {
     b.addEventListener('blur', hideLineage);
     box.append(b);
   }
+  updateDockVisibility();
 }
 
 // The dock shows what each species is worth to you: a purple glow for its total
@@ -242,20 +300,29 @@ function updateCounts() {
   const box = byId('animals');
   for (const b of box.querySelectorAll('[data-spawn]')) {
     const kind = b.dataset.spawn, s = sum.get(kind), k = s ? s.n : 0, count = b.querySelector('b'), price = spawnCost(kind);
-    b.classList.toggle('poor', essence < price);
+    const canSpawn = typeof spawnable !== 'function' || spawnable(world, kind);
+    b.classList.toggle('poor', canSpawn && essence < price);
+    b.classList.toggle('undiscovered', !canSpawn);
+    b.setAttribute('aria-label', `${SPECIES[kind].label}${canSpawn ? ', spawn or view' : ', lure or summon'}`);
     b.dataset.value = s ? s.value : 0;
     b.style.setProperty('--val', s ? (s.value / maxV).toFixed(3) : '0');
     b.style.setProperty('--tier', s && s.best ? TIER_COLOR[s.best] : 'transparent');
     b.classList.toggle('rare', !!(s && s.best >= 2));
-    if (count.textContent !== String(k)) { count.textContent = k; b.classList.toggle('none', !k); }
-    b.title = s ? `${SPECIES[kind].label}: ${k} in the pond, worth ${s.value} essence${s.best ? ` · rarest ${TIERS[s.best]}` : ''} · ${s.looks.size} look${s.looks.size > 1 ? 's' : ''}, ${diversityWord(s.diversity)} (${Math.round(s.diversity * 100)}%). Click to spawn more (${price} essence).`
-      : `${SPECIES[kind].label}: none in the pond. Click to spawn (${price} essence).`;
+    if (count.textContent !== String(k)) count.textContent = k;
+    b.classList.toggle('none', !k);
+    b.title = canSpawn
+      ? `${SPECIES[kind].label}: ${k} here${s ? ` · worth ${s.value} essence · rarest ${TIERS[s.best]}` : ''}. Click to choose a spawn, genes or quality.`
+      : `${SPECIES[kind].label}: not discovered. Click to lure or summon it.`;
   }
   const now = performance.now();
   if (now > dockSortAt && !box.matches(':hover') && !spawnUi.kind) {
     dockSortAt = now + 3000;
-    const btns = [...box.children], order = btns.slice().sort((a, b) => (+b.dataset.value || 0) - (+a.dataset.value || 0) || DOCK_KINDS.indexOf(a.dataset.spawn) - DOCK_KINDS.indexOf(b.dataset.spawn));
+    const btns = [...box.children], order = btns.slice().sort((a, b) =>
+      (+b.dataset.value || 0) - (+a.dataset.value || 0)
+      || Number(typeof spawnable === 'function' && spawnable(world, b.dataset.spawn)) - Number(typeof spawnable === 'function' && spawnable(world, a.dataset.spawn))
+      || DOCK_KINDS.indexOf(a.dataset.spawn) - DOCK_KINDS.indexOf(b.dataset.spawn));
     if (order.some((b, i) => b !== btns[i])) box.append(...order);
+    updateDockVisibility();
   }
   byId('census-count').textContent = total;
 }
@@ -269,6 +336,7 @@ const lineUi = { kind: null, anchor: null, timer: 0 };
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 function showLineage(kind, anchor) {
+  if (dockUi.expanded) return;
   lineUi.kind = kind;
   lineUi.anchor = anchor;
   lineUi.timer = 0;
@@ -894,7 +962,7 @@ function traitChips(traits, max = 5) {
 
 // ---- spawn card: click a dock icon to buy that animal with essence --------------------------
 
-const spawnUi = { kind: null, anchor: null, enh: new Set(), timer: 0 };
+const spawnUi = { kind: null, anchor: null, enh: new Set(), grade: 0, ancient: null, timer: 0 };
 const RARITY_WORDS = ['a common species', 'an uncommon species', 'a scarce species', 'an exotic species', 'a legendary species'];
 const yearsLabel = (y) => (y < 1 ? `${Math.round(y * 12)} months` : `${y} years`);
 
@@ -904,6 +972,8 @@ function openSpawnCard(kind, anchor) {
   spawnUi.kind = kind;
   spawnUi.anchor = anchor;
   spawnUi.enh = new Set();
+  spawnUi.grade = 0;
+  spawnUi.ancient = null;
   hideLineage();
   closeWindows('spawn-card');
   renderSpawnCard();
@@ -917,6 +987,8 @@ function closeSpawnCard() {
 function renderSpawnCard() {
   const kind = spawnUi.kind, box = byId('spawn-card');
   if (!kind) return;
+  const known = typeof knows !== 'function' || knows(world, kind);
+  const canSpawn = typeof spawnable !== 'function' || spawnable(world, kind);
   const s = SPECIES_STATS[kind], G = world.game, enh = [...spawnUi.enh], grade = spawnUi.grade || 0, price = Math.round(spawnPrice(kind, enh) * GRADE_PRICE[grade]);
   const settle = settleChance(world, kind, enh.includes('hardy') ? ENHANCE.hardy.settle : 0), likes = LIKES[kind];
   const head = el('div', 'sc-head'), ic = el('span', 'ic');
@@ -925,14 +997,19 @@ function renderSpawnCard() {
   const title = el('div');
   title.append(el('b', null, SPECIES[kind].label), colored('span', null, `${water} water · ${RARITY_WORDS[s.rarity]}`));
   const cost = el('span', 'sc-cost');
-  cost.append(el('i', 'essence'), document.createTextNode(fmt(price)));
+  if (canSpawn) cost.append(el('i', 'essence'), document.createTextNode(fmt(price)));
+  else cost.textContent = known ? 'Locked' : 'New';
   head.append(ic, title, cost);
   const facts = el('ul', 'sc-facts');
-  facts.append(
-    el('li', null, `Size ${'▮'.repeat(s.size)}${'▯'.repeat(5 - s.size)}${s.group ? ` · comes as ${s.group}` : ''}`),
-    el('li', null, `Settles in ${Math.round(settle * 100)}% of the time (the rest return half their price)`),
-    el('li', null, `Lives ~${yearsLabel(s.years)}, about ${Math.round(lifeSeconds(s.years) / 60)} minutes here · ${Math.min(100, Math.round(100 / s.years))}% die a year`),
-  );
+  facts.append(el('li', null, `Size ${'▮'.repeat(s.size)}${'▯'.repeat(5 - s.size)}${s.group ? ` · group of ${s.group}` : ''}`));
+  if (canSpawn) {
+    const settleFact = el('li', null, `${Math.round(settle * 100)}% settle · lives about ${yearsLabel(s.years)}`);
+    settleFact.title = `Those that don't settle return half their price. An average life lasts about ${Math.round(lifeSeconds(s.years) / 60)} real minutes at normal speed.`;
+    facts.append(settleFact);
+  } else if (!known) {
+    const need = SUCCESSION[kind] ?? 0, ready = (world.maturity ?? 0) >= need || !!DEEP[kind];
+    facts.append(el('li', null, `${oddsWord(kindOdds(world, kind))}${ready ? '' : ' · habitat still growing'}`));
+  }
   if (likes) facts.append(el('li', null, `Likes ${likes.map((k) => LIKE_LABEL[k]).join(', ')}`));
   const S = speciesSummary(world).get(kind);
   let have = null;
@@ -946,10 +1023,13 @@ function renderSpawnCard() {
     have.append(colored('span', null, `In the pond: ${S.n}, worth ${S.value} essence${S.best ? `, rarest ${TIERS[S.best]}` : ''}, ${diversityWord(S.diversity)}`), all);
   }
   const boosts = el('div', 'sc-boosts');
-  boosts.append(el('span', 'sc-sub', `Gene boosts (${typeof TOUCHY !== 'undefined' && TOUCHY ? 'hold one' : 'hover'} for what each does)`));
+  const boostHead = el('span', 'sc-sub', 'Gene boosts');
+  boostHead.title = canSpawn ? 'Choose boosts for the next spawn. Point to one for its effect.' : 'Boosts become available once this kind has arrived.';
+  boosts.append(boostHead);
   for (const [key, e] of Object.entries(ENHANCE)) {
     const b = el('button', 'boost');
     b.type = 'button';
+    b.disabled = !canSpawn;
     b.setAttribute('aria-pressed', spawnUi.enh.has(key));
     const info = GENE_INFO[e.buff] || GENE_INFO.luck;
     const name = el('b', null, e.label);
@@ -957,20 +1037,23 @@ function renderSpawnCard() {
     const c = el('span', 'bc');
     c.append(el('i', 'essence'), document.createTextNode(`+${enhanceCost(kind, key)}`));
     b.append(name, c);
-    b.title = `${e.label}: ${e.note}`;
+    b.title = canSpawn ? `${e.label}: ${e.note}` : 'Available once this kind has arrived';
     b.addEventListener('click', () => { if (spawnUi.enh.has(key)) spawnUi.enh.delete(key); else spawnUi.enh.add(key); renderSpawnCard(); });
     boosts.append(b);
   }
   // Quality: pay more for a spawn that's at least this good (its genes are chosen until they are).
   const grades = el('div', 'sc-boosts grades');
-  grades.append(el('span', 'sc-sub', 'Quality (the spawn is chosen until every one is at least this good)'));
+  const gradeHead = el('span', 'sc-sub', 'Quality');
+  gradeHead.title = canSpawn ? 'Choose the minimum working gene quality for every animal in this spawn. Higher quality costs more essence.' : 'Quality choices become available once this kind has arrived.';
+  grades.append(gradeHead);
   for (const gi of [0, 2, 3, 4, 5]) {
     const b = el('button', 'boost'), nm = el('b', null, gi ? `${GRADES[gi]}${gi < 5 ? '+' : ''}` : 'Any');
     b.type = 'button';
+    b.disabled = !canSpawn;
     b.setAttribute('aria-pressed', grade === gi);
     if (gi) nm.style.color = GRADE_COLOR[gi];
     b.append(nm, el('span', 'bc', gi ? `×${GRADE_PRICE[gi]}` : 'as it comes'));
-    b.title = gi ? `${GRADES[gi]}${gi < 5 ? ' or better' : ''}\nEvery animal in the spawn is at least ${GRADES[gi]}: better working genes, worth more (the price ×${GRADE_PRICE[gi]}).` : 'Any quality\nThe spawn as it comes: mostly Fair to Fine.';
+    b.title = !canSpawn ? 'Available once this kind has arrived' : gi ? `${GRADES[gi]}${gi < 5 ? ' or better' : ''}\nEvery animal in the spawn is at least ${GRADES[gi]}: better working genes, worth more (the price ×${GRADE_PRICE[gi]}).` : 'Any quality\nThe spawn as it comes: mostly Fair to Fine.';
     b.addEventListener('click', () => { spawnUi.grade = gi; renderSpawnCard(); });
     grades.append(b);
   }
@@ -978,10 +1061,13 @@ function renderSpawnCard() {
   let ancient = null;
   if (genes.length) {
     ancient = el('div', 'sc-boosts ancient');
-    ancient.append(el('span', 'sc-sub', 'Ancient genes from fossils (free; the first of the spawn shows it)'));
+    const ancientHead = el('span', 'sc-sub', 'Ancient genes');
+    ancientHead.title = 'A fossil gene goes to the first animal in the spawn at no extra cost.';
+    ancient.append(ancientHead);
     for (const [i, g] of genes.entries()) {
       const b = el('button', 'boost');
       b.type = 'button';
+      b.disabled = !canSpawn;
       b.setAttribute('aria-pressed', spawnUi.ancient === i);
       const nm = el('b', null, g);
       nm.style.color = CLASS_COLOR[g] || '#ffd166';
@@ -990,16 +1076,35 @@ function renderSpawnCard() {
       ancient.append(b);
     }
   }
-  const buy = el('button', 'sc-buy');
-  buy.type = 'button';
-  buy.disabled = (G.essence || 0) < price || hardMode(world);
-  buy.append(document.createTextNode(`Spawn ${SPECIES[kind].label.toLowerCase()} for `), el('i', 'essence'), document.createTextNode(fmt(price)));
-  if (hardMode(world)) { buy.replaceChildren(document.createTextNode('Hard mode: they come of their own accord')); buy.classList.add('hard'); }
-  buy.title = hardMode(world) ? 'Hard mode\nAnimals can’t be bought here. Plant and build what this kind likes, and lure it from the Wildlife window (?), and it finds its way in.' : buy.disabled ? `You have ${fmt(G.essence || 0)} essence. Recycle animals with the Net for more.` : `Spawn\nThey arrive in a ring of bubbles. Each settles in ${Math.round(settle * 100)}% of the time; those that don't give half their share back.`;
-  buy.addEventListener('click', () => {
-    const gene = spawnUi.ancient != null ? genes[spawnUi.ancient] : null;
-    if (buyAnimal(kind, [...spawnUi.enh], gene, spawnUi.grade || 0)) { spawnUi.ancient = null; renderSpawnCard(); }
-  });
+  let action;
+  if (canSpawn) {
+    const buy = el('button', 'sc-buy');
+    buy.type = 'button';
+    buy.disabled = (G.essence || 0) < price || hardMode(world);
+    buy.append(document.createTextNode('Spawn for '), el('i', 'essence'), document.createTextNode(fmt(price)));
+    if (hardMode(world)) { buy.replaceChildren(document.createTextNode('Hard mode: lure new kinds instead')); buy.classList.add('hard'); }
+    buy.title = hardMode(world) ? 'Hard mode\nBuild a habitat that attracts this kind; a lure helps undiscovered kinds arrive.' : buy.disabled ? `You have ${fmt(G.essence || 0)} essence. Recycle animals with the Net for more.` : `Spawn\nThey arrive in bubbles. Each settles in ${Math.round(settle * 100)}% of the time; those that don't give half their share back.`;
+    buy.addEventListener('click', () => {
+      const gene = spawnUi.ancient != null ? genes[spawnUi.ancient] : null;
+      if (buyAnimal(kind, [...spawnUi.enh], gene, spawnUi.grade || 0)) { spawnUi.ancient = null; renderSpawnCard(); }
+    });
+    action = buy;
+  } else if (!known) {
+    action = el('div', 'sc-arrival');
+    const lured = !!(G.lures && G.lures[kind] > world.days), summoned = G.summon === kind;
+    const lure = el('button', 'sc-buy lure'), summon = el('button', 'sc-buy summon');
+    lure.type = summon.type = 'button';
+    lure.disabled = !!world.observe || lured || (G.pearls || 0) < lurePrice(world, kind);
+    summon.disabled = !!world.observe || !!G.summon || hardMode(world) || (G.essence || 0) < summonPrice(world, kind);
+    lure.append(document.createTextNode(lured ? 'Lured until day ' + (Math.floor(G.lures[kind]) + 1) : 'Lure for '), ...(lured ? [] : [el('i', 'pearl'), document.createTextNode(fmt(lurePrice(world, kind)))]));
+    summon.append(document.createTextNode(summoned ? 'Summoned · arriving at dawn' : 'Summon for '), ...(summoned ? [] : [el('i', 'essence'), document.createTextNode(fmt(summonPrice(world, kind)))]));
+    lure.title = 'A lure makes this kind far likelier to arrive for two pond days.';
+    summon.title = hardMode(world) ? 'Summoning is off in hard mode; a lure can still help.' : G.summon && !summoned
+      ? `${SINGULAR[G.summon] || G.summon} is already on its way at dawn.` : 'A summons brings this kind at the next dawn, even if the habitat is still growing.';
+    lure.addEventListener('click', () => { if (lureKind(world, kind)) renderSpawnCard(); });
+    summon.addEventListener('click', () => { if (summonKind(world, kind)) renderSpawnCard(); });
+    action.append(lure, summon);
+  } else action = el('p', 'note', 'Unlock this kind in the depths before spawning it.');
   const sups = supersFor(world, kind);
   let supers = null;
   if (sups.length) {
@@ -1010,7 +1115,7 @@ function renderSpawnCard() {
     b.addEventListener('click', () => { closeSpawnCard(); setParagons(true); });
     supers.append(b);
   }
-  box.replaceChildren(...[head, supers, facts, have, boosts, grades, ancient, buy].filter(Boolean));
+  box.replaceChildren(...[head, supers, facts, have, boosts, grades, ancient, action].filter(Boolean));
   box.hidden = false;
   const a = spawnUi.anchor.getBoundingClientRect(), w = box.offsetWidth;
   if (spawnUi.anchor.closest('#rail, #actions') && innerWidth > 760) { // (beside what opened it: the animals down the left, or all actions)
@@ -1039,6 +1144,20 @@ const LOCUS_INFO = {
   mar: ['marbled', 'dominant'], mut: ['mutator', 'recessive'],
 };
 const BUFF_ROWS = ['fertility', 'longevity', 'vitality', 'intellect', 'aggression', 'territory', 'speed', 'tolerance', 'resilience', 'stealth', 'light', 'luck'];
+const GENE_TIPS = {
+  fertility: 'More eggs and less time between broods.',
+  longevity: 'Slows ageing and helps this animal live longer.',
+  vitality: 'Helps it keep energy and compete for food.',
+  intellect: 'Lets it spot prey and danger from farther away.',
+  aggression: 'Helps it win fights; also makes it a stronger hunter.',
+  territory: 'Makes its kind claim more of the surrounding water.',
+  speed: 'Changes how fast it swims or walks.',
+  tolerance: 'Softens the discomfort of water that does not suit its kind.',
+  resilience: 'Helps it withstand stress and illness.',
+  stealth: 'Makes it harder for predators to spot.',
+  light: 'Makes it glow and draws some plankton after dark.',
+  luck: 'A rare trait bonus carried by shiny and iridescent animals.',
+};
 
 function showCreature(c, auto = false) {
   if (!c || !c.life) return;
@@ -1060,6 +1179,7 @@ function hideCreature() {
 function geneBar(key, v) {
   const info = GENE_INFO[key], mult = MULT_BUFFS.has(key);
   const row = el('li', 'gene'), bar = el('span', 'gbar'), fill = el('i');
+  row.title = `${info.label}\n${GENE_TIPS[key]}`;
   const k = mult ? clamp((v - 0.5) / 1, 0, 1) : clamp(v, 0, 1);
   fill.style.width = `${Math.round(k * 100)}%`;
   fill.style.background = info.color;
@@ -1141,16 +1261,13 @@ function renderCreature() {
   parts.push(Object.assign(el('div', 'chips'), {}).appendChild(gradeChip).parentNode);
   if (d.traits.length || d.carries.length) {
     const t = el('div', 'chips');
-    for (const tr of byRarity(d.traits)) t.append(chip(traitName(tr), traitColor(tr)));
+    for (const tr of byRarity(d.traits)) {
+      const c = chip(traitName(tr), traitColor(tr));
+      if (TRAIT_NOTES[tr]) c.title = `${traitName(tr)}\n${TRAIT_NOTES[tr]}`;
+      t.append(c);
+    }
     for (const k of d.carries) { const ch = chip(`carries ${k}`, CLASS_COLOR[k] || '#8fbcb8'); ch.classList.add('carrier'); t.append(ch); }
     parts.push(t);
-    // What its gifts, curses, quirks and ills do.
-    const noted = byRarity(d.traits).filter((k) => TRAIT_NOTES[k]);
-    if (noted.length) {
-      const ul = el('ul', 'tnotes');
-      for (const k of noted) { const li = el('li'), b = el('b', null, traitName(k)); b.style.color = traitColor(k); li.append(b, document.createTextNode(` ${TRAIT_NOTES[k]}`)); ul.append(li); }
-      parts.push(ul);
-    }
   }
   // The mark: its stage, how fast it's coming on, and what you can do about it.
   const st = eldStage(L);
@@ -1163,8 +1280,9 @@ function renderCreature() {
     fillEl.style.background = 'linear-gradient(90deg, #8a5ae0, #3aff9a)';
     bar.append(fillEl);
     const rate = eldRate(world, c) * L.lifespan;
-    box.append(stage, bar, colored('span', 'note', L.bound ? 'Bound: the change in it has stopped.'
-      : `${rate > 4 ? 'Changing fast here' : rate > 2 ? 'Changing' : 'Changing slowly'}: faster at night, in deep water, near the idol, the whale fall or the mythic.${st === 2 ? ' Small animals circle it; those too close lose their minds; at night it dreams the mark into its neighbours.' : st === 1 ? ' The water around it feels wrong.' : ''}`));
+    const markNote = colored('span', 'note', L.bound ? 'Bound' : rate > 4 ? 'Changing fast' : rate > 2 ? 'Changing' : 'Changing slowly');
+    markNote.title = L.bound ? 'The change in it has stopped.' : `The mark grows faster at night, in deep water, and near the idol, whale fall or mythic.${st === 2 ? ' It draws nearby animals and can spread at night.' : ''}`;
+    box.append(stage, bar, markNote);
     if (here && !world.observe) {
       const acts = el('div', 'eld-acts');
       const fd = el('button', null);
@@ -1210,7 +1328,9 @@ function renderCreature() {
       parts.push(wake);
     }
   }
-  parts.push(el('h4', null, 'Genes'));
+  const geneHead = el('h4', null, 'Genes');
+  geneHead.title = 'Working genes\nPoint at a gene for what it changes. Multipliers centre on ×1; other genes are shown as percentages.';
+  parts.push(geneHead);
   const genes = el('ul', 'genes');
   for (const k of BUFF_ROWS) genes.append(geneBar(k, L.buffs[k]));
   parts.push(genes);
@@ -1223,6 +1343,7 @@ function renderCreature() {
       : k === 'mut' ? (n === 2 ? 'hypermutable young' : 'carrier') : shows ? 'shows' : 'carrier';
     const li = el('li'), name = el('b', null, word);
     name.style.color = CLASS_COLOR[word] || '#b49cf0';
+    li.title = `${word}\n${n} of 2 copies · ${mode}. ${shows ? 'This look is visible.' : 'A hidden copy can pass to its young.'}`;
     li.append(name, el('span', 'al', n === 2 ? '●●' : '●○'), colored('span', null, `${what} · ${mode}`));
     geno.append(li);
   }
@@ -1985,6 +2106,7 @@ function renderObject() {
 
 function initHud() {
   buildDock();
+  addEventListener('resize', updateDockVisibility);
   buildJournalFilters();
   byId('census-btn').addEventListener('click', () => setCensus(!census.open));
   byId('log-line').addEventListener('click', () => setJournal(!journalUi.open));
@@ -2059,7 +2181,9 @@ function hudTick(dt) {
     hatchUi.timer = 0.2;
     renderHatchery();
     const H = world.hatchery, has = !!(H && hatcheryStructure(world)), btn = byId('hatch-btn');
+    const wasHidden = btn.hidden;
     btn.hidden = !has;
+    if (wasHidden !== btn.hidden) updateDockVisibility();
     if (has) {
       const k = Math.min(1, H.nutrients / hatchCost(H));
       btn.style.setProperty('--p', `${Math.round(k * 100)}%`);
@@ -2162,4 +2286,3 @@ function refreshParagonBadge() {
 }
 byId('rail-paragons').addEventListener('click', () => setParagons(!parUi.open));
 byId('paragons-close').addEventListener('click', () => setParagons(false));
-

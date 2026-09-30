@@ -31,6 +31,12 @@ const DUCK_CODES = ['hen', 'baby', 'drake'];
 const SCHOOL_CODES = [null, 'neon', 'lemon'];
 const GENE_KEYS = ['size', 'hue', 'sat', 'light', 'speed', 'girth', 'length'];
 const LINK_JOURNAL = 5;
+// Append-only island trailer tables. Existing p3 links end before this trailer.
+const LINK_ISLE_FEATS = ['nourish', 'grove', 'reef', 'reeds', 'mangrove', 'rookery', 'pools', 'spring', 'fire', 'giant'];
+const LINK_ISLE_FLORA = ['palm', 'bush', 'shrub', 'grass', 'flower', 'reed', 'willow', 'fern', 'moss', 'pine',
+  'glowbloom', 'deadtree', 'blackmoss', 'glassshoot', 'cycad', 'horsetail', 'thorn', 'bones', 'coralstone',
+  'cactus', 'agave', 'bamboo', 'hibiscus', 'banana', 'birch'];
+const LINK_ISLE_MARK = 0x49, LINK_ISLE_TRAILER = 1;
 
 const q8 = (v, lo, hi) => Math.round((clamp(v, lo, hi) - lo) / (hi - lo) * 255);
 const dq8 = (b, lo, hi) => lo + b / 255 * (hi - lo);
@@ -54,7 +60,20 @@ class ByteReader {
   constructor(b) { this.b = b; this.i = 0; }
   u8() { if (this.i >= this.b.length) throw new Error('pond link ends early'); return this.b[this.i++]; }
   u16() { return this.u8() | (this.u8() << 8); }
-  vu() { let v = 0, m = 1, c; do { c = this.u8(); v += (c & 127) * m; m *= 128; } while (c & 128 && m < 2 ** 49); return v; }
+  vu() {
+    let v = 0, m = 1;
+    for (let n = 0; n < 8; n++) {
+      const c = this.u8();
+      v += (c & 127) * m;
+      if (!Number.isSafeInteger(v)) throw new Error('bad pond link number');
+      if (!(c & 128)) {
+        if (n && !(c & 127)) throw new Error('overlong pond link number');
+        return v;
+      }
+      m *= 128;
+    }
+    throw new Error('bad pond link number');
+  }
   str() { const n = this.vu(); if (this.i + n > this.b.length) throw new Error('pond link ends early'); const s = new TextDecoder().decode(this.b.subarray(this.i, this.i + n)); this.i += n; return s; }
 }
 
@@ -263,7 +282,130 @@ function packPond(world) {
     const bits = c.life.warps.reduce((a, k) => a | (WARP_KEYS.includes(k) ? 1 << WARP_KEYS.indexOf(k) : 0), 0);
     w.vu(i); w.u8(bits & 255); w.u8(bits >> 8); w.u8(Math.round(clamp(c.life.genome.size || 1, 0, 2.5) * 100));
   }
+  packIslandTrailer(w, st, rocks);
   return w.bytes();
+}
+
+// The optional p3 trailer keeps the island's shape and plants, plus the age of
+// placed stones. Indices refer to the structure and added-rock lists above.
+function packIslandTrailer(w, structures, rocks) {
+  const aged = rocks.map((r, i) => [r, i]).filter(([r]) => r.born != null);
+  const evolved = structures.map((s, i) => [s, i]).filter(([s]) => s.kind === 'island' &&
+    (s.ig || (s.flora && s.flora.length) || s.evo || s.worth != null));
+  if (!aged.length && !evolved.length) return;
+  w.u8(LINK_ISLE_MARK); w.u8(LINK_ISLE_TRAILER);
+  w.vu(aged.length);
+  for (const [r, i] of aged) { w.vu(i); w.vu(Math.round(Math.max(0, r.born) * 100) + 1); }
+  w.vu(evolved.length);
+  for (const [s, i] of evolved) {
+    const G = s.ig, flora = s.flora || [], evo = s.evo ? LAND_KEYS.indexOf(s.evo) + 1 : 0;
+    if (s.evo && !evo) throw new Error('unknown island evolution');
+    if (flora.length > 128 || (G && (G.lava || []).length > 16)) throw new Error('island link state is too large');
+    w.vu(i);
+    w.u8((G ? 1 : 0) | (evo ? 2 : 0) | (s.worth != null ? 4 : 0));
+    if (evo) w.u8(evo);
+    if (s.worth != null) w.vu(Math.round(Math.max(0, s.worth)));
+    if (G) {
+      w.vu(Math.round(clamp(G.sz ?? 1, 0, 5) * 1000));
+      w.u8(clamp(G.st || 0, 0, 4));
+      w.u8(Math.round(clamp(G.lob || 0, 0, 1) * 100));
+      w.u8(Math.round(clamp(G.bar || 0, 0, 1) * 100));
+      w.u8(clamp(G.cone || 0, 0, 6));
+      for (let j = 0; j < LINK_ISLE_FEATS.length; j += 2) {
+        const a = clamp(Math.round((G.f && G.f[LINK_ISLE_FEATS[j]]) || 0), 0, 15);
+        const b = clamp(Math.round((G.f && G.f[LINK_ISLE_FEATS[j + 1]]) || 0), 0, 15);
+        w.u8(a | (b << 4));
+      }
+      w.vu(G.erupt != null ? Math.round(Math.max(0, G.erupt) * 100) + 1 : 0);
+      const lava = G.lava || [];
+      w.u8(lava.length);
+      for (const L of lava) {
+        w.u16(Math.round((wrapAngle(L.a) + PI) / (2 * PI) * 65535));
+        w.u16(Math.round(Math.max(0, L.len) * 1000));
+        w.u16(Math.round(Math.max(0, L.w) * 1000));
+        w.vu(Math.round(Math.max(0, L.d) * 100));
+      }
+    }
+    w.vu(flora.length);
+    for (const f of flora) {
+      const code = LINK_ISLE_FLORA.indexOf(f.t);
+      if (code < 0) throw new Error('unknown island flora');
+      w.u8(code | (f.dead ? 128 : 0));
+      w.vu(zig(Math.round(f.x * 100))); w.vu(zig(Math.round(f.y * 100)));
+      w.vu(Math.round(Math.max(0, f.b) * 100));
+      w.vu(Math.round(Math.max(0, f.span) * 100));
+      w.u8(Math.round(clamp(f.g ?? 1, 0, 1) * 100));
+      w.vu(f.s || 0);
+    }
+  }
+}
+
+function linkBoundedVu(r, max) {
+  const n = r.vu();
+  if (!Number.isSafeInteger(n) || n > max) throw new Error('bad island link value');
+  return n;
+}
+function linkTrailerCount(r, max, minBytes) {
+  const n = linkBoundedVu(r, max);
+  if (n * minBytes > r.b.length - r.i) throw new Error('short island link trailer');
+  return n;
+}
+function unpackIslandTrailer(r, s) {
+  if (r.u8() !== LINK_ISLE_MARK || r.u8() !== LINK_ISLE_TRAILER) throw new Error('unknown pond link trailer');
+  const aged = linkTrailerCount(r, Math.min(4096, s.addedRocks.length), 2);
+  let lastRock = -1;
+  for (let j = 0; j < aged; j++) {
+    const i = linkBoundedVu(r, s.addedRocks.length), born = linkBoundedVu(r, 1e11);
+    if (i <= lastRock || i >= s.addedRocks.length || !born) throw new Error('bad placed rock age');
+    s.addedRocks[i].born = (born - 1) / 100;
+    lastRock = i;
+  }
+  const count = linkTrailerCount(r, Math.min(256, s.structures.length), 3);
+  let lastIsland = -1;
+  for (let j = 0; j < count; j++) {
+    const i = linkBoundedVu(r, s.structures.length), flags = r.u8(), t = s.structures[i];
+    if (i <= lastIsland || !t || t.k !== 'island' || flags & ~7) throw new Error('bad island reference');
+    lastIsland = i;
+    if (flags & 2) {
+      const evo = r.u8();
+      if (!evo || !LAND_KEYS[evo - 1]) throw new Error('bad island evolution');
+      t.evo = LAND_KEYS[evo - 1];
+    }
+    if (flags & 4) t.w = linkBoundedVu(r, 1e9);
+    if (flags & 1) {
+      const sz = linkBoundedVu(r, 5000) / 1000, st = r.u8(), lob = r.u8(), bar = r.u8(), cone = r.u8();
+      if (sz < 0.5 || st > 4 || lob > 100 || bar > 100 || cone > 6) throw new Error('bad island growth');
+      const f = {};
+      for (let k = 0; k < LINK_ISLE_FEATS.length; k += 2) {
+        const b = r.u8();
+        if (b & 15) f[LINK_ISLE_FEATS[k]] = b & 15;
+        if (b >> 4) f[LINK_ISLE_FEATS[k + 1]] = b >> 4;
+      }
+      const erupt = linkBoundedVu(r, 1e12), G = { sz, st, lob: lob / 100, bar: bar / 100, cone, f };
+      if (erupt) G.erupt = (erupt - 1) / 100;
+      const lava = linkTrailerCount(r, 16, 7);
+      if (lava) G.lava = [];
+      for (let k = 0; k < lava; k++) {
+        const a = r.u16() / 65535 * 2 * PI - PI, len = r.u16() / 1000, w = r.u16() / 1000, d = linkBoundedVu(r, 1e11) / 100;
+        if (len > 2 || w > 2) throw new Error('bad island lava');
+        G.lava.push({ a, len, w, d });
+      }
+      t.ig = G;
+    }
+    const flora = linkTrailerCount(r, 128, 7);
+    if (flora) t.fl = [];
+    for (let k = 0; k < flora; k++) {
+      const code = r.u8(), type = LINK_ISLE_FLORA[code & 127];
+      if (!type) throw new Error('bad island flora');
+      const x = unzig(linkBoundedVu(r, 400000)) / 100, y = unzig(linkBoundedVu(r, 400000)) / 100;
+      const b = linkBoundedVu(r, 1e11) / 100, span = linkBoundedVu(r, 1e7) / 100;
+      const g100 = r.u8(), seed = linkBoundedVu(r, 0xffffffff);
+      if (Math.abs(x) > s.W || Math.abs(y) > s.H || !span || g100 > 100) throw new Error('bad island flora position');
+      const g = g100 / 100;
+      t.fl.push([type, x, y, b, span, g, seed, code & 128 ? 1 : 0]);
+    }
+  }
+  if (r.i !== r.b.length) throw new Error('extra pond link data');
 }
 
 function unpackV2(r, v = 2) {
@@ -425,6 +567,7 @@ function unpackV2(r, v = 2) {
                 if (r.i < r.b.length) {
                   s.warps = new Map();
                   for (let n = r.vu(); n > 0; n--) { const i = r.vu(), lo = r.u8(), hi = r.u8(), size = r.u8() / 100, bits = lo | (hi << 8); s.warps.set(i, { warps: WARP_KEYS.filter((k, j) => bits & (1 << j)), size }); }
+                  if (r.i < r.b.length) unpackIslandTrailer(r, s);
                 }
               }
             }

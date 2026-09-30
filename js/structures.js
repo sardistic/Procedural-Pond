@@ -557,7 +557,10 @@ function updateStructures(world, dt) {
     if (def.plankton && (!def.night || world.darkness > 0.4) && Math.random() < def.plankton * 0.5) {
       let near = 0;
       for (const f of world.food) if (f.kind === 'plankton' && (f.x - s.x) ** 2 + (f.y - s.y) ** 2 < 900) near++;
-      if (near < 14) { const a = rand(0, TAU), d = rand(3, 26); world.food.push(new Food(s.x + Math.cos(a) * d, s.y + Math.sin(a) * d, rand(4, 26), 'plankton')); }
+      if (near < 14) {
+        const a = rand(0, TAU), d = rand(3, 26), x = s.x + Math.cos(a) * d, y = s.y + Math.sin(a) * d;
+        if (aquaticFoodRoom(world, x, y)) world.food.push(new Food(x, y, rand(4, 26), 'plankton'));
+      }
     }
   }
   updateHatchery(world, dt);
@@ -815,7 +818,7 @@ function updateHatchery(world, dt) {
   const H = world.hatchery;
   if (!H || !hatcheryStructure(world)) return;
   if (hatchAuto(H)) feedHatchery(world, hatchAuto(H) * dt);
-  if (H.nutrients >= hatchCost(H) && world.creatures.length < world.maxPop + 40) {
+  if (H.nutrients >= hatchCost(H) && pondPopulation(world) < world.maxPop + 40) {
     const [pair, i] = nextHatchPair(world);
     if (!pair) return; // (every stocked kind is plentiful: the food keeps)
     H.nutrients -= hatchCost(H);

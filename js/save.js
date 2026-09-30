@@ -124,7 +124,7 @@ function serializePond(world) {
     currentBase: world.current.base, records: world.records, spawnNight: world.spawnNight,
     targets: world.targets, eco: { ...ECO }, journalSeq: world.journalSeq,
     game: world.game, lineage: world.lineage ? [...world.lineage.values()] : [], link: world.link || null,
-    structures: (world.structures || []).map((s) => ({ k: s.kind, x: r2(s.x), y: r2(s.y), s: s.seed, born: r2(s.born), lv: s.lv, stack: s.stack, branch: s.branch, blv: s.blv, deep: s.deep || undefined, w: s.worth || undefined, ig: s.ig || undefined,
+    structures: (world.structures || []).map((s) => ({ k: s.kind, x: r2(s.x), y: r2(s.y), s: s.seed, born: r2(s.born), lv: s.lv, stack: s.stack, branch: s.branch, blv: s.blv, deep: s.deep || undefined, w: s.worth || undefined, evo: s.evo || undefined, ig: s.ig || undefined,
       fl: s.flora && s.flora.length ? s.flora.map((f) => [f.t, f.x, f.y, r2(f.b), r2(f.span), r2(f.g), f.s, f.dead ? 1 : 0]) : undefined })),
     story: world.story || null, darkAvg: world.darkAvg ?? null,
     litter: (world.litter || []).map((l) => ({ k: l.k, x: r2(l.x), y: r2(l.y), b: r2(l.born), hp: l.hp, s: l.seed })),
@@ -255,7 +255,7 @@ function restorePond(world, d) {
   world.erosion = { ...newErosion(), ...(d.erosion || {}), next: 0 };
   // Structures first: islands shape the beach that makeShore builds.
   world.structures = (d.structures || []).filter((s) => STRUCTURES[s.k]).map((s) => Object.assign(makeStructure(s.k, world, s.x, s.y, s.s, s.born ?? world.days),
-    s.lv ? { lv: s.lv } : {}, s.stack ? { stack: s.stack } : {}, s.branch ? { branch: s.branch, blv: s.blv || 1 } : {}, s.deep ? { deep: s.deep } : {}, s.w ? { worth: s.w } : {}, s.ig ? { ig: { sz: 1, st: 0, lob: 0, bar: 0, ...s.ig, f: { ...(s.ig.f || {}) } } } : {},
+    s.lv ? { lv: s.lv } : {}, s.stack ? { stack: s.stack } : {}, s.branch ? { branch: s.branch, blv: s.blv || 1 } : {}, s.deep ? { deep: s.deep } : {}, s.w ? { worth: s.w } : {}, s.evo ? { evo: s.evo } : {}, s.ig ? { ig: { sz: 1, st: 0, lob: 0, bar: 0, ...s.ig, f: { ...(s.ig.f || {}) } } } : {},
     s.fl ? { flora: s.fl.map(([t, x, y, b, span, g, sd, dead]) => ({ t, x, y, b, span, g, gs: g, s: sd, ...(dead ? { dead: 1 } : {}) })) } : {}));
   if (typeof growWreck === 'function') for (const s of world.structures) growWreck(s); // (a wreck the size of how deep it went down)
   world.story = d.story || null;

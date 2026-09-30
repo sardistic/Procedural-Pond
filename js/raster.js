@@ -223,6 +223,8 @@ class Raster {
     const lit = (c) => { const r = c & 255, g = (c >> 8) & 255, b = (c >>> 16) & 255; return 0xff000000 | ((b + (((lcb - b) * 36) >> 8)) << 16) | ((g + (((lcg - g) * 36) >> 8)) << 8) | (r + (((lcr - r) * 36) >> 8)); };
     const dryLit = (c) => { const r = c & 255, g = (c >> 8) & 255, b = (c >>> 16) & 255; return 0xff000000 | ((b + (((0xd2 - b) * 46) >> 8)) << 16) | ((g + (((0xf0 - g) * 46) >> 8)) << 8) | (r + (((0xff - r) * 46) >> 8)); };
     const doCaustics = s.caustics, doShadows = s.shadows, doOutlines = s.outlines, anyThick = s.anyThick && thick;
+    // The close-up overlay draws creature outlines at its own 4× or 8× pixel size. Keep other outlines here.
+    const fineCreature = typeof FINE !== 'undefined' && FINE.rec ? FINE.creatureId : null;
     const mr = tint ? Math.round(tint[0] * 256) : 256, mg = tint ? Math.round(tint[1] * 256) : 256, mb = tint ? Math.round(tint[2] * 256) : 256;
     const sr = (mr + 256) >> 1, sg = (mg + 256) >> 1, sb = (mb + 256) >> 1;
     const TM = CAUSTIC_SIZE - 1, t = s.t, causticT = s.causticT || 0.09;
@@ -275,17 +277,21 @@ class Raster {
           const zb = zBase[p];
           let best = 0, bz = zb + 0.5;
           if (doOutlines) {
-            if (x > 0 && id[n = p - 1] && z[n] > bz) { best = id[n]; bz = z[n]; }
-            if (x < W - 1 && id[n = p + 1] && z[n] > bz) { best = id[n]; bz = z[n]; }
-            if (y > 0 && id[n = p - W] && z[n] > bz) { best = id[n]; bz = z[n]; }
-            if (y < H - 1 && id[n = p + W] && z[n] > bz) { best = id[n]; bz = z[n]; }
+            if (x > 0 && id[n = p - 1] && (!fineCreature || !fineCreature[id[n]]) && z[n] > bz) { best = id[n]; bz = z[n]; }
+            if (x < W - 1 && id[n = p + 1] && (!fineCreature || !fineCreature[id[n]]) && z[n] > bz) { best = id[n]; bz = z[n]; }
+            if (y > 0 && id[n = p - W] && (!fineCreature || !fineCreature[id[n]]) && z[n] > bz) { best = id[n]; bz = z[n]; }
+            if (y < H - 1 && id[n = p + W] && (!fineCreature || !fineCreature[id[n]]) && z[n] > bz) { best = id[n]; bz = z[n]; }
             if (!best && anyThick) {
               // Second ring, only for rare animals flagged with a thick outline.
               const zt = zb + 0.5;
-              if ((x > 1 && thick[id[n = p - 2]] && z[n] > zt) || (x < W - 2 && thick[id[n = p + 2]] && z[n] > zt) ||
-                  (y > 1 && thick[id[n = p - 2 * W]] && z[n] > zt) || (y < H - 2 && thick[id[n = p + 2 * W]] && z[n] > zt) ||
-                  (x > 0 && y > 0 && thick[id[n = p - W - 1]] && z[n] > zt) || (x < W - 1 && y > 0 && thick[id[n = p - W + 1]] && z[n] > zt) ||
-                  (x > 0 && y < H - 1 && thick[id[n = p + W - 1]] && z[n] > zt) || (x < W - 1 && y < H - 1 && thick[id[n = p + W + 1]] && z[n] > zt)) {
+              if ((x > 1 && thick[id[n = p - 2]] && (!fineCreature || !fineCreature[id[n]]) && z[n] > zt) ||
+                  (x < W - 2 && thick[id[n = p + 2]] && (!fineCreature || !fineCreature[id[n]]) && z[n] > zt) ||
+                  (y > 1 && thick[id[n = p - 2 * W]] && (!fineCreature || !fineCreature[id[n]]) && z[n] > zt) ||
+                  (y < H - 2 && thick[id[n = p + 2 * W]] && (!fineCreature || !fineCreature[id[n]]) && z[n] > zt) ||
+                  (x > 0 && y > 0 && thick[id[n = p - W - 1]] && (!fineCreature || !fineCreature[id[n]]) && z[n] > zt) ||
+                  (x < W - 1 && y > 0 && thick[id[n = p - W + 1]] && (!fineCreature || !fineCreature[id[n]]) && z[n] > zt) ||
+                  (x > 0 && y < H - 1 && thick[id[n = p + W - 1]] && (!fineCreature || !fineCreature[id[n]]) && z[n] > zt) ||
+                  (x < W - 1 && y < H - 1 && thick[id[n = p + W + 1]] && (!fineCreature || !fineCreature[id[n]]) && z[n] > zt)) {
                 best = id[n]; bz = z[n];
               }
             }
@@ -396,10 +402,10 @@ class Raster {
           depth = z[p];
           const zp = depth + 2.5;
           if (doOutlines &&
-              ((x > 0 && id[n = p - 1] && id[n] !== i && z[n] > zp && !fade[id[n]]) ||
-               (x < W - 1 && id[n = p + 1] && id[n] !== i && z[n] > zp && !fade[id[n]]) ||
-               (y > 0 && id[n = p - W] && id[n] !== i && z[n] > zp && !fade[id[n]]) ||
-               (y < H - 1 && id[n = p + W] && id[n] !== i && z[n] > zp && !fade[id[n]]))) {
+              ((x > 0 && id[n = p - 1] && id[n] !== i && (!fineCreature || !fineCreature[id[n]]) && z[n] > zp && !fade[id[n]]) ||
+               (x < W - 1 && id[n = p + 1] && id[n] !== i && (!fineCreature || !fineCreature[id[n]]) && z[n] > zp && !fade[id[n]]) ||
+               (y > 0 && id[n = p - W] && id[n] !== i && (!fineCreature || !fineCreature[id[n]]) && z[n] > zp && !fade[id[n]]) ||
+               (y < H - 1 && id[n = p + W] && id[n] !== i && (!fineCreature || !fineCreature[id[n]]) && z[n] > zp && !fade[id[n]]))) {
             c = outline[id[n]];
           } else {
             if (doShadows && sh[p] > z[p] + 4) c = shadeColor(c);

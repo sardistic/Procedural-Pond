@@ -217,17 +217,47 @@ function islandTopAt(s, ox, oy) {
 
 function applyIslands(world) {
   const shore = world.shore, { W, H } = world;
-  for (const s of world.structures || []) {
-    if (s.kind !== 'island' || s.anim) continue;
+  const islands = (world.structures || []).filter((s) => s.kind === 'island' && !s.anim);
+  // Keep the island's footprint alongside the height map. The floor bake can
+  // then paint its exposed shore as sand, even on a pond with a dark floor.
+  const ground = islands.length ? new Uint16Array(W * H) : null;
+  world.islandGround = ground;
+  world.islandGroundIsles = islands;
+  world.islandGroundSands = islands.map((s) => typeof isleLook === 'function' ? isleLook(s).sand : SM.sand);
+  for (let k = 0; k < islands.length; k++) {
+    const s = islands[k];
     // (Its shape is worked out once, as a stamp round its middle, and laid on the beach each time the beach is
     // made: only when the island itself changes (its size, its shape, its reef, the depth under it) is it redone.)
     const st = islandStamp(world, s), x0 = Math.round(s.x) - st.r, y0 = Math.round(s.y) - st.r, n = st.n;
     for (let j = Math.max(0, -y0); j < n && y0 + j < H; j++) {
       const row = j * n, yy = (y0 + j) * W;
-      for (let i = Math.max(0, -x0); i < n && x0 + i < W; i++) { const v = st.v[row + i]; if (v) { const q = yy + x0 + i; if (v > shore[q]) shore[q] = v; } }
+      for (let i = Math.max(0, -x0); i < n && x0 + i < W; i++) { const v = st.v[row + i]; if (v) { const q = yy + x0 + i; if (v > shore[q]) { shore[q] = v; ground[q] = k + 1; } } }
     }
   }
   if (typeof applyIsleBars === 'function') applyIsleBars(world); // (islands close together grow a bar between them: land.js)
+}
+// The stamp owner at a point, used for landing room and for plants caught by a growing island.
+function islandAt(world, x, y) {
+  if (!world.islandGround) return null;
+  const xi = x | 0, yi = y | 0;
+  if (xi < 0 || yi < 0 || xi >= world.W || yi >= world.H) return null;
+  return world.islandGroundIsles[world.islandGround[xi + yi * world.W] - 1] || null;
+}
+
+// Frogs, turtles and crabs use an island's beach, but a small cay cannot hold
+// the pond's whole population. Snails and starfish stay on the wet flats.
+const ISLAND_LANDERS = new Set(['frog', 'turtle', 'crab']);
+function islandLandingRoom(world, x, y, c) {
+  const s = islandAt(world, x, y);
+  if (!s || shoreAt(world, x, y) <= world.tide.level + 0.015) return true;
+  if (!ISLAND_LANDERS.has(c.species)) return false;
+  const cap = Math.max(3, Math.floor(islandRadius(world, s) / 9));
+  let here = 0;
+  for (const other of world.creatures || []) {
+    if (!other.life || other.leaving || other.dying || !ISLAND_LANDERS.has(other.species) || !isDry(world, other.x, other.y)) continue;
+    if (islandAt(world, other.x, other.y) === s && ++here >= cap) return false;
+  }
+  return true;
 }
 // An island's shape as heights round its middle. Its shape is its kind's (isles.js isleForm): stretched along the
 // current, ragged or smooth, with a bay, its coastline wandering as it ages and pushed out where lava has run; out
@@ -452,7 +482,14 @@ function blightStep(world) {
       c.dying = { t: 0, why: B.k === 'bloom' ? `choked in the ${BLIGHTS.bloom.label(world).replace(/^an? /, '')}` : 'of sickness' };
     }
   }
-  if (B.k === 'bloom' && Math.random() < 0.3) world.food.push(new Food(rand(10, world.W - 10), rand(10, world.H - 10), rand(4, 30), 'plankton'));
+  if (B.k === 'bloom' && Math.random() < 0.3) {
+    for (let i = 0; i < 8; i++) {
+      const x = rand(10, world.W - 10), y = rand(10, world.H - 10);
+      if (typeof aquaticFoodRoom === 'function' && !aquaticFoodRoom(world, x, y)) continue;
+      world.food.push(new Food(x, y, rand(4, 30), 'plankton'));
+      break;
+    }
+  }
 }
 
 // How much a blight weighs on an animal's comfort.
@@ -519,7 +556,12 @@ function updateCoast(world, dt) {
   const R = world.river;
   if (R && Math.random() < 0.15 * Math.min(3, R.w / 8)) {
     const [mx, my] = R.mouth;
-    world.food.push(new Food(mx + rand(-R.w, R.w), my + rand(-R.w, R.w), rand(4, 26), 'plankton'));
+    for (let i = 0; i < 8; i++) {
+      const x = mx + rand(-R.w, R.w), y = my + rand(-R.w, R.w);
+      if (typeof aquaticFoodRoom === 'function' && !aquaticFoodRoom(world, x, y)) continue;
+      world.food.push(new Food(x, y, rand(4, 26), 'plankton'));
+      break;
+    }
   }
   // Islands gone dark spread madness and corruption; islands of life keep fireflies about at night.
   for (const s of world.structures || []) {

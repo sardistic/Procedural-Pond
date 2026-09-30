@@ -157,7 +157,10 @@ class Creature {
         // Push down the slope toward open water, whichever way it runs here (islands too).
         const f = Math.min(4, 0.6 + (e - lim) * 16), x = this.x, y = this.y;
         const gx = shoreAt(world, x + 4, y) - shoreAt(world, x - 4, y), gy = shoreAt(world, x, y + 4) - shoreAt(world, x, y - 4), gl = Math.hypot(gx, gy);
-        const [nx, ny] = gl > 0.004 ? [gx / gl, gy / gl] : world.shoreN;
+        const isle = typeof islandAt === 'function' ? islandAt(world, x, y) : null;
+        const rd = isle ? Math.hypot(x - isle.x, y - isle.y) : 0;
+        const radial = rd > 1 ? [(isle.x - x) / rd, (isle.y - y) / rd] : null;
+        const [nx, ny] = gl > 0.004 ? [gx / gl, gy / gl] : radial || world.shoreN;
         fx -= nx * f; fy -= ny * f;
       }
     }
@@ -183,7 +186,8 @@ class Creature {
       if (s) {
         const a = rand(0, TAU), R = spotRadius(s) + rand(3, 14);
         const x = clamp(s.x + Math.cos(a) * R, m, world.W - m), y = clamp(s.y + Math.sin(a) * R, m, world.H - m);
-        if ((!wet || shoreAt(world, x, y) <= world.tide.level - (this.shoreMargin ?? SHORE_MARGIN) - 0.06) && (!this.keepIn || this.keepIn(world, x, y))) {
+        if ((!wet || shoreAt(world, x, y) <= world.tide.level - (this.shoreMargin ?? SHORE_MARGIN) - 0.06) &&
+            (typeof islandLandingRoom !== 'function' || islandLandingRoom(world, x, y, this)) && (!this.keepIn || this.keepIn(world, x, y))) {
           this.tx = x; this.ty = y;
           return;
         }
@@ -194,6 +198,7 @@ class Creature {
     for (let tries = 0; tries < 12 && ok < 4; tries++) {
       const x = rand(m, world.W - m), y = rand(m, world.H - m);
       if (this.keepIn && !this.keepIn(world, x, y)) continue;
+      if (typeof islandLandingRoom === 'function' && !islandLandingRoom(world, x, y, this)) continue;
       const e = wet ? shoreAt(world, x, y) : 0;
       if (e < be) { be = e; best = [x, y]; }
       if (wet && e > world.tide.level - SHORE_MARGIN - 0.06) continue;
@@ -538,7 +543,8 @@ class Walker extends Creature {
     if (!world.shore) return false;
     for (let i = 0; i < 24; i++) {
       const x = rand(10, world.W - 10), y = rand(10, world.H - 10), e = shoreAt(world, x, y);
-      if (e > world.tide.level + 0.02 && e < world.tide.level + 0.25 && Math.hypot(x - this.x, y - this.y) < 260) {
+      if (e > world.tide.level + 0.02 && e < world.tide.level + 0.25 && Math.hypot(x - this.x, y - this.y) < 260 &&
+          (typeof islandLandingRoom !== 'function' || islandLandingRoom(world, x, y, this))) {
         this.tx = x; this.ty = y; this.restHere = true;
         return true;
       }

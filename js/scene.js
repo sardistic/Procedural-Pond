@@ -207,13 +207,22 @@ class Food {
   }
 
   update(dt, world) {
+    // A dropped ration or drifting plankton on an exposed island becomes
+    // nutrients in its beach instead of drawing swimmers onto dry ground.
+    if (world.shore && typeof islandAt === 'function' && islandAt(world, this.x, this.y) && isDry(world, this.x, this.y)) {
+      this.eaten = true;
+      if (typeof landAdd === 'function') landAdd(world, this.x, this.y, 'life', this.fed ? 0.012 : 0.004);
+      return;
+    }
     const cur = world.current;
     if (this.kind === 'spawn' && this.z < 42) this.z += 3.5 * dt; // coral spawn floats up
     if (this.kind === 'plankton' || this.kind === 'spawn') {
       // Drifts with the current and a lazy wobble, slowly sinking.
       if (this.kind === 'plankton') this.z = Math.max(1, this.z - 0.4 * dt);
-      this.x = clamp(this.x + (cur.x * 5 + Math.sin(world.t * 0.8 + this.ph) * 1.2) * dt, 1, world.W - 1);
-      this.y = clamp(this.y + (cur.y * 5 + Math.cos(world.t * 0.7 + this.ph) * 1.2) * dt, 1, world.H - 1);
+      const nx = clamp(this.x + (cur.x * 5 + Math.sin(world.t * 0.8 + this.ph) * 1.2) * dt, 1, world.W - 1);
+      const ny = clamp(this.y + (cur.y * 5 + Math.cos(world.t * 0.7 + this.ph) * 1.2) * dt, 1, world.H - 1);
+      if (!aquaticFoodRoom(world, this.x, this.y)) { this.eaten = true; return; }
+      if (aquaticFoodRoom(world, nx, ny)) { this.x = nx; this.y = ny; }
       this.life -= dt;
       if (this.life <= 0) { this.eaten = true; if (typeof foodToDetritus === 'function') foodToDetritus(world, this); }
       return;
@@ -312,8 +321,15 @@ const SHORE_SIDES = [[-1, 0], [1, 0], [0, -1], [0, 1]]; // left, right, top, bot
 const AMPHIBIOUS = new Set(['crab', 'turtle', 'snail', 'starfish', 'frog', 'firefly', 'gnat', 'dragonfly']);
 const SHORE_MARGIN = 0.2; // how much beach elevation of water swimmers keep below the tide
 
+// Food that fish can chase belongs in swimming water, including when the tide
+// exposes an island flat. This also serves the natural plankton spawn sites.
+function aquaticFoodRoom(world, x, y) {
+  return !world.shore || shoreAt(world, x, y) <= Math.max(0.02, world.tide.level - SHORE_MARGIN - 0.04);
+}
+
 function makeShore(world) {
   const { W, H } = world, side = world.shoreSide;
+  const previous = world.shore && world.shore.length === W * H ? world.shore : null;
   // Measured on the pond as it started, so deepening (which grows the far side) leaves the beach alone.
   const [W0, H0] = world.expandPx ? baseSize(world) : [W, H], [ox, oy] = world.expandPx ? originOf(world) : [0, 0];
   const band = Math.min(W0, H0) * 0.22;
@@ -337,6 +353,7 @@ function makeShore(world) {
   world.shore = shore;
   world.shoreN = SHORE_SIDES[side];
   if (typeof applyShoreEdits === 'function') applyShoreEdits(world); // islands (and later, erosion)
+  if (previous && typeof islandShoreChanged === 'function') islandShoreChanged(world, previous);
 }
 
 function shoreAt(world, x, y) {
@@ -466,9 +483,10 @@ function bakeBackground(world, rect = null) {
   const tintF = typeof floorTintFn === 'function' && key !== 'tiles' ? floorTintFn(world) : (c) => c;
   world.lightTint = light;
   if (world.motes) world.motes.mat = solid(water.mote);
-  if (key === 'tiles') world.shore = null;           // a pool has no beach
+  if (key === 'tiles') { world.shore = null; world.islandGround = null; } // a pool has no beach
   else if (!world.shore && world.shoreSide !== undefined) makeShore(world);
   const shore = world.shore;
+  const islandGround = world.islandGround, islandSands = world.islandGroundSands;
   const savedClip = r.clip;
   const part = !!(rect && world.bgBase && world.bgBase.length === W * H);
   const [rx0, ry0, rx1, ry1] = part ? rect : [0, 0, W - 1, H - 1];
@@ -531,6 +549,13 @@ function bakeBackground(world, rect = null) {
           if (world.sand && world.sand[p]) c = sandOver(world, c, world.sand[p], x, y);
           c = tintF(c);
           if (world.depth && world.depth[p]) c = mixColor(c, DEEP_SILT, Math.min(1, world.depth[p] / 160));
+          if (islandGround && islandGround[p]) {
+            const sand = islandSands[islandGround[p] - 1];
+            const grain = (hash2(x >> 2, y >> 2, 91) * sand.length) | 0;
+            // A broad pale shore, with less sand showing under the higher greenery.
+            const beach = 0.8 - 0.35 * smoothstep(0.48, 0.94, shore[p] / 255);
+            c = mixColor(c, sand[grain], beach);
+          }
           if (sh[p] > 1.2) c = shadeColor(c);
         }
       }

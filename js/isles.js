@@ -50,6 +50,136 @@ const isleDeep = (s) => (s.deep || 0) > 0.15;
 const isleName = (s) => `the ${((typeof ISLE_KINDS !== 'undefined' && ISLE_KINDS[isleOf(s)]) || { name: 'island' }).name.replace(/^an? /, '')}`;
 const isleBySeed = (world, seed) => (world.structures || []).find((s) => s.kind === 'island' && s.seed === seed && !s.anim) || null;
 
+// Living island flora needs ground that remains above spring high tide. The
+// owner grid follows the stamped coastline, including coves and lava tongues.
+function islandDryGround(world, s, x, y) {
+  return !!world.shore && islandAt(world, x, y) === s &&
+    shoreAt(world, x, y) > (typeof highWater === 'function' ? highWater(world) : 0.8) + 0.015;
+}
+
+// Find deeper water outward from a newly exposed island cell. Eggs and
+// swimmers keep their identities while their positions move with the shore.
+function islandWetRefuge(world, s, x0, y0, margin = SHORE_MARGIN + 0.04) {
+  const safe = Math.max(0.02, world.tide.level - margin);
+  const a0 = Math.atan2(y0 - s.y, x0 - s.x);
+  const max = Math.min(420, Math.max(60, isleReach(world, s) * 1.3));
+  for (let d = 8; d <= max; d += 6) {
+    for (const turn of [0, -0.35, 0.35, -0.7, 0.7, -1.2, 1.2]) {
+      const a = a0 + turn, x = x0 + Math.cos(a) * d, y = y0 + Math.sin(a) * d;
+      if (x < 8 || y < 8 || x >= world.W - 8 || y >= world.H - 8 || shoreAt(world, x, y) > safe) continue;
+      return [x, y];
+    }
+  }
+  return null;
+}
+
+// When an island claims water that used to be open, rooted life changes with the
+// ground. Water plants become the closest shore plant; coral leaves pale stone.
+// The ordinary island flora lifecycle then grows and eventually replaces them.
+const ISLE_LANDFORMS = {
+  weed: 'reed', eelgrass: 'grass', seagrass: 'grass', hornwort: 'fern', reeds: 'reed',
+  duckweed: 'grass', lily: 'flower', lotus: 'flower', hyacinth: 'flower',
+  marimo: 'moss', moss: 'moss', glowcap: 'glowbloom', seaweed: 'grass', kelp: 'grass',
+  coral: 'coralstone', blackcoral: 'coralstone', anemone: 'coralstone', urchin: 'coralstone',
+  seafan: 'coralstone', sponge: 'coralstone', seagrapes: 'bush',
+};
+function islandShoreChanged(world, before) {
+  if (!world.islandGround || !world.plants || !world.pads || !world.creatures || !world.tide) return;
+  const high = typeof highWater === 'function' ? highWater(world) : 0.8, W = world.W;
+  let rooted = 0, weathered = 0, relocated = 0, composted = 0;
+  for (const [list, key] of [[world.plants, 'plants'], [world.pads, 'pads']]) {
+    for (let i = list.length - 1; i >= 0; i--) {
+      const p = list[i], ix = p.x | 0, iy = p.y | 0;
+      if (ix < 0 || iy < 0 || ix >= W || iy >= world.H || !p.make) continue;
+      const q = ix + iy * W, s = islandAt(world, p.x, p.y);
+      if (!s || before[q] / 255 >= high - 0.03 || world.shore[q] / 255 < high + 0.02) continue;
+      const f = s.flora || (s.flora = []), t = ISLE_LANDFORMS[p.make] || 'grass';
+      if (f.length < 64 && !f.some((v) => (v.x - (p.x - s.x)) ** 2 + (v.y - (p.y - s.y)) ** 2 < 16)) {
+        const g = clamp(p.growth ?? 0.6, 0.2, 1);
+        f.push({ t, x: +(p.x - s.x).toFixed(1), y: +(p.y - s.y).toFixed(1), b: world.days,
+          span: t === 'coralstone' ? 35 : 14 + 12 * hash2(p.seed || 0, s.seed || 0, 95), g, gs: g, s: p.seed || (s.seed + i) });
+        rooted++;
+      } else if (typeof landHumus === 'function') landHumus(world, p);
+      if (p.oi != null && world.removed && world.removed[key] && !world.removed[key].includes(p.oi)) world.removed[key].push(p.oi);
+      p.dead = true; list.splice(i, 1);
+    }
+  }
+  // Placed stones keep their identity, but the new shore weathers them: pale
+  // limestone on a coral cay, black stone on a volcanic one, and native moss
+  // at their feet elsewhere. Their existing rock save record carries the change.
+  for (const r of world.rocks || []) {
+    if (r.born == null) continue;
+    const ix = r.x | 0, iy = r.y | 0;
+    if (ix < 0 || iy < 0 || ix >= W || iy >= world.H) continue;
+    const q = ix + iy * W, s = islandAt(world, r.x, r.y);
+    if (!s || before[q] / 255 >= high - 0.03 || world.shore[q] / 255 < high + 0.02) continue;
+    const kind = isleOf(s), matIndex = kind === 'coral' ? 5 : kind === 'basalt' ? 3 : -1;
+    if (matIndex >= 0 && ROCK_MATS[matIndex] && r.m !== ROCK_MATS[matIndex]) {
+      r.m = ROCK_MATS[matIndex]; // makeRock's shader reads the rock's current material
+      r.outline = outlineOf(r.m);
+    }
+    r.h = Math.max(1, r.h * 0.85);
+    const f = s.flora || (s.flora = []), ox = r.x - s.x, oy = r.y - s.y;
+    if (f.length < 64 && !f.some((v) => (v.x - ox) ** 2 + (v.y - oy) ** 2 < 16)) {
+      const t = kind === 'basalt' ? 'blackmoss' : kind === 'reed' ? 'reed' : 'moss';
+      f.push({ t, x: +ox.toFixed(1), y: +oy.toFixed(1), b: world.days, span: 18 + 12 * hash2(r.seed || 0, s.seed || 0, 96), g: 0.4, gs: 0.4, s: r.seed || (s.seed + ix) });
+    }
+    weathered++;
+  }
+  // Clutches cannot hatch on new dry land. Carry them to the nearest water
+  // without changing parents, genes, hatch timer or the saved egg record.
+  for (const e of world.eggs || []) {
+    const ix = e.x | 0, iy = e.y | 0;
+    if (ix < 0 || iy < 0 || ix >= W || iy >= world.H) continue;
+    const q = ix + iy * W, s = islandAt(world, e.x, e.y);
+    if (!s || before[q] / 255 >= high - 0.03 || world.shore[q] / 255 < high + 0.02) continue;
+    const place = islandWetRefuge(world, s, e.x, e.y);
+    if (place) { [e.x, e.y] = place; relocated++; }
+  }
+  // Food caught by the rising beach becomes a little nourishment for its
+  // plants. Existing structures, rocks and other placed objects stay intact.
+  for (const f of world.food || []) {
+    const ix = f.x | 0, iy = f.y | 0;
+    if (ix < 0 || iy < 0 || ix >= W || iy >= world.H || f.eaten) continue;
+    const q = ix + iy * W, s = islandAt(world, f.x, f.y);
+    if (!s || before[q] / 255 >= high - 0.03 || world.shore[q] / 255 < high + 0.02) continue;
+    f.eaten = true;
+    if (typeof landAdd === 'function') landAdd(world, f.x, f.y, 'life', f.fed ? 0.012 : 0.004);
+    composted++;
+  }
+  if (rooted || weathered || relocated || composted) {
+    if (typeof logEvent === 'function' && !world.observe) {
+      const changes = [];
+      if (rooted) changes.push(`rooted ${rooted} water plant${rooted === 1 ? '' : 's'}`);
+      if (weathered) changes.push(`weathered ${weathered} stone${weathered === 1 ? '' : 's'}`);
+      if (relocated) changes.push(`carried ${relocated} clutch${relocated === 1 ? '' : 'es'} to water`);
+      if (composted) changes.push(`fed on ${composted} stranded food`);
+      logEvent(world, `The island's new beach ${changes.join(', ')}`, null, { cat: 'life', pri: 1 });
+    }
+    if (typeof landRebake === 'function') for (const s of world.islandGroundIsles) landRebake(world, s.x, s.y, isleReach(world, s) + 8);
+  }
+
+  // A swimmer that was in water before the coast rose must have a wet route out.
+  // Move the body with it so the next frame has no long, stretched joints.
+  for (const c of world.creatures) {
+    if (!c.life || c.grabbed || c.leaving || c.dying || ISLAND_LANDERS.has(c.species)) continue;
+    const ix = c.x | 0, iy = c.y | 0;
+    if (ix < 0 || iy < 0 || ix >= W || iy >= world.H || !islandAt(world, c.x, c.y)) continue;
+    const q = ix + iy * W, edge = world.tide.level - 0.04;
+    if (world.shore[q] / 255 <= edge || (before[q] / 255 > edge && !isDry(world, c.x, c.y))) continue;
+    const s = islandAt(world, c.x, c.y);
+    const place = islandWetRefuge(world, s, c.x, c.y, (c.shoreMargin ?? SHORE_MARGIN) + 0.04);
+    if (!place) continue;
+    const dx = place[0] - c.x, dy = place[1] - c.y;
+    c.x += dx; c.y += dy; c.tx = c.x; c.ty = c.y;
+    if (c.body) for (let j = 0; j < c.body.n; j++) { c.body.x[j] += dx; c.body.y[j] += dy; }
+    if (c.legs) for (const L of c.legs) for (const [kx, ky] of [['fx', 'fy'], ['sx', 'sy'], ['ex', 'ey'], ['dfx', 'dfy']]) {
+      if (Number.isFinite(L[kx])) L[kx] += dx;
+      if (Number.isFinite(L[ky])) L[ky] += dy;
+    }
+  }
+}
+
 // Growing up: each stage wants age (a grove brings it on sooner), growth on it, height, and life about it.
 const ISLE_STAGES = [
   { word: 'bare sand' },
@@ -198,7 +328,8 @@ function plantGrove(world, s, n) {
   const w = { ...K.flora };
   isleFloraWeights(s, w);
   for (let k = 0, tries = 0; k < n && tries < n * 8; tries++) {
-    const a = rand(0, TAU), d = Math.sqrt(Math.random()) * R * 0.72, x = Math.cos(a) * d, y = Math.sin(a) * d;
+    const a = rand(0, TAU), d = Math.sqrt(Math.random()) * R * isleOutline(world, s, a) * 0.8, x = Math.cos(a) * d, y = Math.sin(a) * d;
+    if (!islandDryGround(world, s, s.x + x, s.y + y)) continue;
     if (fl.some((f) => (f.x - x) ** 2 + (f.y - y) ** 2 < 12)) continue;
     const t = pickWeighted(w), big = ['palm', 'willow', 'pine', 'cycad'].includes(t);
     fl.push({ t, x: +x.toFixed(1), y: +y.toFixed(1), b: day, span: rand(big ? 24 : 8, big ? 50 : 20), g: 0.4, gs: 0.25, s: randi(0, 9999) });
@@ -339,7 +470,7 @@ function isleEffects(world) {
     // Plankton about the pools and in the warm water off a vent.
     if ((pools || fire) && Math.random() < 0.08 * pools + 0.12 * fire && typeof Food === 'function') {
       const a = rand(0, TAU), d = R * rand(1.1, 1.8), x = s.x + Math.cos(a) * d, y = s.y + Math.sin(a) * d;
-      if (shoreAt(world, x, y) < world.tide.level - 0.05) world.food.push(new Food(x, y, rand(4, 26), 'plankton'));
+      if (typeof aquaticFoodRoom === 'function' && aquaticFoodRoom(world, x, y)) world.food.push(new Food(x, y, rand(4, 26), 'plankton'));
     }
     // Fireflies about a spring at night.
     if (spring && world.darkness > 0.5 && typeof Firefly === 'function' && Math.random() < 0.3) {

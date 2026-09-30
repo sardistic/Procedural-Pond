@@ -64,7 +64,7 @@ function bestLine(world, k) {
 function claimSuper(world, i) {
   const G = world.game, S = G.supers && G.supers[i];
   if (!S) return false;
-  if (world.creatures.length >= world.maxPop + 60) { showTicker('The pond is full: no room for more'); return false; }
+  if (pondPopulation(world) >= world.maxPop + 60) { showTicker('The pond is full: no room for more'); return false; }
   const [x, y] = openSpot(), group = SPECIES[S.k].spawn(world, x, y);
   group.forEach((c, j) => {
     let g = genomeFor(c.seed);

@@ -1,19 +1,21 @@
 'use strict';
-// Close-up detail. Zoomed right in (12× and closer), a picture four times finer lies over the pond. It is the frame as
-// drawn, scaled up by Scale2x twice (smoother edges, still pixel art), plus what only shows up close, all of it slow:
+// Close-up detail. From 12× a picture four times finer lies over the pond; from 20× it is eight times finer. It is the
+// frame as drawn, scaled up by Scale2x (smoother edges, still pixel art), plus what only shows up close, all of it slow:
 //  - the floor: sand grains, shell flecks and ripples; pebbles and wind ripples up the beach; rock speckled and
 //    cracked, lit along its top edge; a finer net of light drifting over the floor by day;
 //  - the water: glints that twinkle now and then, and motes drifting in it (some glowing, at night in the sea);
 //  - animals: scales on fish (mottled skin on the rest), rays in their fins, a gill that breathes, a glint in the eye,
 //    and every shape lit along its top edge and shaded along its lower one;
 //  - plants: veins along leaves and stems, and leaf tips that stir.
-// It covers only what's on screen (about a sixteenth of the screen's pixels, four times over) and is rebuilt every
+// It covers only what's on screen and is rebuilt every
 // frame from the raster: what's at each pixel (`id`), its height and its own colour before the light. Scene → Detail
 // turns it off, and it steps aside when frames run slow.
 
-const FINE_F = 4, FINE_MIN_K = 12;
+const FINE_MIN_K = 12;
+const FINE_CREATURE_PARTS = ['eyeId', 'glowId', 'starId', 'lureId', 'tipId', 'irisId', 'inkId', 'eldId', 'crownId'];
 const FINE = {
-  rec: false, eyes: [], cv: null, g: null, img: null, buf: null, cw: 0, ch: 0, lw: 0, lh: 0, x0: 0, y0: 0, a2: null,
+  rec: false, eyes: [], cv: null, g: null, img: null, buf: null, cw: 0, ch: 0, lw: 0, lh: 0, x0: 0, y0: 0, f: 4,
+  a2: null, a4: null, id2: null, id4: null, ids: null, creatureId: new Uint8Array(65536),
   own: new Array(65536).fill(null), kind: new Uint8Array(65536), used: [], spines: new Map(), ema: 0, off: 0, ms: 0,
 };
 const FINE_SHELL = hexToInt('#eef0e6'), FINE_GRIT = hexToInt('#2a2c30'), FINE_GLINT = hexToInt('#fbfdff'), FINE_EYE = hexToInt('#f6f8fc');
@@ -34,7 +36,7 @@ function fineMix(c, d, a) {
   const r = c & 255, g = (c >> 8) & 255, b = (c >>> 16) & 255;
   return (0xff000000 | ((b + (((d >>> 16) & 255) - b) * a) << 16) | ((g + (((d >> 8) & 255) - g) * a) << 8) | (r + ((d & 255) - r) * a)) >>> 0;
 }
-// A smooth noise tile at the fine scale (256 fine pixels = 64 pond pixels across), for the ripples' waviness.
+// A smooth noise tile at the fine scale, for the ripples' waviness.
 const FINE_NOISE = (() => {
   const N = 256, G = 16, L = new Float32Array(G * G), T = new Float32Array(N * N);
   for (let i = 0; i < L.length; i++) L[i] = fineHash(i, 7) / 4294967296;
@@ -48,7 +50,17 @@ const FINE_NOISE = (() => {
 
 const fineWanted = () => world.opts.fine !== false && view.k >= FINE_MIN_K && !world.bones && QUALITY.level < 2 && performance.now() > FINE.off;
 // (Before the frame is drawn: the eyes are noted as they're drawn.)
-function fineBegin() { FINE.eyes.length = 0; FINE.rec = fineWanted(); }
+function fineBegin(overlay = true) {
+  FINE.eyes.length = 0;
+  FINE.rec = overlay && fineWanted();
+  if (FINE.rec) {
+    FINE.creatureId.fill(0);
+    for (const c of world.creatures) {
+      if (c.id) FINE.creatureId[c.id] = 1;
+      for (const key of FINE_CREATURE_PARTS) if (c[key]) FINE.creatureId[c[key]] = 1;
+    }
+  }
+}
 
 function fineCanvas() {
   if (!FINE.cv) {
@@ -60,10 +72,10 @@ function fineCanvas() {
   }
   return FINE.cv;
 }
-// Over the pond exactly: the pond's own transform, then to where this picture starts, at a quarter the size.
+// Over the pond exactly: the pond's own transform, then to where this picture starts, at its detail scale.
 function placeFine() {
   if (!FINE.cv || FINE.cv.hidden) return;
-  FINE.cv.style.transform = `${canvasTransform(view.tx, view.ty, view.k, view.r, world.W, world.H)} translate(${FINE.x0}px, ${FINE.y0}px) scale(${1 / FINE_F})`;
+  FINE.cv.style.transform = `${canvasTransform(view.tx, view.ty, view.k, view.r, world.W, world.H)} translate(${FINE.x0}px, ${FINE.y0}px) scale(${1 / FINE.f})`;
 }
 function hideFine() { if (FINE.cv && !FINE.cv.hidden) FINE.cv.hidden = true; }
 
@@ -106,18 +118,31 @@ function fineSpine(c) {
 }
 
 function renderFine(rect) {
-  if (!FINE.rec || !world.raster || !out) { hideFine(); return; }
-  const t0 = performance.now(), cv = fineCanvas(), F = FINE_F, g = FINE.g;
-  const [x0, y0, x1, y1] = rect, w = x1 - x0 + 1, h = y1 - y0 + 1, W4 = w * F, H4 = h * F;
-  if (W4 > FINE.cw || H4 > FINE.ch) {
-    FINE.cw = cv.width = Math.max(W4, FINE.cw) + 32; FINE.ch = cv.height = Math.max(H4, FINE.ch) + 32;
+  if (!FINE.rec || !world.raster || !out) { hideFine(); FINE.rec = false; return; }
+  const t0 = performance.now(), cv = fineCanvas(), F = view.k >= 20 ? 8 : 4, g = FINE.g;
+  const [x0, y0, x1, y1] = rect, w = x1 - x0 + 1, h = y1 - y0 + 1, WF = w * F, HF = h * F;
+  if (WF > FINE.cw || HF > FINE.ch) {
+    FINE.cw = cv.width = Math.max(WF, FINE.cw) + 32; FINE.ch = cv.height = Math.max(HF, FINE.ch) + 32;
     FINE.img = g.createImageData(FINE.cw, FINE.ch); FINE.buf = new Uint32Array(FINE.img.data.buffer); FINE.lw = FINE.lh = 0;
   }
-  const S = FINE.cw, buf = FINE.buf, W = world.W, H = world.H, w2 = w * 2, h2 = h * 2;
+  const S = FINE.cw, buf = FINE.buf, W = world.W, H = world.H, w2 = w * 2, h2 = h * 2, w4 = w * 4, h4 = h * 4;
   if (!FINE.a2 || FINE.a2.length < w2 * h2) FINE.a2 = new Uint32Array(Math.ceil(w2 * h2 * 1.3));
-  // 1. The frame, four times over (Scale2x, twice).
+  if (!FINE.id2 || FINE.id2.length < w2 * h2) FINE.id2 = new Uint16Array(Math.ceil(w2 * h2 * 1.3));
+  if (!FINE.ids || FINE.ids.length < WF * HF) FINE.ids = new Uint16Array(Math.ceil(WF * HF * 1.3));
+  // 1. The frame and its object IDs, scaled together so the thin outlines follow the finer silhouettes.
   fineScale2x(out, w, h, W, x0, y0, FINE.a2, w2);
-  fineScale2x(FINE.a2, w2, h2, w2, 0, 0, buf, S);
+  fineScale2x(world.raster.id, w, h, W, x0, y0, FINE.id2, w2);
+  if (F === 4) {
+    fineScale2x(FINE.a2, w2, h2, w2, 0, 0, buf, S);
+    fineScale2x(FINE.id2, w2, h2, w2, 0, 0, FINE.ids, WF);
+  } else {
+    if (!FINE.a4 || FINE.a4.length < w4 * h4) FINE.a4 = new Uint32Array(Math.ceil(w4 * h4 * 1.3));
+    if (!FINE.id4 || FINE.id4.length < w4 * h4) FINE.id4 = new Uint16Array(Math.ceil(w4 * h4 * 1.3));
+    fineScale2x(FINE.a2, w2, h2, w2, 0, 0, FINE.a4, w4);
+    fineScale2x(FINE.id2, w2, h2, w2, 0, 0, FINE.id4, w4);
+    fineScale2x(FINE.a4, w4, h4, w4, 0, 0, buf, S);
+    fineScale2x(FINE.id4, w4, h4, w4, 0, 0, FINE.ids, WF);
+  }
 
   // 2. Whose each id is (animals, plants), for this frame.
   const own = FINE.own, kind = FINE.kind, used = FINE.used;
@@ -142,10 +167,15 @@ function renderFine(rect) {
     for (let x = 0; x < w; x++) {
       const gx = x0 + x, p = gx + gy * W, c = out[p], i = id[p], q0 = y * F * S + x * F;
       if (i === 0) {
-        // Where an outline is drawn (the floor next to something standing on it): as it is.
+        // Where a larger object's outline remains, leave its colour alone. Creature outlines are drawn below at the
+        // fine scale, so their neighbouring floor pixels still get detail.
         const zt = zb[p] + 0.5;
-        if ((gx > 0 && id[p - 1] && z[p - 1] > zt) || (gx < W - 1 && id[p + 1] && z[p + 1] > zt) ||
-            (gy > 0 && id[p - W] && z[p - W] > zt) || (gy < H - 1 && id[p + W] && z[p + W] > zt)) continue;
+        const ci = FINE.creatureId;
+        if (world.opts.outlines &&
+            ((gx > 0 && id[p - 1] && !ci[id[p - 1]] && z[p - 1] > zt) ||
+             (gx < W - 1 && id[p + 1] && !ci[id[p + 1]] && z[p + 1] > zt) ||
+             (gy > 0 && id[p - W] && !ci[id[p - W]] && z[p - W] > zt) ||
+             (gy < H - 1 && id[p + W] && !ci[id[p + W]] && z[p + W] > zt))) continue;
         const dry = !!shore && shore[p] > tideL, rock = zb[p] > 1.5, dd = dmap ? dmap[p] : 0;
         // (Fading out toward the landward edge and the beach's two ends: the land and the neighbours past them are
         //  drawn at the pond's own scale, so no seam there.)
@@ -281,15 +311,15 @@ function renderFine(rect) {
   const gk = k * (0.2 + 0.8 * (1 - dark)) * (1 - 0.6 * Math.min(1, world.weather.rain || 0));
   const X0 = x0 * F, Y0 = y0 * F;
   if (gk > 0.02) {
-    for (let cy = Math.floor(Y0 / 8); cy * 8 < Y0 + H4; cy++) {
-      for (let cx = Math.floor(X0 / 8); cx * 8 < X0 + W4; cx++) {
+    for (let cy = Math.floor(Y0 / 8); cy * 8 < Y0 + HF; cy++) {
+      for (let cx = Math.floor(X0 / 8); cx * 8 < X0 + WF; cx++) {
         const hc = fineHash(cx * 3 + 1, cy * 5 + 2);
         if ((hc & 15) !== 0) continue;
         const b = Math.sin(t * (0.3 + ((hc >>> 20) & 7) * 0.05) + ((hc >>> 10) & 1023) * 0.00614);
         if (b < 0.93) continue;
         const lx = cx * 8 + ((hc >>> 4) & 7) - X0, ly = cy * 8 + ((hc >>> 7) & 7) - Y0;
-        if (lx < 1 || ly < 1 || lx >= W4 - 1 || ly >= H4 - 1) continue;
-        const pp = x0 + (lx >> 2) + (y0 + (ly >> 2)) * W;
+        if (lx < 1 || ly < 1 || lx >= WF - 1 || ly >= HF - 1) continue;
+        const pp = x0 + Math.floor(lx / F) + (y0 + Math.floor(ly / F)) * W;
         if (id[pp] || (shore && shore[pp] > tideL)) continue;
         const a = (b - 0.93) / 0.07, q = lx + ly * S;
         buf[q] = fineMix(buf[q], FINE_GLINT, 0.75 * a * gk);
@@ -300,15 +330,15 @@ function renderFine(rect) {
 
   // 6. Motes drifting in the water, each at its own depth (hidden under anything higher); in the sea at night a few glow.
   const cur = world.current || { x: 0, y: 0 }, base = Math.hypot(cur.x, cur.y) > 0.01 ? Math.atan2(cur.y, cur.x) : 0.6, salt = world.opts.habitat !== 'fresh';
-  for (let cy = Math.floor(Y0 / 24) - 1; cy * 24 < Y0 + H4 + 24; cy++) {
-    for (let cx = Math.floor(X0 / 24) - 1; cx * 24 < X0 + W4 + 24; cx++) {
+  for (let cy = Math.floor(Y0 / 24) - 1; cy * 24 < Y0 + HF + 24; cy++) {
+    for (let cx = Math.floor(X0 / 24) - 1; cx * 24 < X0 + WF + 24; cx++) {
       const hm = fineHash(cx * 17 + 5, cy * 29 + 11);
       if (hm % 3) continue;
       const speed = 0.6 + ((hm >>> 8) & 7) * 0.15, ang = base + (((hm >>> 12) & 255) / 255 - 0.5) * 0.8;
       const travel = t * speed + ((hm >>> 2) & 63), pr = (travel % 24) / 24, d = pr * 24 - 12, wob = Math.sin(t * 0.3 + (hm & 1023)) * 1.5;
       const mx = Math.round(cx * 24 + 12 + Math.cos(ang) * d - Math.sin(ang) * wob) - X0, my = Math.round(cy * 24 + 12 + Math.sin(ang) * d + Math.cos(ang) * wob) - Y0;
-      if (mx < 0 || my < 0 || mx >= W4 || my >= H4) continue;
-      const pp = x0 + (mx >> 2) + (y0 + (my >> 2)) * W, md = 6 + ((hm >>> 20) & 31);
+      if (mx < 0 || my < 0 || mx >= WF || my >= HF) continue;
+      const pp = x0 + Math.floor(mx / F) + (y0 + Math.floor(my / F)) * W, md = 6 + ((hm >>> 20) & 31);
       if ((shore && shore[pp] > tideL) || z[pp] > md) continue;
       const alpha = Math.sin(Math.PI * pr), q = mx + my * S;
       if (salt && (hm >>> 28) === 0) buf[q] = fineMix(buf[q], FINE_GLOW, alpha * (0.15 + 0.6 * dark) * k);
@@ -316,10 +346,35 @@ function renderFine(rect) {
     }
   }
 
-  g.putImageData(FINE.img, 0, 0, 0, 0, W4, H4);
-  if (W4 < FINE.lw) g.clearRect(W4, 0, FINE.cw - W4, FINE.ch);
-  if (H4 < FINE.lh) g.clearRect(0, H4, FINE.cw, FINE.ch - H4);
-  FINE.lw = W4; FINE.lh = H4; FINE.x0 = x0; FINE.y0 = y0;
+  // 7. Draw creatures' outlines at this scale: one detail pixel, or two for rare creatures. At the pond scale those
+  // rings would be four or eight times wider on screen. Keep the outline outside the smoothed creature silhouette.
+  if (world.opts.outlines) {
+    const mask = FINE.ids, ci = FINE.creatureId;
+    for (let yy = 0; yy < HF; yy++) for (let xx = 0; xx < WF; xx++) {
+      const q = xx + yy * WF, i = mask[q];
+      if (!ci[i] || FADE[i]) continue;
+      if ((xx === 0 || mask[q - 1] === i) && (xx === WF - 1 || mask[q + 1] === i) &&
+          (yy === 0 || mask[q - WF] === i) && (yy === HF - 1 || mask[q + WF] === i)) continue;
+      const source = (x0 + Math.floor(xx / F)) + (y0 + Math.floor(yy / F)) * W;
+      const rim = fineMix(buf[xx + yy * S], OUTLINE[i], 0.82), width = THICK[i] ? 2 : 1;
+      for (let d = 1; d <= width; d++) {
+        for (let side = 0; side < 4; side++) {
+          const nx = xx + (side === 0 ? -d : side === 1 ? d : 0);
+          const ny = yy + (side === 2 ? -d : side === 3 ? d : 0);
+          if (nx < 0 || ny < 0 || nx >= WF || ny >= HF) continue;
+          const nq = nx + ny * WF, other = mask[nq];
+          if (other === i || ci[other]) continue;
+          if (other && z[source] <= z[(x0 + Math.floor(nx / F)) + (y0 + Math.floor(ny / F)) * W] + 2.5) continue;
+          buf[nx + ny * S] = rim;
+        }
+      }
+    }
+  }
+
+  g.putImageData(FINE.img, 0, 0, 0, 0, WF, HF);
+  if (WF < FINE.lw) g.clearRect(WF, 0, FINE.cw - WF, FINE.ch);
+  if (HF < FINE.lh) g.clearRect(0, HF, FINE.cw, FINE.ch - HF);
+  FINE.lw = WF; FINE.lh = HF; FINE.x0 = x0; FINE.y0 = y0; FINE.f = F;
   cv.hidden = false;
   placeFine();
   // (Too slow for this machine: off for a while, and the pond as it was.)
@@ -327,4 +382,5 @@ function renderFine(rect) {
   FINE.ms = ms;
   FINE.ema += (ms - FINE.ema) * 0.05;
   if (FINE.ema > 9) { FINE.off = performance.now() + 8000; FINE.ema = 4; hideFine(); }
+  FINE.rec = false;
 }

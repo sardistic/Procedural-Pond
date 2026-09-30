@@ -721,6 +721,20 @@ class Eggs {
 
   update(dt, world) {
     this.alpha = Math.min(1, this.alpha + dt);
+    // Ebb tides can uncover a clutch between shore rebuilds. Carry it to
+    // swimming water before its hatch timer advances; if permanent dry land
+    // has no wet refuge, the clutch returns to the island's soil.
+    if (typeof islandAt === 'function') {
+      const s = islandAt(world, this.x, this.y);
+      if (s && typeof aquaticFoodRoom === 'function' && !aquaticFoodRoom(world, this.x, this.y)) {
+        const place = typeof islandWetRefuge === 'function' ? islandWetRefuge(world, s, this.x, this.y) : null;
+        if (place) [this.x, this.y] = place;
+        else if (shoreAt(world, this.x, this.y) > (typeof highWater === 'function' ? highWater(world) : 0.8)) {
+          if (typeof landAdd === 'function') landAdd(world, this.x, this.y, 'life', 0.02);
+          return false;
+        } else return true;
+      }
+    }
     this.timer -= dt;
     if (this.timer > 0) return true;
     const babies = [];
@@ -1119,8 +1133,14 @@ function assignHunts(world) {
   }
 }
 
+function pondPopulation(world) {
+  return world.creatures.reduce((n, c) => n + (c.ambient ? 0 : 1), 0);
+}
+
 function breed(world) {
-  if (world.creatures.length > (world.maxPop || 130)) return; // the pond is full
+  // Birds, lizards, seals and other ambient island life do not take the
+  // swimming population's breeding room.
+  if (pondPopulation(world) > (world.maxPop || 130)) return;
   const counts = {};
   for (const c of world.creatures) if (!c.leaving) counts[breedKey(c)] = (counts[breedKey(c)] || 0) + 1;
   for (const e of world.eggs) counts[e.key] = (counts[e.key] || 0) + e.cells.length;
@@ -1166,10 +1186,13 @@ function growPlankton(world) {
   let have = 0;
   for (const f of world.food) if (f.kind === 'plankton') have++;
   const lights = world.darkness > 0.5 ? world.creatures.filter((c) => geneBuffs(c).light > 0.3) : [];
-  for (let i = 0; i < 3 && have < want; i++, have++) {
+  let grown = 0;
+  for (let i = 0; i < 15 && grown < 3 && have + grown < want; i++) {
     const src = lights.length && Math.random() < 0.3 ? pick(lights) : Math.random() < 0.7 && pick(world.plants);
     const x = src ? src.x + rand(-6, 6) : rand(5, world.W - 5), y = src ? src.y + rand(-6, 6) : rand(5, world.H - 5);
+    if (typeof aquaticFoodRoom === 'function' && !aquaticFoodRoom(world, x, y)) continue;
     world.food.push(new Food(x, y, rand(4, 30), 'plankton'));
+    grown++;
   }
 }
 

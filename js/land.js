@@ -376,6 +376,12 @@ function isleLook(s) {
 }
 const pickWeighted = (w) => { let r = Math.random() * Object.values(w).reduce((a, b) => a + b, 0); for (const [k, v] of Object.entries(w)) if ((r -= v) <= 0) return k; return Object.keys(w)[0]; };
 
+function islandFloraRebakeRadius(world, s) {
+  let reach = islandRadius(world, s) * 1.5 + 8;
+  for (const f of s.flora || []) reach = Math.max(reach, Math.hypot(f.x, f.y) + 12);
+  return reach;
+}
+
 function landIslands(world) {
   const isles = (world.structures || []).filter((s) => s.kind === 'island' && !s.anim);
   for (const s of isles) {
@@ -387,7 +393,9 @@ function landIslands(world) {
     // Grow, age, die (dead wood lingers a few days, then goes back to the sand).
     for (let i = fl.length - 1; i >= 0; i--) {
       const f = fl[i], age = day - f.b;
-      if (!f.dead && Math.hypot(f.x, f.y) > R * 0.9) { f.dead = 1; f.b = day; f.span = rand(1, 2); continue; } // (the sea has taken the ground under it)
+      if (!f.dead && typeof islandDryGround === 'function' && !islandDryGround(world, s, s.x + f.x, s.y + f.y)) {
+        f.dead = 1; f.b = day; f.span = rand(1, 2); continue; // the shaped coast, tide or lava has taken its ground
+      }
       if (age < f.span) f.g = Math.min(1, f.g + 0.25);
       else if (!f.dead) { f.dead = 1; f.b = day; f.span = rand(2, 4); }
       else { fl.splice(i, 1); landAdd(world, s.x + f.x, s.y + f.y, 'life', 0.02); }
@@ -399,12 +407,14 @@ function landIslands(world) {
     if (typeof isleFloraWeights === 'function') isleFloraWeights(s, weights); // (as it matures, bigger trees: isles.js)
     if (typeof climateFloraWeights === 'function') climateFloraWeights(world, weights); // (and the pond's climate: flora.js)
     for (let n = 0; n < 3 && fl.length < cap; n++) {
-      const a = rand(0, TAU), d = Math.sqrt(Math.random()) * R * 0.75, x = Math.cos(a) * d, y = Math.sin(a) * d;
+      const a = rand(0, TAU), coast = typeof isleOutline === 'function' ? isleOutline(world, s, a) : 1;
+      const d = Math.sqrt(Math.random()) * R * coast * 0.8, x = Math.cos(a) * d, y = Math.sin(a) * d;
+      if (typeof islandDryGround === 'function' && !islandDryGround(world, s, s.x + x, s.y + y)) continue;
       if (fl.some((f) => (f.x - x) ** 2 + (f.y - y) ** 2 < 16)) continue;
       const t = pickWeighted(weights), big = ['palm', 'willow', 'pine', 'deadtree', 'cycad'].includes(t);
       fl.push({ t, x: +x.toFixed(1), y: +y.toFixed(1), b: day, span: rand(big ? 18 : 6, big ? 40 : 16), g: 0.1, gs: 0, s: randi(0, 9999) });
     }
-    landRebake(world, s.x, s.y, R * 1.5 + 8);
+    landRebake(world, s.x, s.y, islandFloraRebakeRadius(world, s));
   }
   isleJoinsDawn(world, isles);
 }
@@ -506,7 +516,10 @@ function updateLand(world, dt) {
       if (Math.abs(d) > 1e-3) { f.gs = (f.gs || 0) + Math.sign(d) * Math.min(Math.abs(d), dayK); moved = true; }
     }
     const sum = s.flora.reduce((a, f) => a + f.gs, 0);
-    if (moved && Math.abs(sum - (s.floraBaked ?? -99)) > 0.15) { s.floraBaked = sum; landRebake(world, s.x, s.y, islandRadius(world, s) * 1.5 + 8); }
+    if (moved && Math.abs(sum - (s.floraBaked ?? -99)) > 0.15) {
+      s.floraBaked = sum;
+      landRebake(world, s.x, s.y, islandFloraRebakeRadius(world, s));
+    }
   }
   landRepaint(world, L, step);
 }
@@ -703,6 +716,11 @@ const FLORA = {
   horsetail(r, x, y, z, g, id) { for (let k = 0; k < 4; k++) { const ox = rand(-1.2, 1.2), oy = rand(-1.2, 1.2), h = (3 + rand(0, 4)) * g + 0.5; r.tube(x + ox, y + oy, 0.35, z, x + ox, y + oy, 0.3, z + h, 1, (lx, ly, px, py, pz) => ((pz || 0) % 1.2 < 0.3 ? SM.soil : LAND_M.cycad), id(LAND_M.cycad)); } },
   thorn(r, x, y, z, g, id) { for (let k = 0; k < 5; k++) { const a = rand(0, TAU), h = (2 + 3 * g) * g + 0.5; r.tube(x, y, 0.4, z, x + Math.cos(a) * 2.5 * g, y + Math.sin(a) * 2.5 * g, 0.1, z + h, 1, LAND_M.thorn, id(LAND_M.thorn)); } },
   bones(r, x, y, z, g, id) { const a = rand(0, TAU); r.tube(x - Math.cos(a) * 2 * g, y - Math.sin(a) * 2 * g, 0.4, z, x + Math.cos(a) * 2 * g, y + Math.sin(a) * 2 * g, 0.4, z + 0.4, 0.8, SM.bone, id(SM.bone)); r.ellipsoid(x + Math.cos(a) * 2.4 * g, y + Math.sin(a) * 2.4 * g, 0.9, 0.7, a, z, 0.8, SM.bone, id(SM.bone)); },
+  coralstone(r, x, y, z, g, id) {
+    const m = SM.barnacle, cid = id(m), h = 2 + 3 * g;
+    r.ellipsoid(x, y, 2.2 * g + 0.6, 1.5 * g + 0.4, 0, z, 0.9 * g, m, cid);
+    for (let k = 0; k < 3; k++) { const a = k * TAU / 3 + 0.4; r.tube(x, y, 0.5 * g, z + 0.5, x + Math.cos(a) * 1.8 * g, y + Math.sin(a) * 1.8 * g, 0.2, z + h, 0.8, m, cid); }
+  },
 };
 // The island's own flora (called at the end of the island's bake in structures.js).
 function bakeFlora(r, s, next) {

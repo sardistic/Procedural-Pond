@@ -64,7 +64,7 @@ const world = {
   nearestFood(x, y, range, filter) {
     let best = null, bd = range * range;
     for (const f of this.food) {
-      if (f.eaten || (filter && !filter(f))) continue;
+      if (f.eaten || (this.islandGround && islandAt(this, f.x, f.y) && isDry(this, f.x, f.y)) || (filter && !filter(f))) continue;
       const d = (f.x - x) ** 2 + (f.y - y) ** 2;
       if (d < bd) { bd = d; best = f; }
     }
@@ -152,9 +152,7 @@ function layout(regen, deferBake = false) {
   }
   world.maxPopBase = Math.min(460, Math.round(W * H / 2400)); // (a vast pond still has a limit)
   world.maxPop = world.maxPopBase + (world.maxPopBonus || 0); // what's built in the deep lets it hold more
-  // The minimap keeps the pond's shape.
-  mini.height = clamp(Math.round(mini.width * (view.r % 2 ? W / H : H / W)), 54, 200);
-  mini.style.aspectRatio = `${mini.width} / ${mini.height}`; // (the page sizes it: smaller on a phone)
+  sizeMinimap(W, H);
   if (regen) buildPond();
   if (deferBake) {
     // (The floor's buffers, blank: the caller paints what's on screen and queues the rest.)
@@ -209,7 +207,7 @@ function spreadGroup(group) {
 }
 
 function spawn(kind, x, y, how = 'founder') {
-  if (world.creatures.length >= world.maxPop + 60) return false;
+  if (pondPopulation(world) >= world.maxPop + 60) return false;
   if (x === undefined) [x, y] = openSpot();
   const group = SPECIES[kind].spawn(world, x, y);
   spreadGroup(group);
@@ -226,7 +224,7 @@ function spawn(kind, x, y, how = 'founder') {
 function buyAnimal(kind, enh = [], ancient = null, grade = 0) {
   const price = Math.round(spawnPrice(kind, enh) * GRADE_PRICE[grade]); // a guaranteed grade costs more
   if (hardMode(world)) { showTicker('Hard mode: animals can’t be bought. Build and plant what they like, and they find their way in'); return false; }
-  if (world.creatures.length >= world.maxPop + 60) { showTicker('The pond is full: no room for more'); return false; }
+  if (pondPopulation(world) >= world.maxPop + 60) { showTicker('The pond is full: no room for more'); return false; }
   if (!spendEssence(world, price, 'life')) { notEnough(price, 'essence'); return false; }
   const [x, y] = openSpot();
   const group = SPECIES[kind].spawn(world, x, y);
@@ -563,7 +561,7 @@ function render(full = false) {
   const r = world.raster, t = world.t, o = world.opts, t0 = performance.now(), q = QUALITY.level;
   const light = world.light || (world.light = lighting());
   const rect = full ? [0, 0, world.W - 1, world.H - 1] : visibleRect();
-  if (typeof fineBegin === 'function') fineBegin(); // (close up: fine.js notes the eyes as they're drawn)
+  if (typeof fineBegin === 'function') fineBegin(!full); // (close up: fine.js notes the eyes as they're drawn)
   // Rasterize a margin above/left of the view: shadows of things just off-screen still land on it.
   r.setClip(rect[0] - 30, rect[1] - 30, rect[2] + 3, rect[3] + 3);
   r.begin();
@@ -740,8 +738,8 @@ const plantTool = (kind, label, list = 'plants') => ({
   place: (x, y) => { const p = sprouting(makePlant(kind, world, x, y), 0.3); p.born = world.days; world[list].push(p); }, // it grows from a seedling
 });
 const TOOLS = {
-  pointer: { label: 'Look', hint: 'click an animal, plant or structure to see it · drag animals · scroll to zoom · drag the water to pan' },
-  feed: { label: 'Pellets', food: 'pellet', price: 0, hint: 'click to feed (free) · drag animals · scroll to zoom · drag water to pan' },
+  pointer: { label: 'Look', hint: 'Click to inspect · drag to pan' },
+  feed: { label: 'Pellets', food: 'pellet', price: 0, hint: 'Click to feed (free)' },
   spirulina: { label: 'Spirulina', food: 'spirulina', price: FOOD_PRICE.spirulina, hint: 'spirulina: keeps animals well fed five times longer, so they age slower and stay' },
   brine: { label: 'Brine', food: 'brine', price: FOOD_PRICE.brine, hint: 'live brine shrimp: a big meal that brings animals straight into breeding condition' },
   net: { label: 'Net', hint: 'click an animal, plant or rock to remove it' },
@@ -840,8 +838,7 @@ function growInPlace(add) {
   out = new Uint32Array(image.data.buffer);
   world.maxPopBase = Math.min(460, Math.round(W * H / 2400));
   world.maxPop = world.maxPopBase + (world.maxPopBonus || 0);
-  mini.height = clamp(Math.round(mini.width * (view.r % 2 ? W / H : H / W)), 54, 200);
-  mini.style.aspectRatio = `${mini.width} / ${mini.height}`;
+  sizeMinimap(W, H);
   if (old.sand && old.sand.length === old.W * old.H) { world.sand = new Uint8Array(W * H); copyGrid(old.sand, old.W, old.H, world.sand, W, H, sx, sy); } // (the sand the water has moved)
   world.bgBase = new Uint32Array(W * H); world.bg = new Uint32Array(W * H); world.bgLight = world.bgDry = null;
   world.islandKey = world.scourKey = null;
@@ -1256,6 +1253,7 @@ function release() {
 
 canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'mouse' && e.button !== 0) return; // right-click opens a card (contextmenu); it never uses the tool
+  if (!$('actions').hidden) setActions(false);
   touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
   canvas.setPointerCapture(e.pointerId);
   if (touches.size === 2) {
@@ -1496,6 +1494,15 @@ function updateChip() {
 
 const mini = document.getElementById('minimap'), mctx = mini.getContext('2d');
 const miniBg = document.createElement('canvas');
+function sizeMinimap(W = world.W, H = world.H) {
+  if (!W || !H) return;
+  const shape = view.r % 2 ? W / H : H / W;
+  mini.height = Math.max(1, Math.round(mini.width * shape));
+  const reserved = innerWidth <= 760 ? 245 : innerHeight <= 500 ? 150 : 210;
+  const fit = Math.max(50, Math.min(211, Math.floor(Math.max(80, innerHeight - reserved) / shape)));
+  mini.closest('.mini-wrap').style.setProperty('--map-fit-width', `${fit}px`);
+}
+addEventListener('resize', () => sizeMinimap());
 // Layers: the pond, how tense the water is, and (with both waters) where it runs fresh or salt.
 const MINI_LAYERS = [['map', 'Map'], ['tension', 'Tension: red is aggressive water'], ['water', 'Water: green fresh, blue salt'], ['land', 'Land: what the floor has become']];
 let miniLayer = 0, miniKey = '', miniCell = null, miniWet = null, miniDry = null;
@@ -2069,11 +2076,40 @@ function updateCard(dt) {
   card.style.top = `${Math.min(y + 14, innerHeight - card.offsetHeight - 8)}px`;
 }
 
+// A selected action can outlive its tile in the closed Actions sheet, especially
+// when it is not pinned. Keep the repeat-use state visible beside the item bar.
+const activeTool = document.createElement('div');
+activeTool.id = 'active-tool';
+activeTool.className = 'active-tool';
+activeTool.hidden = true;
+activeTool.setAttribute('role', 'group');
+activeTool.setAttribute('aria-label', 'Selected action');
+const activeToolName = Object.assign(document.createElement('span'), { className: 'active-tool-name' });
+const activeToolCost = Object.assign(document.createElement('span'), { className: 'active-tool-cost' });
+const activeToolLook = Object.assign(document.createElement('button'), { id: 'active-tool-look', type: 'button', textContent: 'Look ×' });
+activeToolLook.addEventListener('click', () => setTool('pointer'));
+activeTool.append(activeToolName, activeToolCost, activeToolLook);
+document.querySelector('.dock').prepend(activeTool);
+function updateActiveTool() {
+  const t = TOOLS[world.tool];
+  activeTool.hidden = !t || world.tool === 'pointer' || !!world.observe || !$('actions').hidden;
+  if (activeTool.hidden) return;
+  activeToolName.textContent = t.label;
+  const cost = [
+    t.price ? `${fmtShort(t.price)} pearls` : '',
+    t.essence ? `${fmtShort(t.essence)} essence` : '',
+    t.corruption ? `${fmtShort(t.corruption)} corruption` : '',
+  ].filter(Boolean).join(' · ');
+  activeToolCost.textContent = cost || 'free';
+  activeToolLook.setAttribute('aria-label', `Switch to Look and cancel ${t.label}`);
+  activeToolLook.title = `Switch to Look (Esc) · stop using ${t.label}`;
+}
 function setTool(name) {
   world.tool = name;
   const t = TOOLS[name];
   for (const b of document.querySelectorAll('button[data-tool]')) b.setAttribute('aria-pressed', b.dataset.tool === name);
   $('hint').textContent = (typeof forTouch === 'function' ? forTouch : (s) => s)(t.hint || [`click to place ${t.label.toLowerCase()} (${t.price} pearls)`, t.likedBy && likedByText(t.likedBy)].filter(Boolean).join(' · '));
+  updateActiveTool();
 }
 // Each tool, plant and build is a tile in the actions panel, under its kind: an icon, its price,
 // and (on hover) a + to pin it to the bar. Its name is in its tooltip.
@@ -2129,13 +2165,13 @@ function noteToolUse(name) {
   useSaveT = setTimeout(() => { try { localStorage.setItem(USE_KEY, JSON.stringify(toolUse)); } catch { /* storage unavailable */ } }, 1000);
 }
 // The bar down the left: what you've pinned, or, until you pin anything, what you use most.
-// Pins are tools (by name) or creatures ("life:koi"), kept in this browser only.
+// Pins are tools, kept in this browser only.
 const QUICK_N = 8, QUICK_DEFAULT = ['feed', 'net', 'spirulina', 'weed', 'rock', 'brine'];
 const PIN_KEY = 'pond.pins';
 let pins = null;
-try { const p = JSON.parse(localStorage.getItem(PIN_KEY) || 'null'); pins = Array.isArray(p) ? p.filter((k) => typeof k === 'string').slice(0, 30) : null; } catch { pins = null; }
-const actionTile = (k) => document.querySelector(k.startsWith('life:') ? `#act-life [data-spawn="${k.slice(5)}"]` : `#actions [data-tool="${k}"]`);
-const pinUsable = (k) => { if (k.startsWith('life:')) { const kind = k.slice(5); return !!SPECIES[kind] && fitsHabitat(world, SPECIES_HABITAT[kind]) && deepAvailable(world, kind) && deepUnlocked(world, kind); } const b = actionTile(k); return !!TOOLS[k] && !!b && !b.hidden; };
+try { const p = JSON.parse(localStorage.getItem(PIN_KEY) || 'null'); pins = Array.isArray(p) ? p.filter((k) => typeof k === 'string' && !k.startsWith('life:')).slice(0, 30) : null; } catch { pins = null; }
+const actionTile = (k) => document.querySelector(`#actions [data-tool="${k}"]`);
+const pinUsable = (k) => { const b = actionTile(k); return !!TOOLS[k] && !!b && !b.hidden; };
 function barKeys() {
   if (pins) return ['pointer', ...pins.filter((k) => k !== 'pointer' && pinUsable(k))];
   const pick = Object.keys(toolUse).filter((n) => TOOLS[n] && pinUsable(n)).sort((a, b) => toolUse[b] - toolUse[a]).slice(0, QUICK_N);
@@ -2151,8 +2187,8 @@ function togglePin(k) {
 // The tiles show which are on the bar (their pin reads − to take one off).
 function markPins() {
   const on = new Set(barKeys());
-  for (const b of document.querySelectorAll('#actions [data-tool], #act-life [data-spawn]')) {
-    const k = b.dataset.tool || `life:${b.dataset.spawn}`, p = b.querySelector('.pin');
+  for (const b of document.querySelectorAll('#actions [data-tool]')) {
+    const k = b.dataset.tool, p = b.querySelector('.pin');
     b.classList.toggle('pinned', on.has(k));
     if (p) { p.textContent = on.has(k) ? '−' : '+'; p.title = on.has(k) ? 'Take it off the bar' : 'Pin to the bar'; }
   }
@@ -2160,34 +2196,28 @@ function markPins() {
 function renderQuickBar() {
   const bar = $('quickbar');
   bar.hidden = !!world.observe;
+  updateActiveTool();
   if (bar.hidden) return;
   const keys = barKeys(), sig = keys.join();
   if (bar.dataset.sig !== sig) {
     bar.dataset.sig = sig;
     bar.replaceChildren(...keys.map((k) => {
-      const b = document.createElement('button'), life = k.startsWith('life:'), kind = life ? k.slice(5) : null, t = life ? null : TOOLS[k];
+      const b = document.createElement('button'), t = TOOLS[k];
       b.type = 'button';
-      if (life) {
-        b.dataset.pin = k;
-        b.append(iconImg(speciesIcon(kind), 28));
-        b.title = `${SPECIES[kind].label}\nSpawn some (${spawnCost(kind)} essence) · − takes it off the bar`;
-        b.setAttribute('aria-label', `Spawn ${SPECIES[kind].label.toLowerCase()}`);
-      } else {
-        b.dataset.tool = k;
-        b.append(Object.assign(document.createElement('img'), { className: 'ticon', alt: '', width: 28, height: 28 }));
-        b.setAttribute('aria-label', t.label);
-        b.title = [t.label, t.price ? `${t.price} pearls${t.essence ? ` and ${t.essence} essence` : ''}` : t.price === 0 ? 'free' : '', t.build ? STRUCTURES[t.build].desc : t.hint, '− takes it off the bar'].filter(Boolean).join('\n');
-      }
+      b.dataset.tool = k;
+      b.append(Object.assign(document.createElement('img'), { className: 'ticon', alt: '', width: 28, height: 28 }));
+      b.setAttribute('aria-label', t.label);
+      b.title = [t.label, t.price ? `${t.price} pearls${t.essence ? ` and ${t.essence} essence` : ''}` : t.price === 0 ? 'free' : '', t.build ? STRUCTURES[t.build].desc : t.hint, '− takes it off the bar'].filter(Boolean).join('\n');
       const p = pinMark();
       p.textContent = '−'; p.title = 'Take it off the bar';
       b.append(p);
       b.addEventListener('click', (e) => {
         if (e.target.closest('.pin')) { togglePin(k); return; }
-        if (life) openSpawnCard(kind, b); else { setTool(k); noteToolUse(k); }
+        setTool(k); noteToolUse(k);
       });
       return b;
     }));
-    for (const k of keys) if (!k.startsWith('life:')) setToolIcon(k);
+    for (const k of keys) setToolIcon(k);
     if (typeof markBuilt === 'function') markBuilt();
   }
   for (const b of bar.children) b.setAttribute('aria-pressed', b.dataset.tool === world.tool);
@@ -2196,14 +2226,14 @@ function renderQuickBar() {
 
 // All actions, as icons, by kind; each kind folds away (remembered in this browser).
 const CATS_KEY = 'pond.actCats';
-let lifeTiles = false;
 function setActions(open) {
+  if (open && dockUi.expanded) setDockExpanded(false);
   $('actions').hidden = !open;
+  updateActiveTool();
   $('rail-more').setAttribute('aria-expanded', open);
   $('rail-more').textContent = open ? '▾' : '▴';
   if (open) {
     if (!hud.classList.contains('hidden')) setHud(false); // (one big window at a time)
-    if (!lifeTiles) buildLifeTiles();
     markPins();
     placeActions();
   }
@@ -2217,22 +2247,6 @@ function placeActions() {
   box.style.bottom = `${Math.round(innerHeight - document.querySelector('.item-bar').getBoundingClientRect().top + 8)}px`;
 }
 addEventListener('resize', placeActions);
-// Creatures: the dock's species, to spawn from here (or pin to the bar).
-function buildLifeTiles() {
-  lifeTiles = true;
-  $('act-life').replaceChildren(...DOCK_KINDS.map((kind) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.dataset.spawn = kind;
-    b.setAttribute('aria-label', `Spawn ${SPECIES[kind].label.toLowerCase()}`);
-    b.title = `${SPECIES[kind].label}\nSpawn some for ${spawnCost(kind)} essence (a card opens to choose boosts)`;
-    b.append(iconImg(speciesIcon(kind), 28), Object.assign(document.createElement('span'), { className: 'lbl', textContent: SPECIES[kind].label }),
-      Object.assign(document.createElement('b'), { className: 'price', textContent: `${fmtShort(spawnCost(kind))}◆` }), pinMark());
-    b.addEventListener('click', (e) => { if (e.target.closest('.pin')) { togglePin(`life:${kind}`); return; } openSpawnCard(kind, b); });
-    return b;
-  }));
-  refreshSpeciesButtons();
-}
 {
   let folded = {};
   try { folded = JSON.parse(localStorage.getItem(CATS_KEY) || '{}') || {}; } catch { folded = {}; }
@@ -2247,7 +2261,7 @@ function buildLifeTiles() {
     });
   }
   $('rail-more').addEventListener('click', () => setActions($('actions').hidden));
-$('wild-btn').addEventListener('click', () => setWild(!wildUi.open));
+$('wild-btn').addEventListener('click', () => setDockExpanded(!dockUi.expanded));
 $('wild-close').addEventListener('click', () => setWild(false));
   $('actions-close').addEventListener('click', () => setActions(false));
 }
@@ -2261,12 +2275,13 @@ const newKey = (b) => b.dataset.tool || (b.dataset.spawn ? `life:${b.dataset.spa
 function markNew() {
   const G = world.game;
   if (!G || world.observe) return;
-  const tiles = [...document.querySelectorAll('#actions [data-tool], #act-life [data-spawn], #animals [data-spawn]')];
-  const avail = tiles.filter((b) => !b.hidden).map(newKey);
+  const tiles = [...document.querySelectorAll('#actions [data-tool], #animals [data-spawn]')];
+  const available = (b) => !b.hidden && (!b.dataset.spawn || typeof spawnable !== 'function' || spawnable(world, b.dataset.spawn));
+  const avail = tiles.filter(available).map(newKey);
   if (!G.seenAct) { G.seenAct = [...new Set(avail)]; world.gameDirty = true; }
   const seen = new Set(G.seenAct), fresh = new Set();
   for (const b of tiles) {
-    const k = newKey(b), isNew = !b.hidden && !seen.has(k);
+    const k = newKey(b), isNew = available(b) && !seen.has(k);
     b.classList.toggle('is-new', isNew);
     if (isNew && !b.closest('#animals')) fresh.add(k);
   }
@@ -2307,7 +2322,9 @@ function refreshSpeciesButtons() {
   // Deep species show once their zone exists and they're unlocked on the evolution tree.
   for (const b of document.querySelectorAll('[data-spawn]')) {
     const k = b.dataset.spawn;
-    b.hidden = !fitsHabitat(world, SPECIES_HABITAT[k]) || !deepAvailable(world, k) || (typeof spawnable === 'function' ? !spawnable(world, k) : !deepUnlocked(world, k));
+    b.hidden = b.closest('#animals') && typeof dockSpeciesVisible === 'function'
+      ? !dockSpeciesVisible(world, k)
+      : !fitsHabitat(world, SPECIES_HABITAT[k]) || !deepAvailable(world, k) || (typeof spawnable === 'function' ? !spawnable(world, k) : !deepUnlocked(world, k));
   }
   // Builds, foods and plants of the deep show once the pond is that deep.
   const tier = (world.erosion && world.erosion.tier) || 0;
@@ -2325,6 +2342,7 @@ function refreshSpeciesButtons() {
   if (typeof renderQuickBar === 'function' && $('quickbar')) renderQuickBar();
   if (typeof markBuilt === 'function') { markBuilt(); markNew(); }
   if (typeof refreshWildButton === 'function') refreshWildButton();
+  if (typeof updateDockVisibility === 'function') updateDockVisibility();
   syncHard();
 }
 
@@ -2337,6 +2355,17 @@ fillSelect($('opt-floor'), Object.entries(FLOORS).map(([k, f]) => [k, f.label]),
 fillSelect($('opt-water'), Object.entries(WATERS).map(([k, w]) => [k, w.label]), world.opts.water);
 fillSelect($('opt-light'), Object.entries(LIGHTS).map(([k, l]) => [k, l.label]), world.opts.light);
 fillSelect($('opt-world'), Object.entries(WORLD_SIZES).map(([k, w]) => [k, w.label]), world.opts.world);
+const fontChoice = $('opt-font');
+let textStyle = 'readable';
+try { textStyle = localStorage.getItem('pond.textStyle') === 'pixel' ? 'pixel' : 'readable'; } catch { /* storage unavailable */ }
+function setTextStyle(value) {
+  textStyle = value === 'pixel' ? 'pixel' : 'readable';
+  document.documentElement.classList.toggle('font-pixel', textStyle === 'pixel');
+  fontChoice.value = textStyle;
+  try { localStorage.setItem('pond.textStyle', textStyle); } catch { /* storage unavailable */ }
+}
+setTextStyle(textStyle);
+fontChoice.addEventListener('change', () => setTextStyle(fontChoice.value));
 
 function setOpt(key, value) {
   world.opts[key] = value;
@@ -2429,6 +2458,7 @@ const cycleLight = () => setLight(LIGHT_ORDER[(LIGHT_ORDER.indexOf(world.opts.li
 function setBones(on) { world.bones = on; $('bones').setAttribute('aria-pressed', on); }
 function setPaused(on) { world.paused = on; $('pause').setAttribute('aria-pressed', on); }
 function setHud(show) {
+  if (show && dockUi.expanded) setDockExpanded(false);
   hud.classList.toggle('hidden', !show);
   $('show-hud').setAttribute('aria-pressed', show);
   if (show && typeof census !== 'undefined' && census.open) setCensus(false); // (one window down the left at a time)

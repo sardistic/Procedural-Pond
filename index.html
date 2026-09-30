@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=36">
+  <link rel="stylesheet" href="style.css?v=38">
 
   <script type="application/ld+json">
   {
@@ -107,6 +107,7 @@
         <label>Floor <select id="opt-floor"></select></label>
         <label>Water <select id="opt-water"></select></label>
         <label>World <select id="opt-world"></select></label>
+        <label>Text <select id="opt-font" title="Try the readable beta font, or switch back to the pixel font"><option value="readable">Readable (beta)</option><option value="pixel">Pixel (classic)</option></select></label>
         <label title="Music level&#10;How loud the music is when it's on (the Music button, or N)">Music <input type="range" id="opt-music" min="0" max="100" step="5"><output></output></label>
       </div>
       <div class="grid3">
@@ -115,7 +116,7 @@
         <button type="button" data-toggle="outlines">Outlines</button>
         <button type="button" data-toggle="life" title="Hunger, growth, breeding, predators and migration">Life</button>
         <button type="button" data-toggle="weather" title="Rain showers and wind gusts">Weather</button>
-        <button type="button" data-toggle="fine" title="Close-up detail&#10;Zoomed right in (12× and closer), a finer layer of detail: sand grains, ripples and pebbles, cracked rock, a finer net of light, glints and drifting motes, scales, fin rays and gills, a glint in the eye, veins in the leaves. Off: the pond's own pixels only.">Detail</button>
+        <button type="button" data-toggle="fine" title="Close-up detail&#10;A finer pixel layer from 12×, finer again from 20×: sand, light, scales, fins and plants. Turn it off for the original pixels.">Detail</button>
         <button type="button" data-toggle="neighbours" title="Neighbours&#10;The ponds either side of yours along the beach, drawn past each end of it (and you can drag on into them). Off: just your pond; the arrows by its name still walk you over.">Neighbours</button>
       </div>
     </details>
@@ -123,31 +124,14 @@
     <details class="about">
       <summary>About</summary>
       <h2>A living pixel-art pond</h2>
-      <p>Procedural Pond is a free, self-running virtual aquarium in your browser. Every animal is a chain of joints that follows its head, the idea from <a href="https://github.com/argonautcode/animal-proc-anim" target="_blank" rel="noopener">argonautcode's procedural animation sketch</a>, drawn by a tiny voxel renderer into chunky, shaded pixel art.</p>
-      <h3>What happens here</h3>
+      <p>Watch a self-running pond, feed its animals, and shape the habitat around them.</p>
       <ul>
-        <li>Koi, tetras, eels, axolotls, turtles, crabs, stingrays, frogs, snakes, snails, jellyfish, clownfish, pufferfish, an octopus, ducks, shrimp, starfish and dragonflies.</li>
-        <li>New fish species are invented as you watch, each with its own shape, colours, pattern and name.</li>
-        <li>More than a hundred species across every stage, from mandarinfish and guppies to barreleyes, opabinia and things not of this world, and a guide to all of them (press G).</li>
-        <li>Animals get hungry, grow up, lay eggs, pass their genes on, hunt, flee and eventually move on.</li>
-        <li>A day/night cycle and a moon whose phases drive the tides and surf on the beach. Corals spawn under the full moon.</li>
-        <li>Freshwater, saltwater or both: reef fish, corals and starfish, or koi, frogs and lily pads.</li>
-        <li>Genetics that inherit like real genes (recessive, dominant, incompletely dominant, hybrid vigour, inbreeding), with rare albino, leucistic, melanistic, xanthic, axanthic, piebald, marbled, shiny, glowing, ghostly, chimeric, giant and dwarf animals, from Uncommon up to Mythic. Genes set fertility, longevity, vitality, intellect, light and temper.</li>
-        <li>Fresh water is easy and calm, salt water hard, and both together difficult: fresh and salt life fight over the water, and aggressive water drives animals away.</li>
-        <li>A long game: the surf erodes tide pools into the beach, then opens the deep beyond a drop-off, tier by tier, down to the abyss (salt) or a drowned cathedral (fresh), with sharks, anglerfish, cavefish, olms and mythic creatures, and further out and darker still, into the deep past: trilobites, sea scorpions, dunkleosteus, plesiosaurs and mosasaurs.</li>
-        <li>The dark makes animals savage: the marked roll dice as they change and their natures warp, fights break out at night, and hunters follow blood in the water.</li>
-        <li>A sky of its own: glass-calm days you can see deep into, meteor showers, auroras, comets, blood moons, eclipses, and when the stars are right, blood rain.</li>
-        <li>Sign in with Discord to keep your ponds in your account and carry on from any browser; show your name on a pond if you like.</li>
-        <li>Fierce animals that leave one pond sometimes turn up in another to terrorize the natives.</li>
-        <li>Deeper still, alien artifacts land in the deep and release parasites that ride your animals and spread strange contagions; very rarely, something new evolves from them.</li>
-        <li>Everything you build, plant, breed or evolve is an investment that pays points and essence every dawn.</li>
-        <li>Optional music: quiet phrases, cut up and cued by what happens in the pond.</li>
-        <li>New kinds find their way in slowly, each pond with its own odds; lure or summon the ones you want. Different kinds meet and interact (cleaning stations, rival displays, riders, warnings), and you can protect a kind or call a cull.</li>
-        <li>The land remembers: the floor slowly turns to bone sand, glow sand, ash, glass or fossil beds by what lives and dies there, islands grow their own plants and join, scavengers recycle the waste, and the pond keeps reaching further out.</li>
-        <li>Points for every birth and rare find, pearls to spend on animals, plants and food, a shared leaderboard, and fireflies that show your score at night.</li>
-        <li>Your pond saves itself and is waiting when you come back, and the address bar always holds its address: its name (pond.nz/moonlit-reef), which follows it when you rename it.</li>
+        <li>Life grows, hunts, breeds, and passes genes through generations.</li>
+        <li>Build reefs and islands, then watch tides, weather, and time reshape them.</li>
+        <li>Explore the deep to find new species and earn pearls and essence.</li>
       </ul>
-      <p>Made by <a href="https://sardistic.com/">sardistic</a>. <a href="https://github.com/sardistic/Procedural-Pond">Source on GitHub</a>.</p>
+      <p>Your pond saves itself. Open the Guide for species, controls, and the deeper systems.</p>
+      <p>Made by <a href="https://sardistic.com/">sardistic</a>, inspired by <a href="https://github.com/argonautcode/animal-proc-anim" target="_blank" rel="noopener">argonautcode's animation sketch</a>. <a href="https://github.com/sardistic/Procedural-Pond">Source on GitHub</a>.</p>
     </details>
 
     <div class="grid3 foot">
@@ -162,7 +146,7 @@
       <button type="button" id="open-hatchery" title="The hatchery (build one first)">Hatchery</button>
       <button type="button" id="open-guide" class="span3" title="Everything in the game, in one place (G)">Guide</button>
     </div>
-    <p class="keys">Arrows/WASD pan · +/− zoom · F follow · T tour · C animals · J journal · P score · L light · B bones · Space pause · M sound · N music · G guide · H menu (the animals are down the left; food, tools, plants and builds along the bottom: ▴ for all of them, + to pin one)</p>
+    <p class="keys">Drag to pan · scroll to zoom · G for the guide · H for this menu</p>
   </aside>
   <div id="signin-nudge" class="signin-nudge" hidden role="dialog" aria-label="Sign in">
     <b>Keep this pond safe</b>
@@ -170,13 +154,12 @@
     <div class="grid2"><button type="button" id="nudge-signin" class="discord">Sign in with Discord</button><button type="button" id="nudge-later">Not now</button></div>
   </div>
   <nav id="rail" class="rail" aria-label="The menu and the animals">
-    <button type="button" id="show-hud" class="rail-btn menu" aria-pressed="false" aria-label="Menu" title="Menu (H)&#10;Your ponds, the scene, sound, sharing and the rest">☰</button>
     <div class="dock-bar">
       <button type="button" id="census-btn" class="census-btn" aria-expanded="false" aria-controls="census" title="Details about the animals in the pond (C)">
         <b id="census-count">0</b><span class="caret" aria-hidden="true">▸</span>
       </button>
       <div id="animals" class="animals" role="group" aria-label="The animals: add more, or read about them"></div>
-      <button type="button" id="wild-btn" class="wild-dock" hidden aria-label="Wildlife: kinds that haven't come yet"><span aria-hidden="true">?</span><b>0</b></button>
+      <button type="button" id="wild-btn" class="wild-dock" aria-expanded="false" aria-controls="animals" aria-label="Expand creature list" title="Expand creature list"><span aria-hidden="true">▸</span><b>0</b></button>
       <button type="button" id="hatch-btn" class="hatch-dock" hidden aria-label="Hatchery"><span class="egg" aria-hidden="true"></span></button>
     </div>
     <button type="button" id="rail-paragons" class="rail-btn crown" aria-expanded="false" aria-controls="paragons" aria-label="Paragons" title="Paragons&#10;The finest of your lines, earned by breeding: what they are, the ones waiting for you, and how close the next are">♛</button>
@@ -195,21 +178,21 @@
   </section>
   <section id="actions" class="pop actions" hidden aria-label="All actions">
     <header class="pop-head"><b>Actions</b><button type="button" id="actions-close" class="icon" aria-label="Close actions">×</button></header>
-    <p class="note">Click one to use it. Hover one and press + to pin it to the bar along the bottom (− takes it off).</p>
+    <p class="note">Choose an action, then click the pond. + pins it below.</p>
     <div id="tools">
       <div class="act-cat" data-cat="food"><button type="button" class="act-head" aria-expanded="true">Food <span class="caret">▾</span></button><div class="act-grid"></div></div>
       <div class="act-cat" data-cat="tools"><button type="button" class="act-head" aria-expanded="true">Tools <span class="caret">▾</span></button><div class="act-grid"></div></div>
       <div class="act-cat" data-cat="plants"><button type="button" class="act-head" aria-expanded="true">Plants &amp; rocks <span class="caret">▾</span></button><div class="act-grid"></div></div>
     </div>
     <div class="act-cat" data-cat="build"><button type="button" class="act-head" aria-expanded="true">Build <span class="caret">▾</span></button>
-      <div class="act-body"><p class="note">Big structures, each with an area of effect: pick one, then click the pond. Click a structure to read about it; the Net takes one down for half its pearls.</p><div class="act-grid" id="builds"></div></div></div>
-    <div class="act-cat" data-cat="life"><button type="button" class="act-head" aria-expanded="true">Creatures <span class="caret">▾</span></button><div class="act-grid" id="act-life"></div></div>
+      <div class="act-body"><p class="note">Place a structure in the pond. Click it for details; use the Net to remove it.</p><div class="act-grid" id="builds"></div></div></div>
   </section>
 
   <div id="sky" class="sky">
     <button type="button" id="sky-btn" class="sky-btn" aria-expanded="false" aria-controls="sky-panel" aria-label="Time, moon and tide">
       <canvas id="sky-icon" width="16" height="16"></canvas>
     </button>
+    <button type="button" id="show-hud" class="rail-btn menu" aria-pressed="false" aria-label="Menu" title="Menu (H)"><span class="menu-line"></span><span class="menu-line"></span><span class="menu-line"></span></button>
     <b id="sky-day" class="sky-day" aria-hidden="true">Day 1</b>
     <section id="sky-panel" class="pop sky-panel" hidden aria-label="Time, moon and tide">
       <div class="sky-head">
@@ -324,7 +307,7 @@
     <span class="care"></span>
   </div>
   <div id="lineage" class="lineage" hidden aria-live="off"></div>
-  <section id="spawn-card" class="spawn-card" hidden aria-label="Spawn an animal"></section>
+  <section id="spawn-card" class="spawn-card" hidden aria-label="Species options"></section>
   <section id="hatchery" class="pop hatch" hidden aria-label="Hatchery">
     <header class="pop-head"><b>Hatchery <span id="hatch-broods"></span></b><button type="button" id="hatch-close" class="icon" aria-label="Close hatchery">×</button></header>
     <div class="hatch-feed">
@@ -404,7 +387,7 @@
     <div class="dock">
       <div class="item-bar">
         <div id="quickbar" class="rail-pins" aria-label="Pinned actions"></div>
-        <button type="button" id="rail-more" class="rail-btn more" aria-expanded="false" aria-controls="actions" title="All actions&#10;Food, tools, plants, builds and creatures. Hover one and press + to pin it to this bar">▴</button>
+        <button type="button" id="rail-more" class="rail-btn more" aria-expanded="false" aria-controls="actions" title="All actions&#10;Food, tools, plants and builds. Hover one and press + to pin it to this bar">▴</button>
       </div>
     </div>
 
@@ -423,63 +406,63 @@
     </div>
   </div>
 
-  <script src="js/core.js?v=50"></script>
-  <script src="js/raster.js?v=50"></script>
-  <script src="js/creatures.js?v=50"></script>
-  <script src="js/critters.js?v=50"></script>
-  <script src="js/wildlife.js?v=50"></script>
-  <script src="js/wildfish.js?v=50"></script>
-  <script src="js/sound.js?v=50"></script>
-  <script src="js/life.js?v=50"></script>
-  <script src="js/plants.js?v=50"></script>
-  <script src="js/scene.js?v=50"></script>
-  <script src="js/character.js?v=50"></script>
-  <script src="js/structures.js?v=50"></script>
-  <script src="js/erosion.js?v=50"></script>
-  <script src="js/sky.js?v=50"></script>
-  <script src="js/ecology.js?v=50"></script>
-  <script src="js/game.js?v=50"></script>
-  <script src="js/deep.js?v=50"></script>
-  <script src="js/remains.js?v=50"></script>
-  <script src="js/eldritch.js?v=50"></script>
-  <script src="js/coast.js?v=50"></script>
-  <script src="js/gulls.js?v=50"></script>
-  <script src="js/shore.js?v=50"></script>
-  <script src="js/traits.js?v=50"></script>
-  <script src="js/save.js?v=50"></script>
-  <script src="js/link.js?v=50"></script>
-  <script src="js/abyss.js?v=50"></script>
-  <script src="js/quirks.js?v=50"></script>
-  <script src="js/hunters.js?v=50"></script>
-  <script src="js/mastery.js?v=50"></script>
-  <script src="js/habitats.js?v=50"></script>
-  <script src="js/artifacts.js?v=50"></script>
-  <script src="js/story.js?v=50"></script>
-  <script src="js/lineage.js?v=50"></script>
-  <script src="js/depths.js?v=50"></script>
-  <script src="js/sand.js?v=50"></script>
-  <script src="js/heavens.js?v=50"></script>
-  <script src="js/nature.js?v=50"></script>
-  <script src="js/pollution.js?v=50"></script>
-  <script src="js/prehistoric.js?v=50"></script>
-  <script src="js/alien.js?v=50"></script>
-  <script src="js/bestiary.js?v=50"></script>
-  <script src="js/land.js?v=50"></script>
-  <script src="js/isles.js?v=50"></script>
-  <script src="js/flora.js?v=50"></script>
-  <script src="js/cycle.js?v=50"></script>
-  <script src="js/arrivals.js?v=50"></script>
-  <script src="js/interact.js?v=50"></script>
-  <script src="js/net.js?v=50"></script>
-  <script src="js/account.js?v=50"></script>
-  <script src="js/wander.js?v=50"></script>
-  <script src="js/hinterland.js?v=50"></script>
-  <script src="js/imps.js?v=50"></script>
-  <script src="js/hud.js?v=50"></script>
-  <script src="js/fine.js?v=50"></script>
-  <script src="js/main.js?v=53"></script>
-  <script src="js/guide.js?v=50"></script>
-  <script src="js/music.js?v=50"></script>
-  <script src="js/tips.js?v=50"></script>
+  <script src="js/core.js?v=52"></script>
+  <script src="js/raster.js?v=52"></script>
+  <script src="js/creatures.js?v=52"></script>
+  <script src="js/critters.js?v=52"></script>
+  <script src="js/wildlife.js?v=52"></script>
+  <script src="js/wildfish.js?v=52"></script>
+  <script src="js/sound.js?v=52"></script>
+  <script src="js/life.js?v=52"></script>
+  <script src="js/plants.js?v=52"></script>
+  <script src="js/scene.js?v=52"></script>
+  <script src="js/character.js?v=52"></script>
+  <script src="js/structures.js?v=52"></script>
+  <script src="js/erosion.js?v=52"></script>
+  <script src="js/sky.js?v=52"></script>
+  <script src="js/ecology.js?v=52"></script>
+  <script src="js/game.js?v=52"></script>
+  <script src="js/deep.js?v=52"></script>
+  <script src="js/remains.js?v=52"></script>
+  <script src="js/eldritch.js?v=52"></script>
+  <script src="js/coast.js?v=52"></script>
+  <script src="js/gulls.js?v=52"></script>
+  <script src="js/shore.js?v=52"></script>
+  <script src="js/traits.js?v=52"></script>
+  <script src="js/save.js?v=52"></script>
+  <script src="js/link.js?v=52"></script>
+  <script src="js/abyss.js?v=52"></script>
+  <script src="js/quirks.js?v=52"></script>
+  <script src="js/hunters.js?v=52"></script>
+  <script src="js/mastery.js?v=52"></script>
+  <script src="js/habitats.js?v=52"></script>
+  <script src="js/artifacts.js?v=52"></script>
+  <script src="js/story.js?v=52"></script>
+  <script src="js/lineage.js?v=52"></script>
+  <script src="js/depths.js?v=52"></script>
+  <script src="js/sand.js?v=52"></script>
+  <script src="js/heavens.js?v=52"></script>
+  <script src="js/nature.js?v=52"></script>
+  <script src="js/pollution.js?v=52"></script>
+  <script src="js/prehistoric.js?v=52"></script>
+  <script src="js/alien.js?v=52"></script>
+  <script src="js/bestiary.js?v=52"></script>
+  <script src="js/land.js?v=52"></script>
+  <script src="js/isles.js?v=52"></script>
+  <script src="js/flora.js?v=52"></script>
+  <script src="js/cycle.js?v=52"></script>
+  <script src="js/arrivals.js?v=52"></script>
+  <script src="js/interact.js?v=52"></script>
+  <script src="js/net.js?v=52"></script>
+  <script src="js/account.js?v=52"></script>
+  <script src="js/wander.js?v=52"></script>
+  <script src="js/hinterland.js?v=52"></script>
+  <script src="js/imps.js?v=52"></script>
+  <script src="js/hud.js?v=52"></script>
+  <script src="js/fine.js?v=52"></script>
+  <script src="js/main.js?v=55"></script>
+  <script src="js/guide.js?v=52"></script>
+  <script src="js/music.js?v=52"></script>
+  <script src="js/tips.js?v=52"></script>
 </body>
 </html>

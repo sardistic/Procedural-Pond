@@ -19,8 +19,10 @@ html, body {
   overflow: hidden;
   background: #0e3a46;
   color: var(--text);
-  font-family: 'Silkscreen', ui-monospace, monospace;
+  font-family: ui-rounded, 'Trebuchet MS', Verdana, sans-serif;
 }
+
+html.font-pixel body { font-family: 'Silkscreen', ui-monospace, monospace; }
 
 /* The land up the beach, past the pond's landward edge (hinterland.js): panned like the pond. */
 .hinter {
@@ -32,7 +34,7 @@ html, body {
   touch-action: none;
   cursor: default;
 }
-/* Close-up detail over the pond (fine.js): four times finer, panned with it, and never in the way of the pointer. */
+/* Close-up detail over the pond (fine.js): 4× or 8× finer, panned with it, and never in the way of the pointer. */
 .fine {
   position: fixed;
   left: 0;
@@ -637,7 +639,7 @@ output {
 .zoom #zoom-level { font-size: 10px; color: var(--hot); }
 
 .minimap {
-  width: 211px;
+  width: min(211px, var(--map-fit-width, 211px));
   height: 119px;
   image-rendering: pixelated;
   border: 2px solid var(--edge);
@@ -996,7 +998,7 @@ body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, bo
 
 .mini-wrap { position: relative; display: grid; gap: 4px; }
 .map-layer { position: absolute; bottom: 4px; right: 4px; padding: 2px 5px; font-size: 8px; box-shadow: none; opacity: 0.85; }
-.slice { width: 211px; height: 48px; image-rendering: pixelated; border: 2px solid var(--edge); box-shadow: 3px 3px 0 var(--ink); background: var(--ink); cursor: pointer; }
+.slice { width: min(211px, var(--map-fit-width, 211px)); height: 48px; image-rendering: pixelated; border: 2px solid var(--edge); box-shadow: 3px 3px 0 var(--ink); background: var(--ink); cursor: pointer; }
 
 /* ---- the depths ---- */
 
@@ -1137,8 +1139,7 @@ button.discord:hover { background: #4752c4; }
 .act-grid > button { position: relative; flex-direction: column; justify-content: center; gap: 2px; min-height: 50px; padding: 4px 2px; line-height: 1.1; }
 .act-grid > button[hidden] { display: none; }
 .act-grid .lbl, .rail-pins .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.act-grid .price, #act-life .price { display: flex; align-items: center; gap: 2px; margin: 0; font-size: 8px; color: #cfe8f0; white-space: nowrap; }
-#act-life .price { color: #c38bff; }
+.act-grid .price { display: flex; align-items: center; gap: 2px; margin: 0; font-size: 8px; color: #cfe8f0; white-space: nowrap; }
 /* The pin: + to put it on the bar, − to take it off; shown on hover. */
 .pin { position: absolute; top: -6px; right: -6px; z-index: 1; display: none; align-items: center; justify-content: center; width: 16px; height: 16px; font-size: 11px; line-height: 1; color: var(--hot); background: var(--btn); border: 2px solid var(--edge); box-shadow: 1px 1px 0 var(--ink); cursor: pointer; }
 button:hover > .pin, button:focus-visible > .pin { display: flex; }
@@ -1311,7 +1312,7 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
   .evo { left: 8px !important; right: 8px; width: auto !important; transform: none !important; }
   /* The map floats above the news at the right, when it's shown. */
   body.map-open .mini-wrap { position: fixed; right: max(8px, env(safe-area-inset-right)); bottom: 164px; z-index: 1; } /* (above the news line) */
-  .minimap, .slice { width: 176px; }
+  .minimap, .slice { width: min(176px, var(--map-fit-width, 176px)); }
   .corner { gap: 4px; }
 }
 @media (max-height: 500px) {
@@ -1332,7 +1333,7 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
   .log { flex: 0 1 280px; }
   .item-bar { padding: 4px; gap: 4px; }
   .dock-bar { padding: 2px; }
-  .minimap, .slice { width: 150px; }
+  .minimap, .slice { width: min(150px, var(--map-fit-width, 150px)); }
   .corner .zoom button, .map-toggle { width: 32px; height: 30px; }
   .banner { top: 56px; }
   .narrator { top: 100px; }
@@ -1342,3 +1343,117 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
   .act-grid > button > .pin { display: flex; width: 20px; height: 20px; top: -8px; right: -8px; font-size: 13px; }
 }
 
+/* Readable text is the beta default; the Scene selector restores the original pixel face. */
+html:not(.font-pixel) #hud,
+html:not(.font-pixel) .pop,
+html:not(.font-pixel) .spawn-card,
+html:not(.font-pixel) .inspect { font-size: 12px; line-height: 1.45; }
+html:not(.font-pixel) button,
+html:not(.font-pixel) select,
+html:not(.font-pixel) summary,
+html:not(.font-pixel) .note,
+html:not(.font-pixel) .fields label,
+html:not(.font-pixel) .hint,
+html:not(.font-pixel) .keys,
+html:not(.font-pixel) .seed,
+html:not(.font-pixel) .about p,
+html:not(.font-pixel) .about ul,
+html:not(.font-pixel) .sc-sub,
+html:not(.font-pixel) .g-text,
+html:not(.font-pixel) .g-facts,
+html:not(.font-pixel) .g-note,
+html:not(.font-pixel) .journal li { font-size: 12px; line-height: 1.4; }
+html:not(.font-pixel) h1 { font-size: 15px; }
+html:not(.font-pixel) .about h2,
+html:not(.font-pixel) .about h3,
+html:not(.font-pixel) .sc-head b,
+html:not(.font-pixel) .g-ch { font-size: 14px; }
+html:not(.font-pixel) .tip { max-width: min(320px, calc(100vw - 20px)); font-size: 12px; line-height: 1.45; }
+html:not(.font-pixel) .tip b { font-size: 13px; }
+html:not(.font-pixel) .boost .bn,
+html:not(.font-pixel) .pond-open span,
+html:not(.font-pixel) .act-grid .price,
+html:not(.font-pixel) .ani b { font-size: 11px; }
+html:not(.font-pixel) .log-line .txt,
+html:not(.font-pixel) .sc-facts { font-size: 12px; }
+.about ul { padding-left: 18px; }
+.about li { margin: 4px 0; }
+
+/* A chosen action remains visible after its panel closes, with a way back to Look. */
+#active-tool {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 24px));
+  min-height: 40px;
+  padding: 4px 5px 4px 10px;
+  transform: translateX(-50%);
+  color: var(--text);
+  background: rgb(8, 26, 34);
+  border: 2px solid var(--hot);
+  box-shadow: 3px 3px 0 var(--ink);
+  white-space: nowrap;
+}
+#active-tool .active-tool-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--hot); }
+#active-tool .active-tool-cost { flex: none; color: #c38bff; font-size: 11px; }
+#active-tool-look { flex: none; min-width: 58px; min-height: 32px; padding: 4px 7px; }
+@media (max-width: 760px) {
+  #active-tool { width: max-content; max-width: calc(100vw - 24px); }
+  #active-tool-look { min-height: 36px; }
+}
+
+/* The menu sits beside the day. Its little waves turn into a cross when open. */
+#show-hud.menu {
+  position: absolute;
+  right: calc(100% + 7px);
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 36px;
+  height: 32px;
+  padding: 0;
+  border-color: var(--edge);
+  background: var(--panel);
+}
+#show-hud .menu-line { display: block; width: 18px; height: 3px; background: var(--hot); transition: transform 0.22s ease, opacity 0.18s ease; transform-origin: center; }
+#show-hud:hover:not([aria-pressed="true"]) .menu-line:nth-child(1) { animation: menu-wave 0.62s ease-in-out 0s 1; }
+#show-hud:hover:not([aria-pressed="true"]) .menu-line:nth-child(2) { animation: menu-wave 0.62s ease-in-out 0.1s 1; }
+#show-hud:hover:not([aria-pressed="true"]) .menu-line:nth-child(3) { animation: menu-wave 0.62s ease-in-out 0.2s 1; }
+#show-hud[aria-pressed="true"] .menu-line:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+#show-hud[aria-pressed="true"] .menu-line:nth-child(2) { opacity: 0; transform: scaleX(0.4); }
+#show-hud[aria-pressed="true"] .menu-line:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+@keyframes menu-wave { 50% { transform: translateX(3px) scaleX(0.82); } }
+@media (prefers-reduced-motion: reduce) {
+  #show-hud .menu-line { transition: none; }
+  #show-hud:hover .menu-line { animation: none !important; }
+}
+
+/* The compact dock keeps the strongest species in view; the arrow unfolds the full list. */
+.dock-bar:not(.expanded) .animals { overflow-y: hidden; }
+.dock-bar:not(.expanded) .ani-label,
+.dock-bar:not(.expanded) .ani.dock-overflow { display: none; }
+.dock-bar.expanded { width: min(220px, calc(100vw - 80px)); align-items: stretch; }
+.dock-bar.expanded .animals { width: 100%; max-height: calc(100vh - 280px); overflow-y: auto; align-items: stretch; }
+.dock-bar.expanded .ani,
+.dock-bar.expanded .ani.dock-overflow { display: flex; justify-content: flex-start; gap: 8px; width: 100%; height: 42px; padding: 2px 9px; }
+.dock-bar.expanded .ani img { flex: none; max-width: 32px; max-height: 32px; object-fit: contain; }
+.dock-bar.expanded .ani-label { display: block; min-width: 0; padding-right: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.ani.undiscovered { border-style: dashed; }
+.ani.undiscovered img { opacity: 0.52; }
+.dock-bar.expanded .wild-dock { align-self: stretch; width: 100%; height: 32px; flex-direction: row; justify-content: space-between; padding: 0 10px; }
+.dock-bar.expanded .wild-dock b { margin-left: 0; }
+.sc-arrival { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.sc-arrival .sc-buy { min-width: 0; }
+.spawn-card .boost:disabled { opacity: 0.48; cursor: not-allowed; }
+@media (max-height: 500px) {
+  .dock-bar.expanded .animals { max-height: calc(100vh - 170px); }
+}
+@media (max-width: 760px), (max-height: 500px) {
+  .sky { z-index: 10; } /* keep the menu toggle reachable above an open panel */
+}
