@@ -230,6 +230,7 @@ class Creature {
       const ex = b.px(0, s * off, -inset), ey = b.py(0, s * off, -inset);
       r.dot(ex, ey, z, this.eyeMat || EYE, this.id);
       if (shine) r.dot(ex - 0.6, ey - 0.6, z + 0.1, EYE_SHINE, this.id);
+      if (typeof FINE !== 'undefined' && FINE.rec) FINE.eyes.push(ex, ey, this.id); // (close up, a glint in it: fine.js)
     }
   }
 }

@@ -7,7 +7,7 @@ const OPTS_KEY = 'procedural-pond.opts';
 const DEFAULT_OPTS = {
   v: 4, world: 'auto', habitat: 'mixed', floor: 'sand', water: 'teal', light: 'cycle', dayLength: 180,
   current: 25, speed: 1, caustics: true, shadows: true, outlines: true, life: true, weather: true, sound: false,
-  music: false, musicLevel: 40, hard: false, neighbours: true, // (hard: new ponds start in hard mode; neighbours: the ponds along the beach drawn past each end)
+  music: false, musicLevel: 40, hard: false, neighbours: true, fine: true, // (hard: new ponds start in hard mode; neighbours: the ponds along the beach drawn past each end; fine: close-up detail)
 };
 // The pond is a fixed-size world, larger than the screen at the default zoom.
 // "Fit screen" makes it the window at 2x pixels, so zoom 2 fills the screen exactly.
@@ -563,6 +563,7 @@ function render(full = false) {
   const r = world.raster, t = world.t, o = world.opts, t0 = performance.now(), q = QUALITY.level;
   const light = world.light || (world.light = lighting());
   const rect = full ? [0, 0, world.W - 1, world.H - 1] : visibleRect();
+  if (typeof fineBegin === 'function') fineBegin(); // (close up: fine.js notes the eyes as they're drawn)
   // Rasterize a margin above/left of the view: shadows of things just off-screen still land on it.
   r.setClip(rect[0] - 30, rect[1] - 30, rect[2] + 3, rect[3] + 3);
   r.begin();
@@ -640,6 +641,7 @@ function render(full = false) {
     Q.ema += (now - t0 - Q.ema) * 0.05;
     if (Q.ema > 38 && Q.level < 2 && now - Q.at > 2000) { Q.level++; Q.at = now; Q.ema = 30; }
     else if (Q.ema < 18 && Q.level > 0 && now - Q.at > 5000) { Q.level--; Q.at = now; }
+    if (typeof renderFine === 'function') renderFine(rect); // (zoomed right in: the finer picture over it, fine.js)
   }
   updateSkyHud(light);
 }
@@ -1200,6 +1202,7 @@ function applyView() {
   zoomLabel.textContent = Number.isInteger(view.k) ? `${view.k}×` : 'fit'; // (zoomed all the way out, the pond just covering the window)
   if (typeof placeBeyond === 'function') { placeBeyond(); edgePull(); }
   if (typeof placeHinter === 'function') placeHinter();
+  if (typeof placeFine === 'function') placeFine();
 }
 
 function zoomTo(k, cx = innerWidth / 2, cy = innerHeight / 2) {

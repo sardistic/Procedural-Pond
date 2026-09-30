@@ -619,7 +619,7 @@ function chapterScore() {
 function chapterPonds() {
   return [
     { title: 'Your ponds', entries: [
-      { key: 'p:save', name: 'It saves itself', text: 'Your pond saves itself in this browser and is waiting when you come back. The address bar always holds its short four-word link: bookmark it or share it.' },
+      { key: 'p:save', name: 'It saves itself', text: 'Your pond saves itself in this browser and is waiting when you come back. The address bar always holds its address, its name (pond.nz/moonlit-reef): bookmark it or share it.' },
       { key: 'p:discord', name: 'Sign in with Discord', text: 'Keep your ponds in your account and carry on from any browser; show your name on a pond if you like (the menu’s Your ponds).' },
       { key: 'p:copies', name: 'Links and copies', text: 'Friends who open your link get their own copy to grow. Tick “Visitors can only look” and they can watch it, but not take a copy.' },
       { key: 'p:new', name: 'More than one', text: 'Start a New pond from Your ponds; the old one stays saved, and you can switch back.' },
@@ -627,14 +627,14 @@ function chapterPonds() {
     { title: 'Neighbours', entries: [
       { key: 'p:beach', name: 'One long beach', text: 'All ponds share one beach: the next player’s pond lies right past the end of yours. The little arrows either side of the pond’s name say who’s there (the score panel lists them too); click one, or drag on past the end of the beach, to walk over: you can look around but not touch, walk on, or come home the same way.' },
       { key: 'p:hide', name: 'Just your pond', text: 'Scene → Neighbours hides the ponds either side: the view keeps to yours and a drag stops at its ends. The arrows by its name still walk you over.' },
-      { key: 'p:name', name: 'Naming your pond', text: 'Open the score (the pond’s name at the top) and choose Name it: up to 24 letters, shown on the bar, the leaderboard and the beach. Hateful or obscene names aren’t allowed.' },
+      { key: 'p:name', name: 'Naming your pond', text: 'Open the score (the pond’s name at the top) and choose Name it: up to 24 letters, shown on the bar, the leaderboard and the beach, and it becomes the pond’s address (its old ones still open it). Hateful or obscene names, web addresses and official-sounding ones aren’t allowed.' },
       { key: 'p:wander', name: 'Wanderers', text: 'Fierce animals that leave one pond sometimes turn up in another to terrorize the natives.' },
     ] },
   ];
 }
 
 function chapterKeys() {
-  const K = [['Click', 'look (with the pointer), or use the picked action'], ['Esc', 'back to the pointer'], ['Drag', 'move an animal, or pan the water'], ['Scroll, + / −', 'zoom'], ['Arrows / WASD', 'pan'], ['0', 'reset the view'], ['F', 'follow the animal under the pointer'],
+  const K = [['Click', 'look (with the pointer), or use the picked action'], ['Esc', 'back to the pointer'], ['Drag', 'move an animal, or pan the water'], ['Scroll, + / −', 'zoom'], ['Zoomed right in', 'from 12×, a finer layer of detail: sand grains, ripples and pebbles, cracked rock, glints and drifting motes, scales, fin rays and gills, a glint in the eye, veins in leaves (Scene → Detail turns it off)'], ['Arrows / WASD', 'pan'], ['0', 'reset the view'], ['F', 'follow the animal under the pointer'],
     ['T', 'tour: the camera wanders between animals'], ['C', 'the census'], ['J', 'the journal'], ['P', 'the score and leaderboard'], ['L', 'change the light'], ['B', 'bones: the spines and legs'],
     ['Space', 'pause'], ['M', 'sound'], ['N', 'music'], ['H', 'the menu'], ['G', 'this guide'], ['Right-click / long-press', 'a plant’s traits']];
   const T = [['Tap', 'look, or use the picked action (like a click)'], ['Drag', 'pan the water, or move an animal'], ['Pinch', 'zoom'], ['Follow', 'from the animal’s card (the view keeps it clear of the card)'],

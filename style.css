@@ -32,6 +32,15 @@ html, body {
   touch-action: none;
   cursor: default;
 }
+/* Close-up detail over the pond (fine.js): four times finer, panned with it, and never in the way of the pointer. */
+.fine {
+  position: fixed;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
 .beyond {
   position: fixed;
   left: 0;
