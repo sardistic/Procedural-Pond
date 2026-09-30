@@ -1755,12 +1755,12 @@ function floatAward(x, y, text, kind = 'gain') {
   f.addEventListener('animationend', () => { f.remove(); floats--; });
 }
 
-function visitPond(id) {
+function visitPond(id, slug, title) {
   if (world.link && id === world.link.id) return;
-  if (!confirm(`Visit the pond ${id}? You get your own copy of it to watch and breed from. Your pond stays saved in "Your ponds".`)) return;
+  if (!confirm(`Visit the pond ${title || slug || id}? You get your own copy of it to watch and breed from. Your pond stays saved in "Your ponds".`)) return;
   saveNow();
   world.noSave = true;
-  location.assign(`/${id}`);
+  location.assign(`/${slug || id}`); // (by its address, when it has one)
 }
 
 // The narrator's state of mind, the balance of light and dark, and the super spawns waiting (with claim buttons).
@@ -1872,7 +1872,7 @@ function renderScorePanel(force = false) {
     btn.append(el('span', 'rk', `#${i + 1}`), el('b', null, p.title || p.id), el('span', 'pt', `${fmt(p.depth || 1)} fm`),
       el('span', 'mt', [p.by && `${p.by}'s`, p.best && `${TIERS[p.best.tier]} ${findLabel(p.best)}`, `${fmt(p.points)} points`, `${p.animals} animals`, `day ${Math.floor(p.days) + 1}`].filter(Boolean).join(' · ')));
     if (p.best) btn.querySelector('.mt').style.color = TIER_COLOR[p.best.tier];
-    btn.addEventListener('click', () => visitPond(p.id));
+    btn.addEventListener('click', () => visitPond(p.id, p.slug, p.title));
     li.append(btn);
     return li;
   });
@@ -2079,7 +2079,7 @@ const pondTitle = (w) => (w.game && w.game.title) || w.seed;
   byId('sp-rename').addEventListener('click', () => {
     form.hidden = false; byId('sp-rename').hidden = true;
     input.value = world.game.title || '';
-    note.textContent = 'Up to 24 letters, numbers and a little punctuation. Leave it empty to go back to its seed name.';
+    note.textContent = "Up to 24 letters, numbers and a little punctuation. It becomes the pond's address too. Leave it empty to go back to its seed name.";
     input.focus();
   });
   byId('sp-rename-cancel').addEventListener('click', () => { form.hidden = true; byId('sp-rename').hidden = false; renderScorePanel(true); });
@@ -2092,7 +2092,7 @@ const pondTitle = (w) => (w.game && w.game.title) || w.seed;
     let res = null;
     try { res = await api('POST', '/title-check', { title: v }); } catch { /* offline */ }
     if (!res) { note.textContent = "Couldn't reach pond.nz to check the name; try again in a moment."; return; }
-    if (!res.ok) { note.textContent = "That name isn't allowed (hateful or obscene words, or characters other than letters, numbers and simple punctuation)."; return; }
+    if (!res.ok) { note.textContent = "That name isn't allowed: hateful or obscene words (however they're spelled), something that looks like a web address, a number code or an official title, or characters other than letters, numbers and simple punctuation."; return; }
     world.game.title = res.title; world.gameDirty = true;
     form.hidden = true; byId('sp-rename').hidden = false;
     afterRename();

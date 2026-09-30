@@ -15,6 +15,10 @@ const Net = {
   rank: null,   // this pond's place on the leaderboard
 };
 const SHORT_ID = /^[a-z]{2,8}(?:-[a-z]{2,8}){3}$/;
+// A pond's address: its name (pond.nz/moonlit-reef), given by the server once its name passes the filter, or else its
+// id. Any address it has had (and its id) still opens it.
+const PATH_KEY = /^[a-z0-9]+(?:-[a-z0-9]+){0,9}$/;
+const linkName = (link) => (link && (link.slug || link.id)) || null;
 const BOARD_MIN = 50; // points before a pond is listed on the leaderboard
 
 class ApiError extends Error {
@@ -76,6 +80,7 @@ async function pushPond(world) {
     res = await api('POST', '/ponds', { save: uploadSave(world), meta });
     world.link = { id: res.id, key: res.key };
   }
+  if ('slug' in res) world.link.slug = res.slug || null; // (it follows the pond's name)
   world.game.finds.splice(0, sent); // those finds are on the shared feed now
   if (typeof res.rank === 'number') Net.rank = res.rank;
   if (typeof res.views === 'number') world.game.views = res.views; // how many have come to look: popular ponds draw litter
@@ -83,7 +88,7 @@ async function pushPond(world) {
   return world.link.id;
 }
 
-// A shared pond by its short link: { id, save, meta } or null.
+// A shared pond by its id or its address: { id, slug, save, meta } or null.
 // (A peek, for drawing a neighbour past the end of the beach, doesn't count as a visit.)
 async function fetchPond(id, peek = false) {
   try {

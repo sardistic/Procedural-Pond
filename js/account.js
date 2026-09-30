@@ -23,7 +23,7 @@ const accountPond = (id) => (id && Account.ponds.find((p) => p.id === id)) || nu
 // Off to Discord and back to this pond.
 function signIn() {
   saveNow();
-  const back = world.link && world.link.id && !world.observe ? `/${world.link.id}` : '/';
+  const back = world.link && world.link.id && !world.observe ? `/${linkName(world.link)}` : '/';
   location.assign(`${Net.base}/auth/discord?back=${encodeURIComponent(back)}`);
 }
 async function signOut() {

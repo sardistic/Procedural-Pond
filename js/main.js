@@ -1817,13 +1817,14 @@ function crossTo(side) {
   const other = side === 'west' ? 'east' : 'west', k = view.k;
   placeBeyond();
   const [bx, by] = B.rect;
-  if (!world.observe) { saveNow(); homeInfo = { seed: world.seed, id: world.link && world.link.id, path: world.link ? `/${world.link.id}` : `/?pond=${encodeURIComponent(world.seed)}` }; }
-  const leaving = { id: world.observe ? world.observe.id : homeInfo.id, home: !world.observe, back: true, snap: captureSnap(), info: { depth: pondFathoms(world), habitat: world.opts.habitat },
+  if (!world.observe) { saveNow(); homeInfo = { seed: world.seed, id: world.link && world.link.id, path: world.link ? `/${linkName(world.link)}` : `/?pond=${encodeURIComponent(world.seed)}` }; }
+  const leaving = { id: world.observe ? world.observe.id : homeInfo.id, home: !world.observe, back: true, snap: captureSnap(),
+    info: { depth: pondFathoms(world), habitat: world.opts.habitat, slug: world.observe ? world.observe.slug : null, title: world.observe ? world.observe.title : null },
     save: world.observe ? world.observe.save : null, updated: world.observe ? world.observe.updated : 0 };
   const d = B.home ? loadSave(homeInfo.seed) : B.save;
   if (!d) return false;
   hideCreature(); hideObject(); closeSpawnCard(); setHatchery(false); setEvo(false);
-  world.observe = B.home ? null : { id: B.id, updated: B.updated || Date.now(), home: homeInfo, homeId: homeInfo.id, dir: side, save: d };
+  world.observe = B.home ? null : { id: B.id, slug: (B.info && B.info.slug) || null, title: (B.info && B.info.title) || null, updated: B.updated || Date.now(), home: homeInfo, homeId: homeInfo.id, dir: side, save: d };
   world.noSave = !B.home;
   document.body.classList.toggle('observing', !B.home);
   Object.assign(world.opts, d.opts);
@@ -1851,8 +1852,8 @@ function crossTo(side) {
   } else {
     $('observe-name').textContent = `${(B.info && B.info.title) || B.id}${B.info && B.info.by ? ` · ${B.info.by}'s pond` : ''}`;
     $('observe-bar').hidden = false;
-    history.replaceState(null, '', `/${B.id}?observe=1`);
-    logEvent(world, `You walked along the beach into ${B.id}, someone else's pond. Look around; nothing here is yours to touch`, null, { cat: 'pond', pri: 2 });
+    history.replaceState(null, '', `/${linkName(world.observe)}?observe=1`);
+    logEvent(world, `You walked along the beach into ${world.observe.title || world.observe.id}, someone else's pond. Look around; nothing here is yours to touch`, null, { cat: 'pond', pri: 2 });
   }
   NB.at = 0; // look up what's beyond this one
   refreshNeighbours();
@@ -2463,7 +2464,7 @@ $('reset').addEventListener('click', () => {
 async function sharePond() {
   let url = null;
   if (Net.base) {
-    try { await pushPond(world); saveNow(); refreshBoard(); url = shortUrl(world.link.id); } catch { /* fall back to the long link */ }
+    try { await pushPond(world); saveNow(); refreshBoard(); url = shortUrl(linkName(world.link)); } catch { /* fall back to the long link */ }
   }
   if (!url) url = `${shareUrl()}#s=${await encodePond(world)}`;
   const note = world.link ? `Link copied: ${url.replace(/^https?:\/\//, '')}, the same as your address bar. It opens your pond as it grows`
@@ -2525,10 +2526,12 @@ async function syncPond(force = false) {
   syncing = true;
   try {
     const had = !!world.link, finds = world.game.finds.length;
+    const was = linkName(world.link);
     await pushPond(world);
     saveNow();
     if (!had || finds) refreshBoard();
-    if (!had) logEvent(world, `This pond's link is ${location.host}/${world.link.id}: the address bar always opens it, as it grows`, null, { cat: 'pond', pri: 1 });
+    if (linkName(world.link) !== was) updateLink(); // (a new name is a new address; the old one still opens it)
+    if (!had) logEvent(world, `This pond's link is ${location.host}/${linkName(world.link)}: the address bar always opens it, as it grows`, null, { cat: 'pond', pri: 1 });
     if (!had && Account.user) claimLocalPonds().then(renderAccount);
     return true;
   } catch (e) {
@@ -2578,7 +2581,7 @@ function updateSaveStatus() {
 function openPond(s) {
   if (s.seed !== world.seed) saveNow();
   world.noSave = true; // don't let the page-hide save overwrite what we're opening
-  location.assign(s.link && HOME === '/' ? `/${s.link}` : `${HOME}?pond=${encodeURIComponent(s.seed)}`);
+  location.assign(s.link && HOME === '/' ? `/${s.slug || s.link}` : `${HOME}?pond=${encodeURIComponent(s.seed)}`);
 }
 
 function renderPondList() {
@@ -2589,7 +2592,7 @@ function renderPondList() {
   };
   const local = new Set([here, ...list].map((s) => s.link).filter(Boolean));
   const kept = Account.ponds.filter((p) => !local.has(p.id)).map((p) => ({
-    seed: p.id, habitat: p.habitat, days: p.days || 0, animals: p.animals || 0, rares: 0, depth: p.depth, savedAt: p.updated, link: p.id, remote: true,
+    seed: p.id, habitat: p.habitat, days: p.days || 0, animals: p.animals || 0, rares: 0, depth: p.depth, savedAt: p.updated, link: p.id, slug: p.slug || null, remote: true,
   }));
   renderAccount();
   $('pond-list').replaceChildren(...[here, ...list, ...kept].map((s) => {
@@ -2606,7 +2609,7 @@ function renderPondList() {
     open.append(name, meta);
     open.title = s.current ? 'The pond you are watching' : `Open ${s.seed}`;
     if (s.current && s.link) open.title = `The pond you are watching · ${location.host || 'pond.nz'}/${s.link}`;
-    if (s.remote) open.addEventListener('click', () => { saveNow(); world.noSave = true; location.assign(`/${s.link}`); });
+    if (s.remote) open.addEventListener('click', () => { saveNow(); world.noSave = true; location.assign(`/${s.slug || s.link}`); });
     else if (!s.current) open.addEventListener('click', () => openPond(s));
     li.append(open);
     if (!s.current && !s.remote) {
@@ -2637,7 +2640,7 @@ let linkBusy = false;
 async function updateLink() {
   if (linkBusy || world.noSave || !world.raster) return;
   if (HOME === '/') {
-    const want = world.link ? `/${world.link.id}` : `/${new URL(shareUrl()).search}`;
+    const want = world.link ? `/${linkName(world.link)}` : `/${new URL(shareUrl()).search}`;
     if (location.pathname + location.search !== want || (location.hash && location.hash !== '#bones')) {
       history.replaceState(null, '', want + (location.hash === '#bones' ? '#bones' : ''));
     }
@@ -2706,35 +2709,38 @@ async function boot() {
   initHud();
   const meP = Net.base ? fetchMe() : Promise.resolve(Account); // (who's signed in, if anyone)
   const code = (/(?:^#|&)s=([A-Za-z0-9._-]+)/.exec(location.hash) || [])[1];
-  const pathId = HOME === '/' && SHORT_ID.test(location.pathname.slice(1)) ? location.pathname.slice(1) : null;
-  let linked = code ? await decodePond(code) : null, shortId = null, resume = null, adopt = false;
+  const typed = location.pathname.slice(1).toLowerCase(), pathKey = HOME === '/' && PATH_KEY.test(typed) ? typed : null; // (pond.nz/Moonlit-Reef too)
+  let linked = code ? await decodePond(code) : null, shortId = null, resume = null, adopt = false, found = false;
   const params = new URLSearchParams(location.search), edge = params.get('edge');
   let observe = null;
-  if (pathId && params.get('observe') === '1') {
+  if (pathKey && params.get('observe') === '1') {
     // Walking the shared beach: someone else's pond, to look at only.
-    const got = await fetchPond(pathId);
+    const got = await fetchPond(pathKey);
     let home = null;
     try { home = JSON.parse(sessionStorage.getItem('pond.home') || 'null'); } catch { /* none */ }
-    if (got && !(home && home.id === pathId)) {
-      resume = got.save;
-      observe = { id: pathId, updated: got.updated, home: home || { path: '/', id: null }, homeId: home && home.id, seed: got.save.seed, by: (got.meta && got.meta.by) || null, title: (got.meta && got.meta.title) || null };
+    if (got && !(home && home.id === got.id)) {
+      resume = got.save; found = true;
+      observe = { id: got.id, slug: got.slug || null, updated: got.updated, home: home || { path: '/', id: null }, homeId: home && home.id, seed: got.save.seed, by: (got.meta && got.meta.by) || null, title: (got.meta && got.meta.title) || null };
     }
   }
-  if (observe) { /* nothing more to decide */ } else if (!linked && pathId) {
-    // Your own pond's link opens your save straight away; anyone else's comes from the server.
-    const own = listSaves().find((s) => s.link === pathId), mine = own && loadSave(own.seed);
-    if (mine && mine.link && mine.link.id === pathId) resume = await newerFromAccount(mine, meP);
-    else {
-      const got = await fetchPond(pathId);
-      if (got && got.mine) {
+  if (observe) { /* nothing more to decide */ } else if (!linked && pathKey) {
+    // Your own pond's link opens your save straight away; anyone else's comes from the server. (By its id or its
+    // address now; an older address of yours is looked up, then found here by its id.)
+    const ownOf = (key) => { const s = listSaves().find((o) => o.link === key || o.slug === key), d = s && loadSave(s.seed); return d && d.link && (d.link.id === key || d.link.slug === key) ? d : null; };
+    const mine = ownOf(pathKey);
+    if (mine) { resume = await newerFromAccount(mine, meP); found = true; } else {
+      const got = await fetchPond(pathKey), yours = got && ownOf(got.id);
+      if (got) found = true;
+      if (yours) resume = await newerFromAccount(yours, meP);
+      else if (got && got.mine) {
         // Yours, kept in your account (from another browser): your own pond here too, not a copy.
-        resume = { ...got.save, link: { id: pathId, key: null } };
+        resume = { ...got.save, link: { id: got.id, key: null, slug: got.slug || null } };
       } else if (got && got.meta && got.meta.lock) {
         // Its owner lets visitors look only: watch it, don't take a copy.
         resume = got.save;
-        observe = { id: pathId, updated: got.updated, home: { path: '/', id: null }, homeId: null, seed: got.save.seed, locked: true, by: got.meta.by || null, title: got.meta.title || null };
-        history.replaceState(null, '', `/${pathId}?observe=1`);
-      } else if (got) { linked = got.save; shortId = pathId; }
+        observe = { id: got.id, slug: got.slug || null, updated: got.updated, home: { path: '/', id: null }, homeId: null, seed: got.save.seed, locked: true, by: got.meta.by || null, title: got.meta.title || null };
+        history.replaceState(null, '', `/${linkName(observe)}?observe=1`);
+      } else if (got) { linked = got.save; shortId = got.id; }
     }
   }
   if (linked) {
@@ -2780,12 +2786,12 @@ async function boot() {
   if (observe) {
     $('observe-name').textContent = `${observe.title || observe.id}${observe.by ? ` · ${observe.by}'s pond` : ''}`;
     $('observe-bar').hidden = false;
-    logEvent(world, `You walked along the beach into ${observe.id}, someone else's pond. Look around; nothing here is yours to touch`, null, { cat: 'pond', pri: 2 });
+    logEvent(world, `You walked along the beach into ${observe.title || observe.id}, someone else's pond. Look around; nothing here is yours to touch`, null, { cat: 'pond', pri: 2 });
   }
   setTimeout(refreshNeighbours, observe ? 500 : 4000);
   if (code && !linked) showTicker("That pond link couldn't be read, so this is its pond from day 1");
-  if (pathId && !linked && !(world.link && world.link.id === pathId)) {
-    showTicker(`No pond called ${pathId} was found (links left unused for a long while are cleared), so here is yours`);
+  if (pathKey && !found) {
+    showTicker(`No pond called ${pathKey} was found (links left unused for a long while are cleared), so here is yours`);
   }
   // The menu opens by itself (at Your ponds) only the very first time; after that ☰ opens it.
   let firstVisit = false;

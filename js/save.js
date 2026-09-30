@@ -72,7 +72,7 @@ function storeSave(d) {
     }
   }
   list.unshift({
-    seed: d.seed, habitat: d.opts.habitat, days: d.days, savedAt: d.savedAt, points: d.game ? d.game.points : 0, link: d.link ? d.link.id : null,
+    seed: d.seed, habitat: d.opts.habitat, days: d.days, savedAt: d.savedAt, points: d.game ? d.game.points : 0, link: d.link ? d.link.id : null, slug: (d.link && d.link.slug) || null,
     depth: fathomsOf(d.erosion ? d.erosion.e : 0, d.opts.habitat === 'fresh' ? 'fresh' : 'salt'),
     animals: d.creatures.length, rares: d.creatures.filter((c) => c.L.traits && c.L.traits.length).length,
   });

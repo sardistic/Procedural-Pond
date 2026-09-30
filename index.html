@@ -91,7 +91,7 @@
     <details id="ponds">
       <summary>Your ponds</summary>
       <div id="account" class="account" hidden></div>
-      <p class="note ponds-help">Saved here, and at its own link <button type="button" class="help-q" title="Your pond saves itself&#10;It saves itself in this browser and is here when you come back. The address bar holds its short link: bookmark it or share it, and it opens this pond as it grows. Friends who open it get their own copy. Sign in with Discord to keep your ponds in your account and carry on from any browser." aria-label="How saving works">?</button></p>
+      <p class="note ponds-help">Saved here, and at its own link <button type="button" class="help-q" title="Your pond saves itself&#10;It saves itself in this browser and is here when you come back. The address bar holds its address, its name: bookmark it or share it, and it opens this pond as it grows. Friends who open it get their own copy. Sign in with Discord to keep your ponds in your account and carry on from any browser." aria-label="How saving works">?</button></p>
       <ol class="pond-list" id="pond-list"></ol>
       <label class="check" title="Look only\nWhoever opens this pond's link can watch it, but can't take a copy to grow as their own. Your pond stays the only one."><input type="checkbox" id="pond-lock"> Visitors can only look (no copies)</label>
       <div class="grid2">
@@ -144,7 +144,7 @@
         <li>New kinds find their way in slowly, each pond with its own odds; lure or summon the ones you want. Different kinds meet and interact (cleaning stations, rival displays, riders, warnings), and you can protect a kind or call a cull.</li>
         <li>The land remembers: the floor slowly turns to bone sand, glow sand, ash, glass or fossil beds by what lives and dies there, islands grow their own plants and join, scavengers recycle the waste, and the pond keeps reaching further out.</li>
         <li>Points for every birth and rare find, pearls to spend on animals, plants and food, a shared leaderboard, and fireflies that show your score at night.</li>
-        <li>Your pond saves itself and is waiting when you come back, and the address bar always holds its short four-word link.</li>
+        <li>Your pond saves itself and is waiting when you come back, and the address bar always holds its address: its name (pond.nz/moonlit-reef), which follows it when you rename it.</li>
       </ul>
       <p>Made by <a href="https://sardistic.com/">sardistic</a>. <a href="https://github.com/sardistic/Procedural-Pond">Source on GitHub</a>.</p>
     </details>
@@ -251,7 +251,7 @@
       <header class="pop-head"><b>Score</b><button type="button" id="score-close" class="icon" aria-label="Close score">×</button></header>
       <div class="sp-name">
         <b id="sp-title"></b>
-        <button type="button" id="sp-rename" title="Name this pond&#10;Give it a name of your own (up to 24 letters): it shows on the bar, the leaderboard and the beach. Hateful or obscene names aren't allowed.">✎ Name it</button>
+        <button type="button" id="sp-rename" title="Name this pond&#10;Give it a name of your own (up to 24 letters): it shows on the bar, the leaderboard and the beach, and becomes its address (pond.nz/its-name). Hateful or obscene names, web addresses and official-sounding ones aren't allowed.">✎ Name it</button>
       </div>
       <form id="sp-rename-form" class="sp-rename" hidden>
         <input id="sp-title-in" maxlength="24" autocomplete="off" spellcheck="false" aria-label="Pond name">
@@ -422,62 +422,62 @@
     </div>
   </div>
 
-  <script src="js/core.js?v=48"></script>
-  <script src="js/raster.js?v=48"></script>
-  <script src="js/creatures.js?v=48"></script>
-  <script src="js/critters.js?v=48"></script>
-  <script src="js/wildlife.js?v=48"></script>
-  <script src="js/wildfish.js?v=48"></script>
-  <script src="js/sound.js?v=48"></script>
-  <script src="js/life.js?v=48"></script>
-  <script src="js/plants.js?v=48"></script>
-  <script src="js/scene.js?v=48"></script>
-  <script src="js/character.js?v=48"></script>
-  <script src="js/structures.js?v=48"></script>
-  <script src="js/erosion.js?v=48"></script>
-  <script src="js/sky.js?v=48"></script>
-  <script src="js/ecology.js?v=48"></script>
-  <script src="js/game.js?v=48"></script>
-  <script src="js/deep.js?v=48"></script>
-  <script src="js/remains.js?v=48"></script>
-  <script src="js/eldritch.js?v=48"></script>
-  <script src="js/coast.js?v=48"></script>
-  <script src="js/gulls.js?v=48"></script>
-  <script src="js/shore.js?v=48"></script>
-  <script src="js/traits.js?v=48"></script>
-  <script src="js/save.js?v=48"></script>
-  <script src="js/link.js?v=48"></script>
-  <script src="js/abyss.js?v=48"></script>
-  <script src="js/quirks.js?v=48"></script>
-  <script src="js/hunters.js?v=48"></script>
-  <script src="js/mastery.js?v=48"></script>
-  <script src="js/habitats.js?v=48"></script>
-  <script src="js/artifacts.js?v=48"></script>
-  <script src="js/story.js?v=48"></script>
-  <script src="js/lineage.js?v=48"></script>
-  <script src="js/depths.js?v=48"></script>
-  <script src="js/sand.js?v=48"></script>
-  <script src="js/heavens.js?v=48"></script>
-  <script src="js/nature.js?v=48"></script>
-  <script src="js/pollution.js?v=48"></script>
-  <script src="js/prehistoric.js?v=48"></script>
-  <script src="js/alien.js?v=48"></script>
-  <script src="js/bestiary.js?v=48"></script>
-  <script src="js/land.js?v=48"></script>
-  <script src="js/isles.js?v=48"></script>
-  <script src="js/flora.js?v=48"></script>
-  <script src="js/cycle.js?v=48"></script>
-  <script src="js/arrivals.js?v=48"></script>
-  <script src="js/interact.js?v=48"></script>
-  <script src="js/net.js?v=48"></script>
-  <script src="js/account.js?v=48"></script>
-  <script src="js/wander.js?v=48"></script>
-  <script src="js/hinterland.js?v=48"></script>
-  <script src="js/imps.js?v=48"></script>
-  <script src="js/hud.js?v=48"></script>
-  <script src="js/main.js?v=51"></script>
-  <script src="js/guide.js?v=48"></script>
-  <script src="js/music.js?v=48"></script>
-  <script src="js/tips.js?v=48"></script>
+  <script src="js/core.js?v=49"></script>
+  <script src="js/raster.js?v=49"></script>
+  <script src="js/creatures.js?v=49"></script>
+  <script src="js/critters.js?v=49"></script>
+  <script src="js/wildlife.js?v=49"></script>
+  <script src="js/wildfish.js?v=49"></script>
+  <script src="js/sound.js?v=49"></script>
+  <script src="js/life.js?v=49"></script>
+  <script src="js/plants.js?v=49"></script>
+  <script src="js/scene.js?v=49"></script>
+  <script src="js/character.js?v=49"></script>
+  <script src="js/structures.js?v=49"></script>
+  <script src="js/erosion.js?v=49"></script>
+  <script src="js/sky.js?v=49"></script>
+  <script src="js/ecology.js?v=49"></script>
+  <script src="js/game.js?v=49"></script>
+  <script src="js/deep.js?v=49"></script>
+  <script src="js/remains.js?v=49"></script>
+  <script src="js/eldritch.js?v=49"></script>
+  <script src="js/coast.js?v=49"></script>
+  <script src="js/gulls.js?v=49"></script>
+  <script src="js/shore.js?v=49"></script>
+  <script src="js/traits.js?v=49"></script>
+  <script src="js/save.js?v=49"></script>
+  <script src="js/link.js?v=49"></script>
+  <script src="js/abyss.js?v=49"></script>
+  <script src="js/quirks.js?v=49"></script>
+  <script src="js/hunters.js?v=49"></script>
+  <script src="js/mastery.js?v=49"></script>
+  <script src="js/habitats.js?v=49"></script>
+  <script src="js/artifacts.js?v=49"></script>
+  <script src="js/story.js?v=49"></script>
+  <script src="js/lineage.js?v=49"></script>
+  <script src="js/depths.js?v=49"></script>
+  <script src="js/sand.js?v=49"></script>
+  <script src="js/heavens.js?v=49"></script>
+  <script src="js/nature.js?v=49"></script>
+  <script src="js/pollution.js?v=49"></script>
+  <script src="js/prehistoric.js?v=49"></script>
+  <script src="js/alien.js?v=49"></script>
+  <script src="js/bestiary.js?v=49"></script>
+  <script src="js/land.js?v=49"></script>
+  <script src="js/isles.js?v=49"></script>
+  <script src="js/flora.js?v=49"></script>
+  <script src="js/cycle.js?v=49"></script>
+  <script src="js/arrivals.js?v=49"></script>
+  <script src="js/interact.js?v=49"></script>
+  <script src="js/net.js?v=49"></script>
+  <script src="js/account.js?v=49"></script>
+  <script src="js/wander.js?v=49"></script>
+  <script src="js/hinterland.js?v=49"></script>
+  <script src="js/imps.js?v=49"></script>
+  <script src="js/hud.js?v=49"></script>
+  <script src="js/main.js?v=52"></script>
+  <script src="js/guide.js?v=49"></script>
+  <script src="js/music.js?v=49"></script>
+  <script src="js/tips.js?v=49"></script>
 </body>
 </html>

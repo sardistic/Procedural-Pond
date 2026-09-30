@@ -2,7 +2,7 @@
 // Procedural Pond's small API, behind the site's nginx at /api:
 //   POST /api/ponds          store a pond; returns its short id (four words) and a secret key
 //   PUT  /api/ponds/:id      update it (X-Pond-Key); returns the accepted points and rank
-//   GET  /api/ponds/:id      a stored pond, for anyone with the link
+//   GET  /api/ponds/:id      a stored pond, for anyone with the link (by its id, or by its address: its name, see slug.js)
 //   GET  /api/board          the leaderboard, the high-score line and recent rare finds
 //   GET  /api/neighbours     the ponds on either side of one along the shared beach (?id=)
 //   GET  /api/health
@@ -20,7 +20,8 @@ const crypto = require('node:crypto');
 const zlib = require('node:zlib');
 const { DatabaseSync } = require('node:sqlite');
 const WORDS = require('./words.js');
-const { cleanTitle } = require('./namefilter.js');
+const { cleanTitle, nameAllowed } = require('./namefilter.js');
+const { slugify, slugOk } = require('./slug.js');
 
 const PORT = +process.env.PORT || 8080;
 const DB_PATH = process.env.DB_PATH || './pond.db';
@@ -34,6 +35,10 @@ const SMALL_KEEP_DAYS = 45;          // ... or this long, for ponds too small fo
 const BOARD_MIN = 50;                // points before a pond is listed
 const FINDS_KEEP = 300;
 const ID_RE = /^[a-z]{2,8}(?:-[a-z]{2,8}){3}$/;
+// A pond's address is its name (pond.nz/moonlit-reef): its title, or its seed name if it has none (slug.js), kept
+// unique; the last few addresses it has had stay its own, so old links still find it (and renaming again and again
+// can't hold every name).
+const SLUGS_KEEP = 8;
 // The season (the page's SAVE_EPOCH): after a reset, a pond is taken only from a page of this season, so a page
 // left open from before (with an old pond in it) can't bring it back.
 const EPOCH = 2;
@@ -131,6 +136,9 @@ if (!cols.has('depth')) db.exec('ALTER TABLE ponds ADD COLUMN depth INTEGER NOT 
 if (!cols.has('views')) db.exec('ALTER TABLE ponds ADD COLUMN views INTEGER NOT NULL DEFAULT 0');
 if (!cols.has('owner')) db.exec('ALTER TABLE ponds ADD COLUMN owner TEXT');
 if (!cols.has('show_owner')) db.exec('ALTER TABLE ponds ADD COLUMN show_owner INTEGER NOT NULL DEFAULT 0');
+if (!cols.has('slug')) db.exec('ALTER TABLE ponds ADD COLUMN slug TEXT');
+db.exec('CREATE TABLE IF NOT EXISTS slugs (slug TEXT PRIMARY KEY, id TEXT NOT NULL, at INTEGER NOT NULL)');
+db.exec('CREATE INDEX IF NOT EXISTS slugs_id ON slugs (id)');
 db.exec('CREATE INDEX IF NOT EXISTS ponds_owner ON ponds (owner)');
 db.exec('CREATE INDEX IF NOT EXISTS ponds_depth ON ponds (board, depth DESC)');
 const FATHOM_KNOTS = {
@@ -157,18 +165,23 @@ const q = {
   update: db.prepare('UPDATE ponds SET updated = ?, points = ?, board = ?, meta = ?, save = ?, erosion = ?, depth = ? WHERE id = ?'),
   opened: db.prepare('UPDATE ponds SET opened = ? WHERE id = ?'),
   view: db.prepare('UPDATE ponds SET views = views + 1 WHERE id = ?'),
-  ring: db.prepare('SELECT id, depth, points, meta FROM ponds WHERE updated > ? ORDER BY created ASC, id ASC'),
+  ring: db.prepare('SELECT id, slug, depth, points, meta FROM ponds WHERE updated > ? ORDER BY created ASC, id ASC'),
   rank: db.prepare(`SELECT COUNT(*) AS n FROM ponds WHERE board = 1 AND points >= ${BOARD_MIN} AND (depth > ? OR (depth = ? AND points > ?))`),
-  top: db.prepare(`SELECT id, points, depth, meta, updated FROM ponds WHERE board = 1 AND points >= ${BOARD_MIN} ORDER BY depth DESC, points DESC, created ASC LIMIT 20`),
+  top: db.prepare(`SELECT id, slug, points, depth, meta, updated FROM ponds WHERE board = 1 AND points >= ${BOARD_MIN} ORDER BY depth DESC, points DESC, created ASC LIMIT 20`),
   count: db.prepare(`SELECT COUNT(*) AS n FROM ponds WHERE board = 1 AND points >= ${BOARD_MIN}`),
   addFind: db.prepare('INSERT INTO finds (at, pond, tier, species, traits, how) VALUES (?, ?, ?, ?, ?, ?)'),
   finds: db.prepare('SELECT at, pond, tier, species, traits, how FROM finds ORDER BY n DESC LIMIT 20'),
   trimFinds: db.prepare('DELETE FROM finds WHERE n <= (SELECT MAX(n) FROM finds) - ?'),
   prune: db.prepare(`DELETE FROM ponds WHERE owner IS NULL AND ((updated < ? AND opened < ?) OR (points < ${BOARD_MIN} AND updated < ? AND opened < ?))`),
   setMeta: db.prepare('UPDATE ponds SET meta = ? WHERE id = ?'),
+  slugGet: db.prepare('SELECT id FROM slugs WHERE slug = ?'),
+  slugPut: db.prepare('INSERT INTO slugs (slug, id, at) VALUES (?, ?, ?) ON CONFLICT(slug) DO UPDATE SET at = excluded.at'),
+  slugTrim: db.prepare(`DELETE FROM slugs WHERE id = ? AND slug NOT IN (SELECT slug FROM slugs WHERE id = ? ORDER BY at DESC LIMIT ${SLUGS_KEEP})`),
+  setSlug: db.prepare('UPDATE ponds SET slug = ? WHERE id = ?'),
+  pruneSlugs: db.prepare('DELETE FROM slugs WHERE id NOT IN (SELECT id FROM ponds)'),
   setOwner: db.prepare('UPDATE ponds SET owner = ?, show_owner = ?, meta = ? WHERE id = ?'),
   setShow: db.prepare('UPDATE ponds SET show_owner = ? WHERE id = ?'),
-  owned: db.prepare('SELECT id, points, depth, updated, meta, show_owner FROM ponds WHERE owner = ? ORDER BY updated DESC LIMIT 50'),
+  owned: db.prepare('SELECT id, slug, points, depth, updated, meta, show_owner FROM ponds WHERE owner = ? ORDER BY updated DESC LIMIT 50'),
   ownedShown: db.prepare('SELECT id, meta FROM ponds WHERE owner = ? AND show_owner = 1'),
   user: db.prepare('SELECT * FROM users WHERE id = ?'),
   upsertUser: db.prepare('INSERT INTO users (id, name, avatar, created, seen) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, avatar = excluded.avatar, seen = excluded.seen'),
@@ -278,6 +291,38 @@ function addFinds(id, finds, now) {
 }
 
 const publicMeta = ({ finds, showName, ...m }) => m;
+// The address a pond wants: its title's, or else its seed name's (both through the name filter: a seed comes from
+// the page, and a page can send anything), or none (its id is its address).
+function wantSlug(meta, seed) {
+  for (const name of [meta.title, seed]) {
+    const s = name ? slugify(name) : '';
+    if (slugOk(s) && nameAllowed(s.replace(/-/g, ' '))) return s;
+  }
+  return '';
+}
+// Give it that address, or the first free numbered one (moonlit-reef-2...); an address is never another pond's
+// (nor another's id), and its last SLUGS_KEEP stay its own. Returns its address now (or null: none).
+function assignSlug(id, want, current) {
+  if (!want) return current || null;
+  if (current && (current === want || (current.replace(/-\d+$/, '') === want && /-\d+$/.test(current)))) return current;
+  for (let n = 1; n <= 99; n++) {
+    const s = n === 1 ? want : `${want}-${n}`;
+    if (s !== id && ID_RE.test(s) && q.exists.get(s)) continue;
+    const has = q.slugGet.get(s);
+    if (has && has.id !== id) continue;
+    q.slugPut.run(s, id, Date.now()); // (its own, or free: newest first)
+    q.slugTrim.run(id, id);
+    q.setSlug.run(s, id);
+    return s;
+  }
+  return current || null;
+}
+// A pond by its id or by any address it has had.
+function pondIdOf(key) {
+  if (ID_RE.test(key) && q.exists.get(key)) return key;
+  const has = q.slugGet.get(key);
+  return has ? has.id : null;
+}
 // The owner's name, when they've chosen to show it on this pond.
 const byOf = (owner, show) => { if (!owner || !show) return undefined; const u = q.user.get(owner); return u ? u.name : undefined; };
 
@@ -290,11 +335,12 @@ async function createPond(req) {
   const points = Math.min(meta.points, FIRST_POINTS), erosion = Math.min(meta.erosion, FIRST_EROSION), depth = fathomsOf(erosion, meta.habitat);
   for (let i = 0; i < 12; i++) {
     const id = newId();
-    if (q.exists.get(id)) continue;
+    if (q.exists.get(id) || q.slugGet.get(id)) continue; // (nor an address some pond already has)
     q.insert.run(id, hashKey(key), now, now, now, points, meta.board ? 1 : 0, JSON.stringify(publicMeta({ ...meta, points, erosion, depth })), save, erosion, depth);
     addFinds(id, meta.finds, now);
+    const slug = assignSlug(id, wantSlug(meta, body.save.seed), null);
     boardCache = null;
-    return [201, { id, key, points, depth, views: 0, rank: rankOf({ board: meta.board, points, depth }), high: board().high, title: meta.title }];
+    return [201, { id, key, slug, points, depth, views: 0, rank: rankOf({ board: meta.board, points, depth }), high: board().high, title: meta.title }];
   }
   throw new HttpError(503, 'no free link, try again');
 }
@@ -315,8 +361,10 @@ async function updatePond(req, id) {
   const erosion = Math.min(meta.erosion, (row.erosion || 0) + EROSION_RATE * Math.max(0, (now - row.updated) / 1000) + EROSION_BURST), depth = fathomsOf(erosion, meta.habitat);
   q.update.run(now, points, meta.board ? 1 : 0, JSON.stringify(publicMeta({ ...meta, points, erosion, depth })), save, erosion, depth, id);
   addFinds(id, meta.finds, now);
-  if (meta.board) boardCache = null;
-  return [200, { ok: true, points, depth, views: row.views || 0, rank: rankOf({ board: meta.board, points, depth }), high: board().high, title: meta.title }];
+  const slug = assignSlug(id, wantSlug(meta, body.save.seed), row.slug);
+  if (slug !== row.slug) ringCache = null;
+  if (meta.board || slug !== row.slug) boardCache = null;
+  return [200, { ok: true, slug, points, depth, views: row.views || 0, rank: rankOf({ board: meta.board, points, depth }), high: board().high, title: meta.title }];
 }
 
 // One view per address per pond every six hours (observers re-fetch every minute).
@@ -332,8 +380,8 @@ function countView(ip, id, now) {
 
 // A peek (the neighbour drawn past the end of someone's beach) is not a visit: it neither
 // counts a view nor keeps the pond from expiring.
-function getPond(req, id, peek) {
-  const row = q.get.get(id);
+function getPond(req, key, peek) {
+  const id = pondIdOf(key), row = id && q.get.get(id);
   if (!row) throw new HttpError(404, 'no such pond');
   const now = Date.now(), u = userOf(req), mine = !!(u && row.owner === u.id); // (its owner coming back is no visitor)
   if (!peek) {
@@ -341,7 +389,7 @@ function getPond(req, id, peek) {
     if (!mine) countView(req.ip, id, now);
   }
   const save = JSON.parse(zlib.inflateRawSync(row.save).toString('utf8'));
-  return [200, { id, save, meta: JSON.parse(row.meta), updated: row.updated, views: (row.views || 0) + (peek || mine ? 0 : 1), mine }];
+  return [200, { id, slug: row.slug || null, save, meta: JSON.parse(row.meta), updated: row.updated, views: (row.views || 0) + (peek || mine ? 0 : 1), mine }];
 }
 
 // The shared beach: every pond active in the last month, in the order they were
@@ -354,7 +402,7 @@ function neighbours(id) {
   const side = (r) => {
     if (!r || r.id === id) return null;
     const m = JSON.parse(r.meta);
-    return { id: r.id, depth: r.depth, points: r.points, habitat: m.habitat, animals: m.animals, by: m.by, title: m.title || null };
+    return { id: r.id, slug: r.slug || null, depth: r.depth, points: r.points, habitat: m.habitat, animals: m.animals, by: m.by, title: m.title || null };
   };
   if (!n) return { west: null, east: null };
   if (i < 0) return { west: side(rows[n - 1]), east: side(rows[0]) };
@@ -367,7 +415,7 @@ function board() {
   if (boardCache && Date.now() - boardCache.at < 15000) return boardCache.data;
   const top = q.top.all().map((r) => {
     const m = JSON.parse(r.meta);
-    return { id: r.id, points: r.points, depth: r.depth, updated: r.updated, animals: m.animals, species: m.species, rares: m.rares, gen: m.gen, days: m.days, habitat: m.habitat, best: m.best, by: m.by, title: m.title || null };
+    return { id: r.id, slug: r.slug || null, points: r.points, depth: r.depth, updated: r.updated, animals: m.animals, species: m.species, rares: m.rares, gen: m.gen, days: m.days, habitat: m.habitat, best: m.best, by: m.by, title: m.title || null };
   });
   const finds = q.finds.all().map((f) => ({ at: f.at, pond: f.pond, tier: f.tier, species: f.species, traits: f.traits.split(','), how: f.how }));
   const data = { top, high: top.length >= 10 ? top[9].depth : 0, finds, ponds: q.count.get().n };
@@ -402,7 +450,7 @@ function sameOrigin(req) {
 }
 const ownsRow = (req, row) => { const u = userOf(req); return !!(u && row.owner && row.owner === u.id && sameOrigin(req)); };
 const cleanName = (s) => (typeof s === 'string' ? s.normalize('NFC').replace(/[\p{C}<>]/gu, '').trim().slice(0, 32) : '');
-const safeBack = (b) => (typeof b === 'string' && /^\/(?:[a-z]{2,8}(?:-[a-z]{2,8}){3})?$/.test(b) ? b : '/');
+const safeBack = (b) => (typeof b === 'string' && /^\/(?:[a-z0-9]+(?:-[a-z0-9]+){0,9})?$/.test(b) && b.length <= 41 ? b : '/');
 
 const oauthStates = new Map(); // state -> { at, back }
 function authStart(url) {
@@ -457,7 +505,7 @@ function getMe(req) {
   if (!u) return [200, { auth: AUTH_ON, user: null, ponds: [] }];
   const ponds = q.owned.all(u.id).map((r) => {
     const m = JSON.parse(r.meta);
-    return { id: r.id, points: r.points, depth: r.depth, updated: r.updated, habitat: m.habitat, days: m.days, animals: m.animals, show: !!r.show_owner };
+    return { id: r.id, slug: r.slug || null, points: r.points, depth: r.depth, updated: r.updated, habitat: m.habitat, days: m.days, animals: m.animals, show: !!r.show_owner };
   });
   return [200, { auth: AUTH_ON, user: { id: u.id, name: u.name, avatar: u.avatar }, ponds }];
 }
@@ -575,9 +623,9 @@ async function route(req) {
   }
   if (path === '/api/board' && req.method === 'GET') return [200, board()];
   if (path === '/api/ponds' && req.method === 'POST') return createPond(req);
-  const m = /^\/api\/ponds\/([a-z-]{11,35})$/.exec(path);
+  const m = /^\/api\/ponds\/([a-z0-9-]{3,40})$/.exec(path);
+  if (m && req.method === 'GET') return getPond(req, m[1], url.searchParams.get('peek') === '1'); // (by its id or its address)
   if (m && ID_RE.test(m[1])) {
-    if (req.method === 'GET') return getPond(req, m[1], url.searchParams.get('peek') === '1');
     if (req.method === 'PUT') return updatePond(req, m[1]);
     throw new HttpError(405, 'method not allowed');
   }
@@ -604,7 +652,7 @@ server.headersTimeout = 10000;
 function prune() {
   const cut = Date.now() - KEEP_DAYS * 864e5, small = Date.now() - SMALL_KEEP_DAYS * 864e5;
   const n = q.prune.run(cut, cut, small, small).changes;
-  if (n) console.log(new Date().toISOString(), `removed ${n} unused ponds`);
+  if (n) { q.pruneSlugs.run(); console.log(new Date().toISOString(), `removed ${n} unused ponds`); }
   q.pruneSessions.run(Date.now());
   q.pruneWanderers.run(Date.now() - WANDER_KEEP_DAYS * 864e5);
   creates.clear(); wanderSends.clear(); wanderTakes.clear();
