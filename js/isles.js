@@ -13,9 +13,17 @@
 //  - Life comes to live on it: terns from a rookery (herons over fresh water), iguanas (skinks in
 //    fresh water) basking on its rocks, seals hauling out on the bigger salt islands, and frogs and
 //    fireflies about a spring.
+//  - Its shape is its own kind's: a palm cay stretched along the current with a sand tail trailing down it,
+//    a coral cay ringed by a wide reef flat with a lagoon bay on one side, a rocky skerry ragged and
+//    steep, a reed isle low and marshy with mudflats, a willow islet long and narrow, a black islet
+//    jagged and cliffed. Round it lie flats the tide covers at high water and bares at low, so it
+//    changes shape through the day; out over deep water there are none, only cliffs.
+//  - Fire under it (a black islet, one out over the deep, or one raised high enough) erupts now and
+//    then: a tongue of lava runs out into the water and cools to black rock, pushing the coast out
+//    past what sand and reef could ever build, and the cone at its heart grows each time.
 // What an island has become is kept in its save (not in #s= links, like much that's newer).
 
-const ISLE_SZ_MIN = 0.7, ISLE_SZ_MAX = 1.9;
+const ISLE_SZ_MIN = 0.7, ISLE_SZ_MAX = 1.9, ISLE_LAVA_MAX = 16, ISLE_CONE_MAX = 6;
 const ISLE_FX_ID = 9; // (the vent's glow and fire: its own light, no outline)
 EMISSIVE[ISLE_FX_ID] = 2; FADE[ISLE_FX_ID] = 1;
 const IM = {
@@ -69,31 +77,48 @@ function isleFloraWeights(s, w) {
   if (st >= 3) { w.fern = (w.fern || 0) + 1; w.bush = (w.bush || 0) + 1; }
 }
 
-// ---- its shape: a wandering coastline, and a barrier reef offshore -----------------------------------
+// ---- its shape: its kind's, a wandering coastline, flats the tide bares, lava, and a barrier reef -------
+// How each kind lies: stretched along the current (and trailing a tail of flats down it), how ragged its edge,
+// how far its flats reach (and how high they stand: what the tide covers and bares), a bay on one side, how
+// steeply it falls away.
+const ISLE_FORMS = {
+  palm: { stretch: 1.25, rough: 0.35, flats: 0.55, tail: 1.1, flatZ: 0.36, cliff: 0, bay: 0 },
+  coral: { stretch: 1.1, rough: 0.25, flats: 0.9, tail: 0.4, flatZ: 0.4, cliff: 0, bay: 0.38 },
+  rock: { stretch: 1, rough: 1.3, flats: 0.3, tail: 0.1, flatZ: 0.34, cliff: 3, bay: 0 },
+  reed: { stretch: 1.35, rough: 0.9, flats: 0.85, tail: 0.5, flatZ: 0.38, cliff: 0, bay: 0.18 },
+  willow: { stretch: 1.6, rough: 0.45, flats: 0.45, tail: 0.8, flatZ: 0.36, cliff: 0, bay: 0 },
+  basalt: { stretch: 1.05, rough: 1.1, flats: 0.12, tail: 0, flatZ: 0.32, cliff: 5, bay: 0 },
+};
+function isleForm(world, s) {
+  const K = ISLE_FORMS[isleOf(s)] || ISLE_FORMS.palm, h = (k) => hash2(s.seed % 997, k, 131);
+  const ang = ((world && world.current && world.current.base) || 0) + (h(1) - 0.5) * 0.8; // (along the pond's current, and down it)
+  return { ...K, ang, bayAng: h(2) * TAU, flats: K.flats * clamp(1 - 2.2 * (s.deep || 0), 0, 1), cliff: K.cliff + 8 * (s.deep || 0) };
+}
+// How far out its coast lies along a bearing, as a share of its radius.
+function isleOutline(world, s, a, F = isleForm(world, s)) {
+  const G = s.ig || {}, h = s.seed | 0, c = Math.cos(a - F.ang), sn = Math.sin(a - F.ang), st = F.stretch;
+  let o = 1 / Math.sqrt((c / st) ** 2 + (sn * st) ** 2); // (an ellipse along the current, the same size)
+  o *= 1 + 0.06 * F.rough * (Math.sin(7 * a + (h % 17)) + 0.7 * Math.sin(11 * a + (h % 23) * 0.5) + 0.5 * Math.sin(17 * a + (h % 29)));
+  if (F.bay) o *= 1 - F.bay * Math.max(0, Math.cos(a - F.bayAng)) ** 6;
+  o *= isleLobe(s, a);
+  for (const L of G.lava || []) { const da = Math.abs(wrapAngle(a - L.a)); if (da < L.w) o += L.len * (1 - (da / L.w) ** 2); } // (the lava it has put out)
+  return o;
+}
+// How far out its flats reach past the coast along a bearing (further down-current: its tail).
+const isleFlatsAt = (F, a) => F.flats * (1 + F.tail * Math.max(0, Math.cos(a - F.ang)) ** 2);
+// All it can reach, coast and flats, as a share of its radius.
+const isleReachK = (world, s, F = isleForm(world, s)) => 1.4 * Math.max(F.stretch, 1 / F.stretch) * (1 + 0.14 * F.rough) * (s.ig && s.ig.lob ? 1.22 : 1)
+  + Math.max(0, ...((s.ig && s.ig.lava) || []).map((L) => L.len)) + F.flats * (1 + F.tail) + 0.1;
 function isleLobe(s, a) {
   const k = s.ig && s.ig.lob;
   if (!k) return 1;
   const h = s.seed | 0;
   return 1 + k * (0.1 * Math.sin(2 * a + (h % 7)) + 0.07 * Math.sin(3 * a + (h % 11) * 0.7) + 0.05 * Math.sin(5 * a + (h % 13) * 0.5));
 }
-const isleShapeKey = (s) => (s.ig ? `${Math.round((s.ig.lob || 0) * 10)}:${Math.round((s.ig.bar || 0) * 8)}` : '');
-// How far out the island reaches (with its reef), for redrawing round it.
-const isleReach = (world, s) => islandRadius(world, s) * (s.ig && s.ig.bar ? 2.35 : 1.45) * (s.ig && s.ig.lob ? 1.22 : 1);
-// The barrier reef: a ring offshore, rising over the days until its crest bares at low tide (with a pass or two through it).
-function applyIsleReef(world, s, R0) {
-  const b = s.ig && s.ig.bar;
-  if (!b) return;
-  const shore = world.shore, { W, H } = world, r0 = R0 * 1.75, r1 = R0 * 2.15, crest = 0.3 + 0.16 * b, mid = (r0 + r1) / 2, half = (r1 - r0) / 2, ext = r1 * 1.25 + 3;
-  for (let y = Math.max(0, Math.floor(s.y - ext)); y <= Math.min(H - 1, Math.ceil(s.y + ext)); y++) {
-    for (let x = Math.max(0, Math.floor(s.x - ext)); x <= Math.min(W - 1, Math.ceil(s.x + ext)); x++) {
-      const dx = x - s.x, dy = y - s.y, a = Math.atan2(dy, dx), d = Math.hypot(dx, dy) / isleLobe(s, a), t = 1 - Math.abs(d - mid) / (half + 2);
-      if (t <= 0) continue;
-      const pass = Math.sin(a * 3 + (s.seed % 17)) > 0.93;
-      const v = Math.round(crest * Math.min(1, t * 1.6) * (pass ? 0.45 : 1) * (0.9 + 0.2 * fbm(x * 0.1, y * 0.1, 7)) * 255), p = x + y * W;
-      if (v > shore[p]) shore[p] = v;
-    }
-  }
-}
+const isleShapeKey = (s) => (s.ig ? `${Math.round((s.ig.lob || 0) * 10)}:${Math.round((s.ig.bar || 0) * 8)}:${(s.ig.lava || []).length}:${s.ig.cone || 0}` : '');
+// How far out the island reaches (with its flats, its lava and its reef), for redrawing round it.
+const isleReach = (world, s) => islandRadius(world, s) * Math.max(s.ig && s.ig.bar ? 2.35 : 0, isleReachK(world, s));
+// (The barrier reef is drawn into the island's stamp: coast.js islandStamp.)
 
 // ---- what it can grow ---------------------------------------------------------------------------------
 const ISLE_FEATS = {
@@ -114,7 +139,7 @@ const ISLE_FEATS = {
   spring: { label: 'Spring pool', cur: 'essence', max: 1, cost: () => 60, color: '#8ad0dc',
     note: 'fresh water welling up on the summit: frogs and dragonflies are glad of it, and fireflies come at night' },
   fire: { label: 'Wake the fire', cur: 'essence', max: 3, cost: (lv) => Math.round(80 * 2 ** lv), color: '#f08020',
-    note: 'a vent under it: warm water all round draws plankton, it glows at night, and now and then it erupts and the island grows' },
+    note: 'a volcano under it: warm water all round draws plankton, it glows at night, and now and then it erupts: lava runs out into the water and cools to new land, past the size sand and reef can build, and the cone grows' },
   giant: { label: 'The old giant', cur: 'essence', max: 1, cost: () => 150, color: '#86704e',
     note: 'a great tree on the summit: animals near it are calmer, and birds roost in it' },
 };
@@ -128,7 +153,7 @@ function isleFeatWhy(world, s, k) {
   if (k === 'reeds' && salt) return 'it needs fresh water';
   if (k === 'pools' && kind !== 'rock' && kind !== 'basalt' && st < 2) return 'it needs a rocky island, or one grown wooded';
   if (k === 'spring' && (s.stack || 1) < 3) return 'raise the island to level 3 first';
-  if (k === 'fire' && kind !== 'basalt' && !isleDeep(s)) return 'only an island out over the deep, or a black islet, has fire under it';
+  if (k === 'fire' && kind !== 'basalt' && !isleDeep(s) && (s.stack || 1) < 4) return 'only an island out over the deep, a black islet, or one raised to level 4 has fire under it';
   if (k === 'giant' && st < 3) return 'it has to grow into a forest first';
   return '';
 }
@@ -185,7 +210,7 @@ function isleShorePlants(world, s, n) {
   const salt = isleSaltHere(world, s), R = islandRadius(world, s), kinds = salt ? ['coral', 'coral', 'anemone', 'urchin'] : ['eelgrass', 'weed', 'lily', 'lily'];
   let made = 0;
   for (let k = 0; k < n * 10 && made < n; k++) {
-    const a = rand(0, TAU), d = R * rand(1.15, 1.9) * isleLobe(s, a), x = s.x + Math.cos(a) * d, y = s.y + Math.sin(a) * d;
+    const a = rand(0, TAU), d = R * rand(1.15, 1.9) * isleOutline(world, s, a), x = s.x + Math.cos(a) * d, y = s.y + Math.sin(a) * d;
     if (x < 6 || y < 6 || x > world.W - 6 || y > world.H - 6 || shoreAt(world, x, y) > world.tide.level - 0.12) continue;
     const kind = pick(kinds), list = kind === 'lily' ? world.pads : world.plants;
     if (list.some((p) => (p.x - x) ** 2 + (p.y - y) ** 2 < 36)) continue;
@@ -217,19 +242,17 @@ function dawnIsles(world) {
     const mang = isleLv(s, 'mangrove'), reef = isleLv(s, 'reef'), hold = Math.max(0.2, 1 - 0.25 * mang - 0.2 * (G.bar || 0) - 0.06 * isleLv(s, 'nourish'));
     const surf = ((typeof TIDE_RANGE === 'object' && TIDE_RANGE[world.opts.habitat]) || 0.75) * (salt ? 0.005 : 0.003) * (isleDeep(s) ? 1.4 : 1) * hold;
     const build = 0.003 * (1 + 1.5 * (m.life || 0)) + 0.003 * mang + 0.002 * reef + 0.0015 * isleLv(s, 'reeds') + 0.002 * isleLv(s, 'nourish');
-    let d = 0.02 * (1 - (G.sz || 1)) + build - surf;
+    let d = 0.02 * (1 + 0.3 * isleLv(s, 'fire') - (G.sz || 1)) + build - surf; // (a volcano's island settles bigger)
     if (Math.random() < (salt ? 0.025 : 0.01)) {
       d -= rand(0.03, 0.07) * hold;
       if (typeof logEvent === 'function') logEvent(world, `A storm took a bite out of ${name}${hold < 0.7 ? ' (the mangroves and the reef broke the worst of it)' : ''}; it will build back slowly`, null, { cat: 'pond', pri: 1 });
     }
     const fire = isleLv(s, 'fire');
-    if (fire && Math.random() < 0.05 * fire) {
-      d += 0.03 + 0.02 * fire;
-      G.erupt = world.t;
-      if (typeof landAdd === 'function') landAdd(world, s.x, s.y, 'ancient', 0.06, R / LAND_CELL + 1);
-      if (typeof logEvent === 'function') logEvent(world, `✦ The fire under ${name} erupted: fresh black rock has built it out`, null, { cat: 'rare', pri: 2 });
-    }
-    G.sz = +clamp((G.sz || 1) + d, ISLE_SZ_MIN, ISLE_SZ_MAX).toFixed(3);
+    if (fire && Math.random() < 0.06 * fire) d += isleErupt(world, s, G, fire, R, name);
+    // (A volcano's island can grow past what sand and reef could build: the cap rises with its fire, and what it has
+    // grown is held; the surf only wears it back toward that.)
+    const cap = ISLE_SZ_MAX + 0.35 * fire;
+    G.sz = +clamp((G.sz || 1) + d, ISLE_SZ_MIN, Math.max(cap, fire ? G.sz || 1 : 0)).toFixed(3);
     // Things that arise on it of their own accord (one at a time).
     isleNatural(world, s, G, age, salt);
     // A barrier reef, once the reef is thick, rises over about ten days.
@@ -256,6 +279,26 @@ function dawnIsles(world) {
       if ((got || ess) && typeof logEvent === 'function') logEvent(world, `What the birds leave on ${name} feeds the land: +${got} pearls, +${ess} essence`, null, { cat: 'pond', pri: 0 });
     }
   }
+}
+// An eruption: a tongue of lava runs out into the water (where there's room) and cools to new land; the cone grows.
+function isleErupt(world, s, G, fire, R, name) {
+  G.erupt = world.t;
+  const lava = G.lava || (G.lava = []);
+  let flow = null;
+  for (let tries = 0; tries < 8 && !flow; tries++) {
+    const a = rand(-PI, PI), len = rand(0.18, 0.4) * (1 + 0.25 * fire), w = rand(0.28, 0.55), reach = R * (isleOutline(world, s, a) + len) + 6;
+    const ex = s.x + Math.cos(a) * reach, ey = s.y + Math.sin(a) * reach;
+    if (ex < 10 || ey < 10 || ex > world.W - 10 || ey > world.H - 10) continue;
+    if ((world.structures || []).some((q) => q !== s && Math.hypot(q.x - ex, q.y - ey) < (q.kind === 'island' ? islandRadius(world, q) : STRUCTURES[q.kind].size) + 8)) continue;
+    flow = { a: +a.toFixed(3), len: +len.toFixed(3), w: +w.toFixed(3), d: +(world.days || 0).toFixed(2) };
+  }
+  G.cone = Math.min(ISLE_CONE_MAX, (G.cone || 0) + 1);
+  if (typeof landAdd === 'function') landAdd(world, s.x, s.y, 'ancient', 0.06, R / LAND_CELL + 1);
+  if (!flow) { if (typeof logEvent === 'function') logEvent(world, `✦ The fire under ${name} erupted: ash and fire thrown up, and the cone has grown`, null, { cat: 'rare', pri: 2 }); return 0.02; }
+  lava.push(flow);
+  if (lava.length > ISLE_LAVA_MAX) lava.shift(); // (the oldest has long since become the island)
+  if (typeof logEvent === 'function') logEvent(world, `✦ The fire under ${name} erupted: lava ran out into the water and cooled to new black rock, and the cone has grown`, null, { cat: 'rare', pri: 2 });
+  return 0.02 + 0.015 * fire;
 }
 function isleNatural(world, s, G, age, salt) {
   const kind = isleOf(s), st = G.st || 0, f = G.f;
@@ -584,7 +627,7 @@ function bakeIsleFeatures(r, s, next) {
   if ((G.bar || 0) > 0.25) {
     const n = Math.round(46 * G.bar * Math.max(1, R / 28));
     for (let k = 0; k < n; k++) {
-      const a = (k + h(k, 1, 3)) / n * TAU, d = R * (1.85 + 0.25 * h(k, 5, 7)) * isleLobe(s, a), c = h(k, 9, 11) < 0.5 ? IM.coralA : IM.coralB, sz = 1 + h(k, 13, 17) * 1.4;
+      const a = (k + h(k, 1, 3)) / n * TAU, d = R * (1.85 + 0.25 * h(k, 5, 7)) * isleOutline(world, s, a), c = h(k, 9, 11) < 0.5 ? IM.coralA : IM.coralB, sz = 1 + h(k, 13, 17) * 1.4;
       r.ellipsoid(x0 + Math.cos(a) * d, y0 + Math.sin(a) * d, sz, sz * 0.8, a, 0, sz * 0.9, c, id(c));
     }
   }
@@ -592,7 +635,7 @@ function bakeIsleFeatures(r, s, next) {
   if (f.mangrove) {
     const n = 5 + 6 * f.mangrove;
     for (let k = 0; k < n; k++) {
-      const a = (k + h(k, 7, 19) * 0.6) / n * TAU, d = R * (1.0 + 0.12 * h(k, 9, 23)) * isleLobe(s, a), tx = x0 + Math.cos(a) * d, ty = y0 + Math.sin(a) * d, ht = 5 + 2 * h(k, 13, 29);
+      const a = (k + h(k, 7, 19) * 0.6) / n * TAU, d = R * (1.0 + 0.12 * h(k, 9, 23)) * isleOutline(world, s, a), tx = x0 + Math.cos(a) * d, ty = y0 + Math.sin(a) * d, ht = 5 + 2 * h(k, 13, 29);
       for (let j = 0; j < 5; j++) { const b = a + (j - 2) * 0.6, rl = 2.5 + h(k, j, 31) * 1.5; r.tube(tx, ty, 0.35, ht * 0.5, tx + Math.cos(b) * rl, ty + Math.sin(b) * rl, 0.3, 0, 0.8, IM.root, id(IM.root)); }
       r.tube(tx, ty, 0.6, ht * 0.45, tx, ty, 0.5, ht, 0.9, IM.root, id(IM.root));
       for (let j = 0; j < 4; j++) { const b = j / 4 * TAU + a, cr = 2.2 + h(k, j, 37); r.ellipsoid(tx + Math.cos(b) * 1.8, ty + Math.sin(b) * 1.8, cr, cr * 0.8, b, ht - 0.5, 1.8, IM.mangrove, id(IM.mangrove)); }
@@ -601,7 +644,7 @@ function bakeIsleFeatures(r, s, next) {
   // Tide pools: rims of rock along the shore with water standing in them.
   if (f.pools) {
     for (let k = 0; k < 3 + 3 * f.pools; k++) {
-      const a = h(k, 41, 43) * TAU, d = R * (0.8 + 0.12 * h(k, 3, 47)), px = x0 + Math.cos(a) * d, py = y0 + Math.sin(a) * d, pr = 1.6 + h(k, 5, 53) * 1.6;
+      const a = h(k, 41, 43) * TAU, d = R * (0.8 + 0.12 * h(k, 3, 47)) * isleOutline(world, s, a), px = x0 + Math.cos(a) * d, py = y0 + Math.sin(a) * d, pr = 1.6 + h(k, 5, 53) * 1.6;
       for (let j = 0; j < 7; j++) { const b = j / 7 * TAU; r.ellipsoid(px + Math.cos(b) * pr, py + Math.sin(b) * pr, 1, 0.8, b, 0.2, 0.9, SM.stone, id(SM.stone)); }
       r.ellipsoid(px, py, pr * 0.8, pr * 0.7, a, 0.25, 0.1, IM.pool, id(IM.pool));
     }
@@ -622,9 +665,23 @@ function bakeIsleFeatures(r, s, next) {
     r.ellipsoid(x0 + ox, y0 + oy, pr, pr * 0.85, 0.3, z + 0.1, 0.1, IM.pool, id(IM.pool));
     if (typeof FLORA === 'object') for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + 0.4; withSeed(`spring/${s.seed}/${k}`, () => FLORA.reed(r, x0 + ox + Math.cos(a) * (pr + 1), y0 + oy + Math.sin(a) * (pr + 1) * 0.85, z, 0.7, id)); }
   }
-  // The fire: a black cone at the heart, its crater dark red (it glows at night: drawIsleExtras).
+  // Lava that has run out and cooled: a tongue of black rock over the new land, out to its coast, rubble on it.
+  for (const [i, L] of (G.lava || []).entries()) {
+    const o = typeof world === 'undefined' ? 1 : isleOutline(world, s, L.a);
+    for (let j = 0; j <= 7; j++) {
+      const u = j / 7, dd = R * (0.55 + (o - 0.6) * u), half = Math.max(1.5, dd * Math.sin(L.w * (1 - 0.45 * u)) * 0.8), ox = Math.cos(L.a) * dd, oy = Math.sin(L.a) * dd;
+      r.ellipsoid(x0 + ox, y0 + oy, R * (o - 0.55) / 7 + 2, half, L.a, zAt(ox, oy), 0.35, SM.basalt, id(SM.basalt));
+    }
+    const n = Math.round(14 + L.len * R * L.w * 2.2);
+    for (let k = 0; k < n; k++) {
+      const u = h(k, 131 + i, 7), a = L.a + (h(k, 137 + i, 11) - 0.5) * 2 * L.w * Math.sqrt(Math.max(0, 1 - u * u)), dd = R * (0.6 + (typeof world === 'undefined' ? 1 : isleOutline(world, s, a) - 0.6) * (0.35 + 0.65 * u));
+      const ox = Math.cos(a) * dd, oy = Math.sin(a) * dd, sz = 1 + 1.3 * h(k, 139 + i, 13);
+      r.ellipsoid(x0 + ox, y0 + oy, sz, sz * 0.8, a + k, zAt(ox, oy), sz * 0.6, k % 3 ? IM.ash : SM.basalt, id(k % 3 ? IM.ash : SM.basalt));
+    }
+  }
+  // The fire: a black cone at the heart, its crater dark red (it glows at night: drawIsleExtras); it grows with each eruption.
   if (f.fire) {
-    const z = zAt(0, 0), cr = 4 + 2 * f.fire, ht = 4 + 3 * f.fire;
+    const z = zAt(0, 0), cr = isleConeR(s), ht = isleConeH(s);
     for (let j = 0; j < 4; j++) { const t = j / 4, rr = lerp(cr, cr * 0.45, t); r.ellipsoid(x0, y0, rr, rr * 0.92, j, z + t * ht, ht / 4 + 0.5, IM.ash, id(IM.ash)); }
     r.ellipsoid(x0, y0, cr * 0.35, cr * 0.32, 0, z + ht + 0.3, 0.2, IM.crater, id(IM.crater));
     for (let k = 0; k < 10 + 6 * f.fire; k++) { const a = h(k, 77, 79) * TAU, d = cr + h(k, 81, 83) * R * 0.5; r.ellipsoid(x0 + Math.cos(a) * d, y0 + Math.sin(a) * d, 1.2, 0.8, a, zAt(Math.cos(a) * d, Math.sin(a) * d), 0.3, IM.ash, id(IM.ash)); }
@@ -636,10 +693,25 @@ function bakeIsleFeatures(r, s, next) {
     for (let j = 0; j < 12; j++) { const a = h(j, 3, 89) * TAU, d = h(j, 5, 97) * 9, cr = 4 + h(j, 7, 101) * 3; r.ellipsoid(bx + Math.cos(a) * d, by + Math.sin(a) * d, cr, cr * 0.85, a, z + ht * 0.65 + h(j, 9, 103) * 4, 4, IM.canopy, id(IM.canopy)); }
   }
 }
+const isleConeR = (s) => 4 + 2 * isleLv(s, 'fire') + 1.3 * ((s.ig && s.ig.cone) || 0), isleConeH = (s) => 4 + 3 * isleLv(s, 'fire') + 2.6 * ((s.ig && s.ig.cone) || 0);
 function drawIsleExtras(r, s, t, world) {
   const G = s.ig, f = G && G.f;
   if (!f || !f.fire) return;
-  const lv = f.fire, z0 = islandTopAt(s, 0, 0) + 4 + 3 * lv + 0.5, now = (world && world.t) || t, erupting = G.erupt != null && now - G.erupt >= 0 && now - G.erupt < 14;
+  const lv = f.fire, z0 = islandTopAt(s, 0, 0) + isleConeH(s) + 0.5, now = (world && world.t) || t, erupting = G.erupt != null && now - G.erupt >= 0 && now - G.erupt < 14;
+  // Fresh lava (the last day or two): glowing seams down the flow, going dull as it cools.
+  const R = islandRadius(world, s);
+  for (const L of G.lava || []) {
+    const age = (world.days || 0) - L.d;
+    if (age > 2 || age < 0) continue;
+    const heat = 1 - age / 2, n = Math.round(6 + 10 * L.len);
+    r.castShadows = false;
+    for (let k = 0; k < n; k++) {
+      if (Math.sin(t * 3 + k * 1.7) < 0.2 - heat) continue;
+      const u = (k + 0.5) / n, a = L.a + Math.sin(k * 2.3) * L.w * 0.4 * (1 - u), dd = R * (0.6 + (isleOutline(world, s, a) - 0.6) * u);
+      r.dot(s.x + Math.cos(a) * dd, s.y + Math.sin(a) * dd, 0.6, IM.lava, ISLE_FX_ID);
+    }
+    r.castShadows = true;
+  }
   r.castShadows = false;
   // Smoke drifting up off the vent.
   const n = 4 + lv;
@@ -667,7 +739,9 @@ function isleLights(M, world, big) {
     const f = s.kind === 'island' && s.ig && s.ig.f;
     if (!f || !f.fire) continue;
     const hot = s.ig.erupt != null && world.t - s.ig.erupt < 14 ? 2 : 1;
-    splat(M, s.x, s.y, 16 + 6 * f.fire * hot, 0xff2060ff, (0.3 + 0.12 * f.fire) * hot, 0, 0, big);
+    splat(M, s.x, s.y, 16 + 6 * f.fire * hot + 2 * (s.ig.cone || 0), 0xff2060ff, (0.3 + 0.12 * f.fire) * hot, 0, 0, big);
+    // (Fresh lava glows where it ran.)
+    for (const L of s.ig.lava || []) if ((world.days || 0) - L.d < 2) { const dd = islandRadius(world, s) * isleOutline(world, s, L.a); splat(M, s.x + Math.cos(L.a) * dd, s.y + Math.sin(L.a) * dd, 10, 0xff2060ff, 0.3 * (1 - ((world.days || 0) - L.d) / 2), 0, 0, big); }
   }
 }
 
@@ -687,5 +761,7 @@ function isleStatus(world, s) {
   if (!G) return '';
   const feats = ISLE_FEAT_ORDER.filter((k) => k !== 'nourish' && k !== 'grove' && isleLv(s, k)).map((k) => isleFeatLabel(world, s, k).toLowerCase());
   const bar = (G.bar || 0) >= 1 ? ', and a barrier reef offshore' : G.bar > 0 ? ', and a barrier reef rising offshore' : '';
-  return ` ${capFirst(ISLE_STAGES[G.st || 0].word)}, ${Math.round((G.sz || 1) * 100)}% of its first size${feats.length ? `; ${feats.join(', ')}` : ''}${bar}.`;
+  const lava = (G.lava || []).length ? `; ${G.lava.length} lava flow${G.lava.length > 1 ? 's' : ''} have built it out, and its cone stands ${G.cone || 0} high` : '';
+  const F = isleForm(world, s), flats = F.flats > 0.2 ? ' Flats round it bare at low tide.' : isleDeep(s) ? ' It stands in deep water: cliffs, no flats.' : '';
+  return ` ${capFirst(ISLE_STAGES[G.st || 0].word)}, ${Math.round((G.sz || 1) * 100)}% of its first size${feats.length ? `; ${feats.join(', ')}` : ''}${bar}${lava}.${flats}`;
 }

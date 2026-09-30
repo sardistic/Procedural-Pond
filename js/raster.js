@@ -302,7 +302,8 @@ class Raster {
             const se = shore ? shore[q] : 0;
             if (se > tideL) {
               // Beach above the waterline: sunlit dry sand, darker where the water just left.
-              c = se < tideL + 9 ? shadeColor(bg[q]) : bgDry ? bgDry[q] : dryLit(bg[q]);
+              // (Damp a little way above the water, in dithered steps: the flats and the lower beach the tide has just left.)
+              c = se < tideL + 9 + 22 * (BAYER4[(x & 3) | ((y & 3) << 2)] + 0.5) ? shadeColor(bg[q]) : bgDry ? bgDry[q] : dryLit(bg[q]);
               if (doShadows && sh[p] > zb + 1.5) c = shadeColor(c);
               depth = 0;
             } else {

@@ -219,21 +219,54 @@ function applyIslands(world) {
   const shore = world.shore, { W, H } = world;
   for (const s of world.structures || []) {
     if (s.kind !== 'island' || s.anim) continue;
-    // Out over the deep an island rises as a cliff: a flat top and steep sides.
-    // (Its coastline wanders as it ages, into headlands and coves: isles.js isleLobe.)
-    const R0 = islandRadius(world, s), lobed = !!(s.ig && s.ig.lob) && typeof isleLobe === 'function', R = R0 * 1.4 * (lobed ? 1.22 : 1), top = Math.min(1.5, 0.97 + 0.06 * ((s.stack || 1) - 1)), cliff = 2 + 8 * (s.deep || 0);
-    for (let y = Math.max(0, Math.floor(s.y - R)); y <= Math.min(H - 1, Math.ceil(s.y + R)); y++) {
-      for (let x = Math.max(0, Math.floor(s.x - R)); x <= Math.min(W - 1, Math.ceil(s.x + R)); x++) {
-        const d = Math.hypot(x - s.x, y - s.y) / R0 / (lobed ? isleLobe(s, Math.atan2(y - s.y, x - s.x)) : 1);
-        if (d >= 1.4) continue;
-        // Low and broad: the tide covers the rim at high water and bares a wide beach at low.
-        const e = top * (1 - (d / 1.4) ** cliff) + (fbm(x * 0.08, y * 0.08, s.seed % 53) - 0.5) * 0.25;
-        const p = x + y * W, v = Math.round(clamp(e, 0, 1) * 255);
-        if (v > shore[p]) shore[p] = v;
-      }
+    // (Its shape is worked out once, as a stamp round its middle, and laid on the beach each time the beach is
+    // made: only when the island itself changes (its size, its shape, its reef, the depth under it) is it redone.)
+    const st = islandStamp(world, s), x0 = Math.round(s.x) - st.r, y0 = Math.round(s.y) - st.r, n = st.n;
+    for (let j = Math.max(0, -y0); j < n && y0 + j < H; j++) {
+      const row = j * n, yy = (y0 + j) * W;
+      for (let i = Math.max(0, -x0); i < n && x0 + i < W; i++) { const v = st.v[row + i]; if (v) { const q = yy + x0 + i; if (v > shore[q]) shore[q] = v; } }
     }
-    if (typeof applyIsleReef === 'function') applyIsleReef(world, s, R0); // (a barrier reef offshore, once it has risen)
-  }  if (typeof applyIsleBars === 'function') applyIsleBars(world); // (islands close together grow a bar between them: land.js)
+  }
+  if (typeof applyIsleBars === 'function') applyIsleBars(world); // (islands close together grow a bar between them: land.js)
+}
+// An island's shape as heights round its middle. Its shape is its kind's (isles.js isleForm): stretched along the
+// current, ragged or smooth, with a bay, its coastline wandering as it ages and pushed out where lava has run; out
+// over the deep it rises as a cliff. Round it lie flats that the tide covers at high water and bares at low (none
+// where the water is deep), so it changes shape through the day; and its barrier reef, once it has risen.
+function islandStamp(world, s) {
+  const R0 = islandRadius(world, s), F = typeof isleForm === 'function' ? isleForm(world, s) : null, lobed = !!(s.ig && s.ig.lob) && typeof isleLobe === 'function';
+  const deepHere = Math.round(depthAt(world, s.x, s.y) * 20);
+  const key = [R0.toFixed(2), typeof isleShapeKey === 'function' ? isleShapeKey(s) : '', s.stack || 1, s.deep || 0, F ? F.ang.toFixed(2) : '-', deepHere, world.opts.habitat].join('|');
+  if (s.stamp && s.stamp.key === key) return s.stamp;
+  const bar = (s.ig && s.ig.bar) || 0, reachK = Math.max(F ? isleReachK(world, s, F) : 1.4 * (lobed ? 1.22 : 1), bar ? 2.35 : 0), r = Math.ceil(R0 * reachK) + 2, n = 2 * r + 1;
+  const top = Math.min(1.5, 0.97 + 0.06 * ((s.stack || 1) - 1)), cliff = 2 + (F ? F.cliff : 8 * (s.deep || 0)), v = new Uint8Array(n * n);
+  // (Its coast and its flats, along 256 bearings.)
+  const NB = 256, OUT = new Float32Array(NB), FL = new Float32Array(NB), dm = world.depth, cx = Math.round(s.x), cy = Math.round(s.y), seed = s.seed % 997;
+  for (let k = 0; k < NB; k++) { const a = k / NB * TAU - PI; OUT[k] = F ? isleOutline(world, s, a, F) : lobed ? isleLobe(s, a) : 1; FL[k] = F ? isleFlatsAt(F, a) : 0; }
+  const rc0 = R0 * 1.75, rc1 = R0 * 2.15, crest = 0.3 + 0.16 * bar, mid = (rc0 + rc1) / 2, half = (rc1 - rc0) / 2;
+  for (let j = 0; j < n; j++) {
+    const dy = j - r, wy = cy + dy;
+    for (let i = 0; i < n; i++) {
+      const dx = i - r, dist = Math.hypot(dx, dy);
+      if (dist > r) continue;
+      const a = Math.atan2(dy, dx), bi = (((a + PI) / TAU * NB) | 0) & (NB - 1), d = dist / R0 / OUT[bi], wx = cx + dx;
+      let e = d < 1.4 ? top * (1 - (d / 1.4) ** cliff) : 0;
+      const fl = FL[bi];
+      if (fl > 0.02 && d > 0.8 && d < 1 + fl) {
+        const t = (d - 1) / fl, dp = dm && wx >= 0 && wy >= 0 && wx < world.W && wy < world.H ? dm[wx + wy * world.W] / 255 : 0, k = clamp(1 - dp * 4, 0, 1);
+        const shelf = F.flatZ * k * (1 - smoothstep(0.5, 1, Math.max(0, t))) * (0.8 + 0.35 * fbm(dx * 0.06 + seed, dy * 0.06, 61));
+        if (shelf > e) e = shelf;
+      }
+      if (e > 0) e += (fbm(dx * 0.08 + seed, dy * 0.08, 53) - 0.5) * 0.25;
+      // The barrier reef: a ring offshore, rising over the days until its crest bares at low tide (a pass or two through it).
+      if (bar) {
+        const dd = dist / OUT[bi], t = 1 - Math.abs(dd - mid) / (half + 2);
+        if (t > 0) { const pass = Math.sin(a * 3 + (s.seed % 17)) > 0.93, rv = crest * Math.min(1, t * 1.6) * (pass ? 0.45 : 1) * (0.9 + 0.2 * fbm(dx * 0.1 + seed, dy * 0.1, 7)); if (rv > e) e = rv; }
+      }
+      if (e > 0) v[j * n + i] = Math.round(clamp(e, 0, 1) * 255);
+    }
+  }
+  return (s.stamp = { key, r, n, v });
 }
 
 // Island lights (the life branch): little lanterns and glowing caps that come on at dusk.
