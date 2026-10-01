@@ -7,13 +7,14 @@ const WAVE_SIN = new Float32Array(2048);
 for (let i = 0; i < WAVE_SIN.length; i++) WAVE_SIN[i] = Math.sin(i * Math.PI * 2 / WAVE_SIN.length);
 const waveSin = (phase) => WAVE_SIN[(phase * (2048 / (Math.PI * 2)) | 0) & 2047];
 const waveCos = (phase) => WAVE_SIN[((phase * (2048 / (Math.PI * 2)) | 0) + 512) & 2047];
+const waveTime = (world) => world.waveTime ?? 0;
 
 function waveField(s) {
   const dir = s.swellDir || [0, 1], gust = Math.max(0, s.gust || 0), rain = s.rain || 0;
-  const energy = Math.max(0, s.swell || 0), L = 48 + energy * 42;
+  const energy = Math.max(0, s.swell || 0), L = 55 + energy * 60;
   const k = Math.PI * 2 / L, omega = Math.sqrt(12 * k);
   return { x: dir[0], y: dir[1], k, omega, t: s.t || 0,
-    amp: energy * (1.4 + gust * 0.7), chop: (0.12 + gust * 0.7 + rain * 0.35) * energy,
+    amp: energy * (2.1 + gust), chop: (0.12 + gust * 0.7 + rain * 0.35) * energy,
     surf: s.surf || 0, tide: (s.tide ?? 1) * 255, shore: s.shore || null,
     depth: s.depth || null, river: s.riverMask || null };
 }
@@ -29,7 +30,7 @@ function waveAt(f, x, y, p, out) {
   const v = -x * f.y + y * f.x;
   const packet = 0.72 + 0.17 * waveSin(v * 0.026 + f.t * 0.11) + 0.11 * waveSin(u * 0.013 + v * 0.019 - f.t * 0.08);
   const amp = Math.min(f.amp * shoal * packet, room * 0.43);
-  const phase = u * f.k - f.t * f.omega + 0.3 * waveSin(v * 0.022 + f.t * 0.05) + 0.16 * waveSin(u * 0.013 - v * 0.015);
+  const phase = u * f.k - f.t * f.omega + 0.8 * waveSin(v * 0.022 + f.t * 0.05) + 0.16 * waveSin(u * 0.013 - v * 0.015);
   const cross = (u * 0.78 + v * 0.33) * f.k * 1.8 - f.t * f.omega * 1.35;
   const chopPhase = (u * 0.43 - v * 0.9) * f.k * 3.3 - f.t * f.omega * 2.25;
   const a = waveSin(phase), b = waveSin(cross), c = waveSin(chopPhase);
@@ -45,7 +46,7 @@ function waveAt(f, x, y, p, out) {
     + a3 * f.k * 3.3 * (f.y * 0.43 - f.x * 0.9) * waveCos(chopPhase);
   const steep = amp * f.k * (1 + f.chop * 0.6);
   const breakDepth = room > 0 ? 2 * amp / room : 0;
-  out[3] = Math.min(1, Math.max(0, (breakDepth - 0.68) * 2.4 + (steep - 0.23) * 1.5 + near * f.surf * 0.25) * Math.max(0, a * 0.65 + 0.3));
+  out[3] = Math.min(1, Math.max(0, (breakDepth - 0.68) * 2.4 + (steep - 0.23) * 1.5 + near * f.surf * 0.9) * Math.max(0, a * 0.65 + 0.3));
   if (out.length > 5) {
     // Gerstner orbital motion: crests lean forward as the surface rises.
     const lean = Math.min(0.72, 0.72 / Math.max(0.05, amp * f.k));

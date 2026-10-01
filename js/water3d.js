@@ -6,16 +6,18 @@
 // restrained Fresnel reflection catches sky and light. No drawn wave bands.
 let WATER_SCENE = new Uint32Array(0);
 const WATER_POINT = new Float32Array(6);
+const waterSmooth = (a, b, x) => { const v = Math.max(0, Math.min(1, (x - a) / (b - a))); return v * v * (3 - 2 * v); };
 function renderWater3D(out, w, rect, state) {
   const visibility = state.visibility;
   if (visibility < 0.025) return;
   const W = w.W, H = w.H, [x0, y0, x1, y1] = rect;
   if (WATER_SCENE.length < out.length) WATER_SCENE = new Uint32Array(out.length);
   for (let y = y0; y <= y1; y++) WATER_SCENE.set(out.subarray(x0 + y * W, x1 + y * W + 1), x0 + y * W);
-  const f = waveField({ t: w.t, swell: state.swell, swellDir: w.shore ? w.shoreN : [0.8, 0.6],
+  const f = waveField({ t: state.time ?? waveTime(w), swell: state.swell, swellDir: w.shore ? w.shoreN : [0.8, 0.6],
     gust: w.weather.gust, rain: w.weather.rain, surf: w.tide.surf, tide: w.tide.level,
     shore: w.shore, depth: w.depth, riverMask: w.riverMask });
   const sky = state.sky, sr = sky & 255, sg = sky >> 8 & 255, sb = sky >>> 16 & 255;
+  const water = w.waterColor || 0xff7c6a1b, wr = water & 255, wg = water >> 8 & 255, wb = water >>> 16 & 255;
   const day = 1 - (state.darkness || 0), rain = w.weather.rain || 0;
   const tide = w.tide.level * 255, shore = w.shore, depth = w.depth;
   // A slightly oblique overhead camera makes crest height and orbital motion
@@ -53,11 +55,17 @@ function renderWater3D(out, w, rect, state) {
       cr *= shade; cg *= shade; cb *= shade;
       // In deep water the floor contributes little light, but the surface
       // still scatters daylight. Keep the swell visible above a dark abyss.
-      const scatter = Math.max(0, Math.min(1, (waterDepth - 0.15) / 0.7)) * (0.08 + 0.25 * day) * visibility;
+      const scatter = Math.max(0, Math.min(1, (waterDepth - 0.15) / 0.7)) * (0.08 + 0.42 * day) * visibility;
       const faceLight = Math.max(0.6, Math.min(1.1, 0.65 + light * 0.55));
-      cr += (sr * 0.62 * faceLight - cr) * scatter;
-      cg += (sg * 0.78 * faceLight - cg) * scatter;
-      cb += (sb * 0.90 * faceLight - cb) * scatter;
+      cr += ((wr * 0.8 * 0.8 + sr * 0.2) * faceLight - cr) * scatter;
+      cg += ((wg * 1.2 * 0.8 + sg * 0.2) * faceLight - cg) * scatter;
+      cb += ((wb * 1.3 * 0.8 + sb * 0.2) * faceLight - cb) * scatter;
+      const front = Math.max(0, -(sx * f.x + sy * f.y));
+      const back = Math.max(0, sx * f.x + sy * f.y);
+      const shadow = Math.min(0.55, front * 1.8) * visibility;
+      cr *= 1 - shadow * 0.55; cg *= 1 - shadow * 0.34; cb *= 1 - shadow * 0.23;
+      const face = Math.min(0.25, back * 1.2) * visibility;
+      cr += (55 - cr) * face; cg += (173 - cg) * face; cb += (196 - cb) * face;
       const facing = Math.max(0, nx * vx + ny * vy + nz * vz);
       const fresnel = tint + 0.975 * Math.pow(1 - facing, 5);
       const spec = Math.max(0, Math.pow(Math.max(0, nx * hx + ny * hy + nz * hz), 24) - flatSpec) * (0.43 * day + 0.17);
@@ -69,9 +77,10 @@ function renderWater3D(out, w, rect, state) {
       cb += ((day > 0.4 ? 245 : 218) - cb) * sparkle;
       const foam = WATER_POINT[3];
       if (foam > 0.08) {
-        const fleck = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663)) >>> 27;
-        const amount = Math.min(0.8, foam * visibility * (0.34 + fleck / 48));
-        cr += (235 - cr) * amount; cg += (241 - cg) * amount; cb += (245 - cb) * amount;
+        const amount = Math.min(0.9, foam * visibility);
+        cr += (140 - cr) * amount; cg += (214 - cg) * amount; cb += (232 - cb) * amount;
+        const white = waterSmooth(0.26, 0.65, amount) * 0.78;
+        cr += (240 - cr) * white; cg += (250 - cg) * white; cb += (253 - cb) * white;
       }
       out[p] = (0xff000000 | (Math.min(255, cb) << 16) | (Math.min(255, cg) << 8) | Math.min(255, cr)) >>> 0;
     }
@@ -99,7 +108,7 @@ void main() {
   float u = dot(a_pos, u_dir), v = dot(a_pos, vec2(-u_dir.y, u_dir.x));
   float packet = 0.72 + 0.17 * sin(v * 0.026 + u_t * 0.11) + 0.11 * sin(u * 0.013 + v * 0.019 - u_t * 0.08);
   float amp = min(u_amp * (1.0 + 0.55 * (1.0 - shallow)) * packet, room * 0.43);
-  float phase = u * u_k - u_t * u_omega + 0.3 * sin(v * 0.022 + u_t * 0.05) + 0.16 * sin(u * 0.013 - v * 0.015);
+  float phase = u * u_k - u_t * u_omega + 0.8 * sin(v * 0.022 + u_t * 0.05) + 0.16 * sin(u * 0.013 - v * 0.015);
   float cross = (u * 0.78 + v * 0.33) * u_k * 1.8 - u_t * u_omega * 1.35;
   float chopPhase = (u * 0.43 - v * 0.9) * u_k * 3.3 - u_t * u_omega * 2.25;
   float a2 = amp * 0.26, a3 = u_chop * (0.35 + 0.65 * (1.0 - shallow)) * min(amp, 1.5);
@@ -114,7 +123,7 @@ void main() {
   vec2 orbit = (lean * amp * u_dir * cos(phase) + a2 * 0.22 * vec2(-u_dir.y, u_dir.x) * cos(cross)) * shelter;
   v_height = h * u_visibility;
   float steep = amp * u_k * (1.0 + u_chop * 0.6);
-  v_foam = min(1.0, max(0.0, (2.0 * amp / max(room, 0.4) - 0.68) * 2.4 + (steep - 0.23) * 1.5 + near * u_surf * 0.25) * max(0.0, sin(phase) * 0.65 + 0.3)) * (1.0 - step(0.5, river));
+  v_foam = min(1.0, max(0.0, (2.0 * amp / max(room, 0.4) - 0.68) * 2.4 + (steep - 0.23) * 1.5 + near * u_surf * 0.9) * max(0.0, sin(phase) * 0.65 + 0.3)) * (1.0 - step(0.5, river));
   vec2 point = a_pos + (orbit + h * vec2(0.8, 1.1)) * u_visibility;
   point -= u_origin;
   gl_Position = vec4(point.x / u_size.x * 2.0 - 1.0, 1.0 - point.y / u_size.y * 2.0, -h * 0.002, 1.0);
@@ -122,8 +131,9 @@ void main() {
 const WATER_FRAGMENT = `#version 300 es
 precision highp float;
 uniform sampler2D u_scene, u_shore, u_depth;
-uniform vec3 u_sky;
+uniform vec3 u_sky, u_water;
 uniform float u_tide, u_day, u_rain, u_visibility;
+uniform vec2 u_dir;
 in vec2 v_uv, v_slope;
 in float v_height, v_foam;
 out vec4 color;
@@ -137,15 +147,22 @@ void main() {
   vec3 base = texture(u_scene, refractUV).rgb;
   float light = max(0.0, dot(n, normalize(vec3(-0.45, -0.48, 0.75))));
   base *= clamp(0.99 + (light - 0.75) * 0.55, 0.82, 1.14);
-  float scatter = smoothstep(0.15, 0.85, depth) * (0.08 + 0.25 * u_day) * u_visibility;
-  base = mix(base, u_sky * vec3(0.62, 0.78, 0.90) * clamp(0.65 + light * 0.55, 0.6, 1.1), scatter);
+  float scatter = smoothstep(0.15, 0.85, depth) * (0.08 + 0.42 * u_day) * u_visibility;
+  vec3 surface = mix(u_water * vec3(0.8, 1.2, 1.3), u_sky, 0.2);
+  base = mix(base, surface * clamp(0.65 + light * 0.55, 0.6, 1.1), scatter);
+  float front = max(0.0, -dot(slope, u_dir));
+  float back = max(0.0, dot(slope, u_dir));
+  base = mix(base, base * vec3(0.45, 0.66, 0.77), min(0.55, front * 1.8) * u_visibility);
+  base = mix(base, vec3(0.22, 0.68, 0.77), min(0.25, back * 1.2) * u_visibility);
   float facing = max(0.0, dot(n, normalize(vec3(-0.3, -0.42, 0.86))));
   float fresnel = 0.05 + u_rain * 0.015 + 0.95 * pow(1.0 - facing, 5.0);
   base = mix(base, u_sky, min(0.24, fresnel * u_visibility));
   float spec = max(0.0, pow(max(0.0, dot(n, normalize(vec3(0.18, -0.32, 0.93)))), 24.0) - pow(0.93, 24.0)) * (0.43 * u_day + 0.17);
   base = mix(base, mix(vec3(0.64, 0.73, 0.85), vec3(0.93, 0.95, 0.97), step(0.4, u_day)), min(0.3, spec * u_visibility));
-  float fleck = fract(sin(dot(floor(v_uv * vec2(textureSize(u_scene, 0))), vec2(12.9898, 78.233))) * 43758.5453);
-  base = mix(base, vec3(0.92, 0.945, 0.96), min(0.8, v_foam * u_visibility * (0.34 + fleck * 0.55)));
+  // Breaking foam stays with the depth-limited wave face near the shore.
+  float foam = min(0.9, v_foam * u_visibility);
+  base = mix(base, vec3(0.55, 0.84, 0.91), foam);
+  base = mix(base, vec3(0.94, 0.98, 0.99), smoothstep(0.26, 0.65, foam) * 0.78);
   color = vec4(base, 1.0);
 }`;
 
@@ -235,7 +252,7 @@ function drawWaterMesh(scene, w, state, rect) {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, W, H, 0, gl.RED, gl.UNSIGNED_BYTE, flat);
     G.terrain = w.shore; G.depth = w.depth; G.river = w.riverMask; G.terrainAt = performance.now();
   }
-  const F = waveField({ t: w.t, swell: state.swell, swellDir: w.shore ? w.shoreN : [0.8, 0.6], gust: w.weather.gust,
+  const F = waveField({ t: state.time ?? waveTime(w), swell: state.swell, swellDir: w.shore ? w.shoreN : [0.8, 0.6], gust: w.weather.gust,
     rain: w.weather.rain, surf: w.tide.surf, tide: w.tide.level, shore: w.shore, depth: w.depth, riverMask: w.riverMask });
   const set1 = (name, value) => gl.uniform1f(gl.getUniformLocation(G.program, name), value);
   const set2 = (name, x, y) => gl.uniform2f(gl.getUniformLocation(G.program, name), x, y);
@@ -244,6 +261,8 @@ function drawWaterMesh(scene, w, state, rect) {
     u_chop: F.chop, u_surf: F.surf, u_tide: F.tide, u_visibility: state.visibility,
     u_day: 1 - (state.darkness || 0), u_rain: w.weather.rain || 0 })) set1(name, value);
   const sky = state.sky; gl.uniform3f(gl.getUniformLocation(G.program, 'u_sky'), (sky & 255) / 255, (sky >> 8 & 255) / 255, (sky >>> 16 & 255) / 255);
+  const water = w.waterColor || 0xff7c6a1b;
+  gl.uniform3f(gl.getUniformLocation(G.program, 'u_water'), (water & 255) / 255, (water >> 8 & 255) / 255, (water >>> 16 & 255) / 255);
   gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
   gl.drawElements(gl.TRIANGLES, G.count, gl.UNSIGNED_SHORT, 0);

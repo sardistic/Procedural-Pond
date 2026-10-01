@@ -450,7 +450,7 @@ function update(dt) {
   cur.x = Math.cos(cur.angle) * cur.s;
   cur.y = Math.sin(cur.angle) * cur.s;
   updateSky(world, dt);
-  world.waveField = world.opts.hdWaves ? waveField({ t: world.t, swell: surfaceSwell(world),
+  world.waveField = world.opts.hdWaves ? waveField({ t: waveTime(world), swell: surfaceSwell(world),
     swellDir: world.shore ? world.shoreN : [0.8, 0.6], gust: world.weather.gust, rain: world.weather.rain,
     surf: world.tide.surf, tide: world.tide.level, shore: world.shore, depth: world.depth, riverMask: world.riverMask }) : null;
   if (world.shore) {
@@ -639,9 +639,9 @@ function render(full = false) {
     swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6], clouds: q < 1 ? world.clouds : null, sky: skyColor, skyK: glass ? 1.4 : typeof heavenNow === 'function' && heavenNow(world, 'aurora') ? 1.6 : 1 - world.weather.rain * 0.7,
     lights: q < 2 ? buildLights(world, rect) : null, lightVis: light.darkness || 0, deepColor2: deepTint(world), trench: world.trench, trenchGlow: TRENCH_GLOW[branchOf(world)],
     chop: q < 1 && !glass ? clamp(0.18 + Math.max(0, world.weather.gust) * 0.9 + world.tide.surf * 0.35, 0, 1.2) * surfaceVis : 0, spindrift: q < 1 ? clamp((swell - 0.75) * 2.5, 0, 1) * surfaceVis : 0,
-    waveMode: o.hdWaves ? 'mesh' : 'classic', gust: glass ? 0 : world.weather.gust, rain: world.weather.rain,
+    waveMode: o.hdWaves ? 'mesh' : 'classic', waveT: waveTime(world), gust: glass ? 0 : world.weather.gust, rain: world.weather.rain,
   }, rect);
-  const waterState = { swell, sky: skyColor, darkness: light.darkness, visibility: surfaceVis };
+  const waterState = { swell, sky: skyColor, darkness: light.darkness, visibility: surfaceVis, time: waveTime(world) };
   const meshReady = o.hdWaves && surfaceVis > 0.025 && typeof waterMeshAvailable === 'function' && waterMeshAvailable();
   if (o.hdWaves && !meshReady && typeof renderWater3D === 'function') renderWater3D(out, world, rect, waterState);
   if (close < 0.9) drawGlints();
@@ -728,9 +728,13 @@ function drawBones() {
 let last = performance.now(), mapTimer = 0, nbTimer = 2;
 function frame(now) {
   // The first rAF timestamp can predate the load-time performance.now(); never step backwards.
-  const dt = clamp((now - last) / 1000, 0, 0.05);
+  const elapsed = Math.max(0, (now - last) / 1000);
+  const dt = Math.min(elapsed, 0.05);
   last = now;
-  if (!world.paused) update(dt * world.opts.speed * (hardMode(world) ? HARD_PACE : 1)); // (hard mode runs slower)
+  if (!world.paused) {
+    world.waveTime = waveTime(world) + elapsed; // Wave periods follow real seconds even when the ecosystem is sped up.
+    update(dt * world.opts.speed * (hardMode(world) ? HARD_PACE : 1)); // (hard mode runs slower)
+  }
   runJobs();
   growTick(now);
   updateCamera(dt);
@@ -1632,11 +1636,11 @@ function refreshMinimapBackground() {
   if (!miniCell) return;
   const layer = MINI_LAYERS[miniLayer][0], shore = world.shore, tideL = shore ? Math.round(world.tide.level * 255) : 999;
   const light = world.light || lighting(), rain = world.weather.rain;
-  const key = `${tideL}|${layer}|${Math.floor(world.t * 3)}|${Math.round((light.darkness || 0) * 20)}|${Math.round(rain * 20)}|${world.opts.hdWaves}`;
+  const key = `${tideL}|${layer}|${Math.floor(waveTime(world) * 3)}|${Math.round((light.darkness || 0) * 20)}|${Math.round(rain * 20)}|${world.opts.hdWaves}`;
   if (key === miniKey) return;
   miniKey = key;
   const mw = mini.width, mh = mini.height, img = new ImageData(mw, mh), px = new Uint32Array(img.data.buffer);
-  const waves = world.opts.hdWaves ? waveField({ t: world.t, swell: surfaceSwell(world),
+  const waves = world.opts.hdWaves ? waveField({ t: waveTime(world), swell: surfaceSwell(world),
     swellDir: shore ? world.shoreN : [0.8, 0.6], gust: world.weather.gust, rain, surf: world.tide.surf, tide: world.tide.level,
     shore, depth: world.depth, riverMask: world.riverMask }) : null;
   const surface = waves ? new Float32Array(4) : null;

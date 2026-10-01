@@ -276,7 +276,7 @@ class Raster {
     const surfaceVis = s.surfaceVis ?? 1;
     const meshWaves = s.waveMode === 'mesh';
     const hdWaves = surfaceVis > 0 && (s.waveMode === 'hd' || meshWaves) && typeof waveField === 'function';
-    const physical = hdWaves ? waveField(s) : null, surface = hdWaves ? new Float32Array(4) : null;
+    const physical = hdWaves ? waveField({ ...s, t: s.waveT ?? s.t }) : null, surface = hdWaves ? new Float32Array(4) : null;
     const [rx0, ry0, rx1, ry1] = rect;
     for (let y = ry0; y <= ry1; y++) {
       for (let x = rx0, p = rx0 + y * W; x <= rx1; x++, p++) {
