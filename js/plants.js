@@ -202,8 +202,9 @@ class Duckweed {
   hit(x, y) { return Math.hypot(x - this.x, y - this.y) < 12; }
 
   update(dt, world) {
-    this.x += (world.current.x * 3 + this.vx) * dt;
-    this.y += (world.current.y * 3 + this.vy) * dt;
+    const [wx, wy] = typeof waveOrbit === 'function' ? waveOrbit(world, this.x, this.y) : [0, 0];
+    this.x += (world.current.x * 3 + this.vx + wx) * dt;
+    this.y += (world.current.y * 3 + this.vy + wy) * dt;
     if (this.x < 10 || this.x > world.W - 10) this.vx = -this.vx;
     if (this.y < 10 || this.y > world.H - 10) this.vy = -this.vy;
     this.x = clamp(this.x, 10, world.W - 10);
@@ -253,8 +254,9 @@ class LilyPad {
   hit(x, y) { return Math.hypot(x - this.x, y - this.y) < this.r; }
 
   update(dt, world) {
-    this.x += (this.vx + world.current.x * 1.5) * dt;
-    this.y += (this.vy + world.current.y * 1.5) * dt;
+    const [wx, wy] = typeof waveOrbit === 'function' ? waveOrbit(world, this.x, this.y) : [0, 0];
+    this.x += (this.vx + world.current.x * 1.5 + wx) * dt;
+    this.y += (this.vy + world.current.y * 1.5 + wy) * dt;
     this.ang += this.spin * dt;
     if (this.x < this.r || this.x > world.W - this.r) this.vx = -this.vx;
     if (this.y < this.r || this.y > world.H - this.r) this.vy = -this.vy;

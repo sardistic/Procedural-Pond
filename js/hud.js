@@ -1612,8 +1612,18 @@ function drawSlice() {
   const rain = world.weather ? world.weather.rain : 0, cast = typeof skyCast === 'function' ? skyCast(world) : null;
   let sky0 = mixColor(SLICE_SKY, 0xff9aa4a8, rain * 0.6), sky1 = mixColor(SLICE_SKY, 0xffe0f0f4, 0.35);
   if (cast) { sky0 = mixColor(sky0, cast.c, cast.k); sky1 = mixColor(sky1, cast.c, cast.k * 0.7); }
+  const surfaceY = new Float32Array(S);
+  const sliceWaves = world.opts.hdWaves && typeof waveField === 'function' ? waveField({ t, swell: surfaceSwell(world),
+    swellDir: world.shore ? world.shoreN : [0.8, 0.6], gust: world.weather.gust, rain,
+    surf: world.tide.surf, tide: world.tide.level, shore: world.shore, depth: world.depth, riverMask: world.riverMask }) : null;
+  const crest = sliceWaves ? new Float32Array(4) : null;
   for (let i = 0; i < S; i++) {
     const gnd = ground[i], d = depth[i], wav = (fbm(i * 0.06, 3.1, 61 + seed) - 0.5) * 5;
+    if (sliceWaves) {
+      const [x, y] = at(toA(i), 0.5), xi = clamp(Math.round(x), 0, world.W - 1), yi = clamp(Math.round(y), 0, world.H - 1);
+      waveAt(sliceWaves, xi, yi, xi + yi * world.W, crest);
+      surfaceY[i] = clamp(surf - crest[0] * 0.7, 2, T - 5);
+    } else surfaceY[i] = surf;
     for (let j = 0; j < T; j++) {
       let c;
       if (j >= gnd) {
@@ -1623,11 +1633,11 @@ function drawSlice() {
         c = dj < 1.5 ? topC[i] : L < 5 ? mixColor(topC[i], SL.clay, 0.3 + 0.15 * (j & 1)) : L < 9 ? mixColor(SL.clay, SL.stone, 0.55) : mixColor(SL.stone, SL.bed, clamp((L - 9) / 10, 0, 1));
         if (dj >= 1.5) { const h = hash2(i, j, 11 + seed); if (h < 0.05) c = mixColor(c, SL.grit, 0.45); else if (h > 0.97) c = SL.pebble; }
         c = mixColor(c, 0xff000000, d * 0.45 + dk * 0.25);
-      } else if (j < surf) {
-        c = mixColor(mixColor(sky1, sky0, j / Math.max(1, surf)), 0xff101820, dk * 0.8);
+      } else if (j < surfaceY[i]) {
+        c = mixColor(mixColor(sky1, sky0, j / Math.max(1, surfaceY[i])), 0xff101820, dk * 0.8);
         if (dk > 0.5 && hash2(i, j, 5) > 0.985) c = 0xffd8e0f0; // (stars)
       } else {
-        const u = clamp((j - surf) / (abyssY - surf), 0, 1), under = j - surf;
+        const u = clamp((j - surfaceY[i]) / (abyssY - surfaceY[i]), 0, 1), under = j - surfaceY[i];
         c = mixColor(water, dark, u * 0.95);
         if (!salt && d >= 0.45 && d < 0.75) c = mixColor(c, 0xff000000, 0.3); // (under the cave's roof)
         // Sunlight slanting down into the shallows, fading as it goes.
@@ -1637,10 +1647,12 @@ function drawSlice() {
     }
   }
   const put = (i, j, c) => { i = Math.round(i); j = Math.round(j); if (i >= 0 && i < S && j >= 0 && j < T) px[i + j * S] = c; };
-  const inWater = (i, j) => j > surf && j < ground[clamp(Math.round(i), 0, S - 1)];
+  const inWater = (i, j) => j > surfaceY[clamp(Math.round(i), 0, S - 1)] && j < ground[clamp(Math.round(i), 0, S - 1)];
   // The water's surface, lapping.
   const lap = Math.floor(t * 3);
-  for (let i = 0; i < S; i++) if (ground[i] > surf) put(i, surf, (i + lap) % 7 < 4 ? SL.foam : mixColor(water, SL.foam, 0.5));
+  for (let i = 0; i < S; i++) if (ground[i] > surfaceY[i]) put(i, surfaceY[i], sliceWaves
+    ? mixColor(water, SL.foam, clamp(0.2 + Math.abs(surfaceY[i] - surf) * 0.12, 0.2, 0.8))
+    : (i + lap) % 7 < 4 ? SL.foam : mixColor(water, SL.foam, 0.5));
   // What the depths hold, column by column (a hash of the pond and the column decides; the deep past's own at the bottom).
   const tier = world.erosion ? world.erosion.tier : 0;
   for (let i = 0; i < S; i++) {

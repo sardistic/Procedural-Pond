@@ -273,14 +273,18 @@ class Raster {
     const skr = sky & 255, skg = (sky >> 8) & 255, skb = (sky >>> 16) & 255, cdx = t * 1.1, cdy = t * 0.35, mdx = t * 0.2;
     // (Wave marks: always drawn level, the way top-down water is; they drift with the swell.)
     const wd = t * (1.2 + 2 * swell), wdu = -sw[0] * wd, wdv = -sw[1] * wd;
+    const hdWaves = s.waveMode === 'hd' && typeof waveField === 'function';
+    const physical = hdWaves ? waveField(s) : null, surface = hdWaves ? new Float32Array(4) : null;
     const [rx0, ry0, rx1, ry1] = rect;
     for (let y = ry0; y <= ry1; y++) {
       for (let x = rx0, p = rx0 + y * W; x <= rx1; x++, p++) {
         const i = id[p];
+        if (hdWaves) waveAt(physical, x, y, p, surface);
+        const localTide = hdWaves && shore && shore[p] ? tideL + surface[0] * 2.5 : tideL;
         let c, n, depth, fogScale = 1, waveS = 0, waveC = 0, refl = 0, dry = false, stroke = 0;
         if (shore) {
           const sp = shore[p];
-          if (sp > tideL) { fogScale = 0; dry = true; } else if (sp) fogScale = Math.min(1, (tideL - sp) / 60);
+          if (sp > localTide) { fogScale = 0; dry = true; } else if (sp) fogScale = Math.min(1, (localTide - sp) / 60);
         }
         if (i === 0) {
           const zb = zBase[p];
@@ -311,14 +315,15 @@ class Raster {
           } else {
             let q = p;
             if (wx) {
-              const qx = x + wx[y], qy = y + wy[x];
+              const qx = x + wx[y] + (hdWaves ? Math.round(surface[1] * 2.5) : 0);
+              const qy = y + wy[x] + (hdWaves ? Math.round(surface[2] * 2.5) : 0);
               q = (qx < 0 ? 0 : qx >= W ? W - 1 : qx) + (qy < 0 ? 0 : qy >= H ? H - 1 : qy) * W;
             }
             const se = shore ? shore[q] : 0;
-            if (se > tideL) {
+            if (hdWaves ? dry : se > localTide) {
               // Beach above the waterline: sunlit dry sand, darker where the water just left.
               // (Damp a little way above the water, in dithered steps: the flats and the lower beach the tide has just left.)
-              c = se < tideL + 9 + 22 * (BAYER4[(x & 3) | ((y & 3) << 2)] + 0.5) ? shadeColor(bg[q]) : bgDry ? bgDry[q] : dryLit(bg[q]);
+              c = se < localTide + 9 + 22 * (BAYER4[(x & 3) | ((y & 3) << 2)] + 0.5) ? shadeColor(bg[q]) : bgDry ? bgDry[q] : dryLit(bg[q]);
               if (doShadows && sh[p] > zb + 1.5) c = shadeColor(c);
               depth = 0;
             } else {
@@ -326,7 +331,13 @@ class Raster {
                   caustic[((y + o2y) & TM) | (((x + o2x) & TM) << 7)] < causticT ? (bgLight ? bgLight[q] : lit(bg[q])) : bg[q];
               if (doShadows && sh[p] > zb + 1.5) c = shadeColor(c);
               depth = zBase[q];
-              if (swell > 0) {
+              if (hdWaves) {
+                // The same height field moves the floor refraction, the wet edge,
+                // and the light on a crest. Foam forms where a steep crest shoals.
+                waveS = clamp(-(surface[1] * sw[0] + surface[2] * sw[1]) * 5, -1.8, 1.8);
+                const crest = surface[3];
+                if (crest > 0.12 && crest > BAYER4[(x & 3) | ((y & 3) << 2)] * 0.55) waveC = crest > 0.58 ? 9 : 8;
+              } else if (swell > 0) {
                 const dd = depthMap ? depthMap[p] : 0;
                 // Each wave lit on the face toward the light and shadowed behind, broken up along
                 // its length by a slow patchy noise, and bigger over the deep.
@@ -392,7 +403,7 @@ class Raster {
                   }
                 }
               }
-              if (se && !(RM && inland(x, y))) {
+              if (!hdWaves && se && !(RM && inland(x, y))) {
                 // Foam at the water's edge, and waves that roll in toward it.
                 const d = tideL - se;
                 if (d < 2.5) {

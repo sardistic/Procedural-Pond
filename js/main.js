@@ -7,7 +7,7 @@ const OPTS_KEY = 'procedural-pond.opts';
 const DEFAULT_OPTS = {
   v: 4, world: 'auto', habitat: 'mixed', floor: 'sand', water: 'teal', light: 'cycle', dayLength: 180,
   current: 25, speed: 1, caustics: true, shadows: true, outlines: true, life: true, weather: true, sound: false,
-  music: false, musicLevel: 40, hard: false, neighbours: true, fine: true, // (hard: new ponds start in hard mode; neighbours: the ponds along the beach drawn past each end; fine: close-up detail)
+  music: false, musicLevel: 40, hard: false, neighbours: true, fine: true, hdWaves: true, // (the Classic water look remains selectable)
 };
 // The pond is a fixed-size world, larger than the screen at the default zoom.
 // "Fit screen" makes it the window at 2x pixels, so zoom 2 fills the screen exactly.
@@ -450,6 +450,9 @@ function update(dt) {
   cur.x = Math.cos(cur.angle) * cur.s;
   cur.y = Math.sin(cur.angle) * cur.s;
   updateSky(world, dt);
+  world.waveField = world.opts.hdWaves ? waveField({ t: world.t, swell: surfaceSwell(world),
+    swellDir: world.shore ? world.shoreN : [0.8, 0.6], gust: world.weather.gust, rain: world.weather.rain,
+    surf: world.tide.surf, tide: world.tide.level, shore: world.shore, depth: world.depth, riverMask: world.riverMask }) : null;
   if (world.shore) {
     // Tidal streams: the water floods toward the beach, then ebbs away.
     const k = world.tide.flow * 0.35;
@@ -620,7 +623,7 @@ function render(full = false) {
   let fogColor = bloom ? mixColor(world.waterColor, BLOOM_TINT[hab] || BLOOM_TINT.mixed, 0.45) : world.waterColor;
   if (typeof bloodRain === 'function' && bloodRain(world)) fogColor = mixColor(fogColor, BLOOD_WATER, Math.min(0.5, world.weather.rain * 0.6));
   // (A glass day: the surface still, and the water clear far down into the deep.)
-  const swell = glass ? 0.02 : clamp(0.3 + world.tide.surf * 0.35 + Math.max(0, world.weather.gust) * 0.45 + world.weather.rain * 0.15, 0, 1.2) * (hab === 'fresh' ? 0.7 : 1);
+  const swell = surfaceSwell(world, glass);
   r.compose(out, {
     bg: world.bg, bgLight: world.bgLight, lightTint: world.lightTint, caustic: world.caustic, t,
     outline: OUTLINE, emissive: EMISSIVE, fade: FADE, thick: THICK, anyThick, tint: light.tint,
@@ -632,6 +635,7 @@ function render(full = false) {
     swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6], clouds: q < 1 ? world.clouds : null, sky: typeof heavensSky === 'function' ? heavensSky(world, skyReflection(light)) : skyReflection(light), skyK: glass ? 1.4 : typeof heavenNow === 'function' && heavenNow(world, 'aurora') ? 1.6 : 1 - world.weather.rain * 0.7,
     lights: q < 2 ? buildLights(world, rect) : null, lightVis: light.darkness || 0, deepColor2: deepTint(world), trench: world.trench, trenchGlow: TRENCH_GLOW[branchOf(world)],
     chop: q < 1 && !glass ? clamp(0.18 + Math.max(0, world.weather.gust) * 0.9 + world.tide.surf * 0.35, 0, 1.2) : 0, spindrift: q < 1 ? clamp((swell - 0.75) * 2.5, 0, 1) : 0,
+    waveMode: o.hdWaves ? 'hd' : 'classic', gust: glass ? 0 : world.weather.gust, rain: world.weather.rain,
   }, rect);
   drawGlints();
   if (world.bones) drawBones();
@@ -655,6 +659,11 @@ const SKY_DAY = hexToInt('#d8eaf4'), SKY_DUSK = hexToInt('#f0b890'), SKY_NIGHT =
 function skyReflection(light) {
   const d = light.darkness || 0, dusk = Math.max(0, 1 - Math.abs(d - 0.45) * 3);
   return mixColor(mixColor(SKY_DAY, SKY_NIGHT, d), SKY_DUSK, dusk * 0.6);
+}
+function surfaceSwell(w, glass = typeof isGlass === 'function' && isGlass(w)) {
+  if (glass || (w.opts.hdWaves && typeof deadCalm === 'function' && deadCalm(w))) return 0.02;
+  return clamp(0.3 + w.tide.surf * 0.35 + Math.max(0, w.weather.gust) * 0.45 + w.weather.rain * 0.15, 0, 1.2)
+    * (w.opts.habitat === 'fresh' ? 0.7 : 1);
 }
 
 // A plant drawn at its size as it grows (and shrinks as it dies back).
@@ -1586,19 +1595,40 @@ function paintMinimapBackground() {
 function refreshMinimapBackground() {
   if (!miniCell) return;
   const layer = MINI_LAYERS[miniLayer][0], shore = world.shore, tideL = shore ? Math.round(world.tide.level * 255) : 999;
-  const key = `${tideL}|${layer}|${layer === 'map' ? 0 : Math.floor(world.t)}`;
+  const light = world.light || lighting(), rain = world.weather.rain;
+  const key = `${tideL}|${layer}|${Math.floor(world.t * 3)}|${Math.round((light.darkness || 0) * 20)}|${Math.round(rain * 20)}|${world.opts.hdWaves}`;
   if (key === miniKey) return;
   miniKey = key;
   const mw = mini.width, mh = mini.height, img = new ImageData(mw, mh), px = new Uint32Array(img.data.buffer);
+  const waves = world.opts.hdWaves ? waveField({ t: world.t, swell: surfaceSwell(world),
+    swellDir: shore ? world.shoreN : [0.8, 0.6], gust: world.weather.gust, rain, surf: world.tide.surf, tide: world.tide.level,
+    shore, depth: world.depth, riverMask: world.riverMask }) : null;
+  const surface = waves ? new Float32Array(4) : null;
+  const tint = light.tint, sky = skyReflection(light);
   for (let k = 0; k < px.length; k++) {
-    const p = miniCell[k], dry = shore && shore[p] > tideL;
+    const p = miniCell[k], x = p % world.W, y = (p / world.W) | 0;
+    if (waves) waveAt(waves, x, y, p, surface);
+    const dry = shore && shore[p] > tideL + (waves ? surface[0] * 2.5 : 0);
     let c = dry ? miniDry[k] : miniWet[k];
+    if (!dry) {
+      const deep = world.depth ? world.depth[p] / 255 : 0;
+      const wetEdge = shore && shore[p] ? clamp((tideL - shore[p]) / 55, 0, 1) : 1;
+      c = mixColor(c, world.waterColor, (0.07 + 0.16 * deep + 0.08 * rain) * wetEdge);
+      c = mixColor(c, sky, (0.04 + 0.1 * (1 - rain)) * (0.4 + 0.6 * deep));
+      if (waves) {
+        const slope = clamp(-(surface[1] * waves.x + surface[2] * waves.y) * 1.7, -0.5, 0.5);
+        if (slope > 0) c = mixColor(c, 0xfff4ece0, slope * 0.4);
+        else if (slope < 0) c = mixColor(c, 0xff142c42, -slope * 0.32);
+        if (surface[3] > 0.5) c = mixColor(c, 0xfff0f4f6, (surface[3] - 0.5) * 1.2);
+      }
+    }
     if (!dry && layer !== 'map') {
-      const x = p % world.W, y = (p / world.W) | 0;
       if (layer === 'tension') c = mixColor(c, TENSION, Math.min(1, aggressionAt(world, x, y)) * 0.7);
       else if (layer === 'land') c = typeof landMiniColor === 'function' ? landMiniColor(world, x, y, c) : c;
       else { const s = saltAt(world, x, y); c = mixColor(c, s < 0 ? FRESH_TINT : SALT_TINT, Math.min(1, Math.abs(s)) * 0.55); }
     }
+    if (tint) c = (0xff000000 | ((Math.min(255, ((c >>> 16) & 255) * tint[2]) | 0) << 16)
+      | ((Math.min(255, ((c >>> 8) & 255) * tint[1]) | 0) << 8) | (Math.min(255, (c & 255) * tint[0]) | 0)) >>> 0;
     px[k] = c;
   }
   miniBg.width = mw; miniBg.height = mh;

@@ -222,7 +222,7 @@ const CONTROL_TIPS = {
   '[data-toggle="shadows"]': 'Shadows\nEverything casts a shadow on the floor.',
   '[data-toggle="outlines"]': 'Outlines\nA dark edge round every shape (thicker for rare animals).',
   '#clear': 'Clear animals\nTake every animal out of the pond (their essence doesn\'t come back).',
-  '#minimap': 'The map\nThe whole pond. Click or drag to jump there; the box is what you see.',
+  '#minimap': 'The map\nOne square section of the pond, following its light, tide and weather. Click or drag to move; use the arrows for other sections.',
   '#census-btn': 'Census\nHow many animals, by species, with their young, elders, rares and worth. Click a species to list them.',
   '#nb-go': 'Go\nWalk along the beach into the next pond. You can look, but not touch.',
   '#nb-stay': 'Stay here',
