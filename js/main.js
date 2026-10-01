@@ -648,8 +648,14 @@ function render(full = false) {
   if (world.bones) drawBones();
   if (full || world.bones) ctx.putImageData(image, 0, 0);
   else ctx.putImageData(image, 0, 0, rect[0], rect[1], rect[2] - rect[0] + 1, rect[3] - rect[1] + 1);
-  if (meshReady) drawWaterMesh(canvas, world, waterState);
-  else if (typeof hideWaterMesh === 'function') hideWaterMesh();
+  if (meshReady) {
+    const waterRect = full ? visibleRect() : rect;
+    if (!drawWaterMesh(canvas, world, waterState, waterRect)) {
+      // A context/texture failure must never cover the pond with an empty layer.
+      renderWater3D(out, world, waterRect, waterState);
+      ctx.putImageData(image, 0, 0, waterRect[0], waterRect[1], waterRect[2] - waterRect[0] + 1, waterRect[3] - waterRect[1] + 1);
+    }
+  } else if (typeof hideWaterMesh === 'function') hideWaterMesh();
   if (!full) {
     const now = performance.now(), Q = QUALITY;
     Q.ema += (now - t0 - Q.ema) * 0.05;
