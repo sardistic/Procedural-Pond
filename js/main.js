@@ -484,7 +484,10 @@ function update(dt) {
   updateGame(world, dt);
   for (const c of world.creatures) {
     if (c.dread && (c.dread.t -= dt) <= 0) c.dread = null;
-    if (!c.dying && !c.absorbing) c.update(dt, world);
+    if (!c.dying && !c.absorbing) {
+      c.update(dt, world);
+      if (c.life && !(c instanceof Fish) && typeof islandKeepSwimmerWet === 'function') islandKeepSwimmerWet(world, c);
+    }
   }
   world.remains = world.remains.filter((rm) => rm.update(dt, world));
   world.fossils = world.fossils.filter((f) => f.update(dt, world));
@@ -990,7 +993,7 @@ function drawBuildAnim(r, s, t) {
   r.setScale(s.x, s.y, k, Math.max(0.02, kz), zoff);
   if (s.kind === 'island') r.ellipsoid(s.x, s.y, s.R * 1.15, s.R * 1.15, 0, 0, 4, SM.sand, animNext(s)(SM.sand));
   const next = animNext(s);
-  withSeed(`bake/${s.seed}`, () => BAKE[s.kind](r, s, next));
+  withSeed(`bake/${s.seed}`, () => BAKE[s.kind](r, s, next, world));
   r.setScale();
 }
 // Outline ids for a structure drawn live, the same ones every frame.
@@ -1489,18 +1492,19 @@ function updateChip() {
 }
 
 // ---- minimap ------------------------------------------------------------------------
-// The whole pond in miniature: the floor, a dot per animal, and the view rectangle.
-// Click or drag on it to jump there.
+// One square section of the pond: the floor, animals, and the current view. The
+// section buttons travel across its longer screen axis; panning follows along.
 
 const mini = document.getElementById('minimap'), mctx = mini.getContext('2d');
 const miniBg = document.createElement('canvas');
+let miniSection = 0, miniSampleKey = '';
 function sizeMinimap(W = world.W, H = world.H) {
   if (!W || !H) return;
-  const shape = view.r % 2 ? W / H : H / W;
-  mini.height = Math.max(1, Math.round(mini.width * shape));
-  const reserved = innerWidth <= 760 ? 245 : innerHeight <= 500 ? 150 : 210;
-  const fit = Math.max(50, Math.min(211, Math.floor(Math.max(80, innerHeight - reserved) / shape)));
+  // Leave space for the side slice, section controls, bottom bar, and safe area.
+  const reserved = innerWidth <= 760 ? 255 : innerHeight <= 500 ? 235 : 210;
+  const fit = Math.max(56, Math.min(211, Math.floor(innerHeight - reserved)));
   mini.closest('.mini-wrap').style.setProperty('--map-fit-width', `${fit}px`);
+  miniSampleKey = '';
 }
 addEventListener('resize', () => sizeMinimap());
 // Layers: the pond, how tense the water is, and (with both waters) where it runs fresh or salt.
@@ -1509,16 +1513,44 @@ let miniLayer = 0, miniKey = '', miniCell = null, miniWet = null, miniDry = null
 const SUN_DRY = hexToInt('#fff0d2'); // (the sunlit dry beach, as the renderer blends it)
 const TENSION = hexToInt('#ef3a3a'), FRESH_TINT = hexToInt('#5ad25a'), SALT_TINT = hexToInt('#3a8aff');
 
-// Each minimap pixel averages a 3x3 sample of its patch of pond, once as water and
-// once as dry sand; which one it shows follows the tide.
-// (Drawn the pond's own way round, then turned with the view: see miniDims and miniMatrix.)
-const miniDims = () => (view.r % 2 ? [mini.height, mini.width] : [mini.width, mini.height]);
-const miniMatrix = () => {
-  const [DW, DH] = miniDims();
-  return view.r === 1 ? [0, 1, -1, 0, DH, 0] : view.r === 2 ? [-1, 0, 0, -1, DW, DH] : view.r === 3 ? [0, -1, 1, 0, 0, DW] : [1, 0, 0, 1, 0, 0];
-};
+// A section spans the short axis and advances across the long one. The final
+// section overlaps its neighbour so every edge is visible without blank space.
+function miniLayout() {
+  const DW = view.r % 2 ? world.H : world.W, DH = view.r % 2 ? world.W : world.H;
+  const span = Math.min(DW, DH), count = Math.max(1, Math.ceil(Math.max(DW, DH) / span));
+  const step = count > 1 ? (Math.max(DW, DH) - span) / (count - 1) : 0;
+  const axis = DW > DH ? 'x' : 'y';
+  const at = clamp(miniSection, 0, count - 1) * step;
+  return { DW, DH, span, count, step, axis, x: axis === 'x' ? at : 0, y: axis === 'y' ? at : 0 };
+}
+const miniDisplay = (x, y) => view.r === 1 ? [world.H - y, x] : view.r === 2 ? [world.W - x, world.H - y]
+  : view.r === 3 ? [y, world.W - x] : [x, y];
+const miniWorld = (u, v) => view.r === 1 ? [v, world.H - u] : view.r === 2 ? [world.W - u, world.H - v]
+  : view.r === 3 ? [world.W - v, u] : [u, v];
+function miniUi(g) {
+  $('map-section-count').textContent = `Section ${miniSection + 1} / ${g.count}`;
+  $('map-prev').disabled = miniSection === 0;
+  $('map-next').disabled = miniSection === g.count - 1;
+  mini.title = `Section ${miniSection + 1} of ${g.count}. Click or drag to move the view.`;
+}
+function miniFollowView() {
+  let g = miniLayout();
+  if (miniSection >= g.count) { miniSection = g.count - 1; g = miniLayout(); }
+  const [wx, wy] = screenToWorld(innerWidth / 2, innerHeight / 2), [u, v] = miniDisplay(wx, wy);
+  const pos = clamp(g.axis === 'x' ? u : v, 0, Math.max(g.DW, g.DH));
+  const start = g.axis === 'x' ? g.x : g.y;
+  if (g.count > 1 && (pos < start - 1 || pos > start + g.span + 1)) {
+    miniSection = clamp(Math.round((pos - g.span / 2) / g.step), 0, g.count - 1);
+    g = miniLayout();
+  }
+  return g;
+}
+// Each square map pixel averages a 3x3 sample of its own section, once as
+// water and once as dry sand; the current tide chooses which colour appears.
 function paintMinimapBackground() {
-  const [mw, mh] = miniDims(), { W, H, bg, bgDry, shore } = world, water = world.waterColor;
+  const g = miniLayout(), mw = mini.width, mh = mini.height, { W, H, bg, bgDry, shore } = world, water = world.waterColor;
+  miniSampleKey = `${W}|${H}|${view.r}|${miniSection}`;
+  miniUi(g);
   const deep = DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed;
   miniCell = new Int32Array(mw * mh); miniWet = new Uint32Array(mw * mh); miniDry = new Uint32Array(mw * mh);
   const avg = (cs) => {
@@ -1532,13 +1564,15 @@ function paintMinimapBackground() {
       const wet = [], dry = [], cells = [];
       for (let sy = 0; sy < 3; sy++) {
         for (let sx = 0; sx < 3; sx++) {
-          const p = Math.min(W - 1, Math.floor((i + (sx + 0.5) / 3) / mw * W)) + Math.min(H - 1, Math.floor((j + (sy + 0.5) / 3) / mh * H)) * W;
+          const [x, y] = miniWorld(g.x + (i + (sx + 0.5) / 3) / mw * g.span, g.y + (j + (sy + 0.5) / 3) / mh * g.span);
+          const p = clamp(Math.floor(x), 0, W - 1) + clamp(Math.floor(y), 0, H - 1) * W;
           cells.push(p);
           wet.push(bg[p]);
           dry.push(shore && shore[p] ? (bgDry ? bgDry[p] : mixColor(bg[p], SUN_DRY, 0.18)) : bg[p]);
         }
       }
-      miniCell[k] = Math.min(W - 1, Math.floor((i + 0.5) / mw * W)) + Math.min(H - 1, Math.floor((j + 0.5) / mh * H)) * W;
+      const [x, y] = miniWorld(g.x + (i + 0.5) / mw * g.span, g.y + (j + 0.5) / mh * g.span);
+      miniCell[k] = clamp(Math.floor(x), 0, W - 1) + clamp(Math.floor(y), 0, H - 1) * W;
       // Deep water darkens as it does in the pond itself (averaged over the cell, so the drop-off shades in).
       let dd = 0;
       if (world.depth) for (const q of cells) dd += world.depth[q];
@@ -1555,7 +1589,7 @@ function refreshMinimapBackground() {
   const key = `${tideL}|${layer}|${layer === 'map' ? 0 : Math.floor(world.t)}`;
   if (key === miniKey) return;
   miniKey = key;
-  const [mw, mh] = miniDims(), img = new ImageData(mw, mh), px = new Uint32Array(img.data.buffer);
+  const mw = mini.width, mh = mini.height, img = new ImageData(mw, mh), px = new Uint32Array(img.data.buffer);
   for (let k = 0; k < px.length; k++) {
     const p = miniCell[k], dry = shore && shore[p] > tideL;
     let c = dry ? miniDry[k] : miniWet[k];
@@ -1583,34 +1617,53 @@ function setMiniLayer(i) {
 
 function drawMinimap() {
   if (!mini.getClientRects().length) return; // (put away, on a phone)
-  const [mw, mh] = miniDims(), sx = mw / world.W, sy = mh / world.H;
+  const g = miniFollowView(), scale = mini.width / g.span;
+  if (miniSampleKey !== `${world.W}|${world.H}|${view.r}|${miniSection}`) paintMinimapBackground();
   refreshMinimapBackground();
-  mctx.setTransform(...miniMatrix());
+  mctx.setTransform(1, 0, 0, 1, 0, 0);
   mctx.drawImage(miniBg, 0, 0);
   for (const c of world.creatures) {
     if (c.species === 'gnat' || c.species === 'firefly') continue;
+    const [u, v] = miniDisplay(c.x, c.y), mx = (u - g.x) * scale, my = (v - g.y) * scale;
+    if (mx < -2 || my < -2 || mx > mini.width + 2 || my > mini.height + 2) continue;
     const rare = c.life && c.life.traits.length;
     mctx.fillStyle = rare ? '#ffd166' : c.species === 'wild' ? c.sp.color : (SPECIES[c.species] || {}).color || '#dff6f0';
     const s = rare ? 3 : 2;
-    mctx.fillRect(Math.round(c.x * sx) - 1, Math.round(c.y * sy) - 1, s, s);
+    mctx.fillRect(Math.round(mx) - 1, Math.round(my) - 1, s, s);
   }
   const [x0, y0, x1, y1] = visibleRect();
+  const a = miniDisplay(x0, y0), b = miniDisplay(x1, y1);
+  const left = clamp((Math.min(a[0], b[0]) - g.x) * scale, 0, mini.width);
+  const top = clamp((Math.min(a[1], b[1]) - g.y) * scale, 0, mini.height);
+  const right = clamp((Math.max(a[0], b[0]) - g.x) * scale, 0, mini.width);
+  const bottom = clamp((Math.max(a[1], b[1]) - g.y) * scale, 0, mini.height);
   mctx.strokeStyle = '#ffd166';
   mctx.lineWidth = 1;
-  mctx.strokeRect(Math.round(x0 * sx) + 0.5, Math.round(y0 * sy) + 0.5, Math.max(2, Math.round((x1 - x0) * sx)) - 1, Math.max(2, Math.round((y1 - y0) * sy)) - 1);
-  mctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (right > left && bottom > top) mctx.strokeRect(Math.round(left) + 0.5, Math.round(top) + 0.5, Math.max(2, Math.round(right - left)) - 1, Math.max(2, Math.round(bottom - top)) - 1);
 }
 
 function miniJump(e) {
-  const r = mini.getBoundingClientRect(), [DW, DH] = miniDims();
-  const X = (e.clientX - r.left) / r.width * mini.width, Y = (e.clientY - r.top) / r.height * mini.height;
-  const [u, v] = view.r === 1 ? [Y, DH - X] : view.r === 2 ? [DW - X, DH - Y] : view.r === 3 ? [DW - Y, X] : [X, Y];
+  const r = mini.getBoundingClientRect(), g = miniLayout();
+  const u = g.x + clamp((e.clientX - r.left) / r.width, 0, 1) * g.span;
+  const v = g.y + clamp((e.clientY - r.top) / r.height, 0, 1) * g.span;
+  const [x, y] = miniWorld(u, v);
   stopFollow();
-  centerOn(u / DW * world.W, v / DH * world.H);
+  centerOn(x, y);
   drawMinimap();
 }
 mini.addEventListener('pointerdown', (e) => { mini.setPointerCapture(e.pointerId); miniJump(e); });
 mini.addEventListener('pointermove', (e) => { if (e.buttons) miniJump(e); });
+function miniPage(delta) {
+  const g = miniLayout(), next = clamp(miniSection + delta, 0, g.count - 1);
+  if (next === miniSection) return;
+  miniSection = next;
+  const section = miniLayout(), [x, y] = miniWorld(section.x + section.span / 2, section.y + section.span / 2);
+  stopFollow();
+  centerOn(x, y);
+  drawMinimap();
+}
+document.getElementById('map-prev').addEventListener('click', () => miniPage(-1));
+document.getElementById('map-next').addEventListener('click', () => miniPage(1));
 // On a phone the map comes and goes with a button beside the zoom (shown at first when the screen is short and
 // wide, or big enough; remembered once you choose).
 {

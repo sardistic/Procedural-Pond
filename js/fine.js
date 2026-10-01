@@ -1,5 +1,5 @@
 'use strict';
-// Close-up detail. From 12× a picture four times finer lies over the pond; from 20× it is eight times finer. It is the
+// Close-up detail. From 6× a finer picture lies over the pond: 2× detail at 6–9×, 4× at 10–14×, and 8× at 15–16×. It is the
 // frame as drawn, scaled up by Scale2x (smoother edges, still pixel art), plus what only shows up close, all of it slow:
 //  - the floor: sand grains, shell flecks and ripples; pebbles and wind ripples up the beach; rock speckled and
 //    cracked, lit along its top edge; a finer net of light drifting over the floor by day;
@@ -11,7 +11,7 @@
 // frame from the raster: what's at each pixel (`id`), its height and its own colour before the light. Scene → Detail
 // turns it off, and it steps aside when frames run slow.
 
-const FINE_MIN_K = 12;
+const FINE_MIN_K = 6;
 const FINE_CREATURE_PARTS = ['eyeId', 'glowId', 'starId', 'lureId', 'tipId', 'irisId', 'inkId', 'eldId', 'crownId'];
 const FINE = {
   rec: false, eyes: [], cv: null, g: null, img: null, buf: null, cw: 0, ch: 0, lw: 0, lh: 0, x0: 0, y0: 0, f: 4,
@@ -119,7 +119,7 @@ function fineSpine(c) {
 
 function renderFine(rect) {
   if (!FINE.rec || !world.raster || !out) { hideFine(); FINE.rec = false; return; }
-  const t0 = performance.now(), cv = fineCanvas(), F = view.k >= 20 ? 8 : 4, g = FINE.g;
+  const t0 = performance.now(), cv = fineCanvas(), F = view.k >= 15 ? 8 : view.k >= 10 ? 4 : 2, g = FINE.g;
   const [x0, y0, x1, y1] = rect, w = x1 - x0 + 1, h = y1 - y0 + 1, WF = w * F, HF = h * F;
   if (WF > FINE.cw || HF > FINE.ch) {
     FINE.cw = cv.width = Math.max(WF, FINE.cw) + 32; FINE.ch = cv.height = Math.max(HF, FINE.ch) + 32;
@@ -132,7 +132,13 @@ function renderFine(rect) {
   // 1. The frame and its object IDs, scaled together so the thin outlines follow the finer silhouettes.
   fineScale2x(out, w, h, W, x0, y0, FINE.a2, w2);
   fineScale2x(world.raster.id, w, h, W, x0, y0, FINE.id2, w2);
-  if (F === 4) {
+  if (F === 2) {
+    // The first Scale2x pass is already the finished picture at the middle zooms.
+    for (let y = 0; y < h2; y++) {
+      buf.set(FINE.a2.subarray(y * w2, (y + 1) * w2), y * S);
+      FINE.ids.set(FINE.id2.subarray(y * w2, (y + 1) * w2), y * WF);
+    }
+  } else if (F === 4) {
     fineScale2x(FINE.a2, w2, h2, w2, 0, 0, buf, S);
     fineScale2x(FINE.id2, w2, h2, w2, 0, 0, FINE.ids, WF);
   } else {

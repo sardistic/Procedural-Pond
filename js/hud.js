@@ -163,7 +163,7 @@ const toolIcon = (name) => drawnIcon(`tool/${name}`, (w, c) => {
   const t = TOOLS[name];
   if (t.build) {
     const s = makeStructure(t.build, w, c, c), next = (m) => newId(outlineOf(m));
-    return (r) => { withSeed(`bake/${s.seed}`, () => BAKE[s.kind](r, s, next)); if (DRAW[s.kind]) DRAW[s.kind](r, s, 0, w); };
+    return (r) => { withSeed(`bake/${s.seed}`, () => BAKE[s.kind](r, s, next, w)); if (DRAW[s.kind]) DRAW[s.kind](r, s, 0, w); };
   }
   if (t.food) {
     const tiny = t.food === 'snow' || t.food === 'offering', m = t.food === 'snow' ? SNOW_MAT : OFFER_MAT;
@@ -488,6 +488,15 @@ function renderCensus() {
   }
   byId('census-summary').textContent = `${total} animals · ${groups.size} species · ${rares} rare`;
   byId('census-stats').textContent = `born ${ECO.births} · arrived ${ECO.arrivals} · moved on ${ECO.departures} · died ${ECO.died || 0} · eaten ${ECO.eaten}`;
+  let room = byId('census-capacity');
+  if (!room) {
+    room = el('p', 'note'); room.id = 'census-capacity';
+    room.title = 'Breeding room is a soft limit. Direct spawns can temporarily raise the population beyond it.';
+    byId('census-stats').after(room);
+  }
+  const base = world.maxPopBase || Math.min(460, Math.round(world.W * world.H / 2400));
+  const bonus = world.maxPopBonus || 0;
+  room.textContent = `Breeding room: ${pondPopulation(world)} / ${world.maxPop || base + bonus} pond animals (${base} from pond size + ${bonus} from deep habitat). Expand the pond, or place structures and grow plants in deep water; the deep bonus updates at dawn.`;
 
   const rows = [], sum = speciesSummary(world);
   const worth = (k) => (k === 'tadpole' ? 0 : (sum.get(k) || { value: 0 }).value);
@@ -584,7 +593,7 @@ function repeatsChip() {
   if (!box || box.querySelector('.chip.reps')) return;
   const b = el('button', 'chip reps', 'Repeats');
   b.type = 'button';
-  b.title = 'Repeats\nThings that keep happening drop out of the news after the first few times each pond day. Show them here too.';
+  b.title = 'Repeats\nRoutine moments are shown less often as they recur. Turn this on to see every one.';
   b.setAttribute('aria-pressed', 'false');
   b.addEventListener('click', () => { journalUi.repeats = !journalUi.repeats; b.setAttribute('aria-pressed', journalUi.repeats); world.journalDirty = true; renderJournal(); });
   box.append(b);
@@ -655,7 +664,7 @@ function showTicker(text) {
 
 // The ticker shows one line at a time, long enough to read: important lines
 // stay longer and jump ahead, and when things are busy routine lines skip the
-// ticker (they are still in the full journal). A line that grows while it's up
+// ticker (they are still available through Repeats). A line that grows while it's up
 // (e.g. "3 Tetras moved on" becoming 4) updates in place.
 function feedTicker() {
   if (world.journal !== journalUi.list) { // a different pond: start from its newest line
@@ -673,14 +682,14 @@ function feedTicker() {
     if (journalUi.queue.includes(e)) continue;
     const busy = now < journalUi.until || journalUi.queue.length > 0;
     if (busy && (e.pri ?? 1) === 0) continue;
-    if (e.routine && (busy || (e.pri ?? 1) === 0)) continue; // (routine by now: the journal has it)
+    if (e.routine && (!e.digestCount || busy)) continue;
     journalUi.queue.push(e);
     journalUi.queue.sort((a, b) => (b.pri ?? 1) - (a.pri ?? 1)); // stable: same priority keeps its order
     journalUi.queue.length = Math.min(journalUi.queue.length, TICKER_QUEUE);
   }
   if (now >= journalUi.until && journalUi.queue.length) {
     const e = journalUi.current = journalUi.queue.shift();
-    const read = 1600 + e.text.length * 55; // about the time it takes to read
+    const read = 1600 + journalText(e).length * 55; // about the time it takes to read
     journalUi.until = now + Math.max(TICKER_DWELL[Math.min(3, e.pri ?? 1)], read) * (journalUi.queue.length > 2 ? 0.8 : 1);
     journalUi.shownText = null;
     const line = byId('log-line');
@@ -691,25 +700,30 @@ function feedTicker() {
 }
 
 function entryTime(e) { return `D${e.day} ${clockLabel(e.clock)}`; }
+function journalText(e) {
+  const hidden = Math.max(0, (e.digestCount || 0) - (e.n || 1));
+  return hidden ? `${e.text} · +${hidden} similar lately` : e.text;
+}
 
 function renderJournal() {
   feedTicker();
   const line = byId('log-line'), e = journalUi.current;
-  if (e && e.text !== journalUi.shownText) {
-    journalUi.shownText = e.text;
-    line.querySelector('.txt').replaceChildren(colorize(e.text));
+  const said = e && journalText(e);
+  if (e && said !== journalUi.shownText) {
+    journalUi.shownText = said;
+    line.querySelector('.txt').replaceChildren(colorize(said));
     line.querySelector('time').textContent = e.clock == null ? '' : clockLabel(e.clock);
     line.querySelector('.dot').className = `dot cat-${e.cat}`;
-    line.title = `${e.text}\nClick for the journal (J)`;
+    line.title = `${said}\nClick for the journal (J)`;
   }
   const more = line.querySelector('.more'), waiting = journalUi.queue.length ? `+${journalUi.queue.length}` : '';
   if (more.textContent !== waiting) more.textContent = waiting;
   if (!journalUi.open || !world.journalDirty) return;
   world.journalDirty = false;
-  const list = world.journal.filter((e) => (journalUi.filter === 'all' || e.cat === journalUi.filter) && (journalUi.repeats || !e.routine)).slice(0, 80);
+  const list = world.journal.filter((e) => (journalUi.filter === 'all' || e.cat === journalUi.filter) && (journalUi.repeats || !e.routine || e.digestCount)).slice(0, 80);
   byId('journal').replaceChildren(...list.map((e) => {
     const li = el('li', `cat-${e.cat}`);
-    li.append(el('i', 'dot'), el('time', null, entryTime(e)), colored('span', null, e.text));
+    li.append(el('i', 'dot'), el('time', null, entryTime(e)), colored('span', null, journalText(e)));
     if (e.subject) {
       li.classList.add('link');
       li.title = 'Follow';
@@ -729,7 +743,7 @@ function buildJournalFilters() {
     b.setAttribute('aria-pressed', cat === journalUi.filter);
     b.addEventListener('click', () => {
       journalUi.filter = cat;
-      for (const c of box.children) c.setAttribute('aria-pressed', c.dataset.cat === cat);
+      for (const c of box.querySelectorAll('[data-cat]')) c.setAttribute('aria-pressed', c.dataset.cat === cat);
       world.journalDirty = true;
       renderJournal();
     });

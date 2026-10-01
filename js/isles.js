@@ -62,7 +62,7 @@ function islandDryGround(world, s, x, y) {
 function islandWetRefuge(world, s, x0, y0, margin = SHORE_MARGIN + 0.04) {
   const safe = Math.max(0.02, world.tide.level - margin);
   const a0 = Math.atan2(y0 - s.y, x0 - s.x);
-  const max = Math.min(420, Math.max(60, isleReach(world, s) * 1.3));
+  const max = Math.min(Math.hypot(world.W, world.H), Math.max(60, isleReach(world, s) * 1.6));
   for (let d = 8; d <= max; d += 6) {
     for (const turn of [0, -0.35, 0.35, -0.7, 0.7, -1.2, 1.2]) {
       const a = a0 + turn, x = x0 + Math.cos(a) * d, y = y0 + Math.sin(a) * d;
@@ -71,6 +71,104 @@ function islandWetRefuge(world, s, x0, y0, margin = SHORE_MARGIN + 0.04) {
     }
   }
   return null;
+}
+// The narrow river has dry banks on both sides. Find its channel or the sea if
+// a swimmer's body has been left on the beach after a tide or course change.
+function shoreWetRefuge(world, x0, y0, margin = SHORE_MARGIN + 0.04) {
+  const safe = Math.max(0.02, world.tide.level - margin);
+  const n = world.shoreN || [0, 1], seaward = Math.atan2(-n[1], -n[0]);
+  const turns = [0, -1, 1, -2, 2, -3, 3, 4, -4, -5, 5, -6, 6, -7, 7, 8];
+  for (let d = 4, max = Math.min(Math.hypot(world.W, world.H), Math.max(240, Math.min(world.W, world.H) * 0.4)); d <= max; d += 4) {
+    for (const turn of turns) {
+      const a = seaward + turn * PI / 8, x = x0 + Math.cos(a) * d, y = y0 + Math.sin(a) * d;
+      if (x < 8 || y < 8 || x >= world.W - 8 || y >= world.H - 8 || shoreAt(world, x, y) > safe) continue;
+      return [x, y];
+    }
+  }
+  return null;
+}
+// Target points can be wet on opposite sides of an island or river bank. A
+// swimmer needs a water route, or it will repeatedly try to cross dry land.
+function islandWaterRoute(world, x0, y0, x1, y1, margin = SHORE_MARGIN + 0.03) {
+  if (!world.shore || !world.tide) return true;
+  const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 4);
+  for (let j = 1; j <= steps; j++) {
+    const u = j / steps, x = x0 + (x1 - x0) * u, y = y0 + (y1 - y0) * u;
+    if (shoreAt(world, x, y) > world.tide.level - margin) return false;
+  }
+  return true;
+}
+// Keep the whole spine in swimming water, including fish in a winding river.
+// This also repairs old saves and animals stranded by a tide or coast change.
+function islandKeepSwimmerWet(world, c) {
+  // Shore walkers, flying birds and island wildlife may cross dry ground.
+  if (!world.shore || !world.tide || c.grabbed || c.leaving || c.dying || c.ambient ||
+      AMPHIBIOUS.has(c.species) || c.species === 'gull') return false;
+  let moved = false;
+  for (let pass = 0; pass < 4; pass++) {
+    let worst = null;
+    const test = (x, y) => {
+      const s = islandAt(world, x, y);
+      const e = shoreAt(world, x, y);
+      if (e > world.tide.level - 0.025 && (!worst || e > worst.e)) worst = { x, y, s, e };
+    };
+    test(c.x, c.y);
+    if (c.body) for (let j = 0; j < c.body.n; j++) {
+      test(c.body.x[j], c.body.y[j]);
+      const w = c.body.w ? c.body.w[j] || 0 : 0;
+      if (w > 1.5) {
+        const a = (c.body.a && c.body.a[j] != null ? c.body.a[j] : c.heading) + PI / 2;
+        for (const side of [-1, 1]) test(c.body.x[j] + Math.cos(a) * (w + 1), c.body.y[j] + Math.sin(a) * (w + 1));
+      }
+    }
+    if (!worst) return moved;
+    const margin = (c.shoreMargin ?? SHORE_MARGIN) + 0.08;
+    const place = worst.s ? islandWetRefuge(world, worst.s, worst.x, worst.y, margin) : shoreWetRefuge(world, worst.x, worst.y, margin);
+    if (!place) return moved;
+    const dx = place[0] - worst.x, dy = place[1] - worst.y;
+    c.x += dx; c.y += dy; c.tx = c.x; c.ty = c.y;
+    if (c.body) for (let j = 0; j < c.body.n; j++) { c.body.x[j] += dx; c.body.y[j] += dy; }
+    if (c.legs) for (const L of c.legs) for (const [kx, ky] of [['fx', 'fy'], ['sx', 'sy'], ['ex', 'ey'], ['dfx', 'dfy']]) {
+      if (Number.isFinite(L[kx])) L[kx] += dx;
+      if (Number.isFinite(L[ky])) L[ky] += dy;
+    }
+    moved = true;
+  }
+  // A long fish can straddle both banks of a narrow river. Translation alone
+  // cannot fit that pose in the channel, so align it with nearby swimming water.
+  const body = c.body, links = body && body.links || [], widths = body && body.w || [];
+  const fits = (x, y, a) => {
+    const ca = Math.cos(a), sa = Math.sin(a), na = a + PI / 2;
+    let px = x, py = y;
+    for (let j = 0; j < (body ? body.n : 1); j++) {
+      if (px < 3 || py < 3 || px >= world.W - 3 || py >= world.H - 3 || shoreAt(world, px, py) > world.tide.level - 0.025) return false;
+      const w = widths[j] || 0;
+      if (w > 1.5) for (const side of [-1, 1]) {
+        const sx = px + Math.cos(na) * (w + 1) * side, sy = py + Math.sin(na) * (w + 1) * side;
+        if (sx < 3 || sy < 3 || sx >= world.W - 3 || sy >= world.H - 3 || shoreAt(world, sx, sy) > world.tide.level - 0.025) return false;
+      }
+      px -= ca * (links[j] || 0); py -= sa * (links[j] || 0);
+    }
+    return true;
+  };
+  const n = world.shoreN || [0, 1], seaward = Math.atan2(-n[1], -n[0]);
+  const bearings = [0, -1, 1, -2, 2, -3, 3, 4], headings = [c.heading, seaward, seaward + PI, seaward - PI / 2, seaward + PI / 2];
+  for (let d = 0, max = Math.min(Math.hypot(world.W, world.H), 240); d <= max; d += 8) for (const turn of bearings) {
+    const bearing = seaward + turn * PI / 4, x = c.x + Math.cos(bearing) * d, y = c.y + Math.sin(bearing) * d;
+    if (x < 8 || y < 8 || x >= world.W - 8 || y >= world.H - 8 || shoreAt(world, x, y) > world.tide.level - SHORE_MARGIN - 0.06) continue;
+    for (const a of headings) if (fits(x, y, a)) {
+      const dx = x - c.x, dy = y - c.y;
+      c.x = x; c.y = y; c.tx = x; c.ty = y; c.heading = a; c.speed = 0;
+      if (body && typeof body.place === 'function') body.place(x, y, a);
+      else if (body) for (let j = 0; j < body.n; j++) { body.x[j] += dx; body.y[j] += dy; }
+      if (c.legs) for (const L of c.legs) for (const [kx, ky] of [['fx', 'fy'], ['sx', 'sy'], ['ex', 'ey'], ['dfx', 'dfy']]) {
+        if (Number.isFinite(L[kx])) L[kx] += dx;
+        if (Number.isFinite(L[ky])) L[ky] += dy;
+      }
+      return true;
+    }
+  }
+  return moved;
 }
 
 // When an island claims water that used to be open, rooted life changes with the
@@ -161,23 +259,7 @@ function islandShoreChanged(world, before) {
 
   // A swimmer that was in water before the coast rose must have a wet route out.
   // Move the body with it so the next frame has no long, stretched joints.
-  for (const c of world.creatures) {
-    if (!c.life || c.grabbed || c.leaving || c.dying || ISLAND_LANDERS.has(c.species)) continue;
-    const ix = c.x | 0, iy = c.y | 0;
-    if (ix < 0 || iy < 0 || ix >= W || iy >= world.H || !islandAt(world, c.x, c.y)) continue;
-    const q = ix + iy * W, edge = world.tide.level - 0.04;
-    if (world.shore[q] / 255 <= edge || (before[q] / 255 > edge && !isDry(world, c.x, c.y))) continue;
-    const s = islandAt(world, c.x, c.y);
-    const place = islandWetRefuge(world, s, c.x, c.y, (c.shoreMargin ?? SHORE_MARGIN) + 0.04);
-    if (!place) continue;
-    const dx = place[0] - c.x, dy = place[1] - c.y;
-    c.x += dx; c.y += dy; c.tx = c.x; c.ty = c.y;
-    if (c.body) for (let j = 0; j < c.body.n; j++) { c.body.x[j] += dx; c.body.y[j] += dy; }
-    if (c.legs) for (const L of c.legs) for (const [kx, ky] of [['fx', 'fy'], ['sx', 'sy'], ['ex', 'ey'], ['dfx', 'dfy']]) {
-      if (Number.isFinite(L[kx])) L[kx] += dx;
-      if (Number.isFinite(L[ky])) L[ky] += dy;
-    }
-  }
+  for (const c of world.creatures) if (c.life || c instanceof Fish) islandKeepSwimmerWet(world, c);
 }
 
 // Growing up: each stage wants age (a grove brings it on sooner), growth on it, height, and life about it.
@@ -234,6 +316,34 @@ function isleOutline(world, s, a, F = isleForm(world, s)) {
   for (const L of G.lava || []) { const da = Math.abs(wrapAngle(a - L.a)); if (da < L.w) o += L.len * (1 - (da / L.w) ** 2); } // (the lava it has put out)
   return o;
 }
+// Give every coast, tidal flat and barrier reef a strip of open water at the
+// pond edge. Above its original size, an island approaches that available room
+// with diminishing returns instead of suddenly stopping at a hard radius.
+// `raw` is the radius before this limit (coast.js islandRadius passes it in).
+function islandGrowthRadius(world, s, raw) {
+  if (!world || !s || !world.W || !world.H || !Number.isFinite(raw)) return raw;
+  const G = s.ig || {}, lava = G.lava || [], roomKey = `${world.W}:${world.H}:${s.x}:${s.y}:${s.deep || 0}:${world.current && world.current.base || 0}:${G.lob || 0}:${G.bar || 0}:${lava.map((L) => `${L.a}/${L.len}/${L.w}`).join(',')}`;
+  let cap = s.growthRoom && s.growthRoom.key === roomKey ? s.growthRoom.cap : null;
+  if (cap == null) {
+    const F = isleForm(world, s), bar = G.bar || 0;
+    const margin = Math.max(20, Math.min(world.W, world.H) * 0.035);
+    let room = Infinity;
+    for (let k = 0; k < 64; k++) {
+      const a = k * TAU / 64, ca = Math.cos(a), sa = Math.sin(a), outline = isleOutline(world, s, a, F);
+      // The stamped coast extends to 1.4 radii, and flats/reef can reach farther.
+      const extent = outline * Math.max(1.4, 1 + isleFlatsAt(F, a), bar ? 2.35 : 0);
+      const dx = ca > 0.0001 ? (world.W - margin - s.x) / ca : ca < -0.0001 ? (s.x - margin) / -ca : Infinity;
+      const dy = sa > 0.0001 ? (world.H - margin - s.y) / sa : sa < -0.0001 ? (s.y - margin) / -sa : Infinity;
+      room = Math.min(room, (Math.min(dx, dy) - 2) / Math.max(0.2, extent));
+    }
+    cap = Math.max(2, room);
+    s.growthRoom = { key: roomKey, cap };
+  }
+  const first = Math.min(cap, s.R * islandSand(world, s));
+  if (raw <= first || cap <= first + 0.001) return Math.min(raw, cap);
+  const spare = cap - first;
+  return first + spare * (1 - Math.exp(-(raw - first) / spare));
+}
 // How far out its flats reach past the coast along a bearing (further down-current: its tail).
 const isleFlatsAt = (F, a) => F.flats * (1 + F.tail * Math.max(0, Math.cos(a - F.ang)) ** 2);
 // All it can reach, coast and flats, as a share of its radius.
@@ -253,7 +363,7 @@ const isleReach = (world, s) => islandRadius(world, s) * Math.max(s.ig && s.ig.b
 // ---- what it can grow ---------------------------------------------------------------------------------
 const ISLE_FEATS = {
   nourish: { label: 'Nourish the beach', cur: 'pearls', max: 5, cost: (lv) => Math.round(60 * 1.6 ** lv), color: '#e8d8a8',
-    note: 'sand brought in: the island grows by a tenth at once, and holds better against the surf from then on' },
+    note: 'sand brought in: the coast grows, though each addition yields less as open water narrows, and it holds better against surf' },
   grove: { label: 'Plant a grove', cur: 'pearls', max: 5, cost: (lv) => Math.round(45 * 1.5 ** lv), color: '#7cc44c',
     note: 'trees and undergrowth of its own kind, planted now: more grows on it from here on, and it matures sooner' },
   reef: { label: 'Fringing reef', cur: 'pearls', max: 3, cost: (lv) => Math.round(80 * 1.8 ** lv), color: '#f09090',
@@ -749,10 +859,10 @@ function isleLifeTick(world) {
 }
 
 // ---- drawing: what's baked into the island, and what moves ------------------------------------------------
-function bakeIsleFeatures(r, s, next) {
+function bakeIsleFeatures(r, s, next, world) {
   const G = s.ig;
   if (!G || !G.f) return;
-  const f = G.f, R = s.R * islandGrow(s.stack || 1) * (G.sz || 1), x0 = s.x, y0 = s.y, zAt = (ox, oy) => islandTopAt(s, ox, oy);
+  const f = G.f, R = islandRadius(world, s), x0 = s.x, y0 = s.y, zAt = (ox, oy) => islandTopAt(s, ox, oy);
   const ids = new Map(), id = (m) => { if (!ids.has(m)) ids.set(m, next(m)); return ids.get(m); }, h = (a, b, c) => hash2(a, b, (s.seed % 97) + c);
   // The barrier reef's crest: coral heads along the ring.
   if ((G.bar || 0) > 0.25) {
@@ -829,19 +939,33 @@ function drawIsleExtras(r, s, t, world) {
   const G = s.ig, f = G && G.f;
   if (!f || !f.fire) return;
   const lv = f.fire, z0 = islandTopAt(s, 0, 0) + isleConeH(s) + 0.5, now = (world && world.t) || t, erupting = G.erupt != null && now - G.erupt >= 0 && now - G.erupt < 14;
-  // Fresh lava (the last day or two): glowing seams down the flow, going dull as it cools.
+  // A recent eruption sends a narrow, connected stream down the cone and over
+  // the basalt tongue. Its leading edge advances for a few seconds, then the
+  // stream cools from orange to scattered embers over the next day.
   const R = islandRadius(world, s);
-  for (const L of G.lava || []) {
-    const age = (world.days || 0) - L.d;
-    if (age > 2 || age < 0) continue;
-    const heat = 1 - age / 2, n = Math.round(6 + 10 * L.len);
-    r.castShadows = false;
-    for (let k = 0; k < n; k++) {
-      if (Math.sin(t * 3 + k * 1.7) < 0.2 - heat) continue;
-      const u = (k + 0.5) / n, a = L.a + Math.sin(k * 2.3) * L.w * 0.4 * (1 - u), dd = R * (0.6 + (isleOutline(world, s, a) - 0.6) * u);
-      r.dot(s.x + Math.cos(a) * dd, s.y + Math.sin(a) * dd, 0.6, IM.lava, ISLE_FX_ID);
+  const lava = G.lava || [], latest = lava[lava.length - 1];
+  if (latest) {
+    const age = Math.max(0, (world.days || 0) - latest.d), heat = clamp(1 - age / 1.5, 0, 1);
+    if (heat > 0) {
+      const active = erupting && Math.abs(latest.d - (world.days || 0)) < 0.1;
+      const front = active ? clamp((now - G.erupt) / 10, 0.04, 1) : 1;
+      const n = 22, o = isleOutline(world, s, latest.a);
+      const point = (u) => {
+        const a = latest.a + Math.sin(u * 9 + s.seed) * Math.sin(PI * u) * latest.w * 0.16;
+        const dd = R * (0.12 + (o - 0.19) * u), ox = Math.cos(a) * dd, oy = Math.sin(a) * dd;
+        const z = islandTopAt(s, ox, oy) + 0.55 + isleConeH(s) * Math.max(0, 1 - u * 5) ** 2;
+        return [s.x + ox, s.y + oy, z];
+      };
+      r.castShadows = false;
+      for (let j = 0; j < n * front; j++) {
+        const u0 = j / n, u1 = Math.min(front, (j + 1) / n), p = point(u0), q = point(u1);
+        const width = 0.35 + 0.3 * heat + 0.16 * Math.sin(u0 * PI);
+        r.tube(p[0], p[1], width, p[2], q[0], q[1], width * 0.96, q[2], 0.35, IM.lava, ISLE_FX_ID);
+        const pulse = Math.max(0, Math.sin(t * 2.6 - u0 * 18)) ** 5;
+        if (heat > 0.35 && pulse > 0.3) r.dot(q[0], q[1], q[2] + 0.12, IM.lava, ISLE_FX_ID);
+      }
+      r.castShadows = true;
     }
-    r.castShadows = true;
   }
   r.castShadows = false;
   // Smoke drifting up off the vent.
@@ -856,9 +980,9 @@ function drawIsleExtras(r, s, t, world) {
   if (erupting || (world && world.darkness > 0.3)) r.dot(s.x, s.y, z0 - 0.3, IM.lava, ISLE_FX_ID);
   if (erupting) {
     const e = (now - G.erupt) / 14;
-    for (let k = 0; k < 22; k++) {
-      const ph = (t * 0.9 + k / 22) % 1, a = hash2(k, 5, 7) * TAU, v = (4 + hash2(k, 9, 11) * 10) * (1 - e * 0.6);
-      r.dot(s.x + Math.cos(a) * v * ph, s.y + Math.sin(a) * v * ph, z0 + 64 * ph * (1 - ph) * (1 - e * 0.7), IM.lava, ISLE_FX_ID);
+    for (let k = 0; k < 8; k++) {
+      const ph = (t * 0.65 + k / 8) % 1, a = hash2(k, 5, 7) * TAU, v = (3 + hash2(k, 9, 11) * 5) * (1 - e * 0.6);
+      r.dot(s.x + Math.cos(a) * v * ph, s.y + Math.sin(a) * v * ph, z0 + 24 * ph * (1 - ph) * (1 - e * 0.7), IM.lava, ISLE_FX_ID);
     }
   }
   r.castShadows = true;

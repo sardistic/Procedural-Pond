@@ -292,18 +292,56 @@ const METABOLISM = { snail: 900, crab: 600, turtle: 700, ray: 600, frog: 520, sh
 
 // ---- journal: a running story of the pond --------------------------------------
 // Entries carry a category (life, rare, hunt, come, sky, pond). Events that share
-// a merge key within MERGE_WINDOW sim-seconds fold into one line: the entry keeps
-// every event's data and `merge(entry)` rewrites its text, so a burst of
-// departures reads "4 Tetras moved on (3 of old age, 1 hungry)" instead of four lines.
+// a merge key within MERGE_WINDOW sim-seconds fold into one line. Minor events
+// become less frequent news as a pattern repeats; a summary still surfaces now
+// and then, while the Repeats filter can show every line.
 
 const MERGE_WINDOW = 40;
-// How much an entry deserves the ticker: 0 routine (full journal only when busy),
+// How much an entry deserves the ticker: 0 small news (shown when the pond is quiet),
 // 1 normal, 2 notable, 3 important (rares, discoveries, records, the pond itself).
 const CAT_PRI = { pond: 3, rare: 3, sky: 1, life: 1, hunt: 1, come: 0 };
+
+const minorNews = (cat, pri) => cat !== 'rare' && cat !== 'story' && pri < 2;
+function paceNews(world, text, key, cat, day = world.days || 0) {
+  const seen = world.newsSeen || (world.newsSeen = new Map());
+  const sig = `${cat}:${key && !key.startsWith('catch:') ? key : newsSig(text)}`;
+  const old = seen.get(sig);
+  // Familiarity fades between pond days. A once-a-day event stays news; a
+  // frequent pattern needs increasingly many occurrences before another recap.
+  const elapsed = old ? Math.max(0, day - old.day) : 0;
+  const n = (old ? old.n * Math.pow(0.6, elapsed) : 0) + 1;
+  const pending = (old ? old.pending : 0) + 1;
+  const routine = n > 3;
+  const interval = Math.min(18, Math.max(2, Math.ceil(Math.sqrt(n))));
+  const digest = routine && pending >= interval;
+  seen.set(sig, { n, day, pending: routine && !digest ? pending : 0 });
+  if (seen.size > 240) {
+    for (const [k, v] of seen) if (day - v.day > 2) seen.delete(k);
+    while (seen.size > 240) {
+      const oldest = [...seen].reduce((a, b) => a[1].day < b[1].day ? a : b);
+      seen.delete(oldest[0]);
+    }
+  }
+  return { routine, digest, count: pending, sig };
+}
+
+function paceEntry(world, e, pace, pri, merged = false) {
+  if (!pace) { e.pri = Math.max(e.pri || 0, pri); e.routine = false; e.digestCount = 0; return; }
+  if (merged && e.pri >= 2) return; // never demote an important line after it has merged
+  const wasVisible = merged && (!e.routine || e.digestCount > 0);
+  e.routine = pace.routine;
+  if (pace.routine && wasVisible) {
+    // A merged line already on display is its own summary; keep updating it.
+    e.digestCount = e.digestCount ? e.digestCount + 1 : e.n;
+    world.newsSeen.get(pace.sig).pending = 0;
+  } else e.digestCount = pace.digest ? pace.count : 0;
+  e.pri = pace.routine ? (e.digestCount ? Math.min(pri, 1) : 0) : pri;
+}
 
 function logEvent(world, text, subject = null, opts = {}) {
   const { cat = 'pond', key = null, merge = null, data } = opts, pri = opts.pri ?? CAT_PRI[cat] ?? 1;
   const now = world.t || 0;
+  const pace = minorNews(cat, pri) ? paceNews(world, text, key, cat) : null;
   if (key) {
     const e = world.journal.find((j) => j.key === key && now - j.t < MERGE_WINDOW);
     if (e) {
@@ -312,7 +350,7 @@ function logEvent(world, text, subject = null, opts = {}) {
       if (data !== undefined) e.data.push(data);
       if (subject) e.subject = subject;
       if (merge) e.text = merge(e);
-      e.pri = Math.max(e.pri, pri);
+      paceEntry(world, e, pace, pri, true);
       world.journal.splice(world.journal.indexOf(e), 1);
       world.journal.unshift(e);
       e.seq = ++world.journalSeq;
@@ -324,10 +362,7 @@ function logEvent(world, text, subject = null, opts = {}) {
     t: now, clock: world.clock, day: Math.floor(world.days || 0) + 1, text, subject, cat, key, n: 1, pri,
     data: data !== undefined ? [data] : [], seq: (world.journalSeq = (world.journalSeq || 0) + 1),
   };
-  // Something that keeps happening is news only the first few times: after that it's routine (still
-  // in the journal, but not on the ticker or the banner). Judged by its wording, names and numbers aside.
-  const rep = newsRepeat(world, text);
-  if (rep > 3) { e.routine = true; e.pri = rep > 6 ? 0 : Math.min(e.pri, 1); }
+  paceEntry(world, e, pace, pri);
   world.journal.unshift(e);
   if (world.journal.length > 150) world.journal.pop();
   world.journalDirty = true;
@@ -336,16 +371,20 @@ function logEvent(world, text, subject = null, opts = {}) {
 }
 
 const who = (c) => (c.life ? `${c.life.name} the ${describe(c).label}` : `a ${describe(c).label.toLowerCase()}`);
-// How often something worded like this has been said in the last pond day (animals' names and
-// numbers left out, so "Zonosu the Koi died of old age" and "Pira the Koi died of old age" are one).
+// Animals' names and numbers left out, so "Zonosu the Koi died of old age"
+// and "Pira the Koi died of old age" are one pattern.
 const newsSig = (text) => text.toLowerCase().replace(/[✦❝⚠]/g, '').replace(/\b[\w'’-]+ the (?=[a-z])/g, '* the ').replace(/[0-9][0-9,.]*/g, '#').replace(/\s+/g, ' ').trim().slice(0, 90);
-function newsRepeat(world, text) {
-  const M = world.newsSeen || (world.newsSeen = new Map()), sig = newsSig(text), day = world.days || 0;
-  const times = (M.get(sig) || []).filter((d) => day - d < 1);
-  times.push(day);
-  M.set(sig, times);
-  if (M.size > 400) for (const [k, v] of M) if (!v.length || day - v[v.length - 1] > 1) M.delete(k);
-  return times.length;
+// Older saves and compact links have journal lines but no pacing metadata.
+function restoreJournalPacing(world) {
+  world.newsSeen = new Map();
+  for (const e of [...world.journal].reverse()) {
+    const pri = Number.isFinite(e.pri) ? e.pri : CAT_PRI[e.cat] ?? 1;
+    if (!minorNews(e.cat, pri)) { e.pri = pri; continue; }
+    const day = Math.max(0, (e.day || 1) - 1 + (e.clock || 0));
+    let pace;
+    for (let i = 0; i < Math.min(100, Math.max(1, e.n || 1)); i++) pace = paceNews(world, e.text, e.key, e.cat, day);
+    paceEntry(world, e, pace, pri);
+  }
 }
 const plural = (label, n) => (n === 1 || /fish|shrimp|koi|sh$|is$/i.test(label) ? label : /[^aeiou]y$/i.test(label) ? label.slice(0, -1) + 'ies'
   : /(ch|x|ss|us)$/i.test(label) && !/branch$/i.test(label) ? label + 'es' : label + 's');

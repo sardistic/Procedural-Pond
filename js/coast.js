@@ -190,22 +190,28 @@ function islandSand(world, s) {
   const k = world.opts.habitat === 'fresh' ? 0.5 : 1;
   return 1 + k * (0.16 * Math.sin(TAU * d / 23 + p1) + 0.07 * Math.sin(TAU * d / 7.3 + p2));
 }
-// Each level widens it: a sixth for each of the first four, an eighth after.
+// Levels request more width; isles.js eases that request into the available water.
 const islandGrow = (stack = 1) => 1 + 0.16 * Math.min(stack - 1, 4) + 0.12 * Math.max(0, stack - 5);
-const islandRadius = (world, s) => s.R * islandGrow(s.stack || 1) * islandSand(world, s) * ((s.ig && s.ig.sz) || 1); // (and what it has grown or lost over the weeks: isles.js)
+function islandRadius(world, s) {
+  const raw = s.R * islandGrow(s.stack || 1) * islandSand(world, s) * ((s.ig && s.ig.sz) || 1);
+  const radius = typeof islandGrowthRadius === 'function' ? islandGrowthRadius(world, s, raw) : raw;
+  s.terrRadius = radius; // the raised ground and the stamped beach must share a footprint
+  return radius;
+}
 // The terraces of a raised island, one per level above the first, from the widest up:
-// [x offset, y offset, radius, tilt, height of its top]. Low steps (so what basks on
-// them still shows), each a little off-centre so the mound isn't a perfect cone.
-const TERRACE_STEP = 0.55;
+// [x offset, y offset, radius, tilt, height of its top]. Each raised shelf is
+// tall enough to cast a distinct edge while leaving the island's beach visible.
+const TERRACE_STEP = 1.15;
 function islandTerraces(s) {
   const n = (s.stack || 1) - 1;
-  if (s.terr && s.terr.n === n) return s.terr.list;
-  const G = islandGrow(n + 1), list = [];
+  const R = s.terrRadius || s.R * islandGrow(n + 1);
+  if (s.terr && s.terr.n === n && s.terr.r === R) return s.terr.list;
+  const list = [];
   for (let L = 1; L <= n; L++) {
-    const f = 1 - L / (n + 1.4), rr = s.R * G * 0.9 * f;
+    const f = 1 - L / (n + 1.4), rr = R * 0.9 * f;
     list.push([(hash2(L, s.seed % 97, 3) - 0.5) * rr * 0.25, (hash2(L, s.seed % 89, 7) - 0.5) * rr * 0.25, rr, hash2(L, 13, s.seed % 83) * PI, L * TERRACE_STEP]);
   }
-  s.terr = { n, list };
+  s.terr = { n, r: R, list };
   return list;
 }
 // How high the ground stands at a point on the island (offsets from its centre).

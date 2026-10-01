@@ -83,8 +83,8 @@ function hinterRiver(world) {
   const uc = new Float32Array(HINTER_MAX), hw = new Float32Array(HINTER_MAX);
   for (let dd = 0; dd < HINTER_MAX; dd++) {
     const valley = C0.u * along + 24 * Math.sin(dd * 0.021 + C0.ph) + 9 * Math.sin(dd * 0.057 + C0.ph2);
-    uc[dd] = lerp(riverCenter(world, C, -1 - dd), valley, smoothstep(0, 220, dd)); // (easing back into its valley)
-    hw[dd] = Math.max(2.5, Rv.w * 0.42 * lerp(1, 0.8, clamp(dd / 320, 0, 1)));
+    uc[dd] = lerp(riverCenter(world, C, -dd), valley, smoothstep(0, 220, dd)); // (the first land pixel continues the first pond pixel)
+    hw[dd] = Math.max(2.5, Rv.w * 0.4 * lerp(1, 0.8, clamp(dd / 320, 0, 1)));
   }
   return { uc, hw, flow: Rv.flow || 1, deep: typeof riverDeepK === 'function' ? riverDeepK(world) : 0.5 };
 }
@@ -159,12 +159,13 @@ function* hinterPaint(world, geo) {
       if (deep > 0) c = mixColor(c, HL.black, deep * 0.8);
       // What the storms threw up: bits of weed and shell near the top of the sand.
       if (L < 44) { const h = hash2(px, py, S + 5); if (h < 0.004) c = HL.shell; else if (h < 0.02 && Math.abs(dd - 9 - 7 * vnoise(u * 0.05, 3, S)) < 2.5) c = HL.wrack; }
-      // The river: deeper and darker down its middle, wet banks, darker still under the trees.
+      // The river uses the pond channel's cross-section at the join, then bends inland.
       if (riv) {
         const du = Math.abs(u - riv.uc[dd]), hw = riv.hw[dd];
         if (du <= hw) {
-          const k = 1 - du / hw, kk = k * k * (3 - 2 * k);
-          c = mixColor(mixColor(c, water, 0.66 + 0.3 * kk), HL.black, 0.08 + (0.14 + 0.3 * riv.deep) * kk + jung * 0.5);
+          const e = Math.max(0.02, 1 - (du / hw) ** 2), kk = e * e * (3 - 2 * e), fadeIn = Math.min(1, e * 6);
+          c = mixColor(mixColor(c, water, (0.66 + 0.3 * kk) * fadeIn), HL.black,
+            (0.08 + (0.14 + 0.3 * riv.deep) * kk) * fadeIn + jung * 0.5);
           cover[i] = 2;
         } else if (du <= hw + 3.5) c = mixColor(c, HL.wet, 0.55 * (1 - (du - hw) / 3.5) * (1 - jung * 0.5));
       }

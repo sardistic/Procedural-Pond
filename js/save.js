@@ -147,8 +147,10 @@ function serializePond(world) {
     eggs: world.eggs.map((e) => ({ x: r2(e.x), y: r2(e.y), z: r2(e.z), place: e.place, n: e.cells.length, timer: r2(e.timer), p: parent(e.parent), m: parent(e.mate) })),
     journal: world.journal.slice(0, 120).map((e) => ({
       t: r2(e.t), clock: r2(e.clock), day: e.day, text: e.text, cat: e.cat, key: e.key, n: e.n, data: e.data, seq: e.seq,
+      pri: e.pri, routine: e.routine || undefined, digestCount: e.digestCount || undefined,
       u: e.subject && uid.has(e.subject) ? uid.get(e.subject) : null,
     })),
+    newsSeen: world.newsSeen instanceof Map ? [...world.newsSeen].map(([sig, v]) => [sig, v.n, r2(v.day), v.pending]) : undefined,
   };
 }
 
@@ -335,5 +337,11 @@ function restorePond(world, d) {
   }
 
   world.journal = (d.journal || []).map(({ u, ...e }) => ({ ...e, data: e.data || [], subject: u != null ? made[u] || null : null }));
+  world.newsSeen = new Map((Array.isArray(d.newsSeen) ? d.newsSeen : [])
+    .filter((r) => Array.isArray(r) && typeof r[0] === 'string' && r[0].length <= 110 && r.slice(1, 4).every(Number.isFinite))
+    .slice(0, 240).map(([sig, n, day, pending]) => [sig, {
+      n: Math.max(0, Math.min(10000, n)), day: Math.max(0, day), pending: Math.max(0, Math.min(18, pending)),
+    }]));
+  if (!Array.isArray(d.newsSeen)) restoreJournalPacing(world);
   Object.assign(ECO, d.eco || {});
 }

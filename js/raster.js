@@ -244,6 +244,15 @@ class Raster {
     const rc = s.riverColor ?? (fog ? fog.color : 0), rr = rc & 255, rg = (rc >> 8) & 255, rb = (rc >>> 16) & 255; // (the river's own water: not a bloom's)
     // (The river's channels up the beach: the surf breaks at the sea, not in them.)
     const inland = (x, y) => !!RM && x >= RM.x0 && y >= RM.y0 && x < RM.x0 + RM.w && y < RM.y0 + RM.h && RM.data[(x - RM.x0) + (y - RM.y0) * RM.w] === 1;
+    // Fade the surf into either river bank. A full-bright tide line ending at the
+    // channel's edge reads as a straight cut across the river.
+    const riverBankSurf = (x, y) => {
+      if (!RM) return 1;
+      for (let d = 1; d <= 8; d++) {
+        if (inland(x - d, y) || inland(x + d, y) || inland(x, y - d) || inland(x, y + d)) return Math.min(1, (d - 1) / 7);
+      }
+      return 1;
+    };
     const surf = s.surf || 0, wave = s.wave || 0, surfReach = 30 + 70 * surf, foamW = 0.05 + 0.07 * surf;
     // The depths: deep water swallows the light (up to ~90%), except things that make their own.
     const depthMap = s.depth || null, dc = s.deepColor || 0xff0e0402, dc2 = s.deepColor2 ?? dc, deepK = s.deepK ?? 1;
@@ -386,12 +395,19 @@ class Raster {
               if (se && !(RM && inland(x, y))) {
                 // Foam at the water's edge, and waves that roll in toward it.
                 const d = tideL - se;
-                if (d < 2.5) { c = (x + y) & 1 ? FOAM : FOAM_SOFT; fogScale = 0; }
+                if (d < 2.5) {
+                  const bank = riverBankSurf(x, y);
+                  if (bank > 0) { c = bank >= 1 ? ((x + y) & 1 ? FOAM : FOAM_SOFT) : mixColor(c, FOAM_SOFT, bank); fogScale = 0; }
+                }
                 else if (surf > 0 && d < surfReach) {
                   const w = (d * 0.045 + wave) % 1;
-                  if (w < foamW * (1 - d / surfReach) && caustic[(x & TM) | ((y & TM) << 7)] > 0.18) {
-                    c = d < surfReach * 0.45 ? FOAM : FOAM_SOFT;
-                    fogScale = 0;
+                  const chance = foamW * (1 - d / surfReach);
+                  if (w < chance && caustic[(x & TM) | ((y & TM) << 7)] > 0.18) {
+                    const bank = riverBankSurf(x, y);
+                    if (bank > 0 && w < chance * bank) {
+                      c = d < surfReach * 0.45 && bank >= 1 ? FOAM : mixColor(c, FOAM_SOFT, bank);
+                      fogScale = 0;
+                    }
                   }
                 }
               }

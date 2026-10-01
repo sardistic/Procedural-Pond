@@ -640,7 +640,8 @@ output {
 
 .minimap {
   width: min(211px, var(--map-fit-width, 211px));
-  height: 119px;
+  height: auto;
+  aspect-ratio: 1;
   image-rendering: pixelated;
   border: 2px solid var(--edge);
   box-shadow: 3px 3px 0 var(--ink);
@@ -997,8 +998,12 @@ body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, bo
 /* ---- minimap layer switch, and the side view above it ---- */
 
 .mini-wrap { position: relative; display: grid; gap: 4px; }
-.map-layer { position: absolute; bottom: 4px; right: 4px; padding: 2px 5px; font-size: 8px; box-shadow: none; opacity: 0.85; }
+.map-layer { position: absolute; bottom: 34px; right: 4px; padding: 2px 5px; font-size: 8px; box-shadow: none; opacity: 0.85; }
 .slice { width: min(211px, var(--map-fit-width, 211px)); height: 48px; image-rendering: pixelated; border: 2px solid var(--edge); box-shadow: 3px 3px 0 var(--ink); background: var(--ink); cursor: pointer; }
+.map-sections { width: min(211px, var(--map-fit-width, 211px)); height: 26px; display: grid; grid-template-columns: 32px 1fr 32px; gap: 4px; }
+.map-sections button { min-width: 0; padding: 0; font-size: 18px; line-height: 1; box-shadow: none; }
+.map-sections button:disabled { opacity: 0.4; cursor: default; }
+.map-sections span { display: flex; justify-content: center; align-items: center; min-width: 0; padding: 0 3px; border: 2px solid var(--edge); background: var(--panel); color: var(--hot); font-size: 10px; white-space: nowrap; }
 
 /* ---- the depths ---- */
 
@@ -1280,7 +1285,6 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
    Landscape (short screens): windows take the height of the screen beside the rail, and the rail's buttons shrink so
    the pins fit. Either way windows are solid and above the rail and the bottom bar, the news is one line, and the map
    comes and goes with a button beside the zoom. */
-.minimap { height: auto; }
 .slice { height: auto; aspect-ratio: 211 / 48; }
 .map-toggle { display: none; }
 @media (max-width: 760px), (max-height: 500px) {
@@ -1312,7 +1316,7 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
   .evo { left: 8px !important; right: 8px; width: auto !important; transform: none !important; }
   /* The map floats above the news at the right, when it's shown. */
   body.map-open .mini-wrap { position: fixed; right: max(8px, env(safe-area-inset-right)); bottom: 164px; z-index: 1; } /* (above the news line) */
-  .minimap, .slice { width: min(176px, var(--map-fit-width, 176px)); }
+  .minimap, .slice, .map-sections { width: min(176px, var(--map-fit-width, 176px)); }
   .corner { gap: 4px; }
 }
 @media (max-height: 500px) {
@@ -1333,7 +1337,7 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
   .log { flex: 0 1 280px; }
   .item-bar { padding: 4px; gap: 4px; }
   .dock-bar { padding: 2px; }
-  .minimap, .slice { width: min(150px, var(--map-fit-width, 150px)); }
+  .minimap, .slice, .map-sections { width: min(150px, var(--map-fit-width, 150px)); }
   .corner .zoom button, .map-toggle { width: 32px; height: 30px; }
   .banner { top: 56px; }
   .narrator { top: 100px; }

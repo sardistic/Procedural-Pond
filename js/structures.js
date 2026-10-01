@@ -226,7 +226,7 @@ const BAKE = {
     const [cx, cy] = P(-0.55, s.side * 1.9);
     r.ellipsoid(cx, cy, 3.4, 2.3, ang, 0, 2.4, (lx) => (Math.abs(Math.abs(lx) - 0.55) < 0.1 ? SM.brass : SM.woodDark), next(SM.brass));
   },
-  island(r, s, next) {
+  island(r, s, next, world) {
     const { x, y, R } = s;
     const dark = s.branch === 'dark', zAt = (ox, oy) => (typeof islandTopAt === 'function' ? islandTopAt(s, ox, oy) : 0);
     // Each island has its own character (land.js): its sand and grass, and a palm or its own kind of tree.
@@ -243,9 +243,10 @@ const BAKE = {
     }
     // Out over the deep, its edge is a cliff: a ring of dark rock where the sea meets it.
     if ((s.deep || 0) > 0.15) {
-      const G0 = typeof islandGrow === 'function' ? islandGrow(s.stack || 1) : 1, cid = next(SM.basalt), n = Math.round(18 + 14 * G0);
+      const G0 = typeof islandGrow === 'function' ? islandGrow(s.stack || 1) : 1;
+      const coastR = s.terrRadius || R * G0, cid = next(SM.basalt), n = Math.round(18 + 14 * Math.min(2.5, coastR / R));
       for (let k = 0; k < n; k++) {
-        const a = k / n * TAU + hash2(k, s.seed % 91, 5) * 0.2, d = R * G0 * (1.02 + 0.12 * hash2(k, 3, s.seed % 79)), sz = 2.2 + 2.6 * s.deep * hash2(k, 9, 1);
+        const a = k / n * TAU + hash2(k, s.seed % 91, 5) * 0.2, d = coastR * (1.02 + 0.12 * hash2(k, 3, s.seed % 79)), sz = 2.2 + 2.6 * s.deep * hash2(k, 9, 1);
         r.ellipsoid(x + Math.cos(a) * d, y + Math.sin(a) * d, sz, sz * 0.8, a, 0, sz * (1 + s.deep), SM.basalt, cid);
       }
     }
@@ -304,7 +305,7 @@ const BAKE = {
       const sid = next(SM.idol), z0 = zAt(0, -0.5), h = z0 + 14 + 4 * (s.blv || 1);
       r.tube(x - 0.8, y - 0.5, 2.4, z0, x + 0.8, y - 0.5, 1.2, h, 1, SM.idol, sid);
     }
-    if (typeof bakeIsleFeatures === 'function') bakeIsleFeatures(r, s, next); // (what it has grown: reef, mangroves, nests, pools, spring, fire, the giant: isles.js)
+    if (typeof bakeIsleFeatures === 'function') bakeIsleFeatures(r, s, next, world); // (what it has grown: reef, mangroves, nests, pools, spring, fire, the giant: isles.js)
     if (typeof bakeFlora === 'function') bakeFlora(r, s, next); // (its living flora: land.js)
   },
   vent(r, s, next) {

@@ -520,7 +520,7 @@ function bakeBackground(world, rect = null) {
   // Structures' solid parts (see structures.js), with outline ids from 5000 up.
   let sid = 5000;
   const nextS = (m) => { const i = Math.min(8190, sid++); outline[i] = outlineOf(m); return i; };
-  for (const s of world.structures || []) if (!s.anim) withSeed(`bake/${s.seed}`, () => BAKE[s.kind](r, s, nextS)); // same shape every bake (not while it's still arriving)
+  for (const s of world.structures || []) if (!s.anim) withSeed(`bake/${s.seed}`, () => BAKE[s.kind](r, s, nextS, world)); // same shape every bake (not while it's still arriving)
   if (typeof bakeLand === 'function' && world.game) bakeLand(r, world, nextS); // what the land has grown (land.js)
   // (The lit floor and the sunlit beach are blended from this as it's drawn: raster.js compose.)
   const bg = part ? world.bgBase : new Uint32Array(W * H);

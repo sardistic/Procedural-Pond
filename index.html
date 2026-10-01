@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=38">
+  <link rel="stylesheet" href="style.css?v=39">
 
   <script type="application/ld+json">
   {
@@ -392,7 +392,7 @@
     </div>
 
     <div class="corner">
-      <button type="button" id="map-toggle" class="map-toggle" aria-pressed="false" aria-label="Map" title="Map&#10;Show or hide the map of the whole pond and the side view">&#9638;</button>
+      <button type="button" id="map-toggle" class="map-toggle" aria-pressed="false" aria-label="Map" title="Map&#10;Show or hide the sectional map and side view">&#9638;</button>
       <div class="zoom" role="group" aria-label="Zoom">
         <button type="button" id="zoom-in" class="icon" aria-label="Zoom in" title="Zoom in (+)">+</button>
         <button type="button" id="zoom-level" title="Reset zoom (0)">2×</button>
@@ -400,69 +400,74 @@
       </div>
       <div class="mini-wrap">
         <canvas id="slice" class="slice" width="211" height="48" aria-label="The pond from the side: the beach, the floor and the depths; click for the evolution tree"></canvas>
-        <canvas id="minimap" class="minimap" width="211" height="119" aria-label="Map of the whole pond; click to jump"></canvas>
+        <canvas id="minimap" class="minimap" width="211" height="211" aria-label="Map of this pond section; click or drag to move the view"></canvas>
         <button type="button" id="map-layer" class="map-layer" title="Map layer: click to switch">Map</button>
+        <div class="map-sections" role="group" aria-label="Pond map sections">
+          <button type="button" id="map-prev" aria-label="Previous map section" title="Previous section">‹</button>
+          <span id="map-section-count" aria-live="polite">Section 1 / 1</span>
+          <button type="button" id="map-next" aria-label="Next map section" title="Next section">›</button>
+        </div>
       </div>
     </div>
   </div>
 
-  <script src="js/core.js?v=52"></script>
-  <script src="js/raster.js?v=52"></script>
-  <script src="js/creatures.js?v=52"></script>
-  <script src="js/critters.js?v=52"></script>
-  <script src="js/wildlife.js?v=52"></script>
-  <script src="js/wildfish.js?v=52"></script>
-  <script src="js/sound.js?v=52"></script>
-  <script src="js/life.js?v=52"></script>
-  <script src="js/plants.js?v=52"></script>
-  <script src="js/scene.js?v=52"></script>
-  <script src="js/character.js?v=52"></script>
-  <script src="js/structures.js?v=52"></script>
-  <script src="js/erosion.js?v=52"></script>
-  <script src="js/sky.js?v=52"></script>
-  <script src="js/ecology.js?v=52"></script>
-  <script src="js/game.js?v=52"></script>
-  <script src="js/deep.js?v=52"></script>
-  <script src="js/remains.js?v=52"></script>
-  <script src="js/eldritch.js?v=52"></script>
-  <script src="js/coast.js?v=52"></script>
-  <script src="js/gulls.js?v=52"></script>
-  <script src="js/shore.js?v=52"></script>
-  <script src="js/traits.js?v=52"></script>
-  <script src="js/save.js?v=52"></script>
-  <script src="js/link.js?v=52"></script>
-  <script src="js/abyss.js?v=52"></script>
-  <script src="js/quirks.js?v=52"></script>
-  <script src="js/hunters.js?v=52"></script>
-  <script src="js/mastery.js?v=52"></script>
-  <script src="js/habitats.js?v=52"></script>
-  <script src="js/artifacts.js?v=52"></script>
-  <script src="js/story.js?v=52"></script>
-  <script src="js/lineage.js?v=52"></script>
-  <script src="js/depths.js?v=52"></script>
-  <script src="js/sand.js?v=52"></script>
-  <script src="js/heavens.js?v=52"></script>
-  <script src="js/nature.js?v=52"></script>
-  <script src="js/pollution.js?v=52"></script>
-  <script src="js/prehistoric.js?v=52"></script>
-  <script src="js/alien.js?v=52"></script>
-  <script src="js/bestiary.js?v=52"></script>
-  <script src="js/land.js?v=52"></script>
-  <script src="js/isles.js?v=52"></script>
-  <script src="js/flora.js?v=52"></script>
-  <script src="js/cycle.js?v=52"></script>
-  <script src="js/arrivals.js?v=52"></script>
-  <script src="js/interact.js?v=52"></script>
-  <script src="js/net.js?v=52"></script>
-  <script src="js/account.js?v=52"></script>
-  <script src="js/wander.js?v=52"></script>
-  <script src="js/hinterland.js?v=52"></script>
-  <script src="js/imps.js?v=52"></script>
-  <script src="js/hud.js?v=52"></script>
-  <script src="js/fine.js?v=52"></script>
-  <script src="js/main.js?v=55"></script>
-  <script src="js/guide.js?v=52"></script>
-  <script src="js/music.js?v=52"></script>
-  <script src="js/tips.js?v=52"></script>
+  <script src="js/core.js?v=53"></script>
+  <script src="js/raster.js?v=53"></script>
+  <script src="js/creatures.js?v=53"></script>
+  <script src="js/critters.js?v=53"></script>
+  <script src="js/wildlife.js?v=53"></script>
+  <script src="js/wildfish.js?v=53"></script>
+  <script src="js/sound.js?v=53"></script>
+  <script src="js/life.js?v=53"></script>
+  <script src="js/plants.js?v=53"></script>
+  <script src="js/scene.js?v=53"></script>
+  <script src="js/character.js?v=53"></script>
+  <script src="js/structures.js?v=53"></script>
+  <script src="js/erosion.js?v=53"></script>
+  <script src="js/sky.js?v=53"></script>
+  <script src="js/ecology.js?v=53"></script>
+  <script src="js/game.js?v=53"></script>
+  <script src="js/deep.js?v=53"></script>
+  <script src="js/remains.js?v=53"></script>
+  <script src="js/eldritch.js?v=53"></script>
+  <script src="js/coast.js?v=53"></script>
+  <script src="js/gulls.js?v=53"></script>
+  <script src="js/shore.js?v=53"></script>
+  <script src="js/traits.js?v=53"></script>
+  <script src="js/save.js?v=53"></script>
+  <script src="js/link.js?v=53"></script>
+  <script src="js/abyss.js?v=53"></script>
+  <script src="js/quirks.js?v=53"></script>
+  <script src="js/hunters.js?v=53"></script>
+  <script src="js/mastery.js?v=53"></script>
+  <script src="js/habitats.js?v=53"></script>
+  <script src="js/artifacts.js?v=53"></script>
+  <script src="js/story.js?v=53"></script>
+  <script src="js/lineage.js?v=53"></script>
+  <script src="js/depths.js?v=53"></script>
+  <script src="js/sand.js?v=53"></script>
+  <script src="js/heavens.js?v=53"></script>
+  <script src="js/nature.js?v=53"></script>
+  <script src="js/pollution.js?v=53"></script>
+  <script src="js/prehistoric.js?v=53"></script>
+  <script src="js/alien.js?v=53"></script>
+  <script src="js/bestiary.js?v=53"></script>
+  <script src="js/land.js?v=53"></script>
+  <script src="js/isles.js?v=53"></script>
+  <script src="js/flora.js?v=53"></script>
+  <script src="js/cycle.js?v=53"></script>
+  <script src="js/arrivals.js?v=53"></script>
+  <script src="js/interact.js?v=53"></script>
+  <script src="js/net.js?v=53"></script>
+  <script src="js/account.js?v=53"></script>
+  <script src="js/wander.js?v=53"></script>
+  <script src="js/hinterland.js?v=53"></script>
+  <script src="js/imps.js?v=53"></script>
+  <script src="js/hud.js?v=53"></script>
+  <script src="js/fine.js?v=53"></script>
+  <script src="js/main.js?v=56"></script>
+  <script src="js/guide.js?v=53"></script>
+  <script src="js/music.js?v=53"></script>
+  <script src="js/tips.js?v=53"></script>
 </body>
 </html>

@@ -177,7 +177,7 @@ class Creature {
   }
 
   newTarget(world, avoidRocks) {
-    const m = Math.min(28, world.W * 0.15, world.H * 0.15), wet = world.shore && !AMPHIBIOUS.has(this.species);
+    const m = Math.min(28, world.W * 0.15, world.H * 0.15), wet = world.shore && !AMPHIBIOUS.has(this.species) && this.species !== 'gull';
     // More often than not, head for somewhere this species likes (less often where it's crowded:
     // a horde spreads out over the pond instead of circling one patch).
     const crowd = typeof crowdAt === 'function' ? crowdAt(world, this.x, this.y) : 0;
@@ -187,7 +187,8 @@ class Creature {
         const a = rand(0, TAU), R = spotRadius(s) + rand(3, 14);
         const x = clamp(s.x + Math.cos(a) * R, m, world.W - m), y = clamp(s.y + Math.sin(a) * R, m, world.H - m);
         if ((!wet || shoreAt(world, x, y) <= world.tide.level - (this.shoreMargin ?? SHORE_MARGIN) - 0.06) &&
-            (typeof islandLandingRoom !== 'function' || islandLandingRoom(world, x, y, this)) && (!this.keepIn || this.keepIn(world, x, y))) {
+            (typeof islandLandingRoom !== 'function' || islandLandingRoom(world, x, y, this)) && (!this.keepIn || this.keepIn(world, x, y)) &&
+            (!wet || typeof islandWaterRoute !== 'function' || islandWaterRoute(world, this.x, this.y, x, y))) {
           this.tx = x; this.ty = y;
           return;
         }
@@ -200,14 +201,25 @@ class Creature {
       if (this.keepIn && !this.keepIn(world, x, y)) continue;
       if (typeof islandLandingRoom === 'function' && !islandLandingRoom(world, x, y, this)) continue;
       const e = wet ? shoreAt(world, x, y) : 0;
-      if (e < be) { be = e; best = [x, y]; }
       if (wet && e > world.tide.level - SHORE_MARGIN - 0.06) continue;
+      if (wet && typeof islandWaterRoute === 'function' && !islandWaterRoute(world, this.x, this.y, x, y)) continue;
+      if (e < be) { be = e; best = [x, y]; }
       if (!avoidRocks || !world.rocks.some((r) => Math.hypot(r.x - x, r.y - y) < Math.max(r.a, r.b) + 6)) {
         ok++;
         const n = typeof crowdAt === 'function' ? crowdAt(world, x, y) : 0;
         if (n < gc) { gc = n; good = [x, y]; }
         if (!n) break;
       }
+    }
+    // A fish in the narrow river may have no straight route to a random pond
+    // point. Give it a short local swim along its channel instead.
+    if (!good && !best && wet) for (let tries = 0; tries < 20; tries++) {
+      const a = rand(0, TAU), d = rand(8, 26), x = clamp(this.x + Math.cos(a) * d, 8, world.W - 8), y = clamp(this.y + Math.sin(a) * d, 8, world.H - 8);
+      if (shoreAt(world, x, y) > world.tide.level - (this.shoreMargin ?? SHORE_MARGIN) - 0.04) continue;
+      if (typeof islandWaterRoute === 'function' && !islandWaterRoute(world, this.x, this.y, x, y)) continue;
+      if (this.keepIn && !this.keepIn(world, x, y)) continue;
+      if (typeof islandLandingRoom === 'function' && !islandLandingRoom(world, x, y, this)) continue;
+      best = [x, y]; break;
     }
     if (good || best) [this.tx, this.ty] = good || best;
   }
@@ -261,8 +273,9 @@ class Fish extends Creature {
     } else {
       const hungry = !this.life || this.life.energy < 0.8;
       const prey = this.prey && !this.prey.caught && !this.prey.gone ? this.prey : null;
-      const f = prey || world.nearestFood(this.x, this.y, this.sight * (hungry ? 1.4 : 1),
+      let f = prey || world.nearestFood(this.x, this.y, this.sight * (hungry ? 1.4 : 1),
         (fd) => (hungry || fd.fed) && (!this.foodFilter || this.foodFilter(fd)));
+      if (f && typeof islandWaterRoute === 'function' && !islandWaterRoute(world, this.x, this.y, f.x, f.y)) f = null;
       this.chasing = !!f;
       if (f) {
         gx = f.x - this.x; gy = f.y - this.y;
@@ -317,6 +330,7 @@ class Fish extends Creature {
     this.y = clamp(this.y + Math.sin(dir) * this.speed * dt, 1, world.H - 1);
     this.z += (this.tz - this.z) * Math.min(1, dt * 0.6);
     this.body.resolve(this.x, this.y, dir);
+    if (typeof islandKeepSwimmerWet === 'function') islandKeepSwimmerWet(world, this);
   }
 
   wander(world) {
@@ -330,7 +344,11 @@ class Fish extends Creature {
     // Out of its active hours it rests: near cover, low down, drifting slowly.
     if (this.life && activity(world, this) < 0.55 && !this.alwaysSwims) {
       const s = (typeof crowdAt !== 'function' || crowdAt(world, this.x, this.y) < 10 || Math.random() < 0.3) && likedSpot(world, this);
-      if (s) { const a = rand(0, TAU), R = spotRadius(s) + rand(2, 8); this.tx = clamp(s.x + Math.cos(a) * R, 8, world.W - 8); this.ty = clamp(s.y + Math.sin(a) * R, 8, world.H - 8); }
+      if (s) {
+        const a = rand(0, TAU), R = spotRadius(s) + rand(2, 8);
+        const x = clamp(s.x + Math.cos(a) * R, 8, world.W - 8), y = clamp(s.y + Math.sin(a) * R, 8, world.H - 8);
+        if (typeof islandWaterRoute !== 'function' || islandWaterRoute(world, this.x, this.y, x, y)) { this.tx = x; this.ty = y; }
+      }
       this.tz = this.zMin;
       this.timer = rand(7, 15);
       this.cruiseNow = this.cruise * 0.3;
