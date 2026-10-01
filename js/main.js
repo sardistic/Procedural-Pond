@@ -627,6 +627,7 @@ function render(full = false) {
   if (typeof bloodRain === 'function' && bloodRain(world)) fogColor = mixColor(fogColor, BLOOD_WATER, Math.min(0.5, world.weather.rain * 0.6));
   // (A glass day: the surface still, and the water clear far down into the deep.)
   const swell = surfaceSwell(world, glass);
+  const skyColor = typeof heavensSky === 'function' ? heavensSky(world, skyReflection(light)) : skyReflection(light);
   r.compose(out, {
     bg: world.bg, bgLight: world.bgLight, lightTint: world.lightTint, caustic: world.caustic, t,
     outline: OUTLINE, emissive: EMISSIVE, fade: FADE, thick: THICK, anyThick, tint: light.tint,
@@ -635,15 +636,20 @@ function render(full = false) {
     shore: world.shore, bgDry: world.bgDry, riverMask: world.riverMask || null, riverDeep: typeof riverDeepK === 'function' ? riverDeepK(world) : 0.5, riverColor: world.waterColor, tide: world.tide.level, surf: world.tide.surf, wave: world.tide.wave,
     depth: world.depth, deepColor: DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed,
     voidSkin: world.eldMarks && world.eldMarks.length || world.plants.some((p) => p.tr && p.tr.eld) ? VOID_SKIN : null,
-    swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6], clouds: q < 1 ? world.clouds : null, sky: typeof heavensSky === 'function' ? heavensSky(world, skyReflection(light)) : skyReflection(light), skyK: glass ? 1.4 : typeof heavenNow === 'function' && heavenNow(world, 'aurora') ? 1.6 : 1 - world.weather.rain * 0.7,
+    swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6], clouds: q < 1 ? world.clouds : null, sky: skyColor, skyK: glass ? 1.4 : typeof heavenNow === 'function' && heavenNow(world, 'aurora') ? 1.6 : 1 - world.weather.rain * 0.7,
     lights: q < 2 ? buildLights(world, rect) : null, lightVis: light.darkness || 0, deepColor2: deepTint(world), trench: world.trench, trenchGlow: TRENCH_GLOW[branchOf(world)],
     chop: q < 1 && !glass ? clamp(0.18 + Math.max(0, world.weather.gust) * 0.9 + world.tide.surf * 0.35, 0, 1.2) * surfaceVis : 0, spindrift: q < 1 ? clamp((swell - 0.75) * 2.5, 0, 1) * surfaceVis : 0,
-    waveMode: o.hdWaves ? 'hd' : 'classic', gust: glass ? 0 : world.weather.gust, rain: world.weather.rain,
+    waveMode: o.hdWaves ? 'mesh' : 'classic', gust: glass ? 0 : world.weather.gust, rain: world.weather.rain,
   }, rect);
+  const waterState = { swell, sky: skyColor, darkness: light.darkness, visibility: surfaceVis };
+  const meshReady = o.hdWaves && surfaceVis > 0.025 && typeof waterMeshAvailable === 'function' && waterMeshAvailable();
+  if (o.hdWaves && !meshReady && typeof renderWater3D === 'function') renderWater3D(out, world, rect, waterState);
   if (close < 0.9) drawGlints();
   if (world.bones) drawBones();
   if (full || world.bones) ctx.putImageData(image, 0, 0);
   else ctx.putImageData(image, 0, 0, rect[0], rect[1], rect[2] - rect[0] + 1, rect[3] - rect[1] + 1);
+  if (meshReady) drawWaterMesh(canvas, world, waterState);
+  else if (typeof hideWaterMesh === 'function') hideWaterMesh();
   if (!full) {
     const now = performance.now(), Q = QUALITY;
     Q.ema += (now - t0 - Q.ema) * 0.05;
@@ -1234,6 +1240,7 @@ function applyView() {
   if (typeof placeBeyond === 'function') { placeBeyond(); edgePull(); }
   if (typeof placeHinter === 'function') placeHinter();
   if (typeof placeFine === 'function') placeFine();
+  if (typeof placeWaterMesh === 'function') placeWaterMesh();
   scheduleViewUrl();
 }
 

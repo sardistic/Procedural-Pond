@@ -12,7 +12,8 @@ Animals are chains of joints (the argonautcode idea) skinned by a small CPU
 rasterizer in `js/raster.js`. It writes a low-res height/colour buffer with
 banded Bayer-dithered lighting, outlines, height-offset shadows, dithered alpha
 fades and an optional light tint. The canvas is upscaled with
-`image-rendering: pixelated`. There is no WebGL.
+`image-rendering: pixelated`. The optional 3D water mesh uses WebGL2 over this
+canvas; devices without WebGL2 use a software water surface.
 
 ## Fixed-size world, integer zoom, clipped rendering
 The world is a buffer that does not change with window resizes. The default,
@@ -797,6 +798,10 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
 - The Census shows current pond animal count against breeding room, split into the size base and bonus from placed deep structures and plants. The bonus is recalculated at dawn. Minor journal patterns become less prominent as they repeat: the first few remain visible, later occurrences surface as occasional counted recaps, and the Repeats filter reveals all. Rare, story and priority events remain visible. Pacing state is stored in local saves; older saves reconstruct it from their journal entries.
 
 ## Water surface and live sectional map (2026-09-30)
-- Scene → HD waves is on by default; turning it off keeps the previous surface rendering. The preference lives with the other browser scene options and is not part of shared pond state.
-- `waves.js` evaluates a shared height field from a deep-water swell train and shorter wind/rain chop. Its period follows a dispersion-scale speed; finite local water depth shoals and caps the height, and a crest runs briefly up the beach. The raster uses the same field for floor refraction, the visible wet edge, crest lighting and breaker foam. River channels suppress ocean foam. Duckweed rafts and lily pads receive a small oscillating surface drift from the field. The fast wave edge is visual for shore ecology; animal swimming limits and the ecological tide continue to use the stable tide level.
+- Scene → 3D waves is on by default; turning it off keeps the previous surface rendering. The preference lives with the other browser scene options and is not part of shared pond state.
+- `waves.js` evaluates a shared height field from a deep-water swell train and shorter wind/rain chop. Its period follows a dispersion-scale speed; finite local water depth shoals and caps the height, and a crest runs briefly up the beach. The raster uses the field for the visible wet edge; `water3d.js` now renders the crest lighting, refraction and breaker foam. River channels suppress ocean foam. Duckweed rafts and lily pads receive a small oscillating surface drift from the field. The fast wave edge is visual for shore ecology; animal swimming limits and the ecological tide continue to use the stable tide level.
 - The minimap continues caching its expensive terrain sample by section and rotation. Its cheaper colour pass now applies current sand/water colour, depth, time-of-day tint, weather and, in HD mode, the shared wave field and moving waterline. It refreshes at a coarse cadence while the map's animals and view box keep their existing cadence. The side slice also uses the field for the water/sky boundary in HD mode.
+
+## Displaced 3D water mesh (2026-09-30)
+- The initial HD raster surface made repeating dark bands in open water. The default 3D waves mode now draws a tessellated WebGL2 surface over the unchanged software-rendered pond. Vertices rise and move horizontally with a Gerstner-style wave field; its normals control refraction, reflection, specular light and breaking foam. Depth limits height and triggers shoaling, weather controls energy and short chop, and river channels are sheltered. The side cut and minimap keep sampling the same CPU wave field. This is a surface simulation, not a fluid-volume solver.
+- WebGL2 is optional. `water3d.js` ray-renders the displaced surface in software if GPU setup fails. The Classic toggle uses the earlier raster surface. Both surface paths fade out as zoom approaches 16× so the close underwater view stays clear. The GPU canvas has no pointer events and shares the pond's transform; the HUD stays above it. A short-lived scene texture upload each frame gives the mesh the existing creature/floor image to refract, without changing the core rasterizer or saves.

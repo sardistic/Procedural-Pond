@@ -44,7 +44,7 @@ visitors, litter and the risk of a blight, what you earned lately, the leaderboa
   - world size
   - current strength and sim speed
   - caustics, shadows and outlines on or off
-  - HD waves on by default: a moving water surface driven by wind, rain, surf and water depth, with surf that runs up the beach and a gentle sway on floating plants; turn it off for the Classic water look
+  - 3D waves on by default: a displaced water mesh driven by wind, rain, surf and water depth, with surf that runs up the beach and a gentle sway on floating plants; turn it off for the Classic water look
   - neighbours: the ponds either side along the beach, drawn past each end of yours (on by default). Off, the view keeps to your pond and a drag stops at its ends; the arrows by its name still walk you over, and the pond you walk into shows for the walk
 
   Settings are saved in localStorage.

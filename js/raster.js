@@ -274,7 +274,8 @@ class Raster {
     // (Wave marks: always drawn level, the way top-down water is; they drift with the swell.)
     const wd = t * (1.2 + 2 * swell), wdu = -sw[0] * wd, wdv = -sw[1] * wd;
     const surfaceVis = s.surfaceVis ?? 1;
-    const hdWaves = surfaceVis > 0 && s.waveMode === 'hd' && typeof waveField === 'function';
+    const meshWaves = s.waveMode === 'mesh';
+    const hdWaves = surfaceVis > 0 && (s.waveMode === 'hd' || meshWaves) && typeof waveField === 'function';
     const physical = hdWaves ? waveField(s) : null, surface = hdWaves ? new Float32Array(4) : null;
     const [rx0, ry0, rx1, ry1] = rect;
     for (let y = ry0; y <= ry1; y++) {
@@ -316,8 +317,8 @@ class Raster {
           } else {
             let q = p;
             if (wx) {
-              const qx = x + wx[y] + (hdWaves ? Math.round(surface[1] * 2.5 * surfaceVis) : 0);
-              const qy = y + wy[x] + (hdWaves ? Math.round(surface[2] * 2.5 * surfaceVis) : 0);
+              const qx = x + wx[y] + (hdWaves && !meshWaves ? Math.round(surface[1] * 2.5 * surfaceVis) : 0);
+              const qy = y + wy[x] + (hdWaves && !meshWaves ? Math.round(surface[2] * 2.5 * surfaceVis) : 0);
               q = (qx < 0 ? 0 : qx >= W ? W - 1 : qx) + (qy < 0 ? 0 : qy >= H ? H - 1 : qy) * W;
             }
             const se = shore ? shore[q] : 0;
@@ -332,13 +333,13 @@ class Raster {
                   caustic[((y + o2y) & TM) | (((x + o2x) & TM) << 7)] < causticT ? (bgLight ? bgLight[q] : lit(bg[q])) : bg[q];
               if (doShadows && sh[p] > zb + 1.5) c = shadeColor(c);
               depth = zBase[q];
-              if (hdWaves) {
+              if (hdWaves && !meshWaves) {
                 // The same height field moves the floor refraction, the wet edge,
                 // and the light on a crest. Foam forms where a steep crest shoals.
                 waveS = clamp(-(surface[1] * sw[0] + surface[2] * sw[1]) * 5, -1.8, 1.8);
                 const crest = surface[3];
                 if (crest > 0.12 && crest > BAYER4[(x & 3) | ((y & 3) << 2)] * 0.55) waveC = crest > 0.58 ? 9 : 8;
-              } else if (swell > 0) {
+              } else if (!meshWaves && swell > 0) {
                 const dd = depthMap ? depthMap[p] : 0;
                 // Each wave lit on the face toward the light and shadowed behind, broken up along
                 // its length by a slow patchy noise, and bigger over the deep.
