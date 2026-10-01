@@ -1686,6 +1686,7 @@ function setMiniLayer(i) {
 }
 
 function drawMinimap() {
+  if (!world.bg || !world.W || !world.H) return; // Saved ponds may still be loading from the server.
   if (!mini.getClientRects().length) return; // (put away, on a phone)
   const g = miniFollowView(), scale = mini.width / g.span;
   if (miniSampleKey !== `${world.W}|${world.H}|${view.r}|${miniSection}`) paintMinimapBackground();

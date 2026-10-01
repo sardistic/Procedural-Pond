@@ -1,20 +1,76 @@
 'use strict';
 
-// A displaced 3D surface shared by the pond, its side cut and map. Offshore
-// wave trains keep a steady period; near the bottom they steepen, slow, and
-// break when crest height approaches the available water depth.
+// A directional wave spectrum shared by the pond, its side cut and map.
+// Independent wavelengths, phases and directions produce moving interference
+// groups instead of the same three ridges repeating across the whole ocean.
 const WAVE_SIN = new Float32Array(2048);
 for (let i = 0; i < WAVE_SIN.length; i++) WAVE_SIN[i] = Math.sin(i * Math.PI * 2 / WAVE_SIN.length);
-const waveSin = (phase) => WAVE_SIN[(phase * (2048 / (Math.PI * 2)) | 0) & 2047];
-const waveCos = (phase) => WAVE_SIN[((phase * (2048 / (Math.PI * 2)) | 0) + 512) & 2047];
+const waveSin = (phase) => {
+  const q = phase * (2048 / (Math.PI * 2)), i = Math.floor(q), f = q - i;
+  return WAVE_SIN[i & 2047] * (1 - f) + WAVE_SIN[(i + 1) & 2047] * f;
+};
+const waveCos = (phase) => waveSin(phase + Math.PI * 0.5);
 const waveTime = (world) => world.waveTime ?? 0;
+
+// angle, wavelength multiplier, amplitude, initial phase, wind-wave flag.
+// No spatial tile or common wavelength: the surface is evaluated in world
+// coordinates, including far beyond the original pond and GPU camera tile.
+const WAVE_SPECTRUM = [
+  [-0.61, 1.913, 0.22, 1.17, 0], [0.38, 1.537, 0.32, 4.83, 0],
+  [-0.19, 1.183, 0.42, 2.41, 0], [0.73, 0.947, 0.35, 5.72, 0],
+  [0.06, 0.773, 0.28, 0.38, 0], [-0.87, 0.631, 0.16, 3.96, 0],
+  [0.48, 0.509, 0.10, 1.89, 0], [-0.36, 0.417, 0.065, 5.13, 0],
+  [1.09, 0.347, 0.04, 2.98, 0], [-0.13, 0.283, 0.025, 0.74, 0],
+  [-0.72, 0.239, 0.045, 4.19, 1], [0.91, 0.203, 0.038, 1.56, 1],
+  [0.31, 0.173, 0.03, 5.49, 1], [-1.17, 0.151, 0.023, 3.27, 1],
+  [0.62, 0.131, 0.018, 0.93, 1], [-0.41, 0.113, 0.013, 4.61, 1],
+];
+let waveSpectrumKey = '', waveSpectrumCache;
+
+function waveComponents(dx, dy, k, chop) {
+  const key = `${dx}/${dy}/${k}/${chop}`;
+  if (key === waveSpectrumKey) return waveSpectrumCache;
+  const components = new Float32Array(WAVE_SPECTRUM.length * 6);
+  for (let i = 0; i < WAVE_SPECTRUM.length; i++) {
+    const [angle, length, weight, phase, wind] = WAVE_SPECTRUM[i];
+    const c = Math.cos(angle), s = Math.sin(angle), ki = k / length;
+    const j = i * 6;
+    components[j] = (dx * c - dy * s) * ki;
+    components[j + 1] = (dy * c + dx * s) * ki;
+    components[j + 2] = Math.sqrt(12 * ki);
+    components[j + 3] = weight * (wind ? Math.min(1.8, 0.25 + chop) : 1);
+    components[j + 4] = phase;
+    components[j + 5] = 0.48 / ki;
+  }
+  waveSpectrumKey = key; waveSpectrumCache = components;
+  return components;
+}
+
+// Generate the GPU evaluator from the same coefficients as the CPU sampler.
+// Normals are derivatives of this height, rather than a separate texture.
+const WAVE_GLSL = `
+void waveSpectrum(vec2 pos, vec2 dir, float k, float t, float chop,
+                  out float height, out vec2 slope, out vec2 orbit) {
+  height = 0.0; slope = vec2(0.0); orbit = vec2(0.0);
+  ${WAVE_SPECTRUM.map(([angle, length, weight, phase, wind]) => `{
+    vec2 d = vec2(dir.x * ${Math.cos(angle).toFixed(9)} - dir.y * ${Math.sin(angle).toFixed(9)},
+                  dir.y * ${Math.cos(angle).toFixed(9)} + dir.x * ${Math.sin(angle).toFixed(9)});
+    float ki = k / ${length.toFixed(3)};
+    float a = ${weight.toFixed(3)} ${wind ? '* min(1.8, 0.25 + chop)' : ''};
+    float phase = dot(pos, d) * ki - t * sqrt(12.0 * ki) + ${phase.toFixed(3)};
+    height += a * sin(phase);
+    slope += a * ki * d * cos(phase);
+    orbit += a * 0.48 * d * cos(phase);
+  }`).join('\n')}
+}`;
 
 function waveField(s) {
   const dir = s.swellDir || [0, 1], gust = Math.max(0, s.gust || 0), rain = s.rain || 0;
   const energy = Math.max(0, s.swell || 0), L = 55 + energy * 60;
   const k = Math.PI * 2 / L, omega = Math.sqrt(12 * k);
+  const chop = (0.12 + gust * 0.7 + rain * 0.35) * energy;
   return { x: dir[0], y: dir[1], k, omega, t: s.t || 0,
-    amp: energy * (2.1 + gust), chop: (0.12 + gust * 0.7 + rain * 0.35) * energy,
+    amp: energy * (3.1 + gust), chop, components: waveComponents(dir[0], dir[1], k, chop),
     surf: s.surf || 0, tide: (s.tide ?? 1) * 255, shore: s.shore || null,
     depth: s.depth || null, river: s.riverMask || null };
 }
@@ -26,32 +82,34 @@ function waveAt(f, x, y, p, out) {
   const dd = f.depth ? f.depth[p] : 0;
   const room = f.shore && se ? Math.max(0.4, wet * 0.24) : 20 + dd * 0.45;
   const shallow = Math.min(1, room / 19), shoal = 1 + 0.55 * (1 - shallow);
-  const u = x * f.x + y * f.y;
-  const v = -x * f.y + y * f.x;
-  const packet = 0.72 + 0.17 * waveSin(v * 0.026 + f.t * 0.11) + 0.11 * waveSin(u * 0.013 + v * 0.019 - f.t * 0.08);
-  const amp = Math.min(f.amp * shoal * packet, room * 0.43);
-  const phase = u * f.k - f.t * f.omega + 0.8 * waveSin(v * 0.022 + f.t * 0.05) + 0.16 * waveSin(u * 0.013 - v * 0.015);
-  const cross = (u * 0.78 + v * 0.33) * f.k * 1.8 - f.t * f.omega * 1.35;
-  const chopPhase = (u * 0.43 - v * 0.9) * f.k * 3.3 - f.t * f.omega * 2.25;
-  const a = waveSin(phase), b = waveSin(cross), c = waveSin(chopPhase);
-  const a2 = amp * 0.26, a3 = f.chop * (0.35 + 0.65 * (1 - shallow)) * Math.min(amp, 1.5);
+  const amp = Math.min(f.amp * shoal, room * 0.43);
+  let height = 0, sx = 0, sy = 0, ox = 0, oy = 0;
+  const C = f.components;
+  for (let i = 0; i < C.length; i += 6) {
+    const kx = C[i], ky = C[i + 1], a = C[i + 3];
+    const phase = x * kx + y * ky - f.t * C[i + 2] + C[i + 4];
+    const co = a * waveCos(phase);
+    height += a * waveSin(phase); sx += kx * co; sy += ky * co;
+    if (out.length > 5) {
+      const invK = C[i + 5];
+      ox += kx * invK * co; oy += ky * invK * co;
+    }
+  }
+  const ratio = amp * height / (room * 0.43), cap = 1 / Math.sqrt(1 + ratio * ratio);
   const near = f.shore && se ? wet < 0 ? Math.max(0, 1 + wet / (3 + f.surf * 12))
     : Math.max(0, 1 - wet / (17 + f.surf * 27)) : 0;
   // A crest runs a short way up the beach before retreating. The ecological
   // tide stays stable; only the rendered wet edge receives this fast motion.
-  out[0] = amp * a + a2 * b + a3 * c + near * f.surf * 5 * Math.max(0, a);
-  out[1] = amp * f.k * f.x * waveCos(phase) + a2 * f.k * 1.8 * (f.x * 0.78 - f.y * 0.33) * waveCos(cross)
-    + a3 * f.k * 3.3 * (f.x * 0.43 + f.y * 0.9) * waveCos(chopPhase);
-  out[2] = amp * f.k * f.y * waveCos(phase) + a2 * f.k * 1.8 * (f.y * 0.78 + f.x * 0.33) * waveCos(cross)
-    + a3 * f.k * 3.3 * (f.y * 0.43 - f.x * 0.9) * waveCos(chopPhase);
-  const steep = amp * f.k * (1 + f.chop * 0.6);
+  const runup = near * f.surf * 5;
+  out[0] = amp * height * cap + runup * Math.max(0, height);
+  const derivative = amp * cap * cap * cap + (height > 0 ? runup : 0);
+  out[1] = sx * derivative; out[2] = sy * derivative;
+  const steep = Math.hypot(out[1], out[2]);
   const breakDepth = room > 0 ? 2 * amp / room : 0;
-  out[3] = Math.min(1, Math.max(0, (breakDepth - 0.68) * 2.4 + (steep - 0.23) * 1.5 + near * f.surf * 0.9) * Math.max(0, a * 0.65 + 0.3));
+  out[3] = Math.min(1, Math.max(0, (breakDepth - 0.68) * 2.4 + (steep - 0.5) * 0.6 + near * f.surf * 0.9) * Math.max(0, height * 0.65 + 0.3));
   if (out.length > 5) {
     // Gerstner orbital motion: crests lean forward as the surface rises.
-    const lean = Math.min(0.72, 0.72 / Math.max(0.05, amp * f.k));
-    out[4] = lean * amp * f.x * waveCos(phase) + a2 * 0.22 * (-f.y) * waveCos(cross);
-    out[5] = lean * amp * f.y * waveCos(phase) + a2 * 0.22 * f.x * waveCos(cross);
+    out[4] = amp * ox * cap; out[5] = amp * oy * cap;
   }
   // River channels are sheltered from ocean breakers.
   if (f.river && x >= f.river.x0 && y >= f.river.y0 && x < f.river.x0 + f.river.w && y < f.river.y0 + f.river.h

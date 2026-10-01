@@ -281,7 +281,9 @@ class Raster {
     for (let y = ry0; y <= ry1; y++) {
       for (let x = rx0, p = rx0 + y * W; x <= rx1; x++, p++) {
         const i = id[p];
-        if (hdWaves) waveAt(physical, x, y, p, surface);
+        // With a mesh, only the moving shoreline needs a CPU surface sample.
+        // Open water is evaluated once by the GPU (or software fallback).
+        if (hdWaves && (!meshWaves || shore && shore[p])) waveAt(physical, x, y, p, surface);
         const localTide = hdWaves && shore && shore[p] ? tideL + surface[0] * 2.5 * surfaceVis : tideL;
         let c, n, depth, fogScale = 1, waveS = 0, waveC = 0, refl = 0, dry = false, stroke = 0;
         if (shore) {
