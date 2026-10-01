@@ -535,13 +535,19 @@ function updateDeep(world, dt) {
 
 // ---- deep plants ----------------------------------------------------------------------------------
 
-const BLACK_CORAL = mat('#0a0606', '#1a0e0c', '#2e1a16', '#4a2a22'), BLACK_TIP = mat('#5a0a0a', '#8a1a14', '#c02a1e', '#f0503a');
+const BLACK_CORALS = [
+  mat('#0a0606', '#1a0e0c', '#2e1a16', '#4a2a22'),
+  mat('#060a13', '#111a28', '#263344', '#455568'),
+  mat('#100813', '#241326', '#402941', '#68405a'),
+];
+const BLACK_TIPS = [mat('#5a0a0a', '#8a1a14', '#c02a1e', '#f0503a'), mat('#4a2838', '#86445a', '#ba6a78', '#f4aaa0')];
 class BlackCoral extends Coral {
   constructor(x, y) {
-    super(x, y, 'staghorn');
-    this.m = BLACK_CORAL;
-    OUTLINE[this.id] = outlineOf(BLACK_CORAL);
-    this.skin = (u) => (u > 0.72 ? BLACK_TIP : BLACK_CORAL);
+    super(x, y, pick(['staghorn', 'staghorn', 'fan', 'fan', 'whip', 'tube']));
+    this.m = pick(BLACK_CORALS);
+    this.tip = pick(BLACK_TIPS);
+    OUTLINE[this.id] = outlineOf(this.m);
+    this.skin = (u) => (u > 0.72 ? this.tip : this.m);
   }
 }
 

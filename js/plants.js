@@ -287,9 +287,9 @@ const CORAL_MATS = [
 const lighten = (m) => [m[1], m[2], m[3], m[3]];
 const deepen = (m) => [m[0], m[0], m[1], m[2]];
 
-// Staghorn (branching), brain (maze dome), fan (swaying ribs) or tube (organ pipes).
+// Staghorn, brain, fan, tube, plate or whip: each colony grows its own form.
 class Coral {
-  constructor(x, y, kind = pick(['staghorn', 'staghorn', 'brain', 'fan', 'tube'])) {
+  constructor(x, y, kind = pick(['staghorn', 'staghorn', 'brain', 'fan', 'tube', 'plate', 'whip'])) {
     this.x = x; this.y = y; this.kind = kind;
     this.m = pick(CORAL_MATS);
     this.id = newId(outlineOf(this.m));
@@ -317,6 +317,12 @@ class Coral {
       const base = rand(0, TAU);
       this.ribs.forEach((rb, k, all) => { rb.a = base + (k / (all.length - 1) - 0.5) * 1.9; });
       this.R = 11;
+    } else if (kind === 'plate') {
+      this.plates = Array.from({ length: randi(3, 6) }, () => ({ x: rand(-5, 5), y: rand(-5, 5), r: rand(2.5, 5), z: rand(1.5, 5) }));
+      this.R = 12;
+    } else if (kind === 'whip') {
+      this.whips = Array.from({ length: randi(4, 8) }, () => ({ a: rand(0, TAU), len: rand(7, 15), bend: rand(-0.25, 0.25), phase: rand(0, TAU) }));
+      this.R = 15;
     } else {
       this.tubes = Array.from({ length: randi(5, 9) }, () => ({ ox: rand(-3.5, 3.5), oy: rand(-3.5, 3.5), r: rand(1.1, 1.8), h: rand(2.5, 4.5) }));
       this.R = 6;
@@ -340,9 +346,24 @@ class Coral {
         let px = this.x, py = this.y, a = rb.a + sway, rad = 0.9;
         for (let k = 1; k <= 3; k++) {
           const seg = rb.len / 3, nx = px + Math.cos(a) * seg, ny = py + Math.sin(a) * seg;
-          r.tube(px, py, rad, k * 1.2 - 1.2, nx, ny, rad * 0.8, k * 1.2, 0.6, k === 3 ? lighten(this.m) : this.m, id);
+          r.tube(px, py, rad, k * 1.2 - 1.2, nx, ny, rad * 0.8, k * 1.2, 0.6, k === 3 ? (this.tip || lighten(this.m)) : this.m, id);
           if (k === 2) r.tube(nx, ny, 0.6, 2.4, nx + Math.cos(a + 0.5) * seg * 0.7, ny + Math.sin(a + 0.5) * seg * 0.7, 0.5, 3, 0.6, this.m, id);
           px = nx; py = ny; rad *= 0.8; a += sway * 0.5;
+        }
+      }
+    } else if (this.kind === 'plate') {
+      for (const plate of this.plates) {
+        r.tube(this.x, this.y, 0.8, 0, this.x + plate.x, this.y + plate.y, 0.7, plate.z, 0.7, this.m, id);
+        r.ellipsoid(this.x + plate.x, this.y + plate.y, plate.r, plate.r * 0.72, this.phase, plate.z, 0.8, this.tip || lighten(this.m), id);
+      }
+    } else if (this.kind === 'whip') {
+      for (const whip of this.whips) {
+        let px = this.x, py = this.y;
+        for (let k = 1; k <= 4; k++) {
+          const u = k / 4, sway = Math.sin(t * 0.6 + whip.phase + u * 2) * 0.06;
+          const a = whip.a + whip.bend * u + sway, nx = this.x + Math.cos(a) * whip.len * u, ny = this.y + Math.sin(a) * whip.len * u;
+          r.tube(px, py, 0.8 - u * 0.35, (k - 1) * 2, nx, ny, 0.8 - u * 0.38, k * 2, 0.5, k === 4 ? (this.tip || lighten(this.m)) : this.m, id);
+          px = nx; py = ny;
         }
       }
     } else {

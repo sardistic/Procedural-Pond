@@ -615,7 +615,10 @@ function render(full = false) {
   r.alpha = 1;
   // Refraction: rows and columns of the floor shift by a pixel as the surface moves.
   const water = WATERS[o.water] || WATERS.teal, wob = world.wob;
-  const amp = water.wobble * (1 + Math.max(0, world.weather.gust) * 0.5 + world.tide.surf * 0.3);
+  // At close range the camera reads as being beneath the surface, near the subject.
+  const close = clamp((view.k - Math.max(5, fitK())) / Math.max(1, 16 - Math.max(5, fitK())), 0, 1);
+  const surfaceVis = (1 - close) * (1 - close);
+  const amp = water.wobble * surfaceVis * (1 + Math.max(0, world.weather.gust) * 0.5 + world.tide.surf * 0.3);
   for (let y = rect[1]; y <= rect[3]; y++) wob.x[y] = Math.round(Math.sin(y * 0.19 + t * 0.7) * amp * (0.55 + 0.45 * Math.sin(t * 0.2 + y * 0.013)));
   for (let x = rect[0]; x <= rect[2]; x++) wob.y[x] = Math.round(Math.sin(x * 0.15 + t * 0.6) * amp * (0.55 + 0.45 * Math.sin(t * 0.17 + x * 0.011)));
   // A bloom turns the water green (a red tide, red); wind and surf raise a swell, bigger over the deep.
@@ -628,16 +631,16 @@ function render(full = false) {
     bg: world.bg, bgLight: world.bgLight, lightTint: world.lightTint, caustic: world.caustic, t,
     outline: OUTLINE, emissive: EMISSIVE, fade: FADE, thick: THICK, anyThick, tint: light.tint,
     caustics: o.caustics && light.caustics && q < 2, causticT: water.caustic, shadows: o.shadows, outlines: o.outlines,
-    fog: { color: fogColor, amount: (water.fog + (bloom ? 0.12 : 0)) * (glass ? 0.3 : 1) }, wob, deepK: glass ? 0.5 : 1,
+    fog: { color: fogColor, amount: (water.fog + (bloom ? 0.12 : 0)) * (glass ? 0.3 : 1) * (1 - close * 0.9) }, wob, deepK: (glass ? 0.5 : 1) * (1 - close * 0.65), surfaceVis,
     shore: world.shore, bgDry: world.bgDry, riverMask: world.riverMask || null, riverDeep: typeof riverDeepK === 'function' ? riverDeepK(world) : 0.5, riverColor: world.waterColor, tide: world.tide.level, surf: world.tide.surf, wave: world.tide.wave,
     depth: world.depth, deepColor: DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed,
     voidSkin: world.eldMarks && world.eldMarks.length || world.plants.some((p) => p.tr && p.tr.eld) ? VOID_SKIN : null,
     swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6], clouds: q < 1 ? world.clouds : null, sky: typeof heavensSky === 'function' ? heavensSky(world, skyReflection(light)) : skyReflection(light), skyK: glass ? 1.4 : typeof heavenNow === 'function' && heavenNow(world, 'aurora') ? 1.6 : 1 - world.weather.rain * 0.7,
     lights: q < 2 ? buildLights(world, rect) : null, lightVis: light.darkness || 0, deepColor2: deepTint(world), trench: world.trench, trenchGlow: TRENCH_GLOW[branchOf(world)],
-    chop: q < 1 && !glass ? clamp(0.18 + Math.max(0, world.weather.gust) * 0.9 + world.tide.surf * 0.35, 0, 1.2) : 0, spindrift: q < 1 ? clamp((swell - 0.75) * 2.5, 0, 1) : 0,
+    chop: q < 1 && !glass ? clamp(0.18 + Math.max(0, world.weather.gust) * 0.9 + world.tide.surf * 0.35, 0, 1.2) * surfaceVis : 0, spindrift: q < 1 ? clamp((swell - 0.75) * 2.5, 0, 1) * surfaceVis : 0,
     waveMode: o.hdWaves ? 'hd' : 'classic', gust: glass ? 0 : world.weather.gust, rain: world.weather.rain,
   }, rect);
-  drawGlints();
+  if (close < 0.9) drawGlints();
   if (world.bones) drawBones();
   if (full || world.bones) ctx.putImageData(image, 0, 0);
   else ctx.putImageData(image, 0, 0, rect[0], rect[1], rect[2] - rect[0] + 1, rect[3] - rect[1] + 1);
@@ -1157,6 +1160,25 @@ function removeAt(x, y) {
 
 // tx, ty: where the pond sits on screen. reach: which end the view may run on past (see beachRange).
 const view = { k: 3, tx: 0, ty: 0, r: 0, reach: { west: false, east: false }, lastTx: 0, lastTy: 0, glide: null };
+let viewUrlReady = false, viewUrlTimer = 0;
+function viewParams(u) {
+  const [x, y] = screenToWorld(innerWidth / 2, innerHeight / 2);
+  u.searchParams.set('x', clamp(x, 0, world.W).toFixed(1));
+  u.searchParams.set('y', clamp(y, 0, world.H).toFixed(1));
+  u.searchParams.set('z', String(view.k));
+  u.searchParams.set('tx', String(Math.round(view.tx)));
+  u.searchParams.set('ty', String(Math.round(view.ty)));
+  if (view.r) u.searchParams.set('r', String(view.r)); else u.searchParams.delete('r');
+  return u;
+}
+function scheduleViewUrl() {
+  if (!viewUrlReady) return;
+  clearTimeout(viewUrlTimer);
+  viewUrlTimer = setTimeout(() => {
+    const u = viewParams(new URL(location.href));
+    history.replaceState(null, '', `${u.pathname}${u.search}${u.hash}`);
+  }, 250);
+}
 // The view can be turned a quarter at a time (r), so a neighbour's pond shows with
 // its beach on the same side of the screen as yours. World ↔ screen:
 const ROT_SIDE = [[0, 1, 2, 3], [2, 3, 1, 0], [1, 0, 3, 2], [3, 2, 0, 1]]; // where each side of the pond ends up on screen
@@ -1212,6 +1234,7 @@ function applyView() {
   if (typeof placeBeyond === 'function') { placeBeyond(); edgePull(); }
   if (typeof placeHinter === 'function') placeHinter();
   if (typeof placeFine === 'function') placeFine();
+  scheduleViewUrl();
 }
 
 function zoomTo(k, cx = innerWidth / 2, cy = innerHeight / 2) {
@@ -1677,18 +1700,54 @@ function miniJump(e) {
   const u = g.x + clamp((e.clientX - r.left) / r.width, 0, 1) * g.span;
   const v = g.y + clamp((e.clientY - r.top) / r.height, 0, 1) * g.span;
   const [x, y] = miniWorld(u, v);
-  stopFollow();
+  settleMapView();
   centerOn(x, y);
   drawMinimap();
 }
+function settleMapView() {
+  stopFollow();
+  view.glide = null;
+  view.reach = { west: false, east: false };
+  const [w, h] = screenSize(), [xl, xh] = normalRange(w, innerWidth), [yl, yh] = normalRange(h, innerHeight);
+  view.lastTx = clamp(view.lastTx, xl, xh);
+  view.lastTy = clamp(view.lastTy, yl, yh);
+}
 mini.addEventListener('pointerdown', (e) => { mini.setPointerCapture(e.pointerId); miniJump(e); });
 mini.addEventListener('pointermove', (e) => { if (e.buttons) miniJump(e); });
+// The side cut uses a widened beach in its first quarter, just like drawSlice.
+const slice = document.getElementById('slice');
+function sliceJump(e) {
+  const side = world.shoreSide ?? 3, axisX = side < 2, len = axisX ? world.W : world.H, cross = axisX ? world.H : world.W;
+  const at = (a, f) => { const pos = side === 0 || side === 2 ? a : len - 1 - a; return axisX ? [pos, cross * f] : [cross * f, pos]; };
+  let beach = 0;
+  if (world.shore) for (let a = 0; a < len; a += 2) if ([0.3, 0.5, 0.7].some((f) => shoreAt(world, ...at(a, f)) > 0.02)) beach = a;
+  const share = world.shore && beach > 4 ? Math.max(0.25, beach / len) : 0;
+  const bounds = slice.getBoundingClientRect(), u = clamp((e.clientX - bounds.left) / bounds.width, 0, 1);
+  const a = !share ? u * len : u < share ? u / share * beach : beach + (u - share) / (1 - share) * (len - beach);
+  const [cx, cy] = screenToWorld(innerWidth / 2, innerHeight / 2), pos = side === 0 || side === 2 ? a : len - 1 - a;
+  settleMapView();
+  centerOn(axisX ? pos : cx, axisX ? cy : pos);
+  drawSlice(); drawMinimap();
+}
+slice.addEventListener('pointerdown', (e) => { slice.setPointerCapture(e.pointerId); sliceJump(e); });
+slice.addEventListener('pointermove', (e) => { if (e.buttons) sliceJump(e); });
+const expandMap = document.getElementById('map-expand');
+expandMap.addEventListener('click', () => {
+  const on = document.body.classList.toggle('map-tall');
+  document.body.classList.add('map-open');
+  document.getElementById('map-toggle').setAttribute('aria-pressed', 'true');
+  expandMap.setAttribute('aria-pressed', String(on));
+  expandMap.textContent = on ? 'Shrink ↙' : 'Expand ↗';
+  expandMap.title = on ? 'Restore small map' : 'Expand map to window height';
+  drawMinimap(); drawSlice();
+});
+document.getElementById('map-depths').addEventListener('click', () => setEvo(!evoUi.open));
 function miniPage(delta) {
   const g = miniLayout(), next = clamp(miniSection + delta, 0, g.count - 1);
   if (next === miniSection) return;
   miniSection = next;
   const section = miniLayout(), [x, y] = miniWorld(section.x + section.span / 2, section.y + section.span / 2);
-  stopFollow();
+  settleMapView();
   centerOn(x, y);
   drawMinimap();
 }
@@ -2125,7 +2184,12 @@ function shareUrl() {
   u.searchParams.set('pond', world.seed);
   for (const k of ['habitat', 'floor', 'water', 'world']) if (world.opts[k] !== DEFAULT_OPTS[k]) u.searchParams.set(k, world.opts[k]);
   if (world.opts.world === 'auto') u.searchParams.set('size', `${world.W}x${world.H}`);
-  return u.toString();
+  return viewParams(u).toString();
+}
+function viewSearch() {
+  const source = viewParams(new URL(location.href)).searchParams, query = new URLSearchParams();
+  for (const key of ['x', 'y', 'z', 'r', 'tx', 'ty']) if (source.has(key)) query.set(key, source.get(key));
+  return `?${query}`;
 }
 
 // Hover card: who is this, how old, how hungry, what are they up to.
@@ -2580,7 +2644,7 @@ $('reset').addEventListener('click', () => {
 async function sharePond() {
   let url = null;
   if (Net.base) {
-    try { await pushPond(world); saveNow(); refreshBoard(); url = shortUrl(linkName(world.link)); } catch { /* fall back to the long link */ }
+    try { await pushPond(world); saveNow(); refreshBoard(); url = `${shortUrl(linkName(world.link))}${viewSearch()}`; } catch { /* fall back to the long link */ }
   }
   if (!url) url = `${shareUrl()}#s=${await encodePond(world)}`;
   const note = world.link ? `Link copied: ${url.replace(/^https?:\/\//, '')}, the same as your address bar. It opens your pond as it grows`
@@ -2756,7 +2820,7 @@ let linkBusy = false;
 async function updateLink() {
   if (linkBusy || world.noSave || !world.raster) return;
   if (HOME === '/') {
-    const want = world.link ? `/${linkName(world.link)}` : `/${new URL(shareUrl()).search}`;
+    const want = world.link ? `/${linkName(world.link)}${viewSearch()}` : `/${new URL(shareUrl()).search}`;
     if (location.pathname + location.search !== want || (location.hash && location.hash !== '#bones')) {
       history.replaceState(null, '', want + (location.hash === '#bones' ? '#bones' : ''));
     }
@@ -2898,6 +2962,30 @@ async function boot() {
   syncControls();
   layout(true);
   world.linkAdopt = false;
+  const vx = Number(params.get('x')), vy = Number(params.get('y')), vz = Number(params.get('z')), vr = Number(params.get('r'));
+  if (params.has('x') && params.has('y') && Number.isFinite(vx) && Number.isFinite(vy)) {
+    if (Number.isInteger(vr) && vr >= 0 && vr <= 3) view.r = vr;
+    if (params.has('z') && Number.isFinite(vz)) view.k = clamp(vz, minK(), 16);
+    const [sx, sy] = worldToScreen(clamp(vx, 0, world.W), clamp(vy, 0, world.H));
+    view.tx += innerWidth / 2 - sx; view.ty += innerHeight / 2 - sy;
+    // Preserve a camera already walking beyond a beach edge when following its link.
+    view.lastTx = view.tx; view.lastTy = view.ty;
+    applyView();
+    const savedTx = Number(params.get('tx')), savedTy = Number(params.get('ty'));
+    if (params.has('tx') && params.has('ty') && Number.isFinite(savedTx) && Number.isFinite(savedTy)) {
+      const [tx0, ty0] = [view.tx, view.ty];
+      view.tx = savedTx; view.ty = savedTy;
+      const [rx, ry] = screenToWorld(innerWidth / 2, innerHeight / 2);
+      if (Math.hypot(rx - vx, ry - vy) <= 1) {
+        view.lastTx = savedTx; view.lastTy = savedTy;
+        canvas.style.transform = canvasTransform(view.tx, view.ty, view.k, view.r, world.W, world.H);
+        if (typeof placeBeyond === 'function') { placeBeyond(); edgePull(); }
+        if (typeof placeHinter === 'function') placeHinter();
+        if (typeof placeFine === 'function') placeFine();
+      } else { view.tx = tx0; view.ty = ty0; }
+    }
+  }
+  viewUrlReady = true;
   if (edge === 'west' || edge === 'east') startAtEdge(edge);
   if (observe) {
     $('observe-name').textContent = `${observe.title || observe.id}${observe.by ? ` · ${observe.by}'s pond` : ''}`;

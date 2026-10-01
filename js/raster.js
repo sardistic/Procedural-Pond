@@ -273,14 +273,15 @@ class Raster {
     const skr = sky & 255, skg = (sky >> 8) & 255, skb = (sky >>> 16) & 255, cdx = t * 1.1, cdy = t * 0.35, mdx = t * 0.2;
     // (Wave marks: always drawn level, the way top-down water is; they drift with the swell.)
     const wd = t * (1.2 + 2 * swell), wdu = -sw[0] * wd, wdv = -sw[1] * wd;
-    const hdWaves = s.waveMode === 'hd' && typeof waveField === 'function';
+    const surfaceVis = s.surfaceVis ?? 1;
+    const hdWaves = surfaceVis > 0 && s.waveMode === 'hd' && typeof waveField === 'function';
     const physical = hdWaves ? waveField(s) : null, surface = hdWaves ? new Float32Array(4) : null;
     const [rx0, ry0, rx1, ry1] = rect;
     for (let y = ry0; y <= ry1; y++) {
       for (let x = rx0, p = rx0 + y * W; x <= rx1; x++, p++) {
         const i = id[p];
         if (hdWaves) waveAt(physical, x, y, p, surface);
-        const localTide = hdWaves && shore && shore[p] ? tideL + surface[0] * 2.5 : tideL;
+        const localTide = hdWaves && shore && shore[p] ? tideL + surface[0] * 2.5 * surfaceVis : tideL;
         let c, n, depth, fogScale = 1, waveS = 0, waveC = 0, refl = 0, dry = false, stroke = 0;
         if (shore) {
           const sp = shore[p];
@@ -315,8 +316,8 @@ class Raster {
           } else {
             let q = p;
             if (wx) {
-              const qx = x + wx[y] + (hdWaves ? Math.round(surface[1] * 2.5) : 0);
-              const qy = y + wy[x] + (hdWaves ? Math.round(surface[2] * 2.5) : 0);
+              const qx = x + wx[y] + (hdWaves ? Math.round(surface[1] * 2.5 * surfaceVis) : 0);
+              const qy = y + wy[x] + (hdWaves ? Math.round(surface[2] * 2.5 * surfaceVis) : 0);
               q = (qx < 0 ? 0 : qx >= W ? W - 1 : qx) + (qy < 0 ? 0 : qy >= H ? H - 1 : qy) * W;
             }
             const se = shore ? shore[q] : 0;
@@ -499,6 +500,8 @@ class Raster {
         }
         // The surface over it all (after the deep has darkened the floor below): the sky in calm
         // water, the lit and shadowed faces of waves, foam on the biggest.
+        stroke *= surfaceVis; waveS *= surfaceVis; refl *= surfaceVis;
+        if (surfaceVis < 1 && waveC >= 8 && BAYER4[(x & 3) | ((y & 3) << 2)] > surfaceVis) waveC = 0;
         if (stroke && waveC < 8) {
           const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
           if (stroke > 0) { const a = (stroke * 150) | 0; c = (0xff000000 | ((cb + (((0xf0 - cb) * a) >> 8)) << 16) | ((cg + (((0xe8 - cg) * a) >> 8)) << 8) | (cr + (((0xdc - cr) * a) >> 8))) >>> 0; }

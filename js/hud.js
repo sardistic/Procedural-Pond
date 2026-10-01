@@ -1261,6 +1261,8 @@ function renderCreature() {
   parts.push(head);
   const water = waterOf(c), mm = mismatch(world, c), a = aggressionAt(world, c.x, c.y);
   parts.push(colored('p', 'cr-sub', `${d.label} · ${d.stage} · gen ${d.gen} · ${ageLabel(L.age)} of ~${Math.round(L.lifespan / 60)}m`));
+  const speciesNote = typeof SPECIES_NOTES !== 'undefined' && SPECIES_NOTES[c.species];
+  parts.push(colored('p', 'cr-description', `${speciesNote || 'A living animal in this pond, with its own behavior and inherited traits.'} This individual's energy and comfort change as it finds food, shelter and suitable water; its traits can pass to its young.`));
   if (!here) {
     parts.push(colored('p', 'cr-gone', rec && rec.d != null ? `No longer in the pond: left on day ${Math.floor(rec.d) + 1}${rec.why ? ` (${rec.why})` : ''}` : 'No longer in the pond'));
   } else {
@@ -1744,7 +1746,7 @@ function drawSlice() {
     g.lineWidth = 1;
     g.strokeRect(i0 + 0.5, 0.5, Math.max(2, i1 - i0) - 1, T - 1);
   }
-  cv.title = `${tierName(world, tier)}${next ? ` · next: ${tierName(world, E.tier + 1).toLowerCase()} (erosion ${E.e.toFixed(1)} of ${next.erosion})` : ' · the deepest the pond can go'}. The box is what's on screen. Click for the depths and what lives there.`;
+  cv.title = `${tierName(world, tier)}${next ? ` · next: ${tierName(world, E.tier + 1).toLowerCase()} (erosion ${E.e.toFixed(1)} of ${next.erosion})` : ' · the deepest the pond can go'}. The box is what's on screen. Click or drag to move the view.`;
 }
 
 function setEvo(open) {
@@ -2078,6 +2080,23 @@ function showObject(o) {
 }
 function hideObject() { objUi.o = null; byId('object').hidden = true; }
 
+const PLANT_DETAILS = {
+  weed: 'Its soft stems give small animals somewhere to hide and lay eggs. As it grows, the patch also releases food for tiny swimmers.',
+  eelgrass: 'These long underwater blades form a nursery for young fish. The stems sway with the water and shelter animals that would otherwise be exposed.',
+  anemone: 'An anemone is a stationary animal with feeding tentacles, rather than a plant. Clownfish can live among its arms and defend their home.',
+  coral: 'A coral colony is built by many small animals. Its branching, plate, fan, tube or dome form gives reef fish cover and creates feeding space.',
+  urchin: 'A sea urchin is a spiny grazing animal. It moves slowly across the floor, and its spines make it a useful landmark and refuge.',
+  marimo: 'A marimo is a ball of living algae that rolls gently on the bottom. It makes a quiet patch favored by axolotls and snails.',
+  duckweed: 'Tiny floating leaves collect at the surface. Together they shade the water and give small surface animals a place to gather.',
+  lily: 'A lily pad is a broad floating leaf rooted below. Frogs rest on top while fish and other animals shelter in its shade.',
+  blackcoral: 'Black coral is a slow-growing deep-water animal colony, named for its dark skeleton. Branching trees, fans, whips and tubes provide shelter where sunlight is scarce.',
+  glowcap: 'These small deep-water caps emit their own light. Their glow marks a pocket of habitat in water that sunlight cannot reach.',
+  tubeworms: 'Tube worms anchor themselves on the deep floor and extend feeding plumes into the water. Their cluster creates cover around a trench.',
+  paleroots: 'Pale roots spread through the deep floor and form shelter in the crypts. Their light color stands out in the dim water.',
+  sealily: 'A sea lily is a stalked relative of starfish, with feathery arms that catch food. Here its glow draws deep life to the colony.',
+  weepmoss: 'Weeping moss trails over submerged surfaces in the roots. Its soft growth makes cover and carries a faint light.',
+  starweed: 'Star-weed grows in the drowned city and glows in the abyss. Its light attracts creatures adapted to that depth.',
+};
 function renderObject() {
   const o = objUi.o, box = byId('object');
   if (!o) return;
@@ -2091,7 +2110,7 @@ function renderObject() {
   const tree = el('div', 'trait-tree');
   if (isS) {
     const def = STRUCTURES[o.kind];
-    parts.push(colored('p', 'cr-sub', `${def.desc}.`), el('p', 'note', `Built on day ${Math.floor(o.born || 0) + 1}${depthAt(world, o.x, o.y) > 0.15 ? ' · in deep water: it lets the pond hold more, and draws deep life up' : ''}`));
+    parts.push(colored('p', 'cr-description', `${def.label} is a structure placed in the pond. ${def.desc[0].toUpperCase()}${def.desc.slice(1)}. Its effect reaches nearby animals and habitat; the traits below can change what it does.`), el('p', 'note', `Built on day ${Math.floor(o.born || 0) + 1}${depthAt(world, o.x, o.y) > 0.15 ? ' · in deep water: it lets the pond hold more, and draws deep life up' : ''}`));
     for (const [k, T] of Object.entries(STRUCT_TRAITS)) {
       const lv = (o.lv && o.lv[k]) || 0;
       tree.append(traitButton(T.label, 'pearls', lv < T.max ? T.cost(o, lv) : null, T.note, lv >= T.max, () => buyStructTrait(world, o, k), pips(lv, T.max), null, renderObject));
@@ -2118,6 +2137,7 @@ function renderObject() {
     }
   } else {
     const g = o.growth ?? 1, likes = typeof likedByText === 'function' ? likedByText(o.make) : '';
+    parts.push(colored('p', 'cr-description', PLANT_DETAILS[o.make] || `${typeof plantTip === 'function' ? plantTip(o.make) : 'A living part of the pond.'} It grows here and changes the habitat around it.`));
     parts.push(colored('p', 'cr-sub', `${Math.round(g * 100)}% grown · ${o.age != null ? `${Math.floor(o.age)} of about ${Math.round(o.span || 0)} days` : 'full grown'}${o.born != null ? ' · planted by you' : ''}`));
     if (likes) parts.push(colored('p', 'note', likes));
     for (const [k, T] of Object.entries(PLANT_TRAITS)) {
@@ -2147,7 +2167,6 @@ function initHud() {
   byId('score-close').addEventListener('click', () => setScore(false));
   byId('hatch-close').addEventListener('click', () => setHatchery(false));
   byId('hatch-btn').addEventListener('click', () => setHatchery(!hatchUi.open));
-  byId('slice').addEventListener('click', () => setEvo(!evoUi.open));
   byId('open-depths').addEventListener('click', () => setEvo(!evoUi.open));
   byId('open-hatchery').addEventListener('click', () => { if (world.hatchery && hatcheryStructure(world)) setHatchery(!hatchUi.open); else showTicker('Build a hatchery first (the Build section, 250 pearls and 40 essence)'); });
   byId('evo-close').addEventListener('click', () => setEvo(false));
