@@ -1272,6 +1272,19 @@ function renderCreature() {
     parts.push(bar, colored('p', 'cr-sub', [d.mood, comfortWord(L.comfort), aggressionWord(a), water && (mm > 0.3 ? `out of place in ${water === 'fresh' ? 'salt' : 'fresh'} water` : `in ${water} water`), d.fed && 'well fed', ...d.temper].filter(Boolean).join(' · ')));
   }
   const gr = gradeOf(L.genome);
+  if (here && typeof mindEligible === 'function' && (mindEligible(c) || L.mind)) {
+    const mind = el('div', 'eld');
+    mind.append(el('b', null, 'Awakened mind'), el('p', 'note', L.mind ?
+      c.mind?.status || 'Watching for an encounter' : 'A rare, intelligent swimmer can learn from encounters and choose how to respond. One mind per pond.'));
+    if (!world.observe) {
+      const button = el('button', null, L.mind ? 'Return to instincts' : 'Awaken mind');
+      button.type = 'button'; button.disabled = !L.mind && !mindEligible(c);
+      button.setAttribute('aria-pressed', String(!!L.mind));
+      button.addEventListener('click', () => { awakenMind(world,c); renderCreature(); });
+      mind.append(button);
+    }
+    parts.push(mind);
+  }
   const gradeChip = chip(`${GRADES[gr]} quality`, GRADE_COLOR[gr]);
   gradeChip.title = 'Graded from its genes: its working genes against the average, gifts up, curses down. It sets what it is worth.';
   parts.push(Object.assign(el('div', 'chips'), {}).appendChild(gradeChip).parentNode);

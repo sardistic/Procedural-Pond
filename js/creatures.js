@@ -272,8 +272,9 @@ class Fish extends Creature {
       this.tz = this.zMax;
     } else {
       const hungry = !this.life || this.life.energy < 0.8;
-      const prey = this.prey && !this.prey.caught && !this.prey.gone ? this.prey : null;
-      let f = prey || world.nearestFood(this.x, this.y, this.sight * (hungry ? 1.4 : 1),
+      const intent = typeof mindIntent === 'function' ? mindIntent(world, this) : null;
+      const prey = intent ? intent.prey || null : this.prey && !this.prey.caught && !this.prey.gone ? this.prey : null;
+      let f = intent ? intent.food || prey : prey || world.nearestFood(this.x, this.y, this.sight * (hungry ? 1.4 : 1),
         (fd) => (hungry || fd.fed) && (!this.foodFilter || this.foodFilter(fd)));
       if (f && typeof islandWaterRoute === 'function' && !islandWaterRoute(world, this.x, this.y, f.x, f.y)) f = null;
       this.chasing = !!f;
@@ -286,6 +287,8 @@ class Fish extends Creature {
           eat(world, this, f);
           this.timer = 0;
         }
+      } else if (intent) {
+        gx = intent.x - this.x; gy = intent.y - this.y; want = intent.speed;
       } else {
         if (this.timer <= 0 || Math.hypot(this.tx - this.x, this.ty - this.y) < 8) this.wander(world);
         gx = this.tx - this.x; gy = this.ty - this.y;

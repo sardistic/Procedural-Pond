@@ -232,6 +232,22 @@ With **Life** on (Scene section), the pond runs itself:
 
 ## Hosting
 
+Rare swimmers with an intellect multiplier of at least 1.1 have an **Awaken mind**
+button in their creature card. One awakened individual per pond can choose food,
+approved prey, underwater cover, retreat, waiting or nearby exploration based on
+its perceived neighbors, hunger, temperament, traits, upgrades and four recent
+encounters. The card shows its current intent. The selection and memory persist
+in local saves and server-backed pond links; compact fragment links retain their
+existing format. Movement, shore avoidance and immediate escape remain local.
+
+Thinking requires a server-backed pond owned by the current browser or signed-in
+account, and `TYPESAFE_API_KEY` in the API service environment. Keep that key
+server-side. `TYPESAFE_MODEL` optionally selects a model (default `jev-latest`).
+The API makes at most one decision per pond per 30 real seconds, 120 per pond per
+hour, 600 total per hour and two concurrently. Missing configuration, network
+failure, stale decisions or uncertain threatening encounters retain ordinary
+behavior. Run the mocked service checks with `node --test server/minds.test.js`.
+
 The `Dockerfile` builds a small nginx image that serves the site files. Configuration is in
 `deploy/nginx.conf`: caching, gzip, security headers, a Content-Security-Policy, and 301 redirects from `www.pond.nz` and `pond.sardistic.com` to the canonical `pond.nz`. It serves pond addresses and four-word ids (lower-case words and digits joined by hyphens, in any case) as `index.html` and proxies `/api/` (rate-limited) to the network alias `pond-api`, a service built from `server/Dockerfile` with a volume at `/data` for its SQLite file. The name is resolved per request, so the site keeps serving if the API is down.
 

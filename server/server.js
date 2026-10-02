@@ -22,6 +22,8 @@ const { DatabaseSync } = require('node:sqlite');
 const WORDS = require('./words.js');
 const { cleanTitle, nameAllowed } = require('./namefilter.js');
 const { slugify, slugOk } = require('./slug.js');
+const { createMindService } = require('./minds.js');
+const minds = createMindService();
 
 const PORT = +process.env.PORT || 8080;
 const DB_PATH = process.env.DB_PATH || './pond.db';
@@ -605,6 +607,16 @@ async function takeWanderer(req) {
 async function route(req) {
   const url = new URL(req.url, 'http://pond'), path = url.pathname;
   if (path === '/api/health' && req.method === 'GET') return [200, { ok: true }];
+  if (path === '/api/minds' && req.method === 'GET') return [200, { enabled: minds.enabled }];
+  if (path === '/api/minds/decide' && req.method === 'POST') {
+    if (!sameOrigin(req)) throw new HttpError(403, 'not from here');
+    const body = await readJson(req), id = String(body?.pond || '');
+    if (!ID_RE.test(id)) throw new HttpError(400, 'bad pond id');
+    const row = q.get.get(id);
+    if (!row || (!keyMatches(row, req.headers['x-pond-key']) && !ownsRow(req, row))) throw new HttpError(403, 'not your pond');
+    const result = await minds.decide(id, body.scenario);
+    return [result.status, result.body];
+  }
   // Is a pond name allowed? (Asked as the owner types one; every save is checked again anyway.)
   if (path === '/api/title-check' && req.method === 'POST') {
     const body = await readJson(req), t = cleanTitle(body && body.title);

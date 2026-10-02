@@ -175,6 +175,7 @@ function creatureRecord(c, a = {}) {
       absorbed: L.absorbed || undefined, ascended: L.ascended || undefined, boosts: L.boosts || undefined,
       quirks: L.quirks && L.quirks.length ? L.quirks : undefined, ill: L.ill && L.ill.length ? L.ill : undefined,
       hunt: L.hunt || undefined, hunter: L.hunter || undefined, madCount: L.madCount || undefined,
+      mind: L.mind || undefined, mindMemory: L.mindMemory?.slice(-4),
       safe: L.safe || undefined, paragon: L.paragon || undefined, warps: L.warps && L.warps.length ? L.warps : undefined,
       wanderer: L.wanderer || undefined, para: L.para || undefined,
       lifespan: r2(L.lifespan), gen: L.gen, scale: L.scale, old: !!L.old, inbred: r2(L.inbred || 0),
@@ -192,6 +193,8 @@ function restoreCreature(world, r, a = {}) {
     fed: r.L.fed || 0, comfort: r.L.comfort ?? 0.5, corruption: r.L.corruption || 0, bound: !!r.L.bound,
     absorbed: r.L.absorbed || 0, ascended: !!r.L.ascended, boosts: r.L.boosts || null,
     quirks: r.L.quirks || [], ill: r.L.ill || [], hunt: r.L.hunt || null, hunter: !!r.L.hunter, madCount: r.L.madCount || 0,
+    mind: r.L.mind === true, mindMemory: Array.isArray(r.L.mindMemory) ? r.L.mindMemory.slice(-4).filter(m =>
+      ['fed','threat','prey_lost'].includes(m?.event) && typeof m.species === 'string' && m.species.length<=40) : [],
     safe: !!r.L.safe, paragon: !!r.L.paragon, warps: r.L.warps && r.L.warps.length ? r.L.warps : null, wanderer: r.L.wanderer || null,
     para: r.L.para && typeof PARASITES !== 'undefined' && PARASITES[r.L.para.k] ? r.L.para : null,
   });

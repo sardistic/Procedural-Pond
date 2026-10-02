@@ -736,6 +736,7 @@ function frame(now) {
     update(dt * world.opts.speed * (hardMode(world) ? HARD_PACE : 1)); // (hard mode runs slower)
   }
   runJobs();
+  if (typeof mindTick === 'function') mindTick(world);
   growTick(now);
   updateCamera(dt);
   updateGlide(dt);
