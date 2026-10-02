@@ -65,3 +65,21 @@ test('allow only two simultaneous thoughts across different ponds and release ca
   resolvers.shift()(answer());resolvers.shift()(answer());
   assert.equal((await second).status,200);assert.equal((await third).status,200);
 });
+
+test('expanded action choices and creature context reach TypeSafe without arbitrary actions', async () => {
+  const actions=['wait','forage','hunt','shelter','flee','explore','rest','shoal','investigate','avoid','ambush','camouflage','ink'];
+  const state=encounter();state.options=actions.map(action=>({action,distance:10}));
+  Object.assign(state.creature,{species:'octopus',locomotion:'cephalopod',comfort:.3,depth:.6});
+  state.neighbors.push({species:'octopus',distance:20,relativeSize:1,role:'neighbor',aggression:1.7});
+  let sent;
+  const service=createMindService({key:'test-only',request:async(url,options)=>{
+    sent=JSON.parse(options.body);
+    return {ok:true,json:async()=>({answers:{action:{type:'choice',choice:'ink',confidence:1,
+      probabilities:Object.fromEntries(actions.map(a=>[a,a==='ink'?1:0]))}}})};
+  }});
+  assert.deepEqual(await service.decide('pond',state),{status:200,body:{action:'ink',confidence:1}});
+  assert.equal(sent.state.creature.locomotion,'cephalopod');assert.equal(sent.state.creature.comfort,.3);
+  assert.equal(sent.state.neighbors[1].sameSpecies,true);assert.equal(sent.state.neighbors[1].aggression,1.7);
+  assert.equal(Object.keys(sent.questions.action.criteria).length,13);
+  state.options.push({action:'teleport'});assert.equal(cleanScenario(state),null);
+});

@@ -1004,7 +1004,7 @@ body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, bo
 /* ---- minimap layer switch, and the side view above it ---- */
 
 .mini-wrap { position: relative; z-index: 10; display: grid; gap: 4px; }
-.map-tools { display: flex; justify-content: space-between; gap: 4px; width: min(211px, var(--map-fit-width, 211px)); }
+.map-tools { display: none; justify-content: space-between; gap: 4px; width: min(211px, var(--map-fit-width, 211px)); }
 .map-tools button { flex: 1; min-width: 0; padding: 2px 4px; font-size: 9px; box-shadow: none; }
 .slice, .minimap { touch-action: none; }
 .map-layer { position: absolute; bottom: 34px; right: 4px; padding: 2px 5px; font-size: 8px; box-shadow: none; opacity: 0.85; }
@@ -1316,6 +1316,7 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
   .score { top: max(12px, env(safe-area-inset-top)); }
 }
 @media (max-width: 760px) {
+  .map-tools { display: flex; }
   /* Sheets from the bottom: the animal's card, a plant's or structure's, the census, the journal, a spawn. */
   .creature, .object { top: auto; bottom: max(8px, env(safe-area-inset-bottom)); left: 8px; right: 8px; width: auto; max-height: 62vh; }
   .census, .log-panel { position: fixed; top: auto; bottom: max(8px, env(safe-area-inset-bottom)); left: 8px; right: 8px; width: auto; transform: none; max-height: 66vh; }
@@ -1439,8 +1440,9 @@ html:not(.font-pixel) .sc-facts { font-size: 12px; }
 #show-hud:hover:not([aria-pressed="true"]) .menu-line:nth-child(2) { animation: menu-wave 0.62s ease-in-out 0.1s 1; }
 #show-hud:hover:not([aria-pressed="true"]) .menu-line:nth-child(3) { animation: menu-wave 0.62s ease-in-out 0.2s 1; }
 #show-hud[aria-pressed="true"] { border-color: var(--hot); }
-body.map-tall.map-open .mini-wrap { position: fixed; top: 8px; left: max(64px, env(safe-area-inset-left)); right: auto; bottom: auto; z-index: 8; width: min(calc(81vh - 50px), calc(100vw - 80px)); padding: 4px; background: var(--panel); border: 2px solid var(--edge); box-shadow: 4px 4px 0 var(--ink); }
 .sky { z-index: 10; }
+@media (max-width: 760px) {
+body.map-tall.map-open .mini-wrap { position: fixed; top: 8px; left: max(64px, env(safe-area-inset-left)); right: auto; bottom: auto; z-index: 8; width: min(calc(81vh - 50px), calc(100vw - 80px)); padding: 4px; background: var(--panel); border: 2px solid var(--edge); box-shadow: 4px 4px 0 var(--ink); }
 body.map-tall.map-open .mini-wrap .minimap,
 body.map-tall.map-open .mini-wrap .slice,
 body.map-tall.map-open .mini-wrap .map-sections,
@@ -1448,6 +1450,9 @@ body.map-tall.map-open .mini-wrap .map-tools { display: block; width: 100%; max-
 body.map-tall.map-open .mini-wrap .map-tools { display: flex; }
 body.map-tall.map-open .mini-wrap .minimap { height: auto; }
 body.map-tall.map-open .mini-wrap .slice { height: auto; }
+}
+/* Creature controls stay clickable wherever the map is positioned. */
+.creature, .object, .spawn-card { z-index: 11; background: rgb(8, 26, 34); }
 @keyframes menu-wave { 50% { transform: translateX(3px) scaleX(0.82); } }
 @media (prefers-reduced-motion: reduce) {
   #show-hud .menu-line { transition: none; }

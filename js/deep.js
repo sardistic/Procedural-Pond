@@ -451,9 +451,15 @@ class Watcher extends Creature {
     } else {
       if (this.timer <= 0 || Math.hypot(this.tx - this.x, this.ty - this.y) < 8) { this.newTarget(world); this.timer = rand(8, 16); }
       const [ax, ay] = this.avoid(world, this.z), [dx, dy] = deepPush(world, this);
-      const gx = this.tx - this.x, gy = this.ty - this.y, gl = Math.hypot(gx, gy) || 1;
+      const intent=typeof mindIntent==='function' ? mindIntent(world,this) : null;
+      const gx = (intent?.x ?? this.tx) - this.x, gy = (intent?.y ?? this.ty) - this.y, gl = Math.hypot(gx, gy) || 1;
       this.turnToward(Math.atan2(gy / gl + ay * 2 + dy, gx / gl + ax * 2 + dx), this.turnRate, dt);
-      this.speed += (this.cruise - this.speed) * Math.min(1, dt);
+      this.speed += ((intent?.speed ?? this.cruise) - this.speed) * Math.min(1, dt);
+      if(this.life?.mind && (this.threat || this.dread)){
+        const th=this.threat||this.dread;
+        this.turnToward(Math.atan2(this.y-th.y,this.x-th.x),3,dt);
+        this.speed=this.maxSpeed;
+      }
     }
     this.x = clamp(this.x + Math.cos(this.heading) * this.speed * dt, 8, world.W - 8);
     this.y = clamp(this.y + Math.sin(this.heading) * this.speed * dt, 8, world.H - 8);

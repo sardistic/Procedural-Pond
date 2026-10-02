@@ -587,11 +587,14 @@ class Walker extends Creature {
       [gx, gy, want] = this.pointerGoal(world);
     } else {
       const hungry = !this.life || this.life.energy < 0.8;
-      const f = world.nearestFood(this.x, this.y, this.sight, (fd) => fd.z < 3 && (hungry || fd.fed));
+      const intent = typeof mindIntent === 'function' ? mindIntent(world, this) : null;
+      const f = intent ? intent.food || intent.prey || null : world.nearestFood(this.x, this.y, this.sight, (fd) => fd.z < 3 && (hungry || fd.fed));
       if (f) {
         gx = f.x - this.x; gy = f.y - this.y;
         want = this.maxSpeed;
         if (Math.hypot(gx, gy) < this.widths[0] + 1.5) eat(world, this, f);
+      } else if (intent) {
+        gx = intent.x - this.x; gy = intent.y - this.y; want = intent.speed;
       } else if (this.mode === 'walk') {
         if (this.timer <= 0 || Math.hypot(this.tx - this.x, this.ty - this.y) < 6) {
           const act = activity(world, this);
@@ -605,6 +608,10 @@ class Walker extends Creature {
         this.newTarget(world, true);
         this.timer = rand(3, 8);
       }
+    }
+    if (!this.grabbed && this.life?.mind && (this.threat || this.dread)) {
+      const th=this.threat||this.dread;
+      gx=this.x-th.x;gy=this.y-th.y;want=this.maxSpeed;
     }
     if (this.hold > world.t) want = Math.min(want, 0.4); // (holding still: being cleaned, say)
     const gl = Math.hypot(gx, gy) || 1;

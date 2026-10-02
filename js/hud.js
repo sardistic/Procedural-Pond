@@ -1275,7 +1275,12 @@ function renderCreature() {
   if (here && typeof mindEligible === 'function' && (mindEligible(c) || L.mind)) {
     const mind = el('div', 'eld');
     mind.append(el('b', null, 'Awakened mind'), el('p', 'note', L.mind ?
-      c.mind?.status || 'Watching for an encounter' : 'A rare, intelligent swimmer can learn from encounters and choose how to respond. One mind per pond.'));
+      c.mind?.status || 'Watching for an encounter' : 'A rare, intelligent creature can learn from encounters and choose how to respond. One mind per pond.'));
+    if(mindEligible(c)) {
+      const labels={wait:'watch',forage:'forage',hunt:'hunt',shelter:'shelter',flee:'flee',explore:'explore',
+        rest:'rest',shoal:'join its kind',investigate:'investigate',avoid:'keep distance',ambush:'wait in ambush',camouflage:'camouflage',ink:'ink escape'};
+      mind.append(el('p','note','Choices here: '+mindEncounter(world,c).options.map(o=>labels[o.action]).join(' · ')));
+    }
     if (!world.observe) {
       const button = el('button', null, L.mind ? 'Return to instincts' : 'Awaken mind');
       button.type = 'button'; button.disabled = !L.mind && !mindEligible(c);

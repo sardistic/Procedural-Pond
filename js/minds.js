@@ -1,13 +1,15 @@
 'use strict';
 
-// One owner-selected rare swimmer thinks at encounters; all motion stays local.
+// One owner-selected rare creature thinks at encounters; all motion stays local.
 const MINDS = { next: 0, config: null, configAt: 0, pending: false, backoff: 0, targets: new WeakMap(), targetId: 0 };
 const mindTargetId = (target) => {
   if (!target) return 0;
   if (!MINDS.targets.has(target)) MINDS.targets.set(target, ++MINDS.targetId);
   return MINDS.targets.get(target);
 };
-const mindEligible = (c) => c instanceof Fish && !c.ambient && c.life && tierOf(c.life.traits) >= 2 && geneBuffs(c).intellect >= 1.1;
+const mindSupported = (c) => c instanceof Fish || c instanceof Walker || c instanceof Octopus || c instanceof Watcher;
+const mindRarity = (c) => Math.max(tierOf(c.life?.traits || []), SPECIES_STATS[c.species]?.rarity || 0);
+const mindEligible = (c) => mindSupported(c) && !c.ambient && c.life && mindRarity(c) >= 2 && geneBuffs(c).intellect >= 1.1;
 const mindHere = (c) => c && !c.gone && !c.caught && !c.leaving && !c.dying;
 const mindSpecies = (c) => /^[a-zA-Z][a-zA-Z0-9 -]{0,39}$/.test(c.species) ? c.species : 'fish';
 const mindDistance = (a, b) => Math.hypot(a.x-b.x,a.y-b.y);
@@ -42,9 +44,11 @@ function mindEncounter(w, c) {
   neighbors.sort((a,b)=>mindDistance(c,a)-mindDistance(c,b)); neighbors.length=Math.min(8,neighbors.length);
   const threat=neighbors.find(q=>q===c.threat || q===c.dread ||
     (isPredator(q) && (q.body?.w[0]||1)>(c.body.w[0]||1)*1.3 && (q.prey===c || mindDistance(c,q)<26)));
-  const prey=c.prey && neighbors.includes(c.prey) && isPredator(c) &&
+  const prey=!(c instanceof Watcher) && c.prey && neighbors.includes(c.prey) && isPredator(c) &&
     (typeof huntable!=='function' || huntable(w,c.prey)) ? c.prey : null;
-  const food=w.nearestFood(c.x,c.y,radius,fd=>(!c.foodFilter||c.foodFilter(fd))) || null;
+  const feeds=!(c instanceof Watcher);
+  const food=feeds ? w.nearestFood(c.x,c.y,radius,fd=>(!c.foodFilter||c.foodFilter(fd)) &&
+    (!(c instanceof Walker || c instanceof Octopus) || fd.z<3)) || null : null;
   let cover=null;
   for(const p of w.plants) if(mindDistance(c,p)<radius && mindWetRoute(w,c,p) && (!cover||mindDistance(c,p)<mindDistance(c,cover)))cover=p;
   const options=[{action:'wait',x:c.x,y:c.y,speed:0}], add=(action,p,speed,extra={})=>{
@@ -53,6 +57,21 @@ function mindEncounter(w, c) {
   if(food && c.life.energy<.9)add('forage',food,c.maxSpeed,{food});
   if(prey)add('hunt',prey,c.maxSpeed,{prey});
   if(cover)add('shelter',cover,c.cruise,{cover});
+  if(!threat && c.life.energy>=.65)options.push({action:'rest',x:c.x,y:c.y,speed:0});
+  const companion=neighbors.find(q=>q.species===c.species && q!==threat && q!==prey);
+  if(companion && !threat)add('shoal',companion,c.cruise*.7,{companion,spacing:10});
+  const curious=neighbors.find(q=>q!==threat && q!==prey && q!==companion);
+  if(curious && !threat)add('investigate',curious,c.cruise*.5,{companion:curious,spacing:18});
+  const avoid=threat || neighbors.find(q=>q!==companion && mindDistance(c,q)<30);
+  if(avoid){
+    const away=Math.atan2(c.y-avoid.y,c.x-avoid.x);
+    add('avoid',{x:clamp(c.x+Math.cos(away)*24,1,w.W-2),y:clamp(c.y+Math.sin(away)*24,1,w.H-2)},c.cruise,{avoid});
+  }
+  if(prey && cover)add('ambush',cover,c.cruise*.5,{cover,watchPrey:prey});
+  if(c instanceof Octopus && c.jet<=0){
+    options.push({action:'camouflage',x:c.x,y:c.y,speed:0});
+    if(threat && typeof c.inkEscape==='function')options.push({action:'ink',x:c.x,y:c.y,speed:c.maxSpeed});
+  }
   if(threat){
     const heading=Math.atan2(c.y-threat.y,c.x-threat.x);
     for(const angle of [0,.6,-.6,1.2,-1.2]){
@@ -65,13 +84,16 @@ function mindEncounter(w, c) {
   const levels={...(c.life.boosts||{})};
   for(const [k,v] of Object.entries(c.life.hunt||{}))levels[`hunt${k[0].toUpperCase()}${k.slice(1)}`]=v;
   const state={creature:{species:mindSpecies(c),hunger:clamp(1-c.life.energy,0,1),intellect:geneBuffs(c).intellect,
-    aggression:geneBuffs(c).aggression,rarity:tierOf(c.life.traits),levels,traits:c.life.traits},
+    aggression:geneBuffs(c).aggression,rarity:mindRarity(c),levels,traits:c.life.traits,
+    locomotion:c instanceof Walker?'bottom walker':c instanceof Octopus?'cephalopod':c instanceof Watcher?'drifting watcher':'swimmer',
+    comfort:clamp(c.life.comfort??.5,0,1),depth:clamp(depthAt(w,c.x,c.y),0,1)},
     neighbors:neighbors.map(q=>({species:mindSpecies(q),distance:Math.round(mindDistance(c,q)),
-      relativeSize:Math.min(100,(q.body?.w[0]||1)/(c.body.w[0]||1)),role:q===threat?'threat':q===prey?'prey':'neighbor'})),
+      relativeSize:Math.min(100,(q.body?.w[0]||1)/(c.body.w[0]||1)),role:q===threat?'threat':q===prey?'prey':'neighbor',
+      sameSpecies:q.species===c.species,aggression:clamp(geneBuffs(q).aggression,0,10)})),
     options:options.map(o=>({action:o.action,distance:Math.round(mindDistance(c,o))})),memory:c.life.mindMemory||[]};
   // Recheck coarse needs and identities after the asynchronous decision.
   const signature=[Math.floor(state.creature.hunger*4),geneBuffs(c).intellect,geneBuffs(c).aggression,JSON.stringify(levels),
-    threat?.id||0,prey?.id||0,mindTargetId(food),
+    threat?.id||0,prey?.id||0,mindTargetId(food),mindTargetId(cover),Math.floor(state.creature.comfort*4),
     ...neighbors.map(q=>q.id),...options.map(o=>o.action)].join('/');
   return {state,options,signature,threat,meaningful:!!(threat||prey||food||neighbors.length)};
 }
@@ -104,7 +126,9 @@ async function mindThink(w,c,encounter) {
     if(encounter.threat && result.confidence<.55){brain.status='Instincts · uncertain about the danger';return;}
     brain.plan={...plan,until:w.t+8,energy:c.life.energy,threat:encounter.threat};brain.signature=encounter.signature;
     brain.status={forage:'Going for the food',hunt:'Pursuing its chosen prey',shelter:'Taking cover',
-      flee:'Retreating from danger',wait:'Waiting and watching',explore:'Investigating nearby water'}[plan.action];
+      flee:'Retreating from danger',wait:'Waiting and watching',explore:'Investigating nearby water',
+      rest:'Resting quietly',shoal:'Joining its own kind',investigate:'Studying a nearby creature',avoid:'Keeping its distance',
+      ambush:'Waiting for prey in cover',camouflage:'Blending into the pond floor',ink:'Escaping behind an ink cloud'}[plan.action];
   } catch { MINDS.backoff=performance.now()+60000;brain.status='Instincts · thought interrupted'; }
   finally {MINDS.pending=false;}
 }
@@ -129,16 +153,22 @@ function mindIntent(w,c) {
   if(!mindEligible(c) || c.grabbed || w.t>p.until || !mindHere(c) || !w.creatures.includes(c) ||
     (c.threat && c.threat!==p.threat) || c.dread || (p.prey && (!mindHere(p.prey)||!huntable(w,p.prey)||
       c.life.satedUntil>w.t||c.life.energy>.9)) ||
+    (p.companion && (!mindHere(p.companion)||!w.creatures.includes(p.companion)||mindDistance(c,p.companion)>(c.sight||60))) ||
+    (p.watchPrey && (!mindHere(p.watchPrey)||!huntable(w,p.watchPrey))) ||
     (p.food && (p.food.eaten||!w.food.includes(p.food)||c.life.energy>=.95)) || (p.cover&&!w.plants.includes(p.cover))){
     if(p.food&&c.life.energy>p.energy+.05)mindRemember(c,'fed',mindSpecies(c));
     if(p.prey&&!mindHere(p.prey))mindRemember(c,'prey_lost',mindSpecies(p.prey));
     brain.plan=null;brain.status='Watching for an encounter';return null;
   }
-  const target=p.food||p.prey||p.cover||p;
+  const target=p.food||p.prey||p.cover||p.companion||p;
   if(!mindWetRoute(w,c,target)){brain.plan=null;brain.status='Instincts · the route changed';return null;}
   // An old choice never suppresses an immediate local escape reflex.
   if(p.threat && (!mindHere(p.threat) || mindDistance(c,p.threat)<12)){
     brain.plan=null;brain.status='Instincts · danger is too close';return null;
   }
-  return {...p,x:target.x,y:target.y,speed:p.cover && mindDistance(c,target)<5 ? 0 : p.speed};
+  if(p.action==='ink'){
+    c.inkEscape(p.threat || c.threat);brain.plan=null;return null;
+  }
+  const arrived=!!((p.cover && mindDistance(c,target)<5) || (p.companion && mindDistance(c,target)<p.spacing));
+  return {...p,x:arrived?c.x:target.x,y:arrived?c.y:target.y,speed:arrived?0:p.speed};
 }

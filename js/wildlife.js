@@ -234,15 +234,20 @@ class Octopus extends Creature {
   hit(px, py) { return Math.hypot(px - this.x, py - this.y) < 5; }
   chains() { return this.arms.map((a) => a.ch); }
 
+  inkEscape(threat) {
+    if (!threat || this.grabbed || this.jet>0) return;
+    this.jet=1.2;this.flash=1;
+    this.heading=Math.atan2(this.y-threat.y,this.x-threat.x);this.speed=45;
+    for(let i=0;i<9;i++)this.ink.push({x:this.x+rand(-2,2),y:this.y+rand(-2,2),r:rand(1,2.5),life:1});
+  }
+
   update(dt, world) {
     this.timer -= dt;
     const p = world.pointer, t = world.t;
     if (!this.grabbed && this.jet <= 0 && p.inside && !world.grab && (p.x - this.x) ** 2 + (p.y - this.y) ** 2 < 144) {
-      this.jet = 1.2; this.flash = 1;
-      this.heading = Math.atan2(this.y - p.y, this.x - p.x);
-      this.speed = 45;
-      for (let i = 0; i < 9; i++) this.ink.push({ x: this.x + rand(-2, 2), y: this.y + rand(-2, 2), r: rand(1, 2.5), life: 1 });
+      this.inkEscape(p);
     }
+    if(this.life?.mind && (this.threat || this.dread) && Math.hypot(this.x-(this.threat||this.dread).x,this.y-(this.threat||this.dread).y)<12)this.inkEscape(this.threat||this.dread);
     if (this.grabbed) {
       const [gx, gy, want] = this.pointerGoal(world);
       this.turnToward(Math.atan2(gy, gx), 6, dt);
@@ -252,11 +257,14 @@ class Octopus extends Creature {
       this.speed *= 1 - Math.min(1, dt * 1.5);
     } else {
       let gx = Math.cos(this.heading), gy = Math.sin(this.heading), want = 0;
-      const prey = this.prey && !this.prey.caught && !this.prey.gone ? this.prey : null;
-      const f = prey || world.nearestFood(this.x, this.y, this.sight, (fd) => fd.z < 3);
+      const intent = typeof mindIntent === 'function' ? mindIntent(world,this) : null;
+      const prey = intent ? intent.prey || null : this.prey && !this.prey.caught && !this.prey.gone ? this.prey : null;
+      const f = intent ? intent.food || prey : prey || world.nearestFood(this.x, this.y, this.sight, (fd) => fd.z < 3);
       if (f) {
         gx = f.x - this.x; gy = f.y - this.y; want = prey ? this.maxSpeed : this.cruise * 1.4;
         if (Math.hypot(gx, gy) < (prey ? 5 : 3)) eat(world, this, f);
+      } else if (intent) {
+        gx=intent.x-this.x;gy=intent.y-this.y;want=intent.speed;
       } else if (this.mode === 'walk') {
         if (this.timer <= 0 || Math.hypot(this.tx - this.x, this.ty - this.y) < 6) { this.mode = 'pause'; this.timer = rand(3, 9) * (2.2 - activity(world, this)); }
         gx = this.tx - this.x; gy = this.ty - this.y; want = this.cruise;
@@ -264,6 +272,7 @@ class Octopus extends Creature {
         this.mode = 'walk'; this.newTarget(world, true); this.timer = rand(4, 9);
       }
       const gl = Math.hypot(gx, gy) || 1, [ax, ay] = this.avoid(world, 0), [dx, dy] = deepPush(world, this);
+      if(this.jet>0){gx=Math.cos(this.heading);gy=Math.sin(this.heading);want=this.speed;}
       this.turnToward(Math.atan2(gy / gl + ay * 2 + dy, gx / gl + ax * 2 + dx), this.turnRate, dt);
       this.speed += (want - this.speed) * Math.min(1, dt * 2);
     }

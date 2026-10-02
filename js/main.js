@@ -1752,6 +1752,7 @@ slice.addEventListener('pointerdown', (e) => { slice.setPointerCapture(e.pointer
 slice.addEventListener('pointermove', (e) => { if (e.buttons) sliceJump(e); });
 const expandMap = document.getElementById('map-expand');
 expandMap.addEventListener('click', () => {
+  if (!matchMedia('(max-width: 760px)').matches) return;
   const on = document.body.classList.toggle('map-tall');
   document.body.classList.add('map-open');
   document.getElementById('map-toggle').setAttribute('aria-pressed', 'true');
@@ -2409,7 +2410,7 @@ function setActions(open) {
 function placeActions() {
   const box = $('actions');
   if (box.hidden) return;
-  if (matchMedia('(max-width: 760px), (max-height: 500px)').matches) { box.style.bottom = ''; return; }
+  if (matchMedia('(max-width: 760px)').matches) { box.style.bottom = ''; return; }
   box.style.bottom = `${Math.round(innerHeight - document.querySelector('.item-bar').getBoundingClientRect().top + 8)}px`;
 }
 addEventListener('resize', placeActions);
