@@ -1151,7 +1151,7 @@ function renderSpawnCard() {
 const masteryTip = (k, lv, max) => (typeof MASTERY_LOOKS === 'undefined' || !MASTERY_LOOKS[k] ? '' : lv >= max ? `. Built all the way: ${MASTERY_LOOKS[k]}` : `. At level ${max} it shows: ${MASTERY_LOOKS[k]}`);
 // Opened by clicking an animal, and shown automatically while following or touring.
 
-const creatureUi = { c: null, auto: false, timer: 0, rec: null, more: false, logMore: false };
+const creatureUi = { c: null, auto: false, timer: 0, rec: null, more: false, logMore: false, neuralMore: false };
 const LOCUS_INFO = {
   albino: ['albino', 'recessive'], melanistic: ['melanistic', 'recessive'], piebald: ['piebald', 'recessive'],
   xanthic: ['xanthic', 'recessive'], axanthic: ['axanthic', 'recessive'], leu: ['leucistic', 'incomplete'],
@@ -1177,7 +1177,7 @@ function showCreature(c, auto = false) {
   if (!c || !c.life) return;
   if (auto && creatureUi.c && !creatureUi.auto && alive(creatureUi.c)) return; // don't replace one you opened
   if (!auto) closeWindows('creature');
-  if(creatureUi.c!==c){creatureUi.more=false;creatureUi.logMore=false;}
+  if(creatureUi.c!==c){creatureUi.more=false;creatureUi.logMore=false;creatureUi.neuralMore=false;}
   creatureUi.c = c;
   creatureUi.auto = auto;
   creatureUi.rec = world.lineage && world.lineage.get(c.seed);
@@ -1284,15 +1284,24 @@ function renderCreature() {
   }
   const gr = gradeOf(L.genome);
   if (here && typeof mindEligible === 'function' && (mindEligible(c) || L.mind)) {
-    const mind = el('div', 'eld');
+    const mind = el('div', 'eld'),controller=mindController(c);
     mind.append(el('b', null, 'Awakened mind'), el('p', 'note', L.mind ?
       c.mind?.status || 'Watching for an encounter' : 'A rare, intelligent creature can learn from encounters and choose how to respond. One mind per pond.'));
-    if(mindEligible(c)) {
+    if(controller==='fly-brain')mind.append(el('p','note','Fly Brain · experimental control from food, danger and movement signals.'));
+    if(mindEligible(c) && controller==='typesafe') {
       const labels={wait:'watch',forage:'forage',hunt:'hunt',shelter:'shelter',flee:'flee',explore:'explore',
         rest:'rest',shoal:'join its kind',investigate:'investigate',avoid:'keep distance',ambush:'wait in ambush',camouflage:'camouflage',ink:'ink escape'};
       mind.append(el('p','note','Choices here: '+mindEncounter(world,c).options.map(o=>labels[o.action]).join(' · ')));
     }
     if (!world.observe) {
+      const controls=el('div','mind-controls');controls.setAttribute('aria-label','Creature controller');
+      for(const [mode,label] of Object.entries(MIND_CONTROLLERS)){
+        const choose=el('button',null,`Use ${label}`);choose.type='button';
+        choose.disabled=!L.mind && !mindEligible(c);choose.setAttribute('aria-pressed',String(controller===mode));
+        choose.addEventListener('click',()=>{setMindController(world,c,mode);renderCreature();});controls.append(choose);
+      }
+      mind.append(controls);
+      if(MINDS.config && !MINDS.config[controller])mind.append(el('p','note',`${MIND_CONTROLLERS[controller]} is resting. It will use instincts until the service is ready.`));
       const button = el('button', null, L.mind ? 'Return to instincts' : 'Awaken mind');
       button.type = 'button'; button.disabled = !L.mind && !mindEligible(c);
       button.setAttribute('aria-pressed', String(!!L.mind));
@@ -1302,9 +1311,10 @@ function renderCreature() {
     parts.push(mind);
   }
   if(L.mind || L.mindLog?.length){
-    const log=el('section','mind-log');log.setAttribute('aria-label','TypeSafe decision log');
-    log.append(el('b',null,'Decision log'));
     const entries=L.mindLog||[];
+    const log=el('section','mind-log');log.setAttribute('aria-label',mindController(c)==='typesafe' &&
+      !entries.some(e=>e.source==='fly-brain')?'TypeSafe decision log':'Creature decision log');
+    log.append(el('b',null,'Decision log'));
     if(!entries.length)log.append(el('p','note','No decisions yet.'));
     else {
       const list=el('ol');
@@ -1313,9 +1323,18 @@ function renderCreature() {
         time.dateTime=new Date(entry.at).toISOString();
         const target=entry.target?` · ${SINGULAR[entry.target]||entry.target}`:'';
         const outcome=entry.outcome==='stale'?' · discarded: encounter changed':entry.outcome==='uncertain'?' · instincts: uncertain about danger':'';
-        row.append(time,el('span',null,`${MIND_LABELS[entry.action]}${target}${outcome}`));list.append(row);
+        const source=entry.source==='fly-brain'?'Fly Brain':'TypeSafe';
+        row.append(time,el('span',null,`${source} · ${MIND_LABELS[entry.action]}${target}${outcome}`));list.append(row);
       }
       log.append(list);
+      const neural=entries.findLast(e=>e.source==='fly-brain' && e.activity);
+      if(neural){
+        const activity=el('details');activity.open=creatureUi.neuralMore;
+        activity.addEventListener('toggle',()=>{if(creatureUi.c===c)creatureUi.neuralMore=activity.open;});
+        activity.append(el('summary',null,'Latest Fly Brain activity'));
+        activity.append(el('p','note',FLY_ACTIVITY.map(k=>`${k} ${neural.activity[k].toFixed(1)} Hz`).join(' · ')));
+        log.append(activity);
+      }
       if(entries.length>3){
         const more=el('button','cr-more',creatureUi.logMore?'Show recent':`View all (${entries.length})`);more.type='button';
         more.setAttribute('aria-expanded',String(creatureUi.logMore));

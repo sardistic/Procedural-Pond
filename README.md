@@ -238,20 +238,52 @@ approved prey, underwater cover, retreat, waiting, nearby exploration, resting,
 companionship, investigating neighbors, keeping distance or waiting in ambush based on
 its perceived neighbors, hunger, temperament, traits, upgrades and four recent
 encounters. The card shows its current intent and a decision log (twenty recent returned
-choices, including discarded ones). The selection and memory persist
+choices, including discarded ones). Choose **Use TypeSafe** for semantic decisions
+or **Use Fly Brain** for experimental neural control, then **Awaken mind**. The selection and memory persist
 in local saves and server-backed pond links; compact fragment links retain their
 existing format. Movement, shore avoidance and immediate escape remain local. Fish, bottom walkers
 (including axolotls, turtles, crabs and their deep/prehistoric relatives), octopuses
 and their relatives, and Watchers support awakening. Cephalopods can also choose
 camouflage and an ink escape using their existing behaviors.
 
-Thinking requires a server-backed pond owned by the current browser or signed-in
-account, and `TYPESAFE_API_KEY` in the API service environment. Keep that key
+Both controllers require a server-backed pond owned by the current browser or signed-in
+account. TypeSafe needs `TYPESAFE_API_KEY` in the API service environment. Keep that key
 server-side. `TYPESAFE_MODEL` optionally selects a model (default `jev-latest`).
 The API makes at most one decision per pond per 30 real seconds, 120 per pond per
 hour, 600 total per hour and two concurrently. Missing configuration, network
 failure, stale decisions or uncertain threatening encounters retain ordinary
-behavior. Run the mocked service checks with `node --test server/minds.test.js`.
+behavior.
+
+Fly Brain imports the actual pinned [Eon fly-brain PyTorch model](https://github.com/eonsystemspbc/fly-brain)
+and full connectome in a separate private Python worker. Food, danger and locomotion
+drive stimulate published neural populations; measured firing rates become locally
+checked swimming, turning, feeding, retreat and waiting. Motor rates aggregate
+completed spike windows over at most 50 ms of neural time for steadier control. This is an experimental
+game adapter of a fruit-fly brain, not validated fish cognition. It retains neural
+state between requests; silence produces waiting, and startup responses can take
+several windows. The decision log labels the controller and exposes the latest
+neural activity in Hz. Controller choice and bounded history persist, while neural
+membrane state starts fresh after worker restart or two idle minutes.
+
+Build `server/flybrain/Dockerfile` as a private service on the API's network, without
+published ports, and set the API's `FLY_BRAIN_URL` to its internal HTTP address
+(for example, `http://flybrain:8090`). Its image downloads checksum-verified source,
+license and data; see [upstream provenance](server/flybrain/UPSTREAM.md).
+Give it two CPU cores and a 3 GB memory limit. Readiness is independent of the
+TypeSafe key and requires successful model loading. The worker defaults to 10 ms
+of neural time per CPU request (50 ms with `FLY_BRAIN_DEVICE=cuda`), using the
+upstream 0.1 ms timestep. `FLY_BRAIN_STEP_MS` can select 5–50 ms; a 3.5-second
+compute budget may shorten the window while preserving completed neural state.
+The API caps calls at one in flight, one per pond per two seconds, 600 per pond per
+hour and 1,800 total per hour. Missing or interrupted service returns to instincts.
+
+Run service checks with `node --test server/minds.test.js server/flybrain.test.js`
+and adapter checks with `python -m unittest discover -s server/flybrain -p test_worker.py`.
+For an actual model smoke check, install `server/flybrain/requirements.txt`, run
+`python server/flybrain/setup.py`, set `FLY_BRAIN_ROOT=.agent/runtime/fly-brain-upstream`,
+then run `python server/flybrain/worker.py --smoke --smoke-windows 5`.
+Set `FLY_BRAIN_TEST_ROOT` to that downloaded directory to enable the full-connectome
+test comparing retained adapter state and readout spikes with direct upstream steps.
 
 The `Dockerfile` builds a small nginx image that serves the site files. Configuration is in
 `deploy/nginx.conf`: caching, gzip, security headers, a Content-Security-Policy, and 301 redirects from `www.pond.nz` and `pond.sardistic.com` to the canonical `pond.nz`. It serves pond addresses and four-word ids (lower-case words and digits joined by hyphens, in any case) as `index.html` and proxies `/api/` (rate-limited) to the network alias `pond-api`, a service built from `server/Dockerfile` with a volume at `/data` for its SQLite file. The name is resolved per request, so the site keeps serving if the API is down.

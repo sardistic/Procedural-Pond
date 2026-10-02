@@ -3,7 +3,7 @@
 FROM node:24-alpine
 
 WORKDIR /app
-COPY server.js words.js namefilter.js slug.js minds.js ./
+COPY server.js words.js namefilter.js slug.js minds.js flybrain.js ./
 
 ENV NODE_ENV=production PORT=8080 DB_PATH=/data/pond.db
 USER node

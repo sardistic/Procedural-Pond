@@ -873,6 +873,8 @@ output {
 .cr-description { margin: 8px 0; line-height: 1.5; color: var(--text); }
 .cr-description p { margin: 0 0 4px; }
 .cr-more { padding: 2px 0; border: 0; background: transparent; box-shadow: none; font-size: inherit; color: var(--hot); text-decoration: underline; }
+.mind-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
+.mind-controls button { min-height: 36px; }
 .mind-log { margin: 10px 0; padding-top: 8px; border-top: 1px solid var(--btn-edge); }
 .mind-log ol { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 6px; }
 .mind-log li { display: grid; grid-template-columns: auto 1fr; gap: 8px; line-height: 1.5; }

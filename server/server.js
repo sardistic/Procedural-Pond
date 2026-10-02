@@ -24,6 +24,8 @@ const { cleanTitle, nameAllowed } = require('./namefilter.js');
 const { slugify, slugOk } = require('./slug.js');
 const { createMindService } = require('./minds.js');
 const minds = createMindService();
+const { createFlyBrainService } = require('./flybrain.js');
+const flyBrain = createFlyBrainService();
 
 const PORT = +process.env.PORT || 8080;
 const DB_PATH = process.env.DB_PATH || './pond.db';
@@ -607,7 +609,16 @@ async function takeWanderer(req) {
 async function route(req) {
   const url = new URL(req.url, 'http://pond'), path = url.pathname;
   if (path === '/api/health' && req.method === 'GET') return [200, { ok: true }];
-  if (path === '/api/minds' && req.method === 'GET') return [200, { enabled: minds.enabled }];
+  if (path === '/api/minds' && req.method === 'GET') return [200, { enabled: minds.enabled, flyBrain: await flyBrain.available() }];
+  if (path === '/api/minds/fly-brain' && req.method === 'POST') {
+    if (!sameOrigin(req)) throw new HttpError(403, 'not from here');
+    const body=await readJson(req),id=String(body?.pond||'');
+    if (!ID_RE.test(id)) throw new HttpError(400,'bad pond id');
+    const row=q.get.get(id);
+    if (!row || (!keyMatches(row,req.headers['x-pond-key']) && !ownsRow(req,row))) throw new HttpError(403,'not your pond');
+    const result=await flyBrain.step(id,body);
+    return [result.status,result.body];
+  }
   if (path === '/api/minds/decide' && req.method === 'POST') {
     if (!sameOrigin(req)) throw new HttpError(403, 'not from here');
     const body = await readJson(req), id = String(body?.pond || '');
