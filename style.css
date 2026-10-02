@@ -871,6 +871,12 @@ output {
 .cr-head b { font-size: 13px; font-weight: 400; }
 .cr-sub { margin: 4px 0 0; line-height: 1.4; color: var(--text); }
 .cr-description { margin: 8px 0; line-height: 1.5; color: var(--text); }
+.cr-description p { margin: 0 0 4px; }
+.cr-more { padding: 2px 0; border: 0; background: transparent; box-shadow: none; font-size: inherit; color: var(--hot); text-decoration: underline; }
+.mind-log { margin: 10px 0; padding-top: 8px; border-top: 1px solid var(--btn-edge); }
+.mind-log ol { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 6px; }
+.mind-log li { display: grid; grid-template-columns: auto 1fr; gap: 8px; line-height: 1.5; }
+.mind-log time { color: var(--muted); font-variant-numeric: tabular-nums; }
 .cr-gone { margin: 6px 0 0; color: #ef6f6c; }
 .object { top: 128px; right: 16px; }
 .trait-tree { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px; }

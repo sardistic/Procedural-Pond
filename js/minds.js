@@ -2,6 +2,20 @@
 
 // One owner-selected rare creature thinks at encounters; all motion stays local.
 const MINDS = { next: 0, config: null, configAt: 0, pending: false, backoff: 0, targets: new WeakMap(), targetId: 0 };
+const MIND_LABELS = {forage:'Forage',hunt:'Hunt',shelter:'Take cover',flee:'Flee',wait:'Watch',explore:'Explore',
+  rest:'Rest',shoal:'Join its kind',investigate:'Investigate',avoid:'Keep distance',ambush:'Wait in ambush',camouflage:'Camouflage',ink:'Ink escape'};
+function mindCleanLog(log) {
+  return Array.isArray(log) ? log.slice(-20).filter(e=>e && Object.hasOwn(MIND_LABELS,e.action) &&
+    Number.isFinite(e.at) && e.at>=0 && e.at<=8640000000000000 && Number.isFinite(e.confidence) && e.confidence>=0 && e.confidence<=1 &&
+    ['chosen','stale','uncertain'].includes(e.outcome)).map(e=>({at:e.at,action:e.action,confidence:e.confidence,outcome:e.outcome,
+      target:typeof e.target==='string' && /^[a-zA-Z][a-zA-Z0-9 -]{0,39}$/.test(e.target)?e.target:null})) : [];
+}
+function mindLogChoice(c,plan,confidence,outcome) {
+  const log= c.life.mindLog || (c.life.mindLog=[]);
+  const target=plan.prey||plan.watchPrey||plan.companion||plan.avoid||plan.threat;
+  log.push({at:Date.now(),action:plan.action,confidence,outcome,target:target?mindSpecies(target):null});
+  if(log.length>20)log.shift();
+}
 const mindTargetId = (target) => {
   if (!target) return 0;
   if (!MINDS.targets.has(target)) MINDS.targets.set(target, ++MINDS.targetId);
@@ -115,15 +129,17 @@ async function mindThink(w,c,encounter) {
       body:JSON.stringify({pond:w.link.id,scenario:encounter.state})});
     if(!response.ok)throw Error('unavailable');
     const result=await response.json();
-    if(w!==world || w.observe || w.paused || !c.life.mind || !mindHere(c) || !w.creatures.includes(c) || brain!==c.mind || token!==brain.token ||
-      performance.now()-started>8000 || mindEncounter(w,c).signature!==encounter.signature) {
-      brain.status='Watching the changed encounter';return;
-    }
     const plan=encounter.options.find(o=>o.action===result.action);
     if(!plan || !Number.isFinite(result.confidence) || result.confidence<0 || result.confidence>1)throw Error('invalid');
+    if(w!==world || w.observe || w.paused || !c.life.mind || !mindHere(c) || !w.creatures.includes(c) || brain!==c.mind || token!==brain.token ||
+      performance.now()-started>8000 || mindEncounter(w,c).signature!==encounter.signature) {
+      if(w===world)mindLogChoice(c,plan,result.confidence,'stale');
+      brain.status='Watching the changed encounter';return;
+    }
     // Ambiguous harmless choices can remain preferences; threatening encounters
     // require a clearer signal before replacing instinctive behavior.
-    if(encounter.threat && result.confidence<.55){brain.status='Instincts · uncertain about the danger';return;}
+    if(encounter.threat && result.confidence<.55){mindLogChoice(c,plan,result.confidence,'uncertain');brain.status='Instincts · uncertain about the danger';return;}
+    mindLogChoice(c,plan,result.confidence,'chosen');
     brain.plan={...plan,until:w.t+8,energy:c.life.energy,threat:encounter.threat};brain.signature=encounter.signature;
     brain.status={forage:'Going for the food',hunt:'Pursuing its chosen prey',shelter:'Taking cover',
       flee:'Retreating from danger',wait:'Waiting and watching',explore:'Investigating nearby water',

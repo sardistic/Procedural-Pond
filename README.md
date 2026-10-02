@@ -237,7 +237,8 @@ button in their creature card. One awakened individual per pond can choose food,
 approved prey, underwater cover, retreat, waiting, nearby exploration, resting,
 companionship, investigating neighbors, keeping distance or waiting in ambush based on
 its perceived neighbors, hunger, temperament, traits, upgrades and four recent
-encounters. The card shows its current intent. The selection and memory persist
+encounters. The card shows its current intent and a decision log (twenty recent returned
+choices, including discarded ones). The selection and memory persist
 in local saves and server-backed pond links; compact fragment links retain their
 existing format. Movement, shore avoidance and immediate escape remain local. Fish, bottom walkers
 (including axolotls, turtles, crabs and their deep/prehistoric relatives), octopuses

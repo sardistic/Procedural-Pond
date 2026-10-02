@@ -1151,7 +1151,7 @@ function renderSpawnCard() {
 const masteryTip = (k, lv, max) => (typeof MASTERY_LOOKS === 'undefined' || !MASTERY_LOOKS[k] ? '' : lv >= max ? `. Built all the way: ${MASTERY_LOOKS[k]}` : `. At level ${max} it shows: ${MASTERY_LOOKS[k]}`);
 // Opened by clicking an animal, and shown automatically while following or touring.
 
-const creatureUi = { c: null, auto: false, timer: 0, rec: null };
+const creatureUi = { c: null, auto: false, timer: 0, rec: null, more: false, logMore: false };
 const LOCUS_INFO = {
   albino: ['albino', 'recessive'], melanistic: ['melanistic', 'recessive'], piebald: ['piebald', 'recessive'],
   xanthic: ['xanthic', 'recessive'], axanthic: ['axanthic', 'recessive'], leu: ['leucistic', 'incomplete'],
@@ -1177,6 +1177,7 @@ function showCreature(c, auto = false) {
   if (!c || !c.life) return;
   if (auto && creatureUi.c && !creatureUi.auto && alive(creatureUi.c)) return; // don't replace one you opened
   if (!auto) closeWindows('creature');
+  if(creatureUi.c!==c){creatureUi.more=false;creatureUi.logMore=false;}
   creatureUi.c = c;
   creatureUi.auto = auto;
   creatureUi.rec = world.lineage && world.lineage.get(c.seed);
@@ -1262,7 +1263,17 @@ function renderCreature() {
   const water = waterOf(c), mm = mismatch(world, c), a = aggressionAt(world, c.x, c.y);
   parts.push(colored('p', 'cr-sub', `${d.label} · ${d.stage} · gen ${d.gen} · ${ageLabel(L.age)} of ~${Math.round(L.lifespan / 60)}m`));
   const speciesNote = typeof SPECIES_NOTES !== 'undefined' && SPECIES_NOTES[c.species];
-  parts.push(colored('p', 'cr-description', `${speciesNote || 'A living animal in this pond, with its own behavior and inherited traits.'} This individual's energy and comfort change as it finds food, shelter and suitable water; its traits can pass to its young.`));
+  if(speciesNote){
+    const preview=speciesNote.length>64 ? speciesNote.slice(0,64).replace(/\s+\S*$/,'').replace(/[,;:.]$/,'')+'…' : speciesNote;
+    const description=el('div','cr-description');
+    description.append(colored('p',null,creatureUi.more?speciesNote:preview));
+    if(preview!==speciesNote){
+      const more=el('button','cr-more',creatureUi.more?'View less':'View more');more.type='button';
+      more.setAttribute('aria-expanded',String(creatureUi.more));
+      more.addEventListener('click',()=>{creatureUi.more=!creatureUi.more;renderCreature();});description.append(more);
+    }
+    parts.push(description);
+  }
   if (!here) {
     parts.push(colored('p', 'cr-gone', rec && rec.d != null ? `No longer in the pond: left on day ${Math.floor(rec.d) + 1}${rec.why ? ` (${rec.why})` : ''}` : 'No longer in the pond'));
   } else {
@@ -1289,6 +1300,29 @@ function renderCreature() {
       mind.append(button);
     }
     parts.push(mind);
+  }
+  if(L.mind || L.mindLog?.length){
+    const log=el('section','mind-log');log.setAttribute('aria-label','TypeSafe decision log');
+    log.append(el('b',null,'Decision log'));
+    const entries=L.mindLog||[];
+    if(!entries.length)log.append(el('p','note','No decisions yet.'));
+    else {
+      const list=el('ol');
+      for(const entry of entries.slice(creatureUi.logMore?-20:-3).reverse()){
+        const row=el('li'),time=el('time',null,new Date(entry.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
+        time.dateTime=new Date(entry.at).toISOString();
+        const target=entry.target?` · ${SINGULAR[entry.target]||entry.target}`:'';
+        const outcome=entry.outcome==='stale'?' · discarded: encounter changed':entry.outcome==='uncertain'?' · instincts: uncertain about danger':'';
+        row.append(time,el('span',null,`${MIND_LABELS[entry.action]}${target}${outcome}`));list.append(row);
+      }
+      log.append(list);
+      if(entries.length>3){
+        const more=el('button','cr-more',creatureUi.logMore?'Show recent':`View all (${entries.length})`);more.type='button';
+        more.setAttribute('aria-expanded',String(creatureUi.logMore));
+        more.addEventListener('click',()=>{creatureUi.logMore=!creatureUi.logMore;renderCreature();});log.append(more);
+      }
+    }
+    parts.push(log);
   }
   const gradeChip = chip(`${GRADES[gr]} quality`, GRADE_COLOR[gr]);
   gradeChip.title = 'Graded from its genes: its working genes against the average, gifts up, curses down. It sets what it is worth.';
