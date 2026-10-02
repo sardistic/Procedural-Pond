@@ -9,8 +9,8 @@ import hashlib
 import json
 import math
 from pathlib import Path
-import random
 import struct
+import numpy as np
 
 REVISION = "7d5b58a54dd314c70ee2ea550a896dbeed7f951f"
 MODEL = "fish1-hmi-rate-v1"
@@ -45,9 +45,9 @@ def verified_file(root, name):
 
 @dataclass
 class NeuralState:
-    activation: list
-    rates: list
-    rng: random.Random
+    activation: np.ndarray
+    rates: np.ndarray
+    rng: np.random.Generator
 
 
 class Connectome:
@@ -117,14 +117,27 @@ class Connectome:
                 rows[post + shift].append((pre + shift, weight))
         self.rows = tuple(tuple(row) for row in rows)
         self.active_rows = tuple((i, row) for i, row in enumerate(self.rows) if any(w for _, w in row))
+        self.population_indices = {name: tuple(np.asarray(members, dtype=np.intp) for members in sides)
+                                   for name, sides in self.populations.items()}
+        self._compiled_rows = None
+
+    def _sparse_arrays(self):
+        # Recompile only if local ablation controls replace the row tuple.
+        if self._compiled_rows is not self.active_rows:
+            edges = [(pre, post, weight) for post, row in self.active_rows for pre, weight in row]
+            self._pre = np.asarray([pre for pre, _, _ in edges], dtype=np.intp)
+            self._post = np.asarray([post for _, post, _ in edges], dtype=np.intp)
+            self._weight = np.asarray([weight for _, _, weight in edges], dtype=np.float64)
+            self._compiled_rows = self.active_rows
+        return self._pre, self._post, self._weight
 
     def new_state(self, name):
         seed = int.from_bytes(hashlib.sha256(name.encode()).digest()[:8], "little")
-        return NeuralState([0.] * self.node_count, [0.] * self.node_count, random.Random(seed))
+        return NeuralState(np.zeros(self.node_count), np.zeros(self.node_count), np.random.default_rng(seed))
 
     @staticmethod
     def mean(rates, members):
-        return sum(rates[i] for i in members) / len(members) if members else 0.
+        return float(np.mean(rates[np.asarray(members, dtype=np.intp)])) if len(members) else 0.
 
     def advance(self, state, left, right, noise=.25, measured_gain=1., crossed=True):
         """Advance 200 ms. Ablations are local research/test controls only.
@@ -133,28 +146,26 @@ class Connectome:
         No invented individual Class II edges: its missing crossed output is
         represented separately as a modeled population projection.
         """
-        drive = [0.] * self.node_count
+        pre, post, weights = self._sparse_arrays()
+        populations = self.population_indices
+        drive = np.zeros(self.node_count)
         for side, strength in enumerate((left, right)):
-            for i in self.populations["input-layer"][side]:
-                drive[i] = self.sensory_gain * strength
+            drive[populations["input-layer"][side]] = self.sensory_gain * strength
         alpha = self.dt / self.tau
         noise_scale = noise * math.sqrt(self.dt)
         for _ in range(40):
             rates = state.rates
-            incoming = drive[:]
-            for post, row in self.active_rows:
-                incoming[post] += measured_gain * sum(weight * rates[pre] for pre, weight in row)
+            incoming = drive + measured_gain * np.bincount(post, weights=weights * rates[pre], minlength=self.node_count)
             if crossed:
                 for side in (0, 1):
-                    inhibition = self.crossed_gain * self.mean(rates, self.populations["class-II"][1-side])
-                    for i in self.populations["class-I"][side]:
-                        incoming[i] -= inhibition
-            for i, current in enumerate(state.activation):
-                jitter = state.rng.gauss(0, noise_scale) if noise else 0.
-                # Bound membrane-like activation as well as emitted rates.
-                value = max(-2., min(2., current + alpha * (-current + incoming[i] + jitter)))
-                state.activation[i] = value
-                rates[i] = max(0., min(1., value))
+                    inhibition = self.crossed_gain * float(np.mean(rates[populations["class-II"][1-side]]))
+                    incoming[populations["class-I"][side]] -= inhibition
+            if noise:
+                incoming += state.rng.normal(0, noise_scale, self.node_count)
+            state.activation += alpha * (incoming - state.activation)
+            # Bound activation and emitted rates, with synchronous updates.
+            np.clip(state.activation, -2., 2., out=state.activation)
+            np.clip(state.activation, 0., 1., out=rates)
         return {
             name: tuple(self.mean(state.rates, members) for members in self.populations[name])
             for name in ("spn-turning", "spn-forward", "class-I", "class-II")

@@ -15,9 +15,11 @@ is derived, not additional biological measurement. Only 46 original cells have
 traced outgoing contacts; missing edges do not imply biological absence.
 See [data provenance and attribution](UPSTREAM.md).
 
-The independent standard-library Python runtime decodes the unchanged, packaged
-HMI1 data after SHA-256 verification. It needs no GPU, scientific dependencies,
-download, CAVE token or training. No upstream application code is included.
+The independent Python/NumPy runtime decodes the unchanged, packaged
+HMI1 data after SHA-256 verification. NumPy 2.2.6 vectorizes the sparse rate
+updates without a dense matrix; CPU/memory limits remain unchanged. It needs no
+GPU, connectome download, CAVE token or training. No upstream application code
+is included. Seeded Gaussian noise uses a per-session NumPy random generator.
 
 ## Neural dynamics and motor coupling
 
@@ -64,6 +66,7 @@ in ordinary game code. No training or reinforcement learning is included.
 ## Run
 
 ```sh
+python -m pip install -r server/fishbrain/requirements.txt
 python server/fishbrain/worker.py
 # Or build with this directory as the context:
 docker build -t pond-fishbrain server/fishbrain
@@ -160,6 +163,7 @@ Run the route tests on Node 24 (the API's existing runtime with built-in SQLite)
 They use an isolated in-memory pond database and local mock upstream, including
 authorization and timeouts; the Python suite also exercises the actual worker's
 HTTP interface, signed measured connectivity, mirrored populations, pathway
-ablations, seeded neural history, independent sessions, expiry, capacity and
+ablations, scalar/vectorized equation parity, seeded neural history, independent
+sessions, expiry, capacity and
 missing/corrupt-data availability. These are simulation tests, not a validation
 of biological cognition or learned performance.

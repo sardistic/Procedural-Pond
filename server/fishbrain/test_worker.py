@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+import numpy as np
 from worker import Busy, CHANNELS, INTERNAL, FishBrain, WorkerServer, validate_input
 from connectome import Connectome, ConnectomeError, MODEL, REVISION
 
@@ -43,7 +44,7 @@ class NetworkTests(unittest.TestCase):
     def test_feeding_and_rest_gains_modulate_the_network_not_coordinates(self):
         stimulus = inputs()
         stimulus["sectors"][0]["food"] = 1
-        brain = FishBrain()
+        brain = FishBrain(noise=0)
         self.assertTrue(brain.step("pond/forage", stimulus)["motor"]["feeding"])
         rest = copy.deepcopy(stimulus)
         rest["gains"] = {"drive": 0, "food": 0}
@@ -153,14 +154,38 @@ class ConnectomeTests(unittest.TestCase):
         network.advance(first, 1, 0)
         network.advance(replay, 1, 0)
         network.advance(other, 1, 0)
-        self.assertEqual(first.rates, replay.rates)
-        self.assertNotEqual(first.rates, other.rates)
+        np.testing.assert_array_equal(first.rates, replay.rates)
+        self.assertFalse(np.array_equal(first.rates, other.rates))
         retained = network.advance(first, 0, 0, noise=0)
         fresh = network.advance(network.new_state("p/1"), 0, 0, noise=0)
         self.assertGreater(retained["spn-turning"][0], fresh["spn-turning"][0])
         for _ in range(20):
             network.advance(first, 1, 1)
         self.assertTrue(all(math.isfinite(r) and 0 <= r <= 1 for r in first.rates))
+
+    def test_vectorized_steps_match_scalar_equations(self):
+        network = Connectome()
+        activation, rates = [0.] * network.node_count, [0.] * network.node_count
+        drive = [0.] * network.node_count
+        for side, strength in enumerate((.1, .9)):
+            for i in network.populations["input-layer"][side]:
+                drive[i] = network.sensory_gain * strength
+        for _ in range(40):
+            incoming = drive[:]
+            for post, row in network.active_rows:
+                incoming[post] += sum(weight * rates[pre] for pre, weight in row)
+            for side in (0, 1):
+                members = network.populations["class-II"][1-side]
+                inhibition = network.crossed_gain * sum(rates[i] for i in members) / len(members)
+                for i in network.populations["class-I"][side]:
+                    incoming[i] -= inhibition
+            for i, current in enumerate(activation):
+                value = max(-2., min(2., current + network.dt/network.tau * (-current + incoming[i])))
+                activation[i], rates[i] = value, max(0., min(1., value))
+        state = network.new_state("p/1")
+        network.advance(state, .1, .9, noise=0)
+        np.testing.assert_allclose(state.activation, activation, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(state.rates, rates, rtol=0, atol=1e-12)
 
     def test_missing_truncated_corrupted_or_changed_population_data_fail_closed(self):
         original = Path(__file__).with_name("data")

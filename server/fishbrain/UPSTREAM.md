@@ -3,7 +3,7 @@
 Fish Brain uses **data only** from
 [jamieswrld/zebrafishconnectome](https://github.com/jamieswrld/zebrafishconnectome),
 pinned at `7d5b58a54dd314c70ee2ea550a896dbeed7f951f`.
-`connectome.py` is an independent Python implementation of a bounded rate network;
+`connectome.py` is an independent Python/NumPy implementation of a bounded rate network;
 no upstream application code, Next.js runtime or trained model is included.
 
 The unchanged scientific artifacts in `data/` are:
