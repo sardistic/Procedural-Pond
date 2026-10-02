@@ -18,6 +18,9 @@ const ACTIONS = {
 };
 const finite = (n, lo, hi) => typeof n === 'number' && Number.isFinite(n) && n >= lo && n <= hi;
 const word = (s) => typeof s === 'string' && /^[a-zA-Z][a-zA-Z0-9 -]{0,39}$/.test(s);
+const WEIGHTS = ['food','danger','hunt','explore','social','shelter','motor','turn'];
+const bools = (input, keys) => Object.fromEntries(keys.map(k=>[k,input?.[k]===true]));
+const stance = (value) => ['protect','cull','neutral'].includes(value)?value:'neutral';
 
 function cleanScenario(input) {
   if (!input || typeof input !== 'object' || JSON.stringify(input).length > 12000) return null;
@@ -39,11 +42,22 @@ function cleanScenario(input) {
   return {
     creature: { species: c.species, hunger: c.hunger, intellect: c.intellect, aggression: c.aggression,
       rarity: c.rarity, levels, traits: Array.isArray(c.traits) ? c.traits.filter(word).slice(0, 12) : [],
+      tags:Array.isArray(c.tags)?c.tags.filter(word).slice(0,24):[],
+      abilities:bools(c.abilities || {feeds:options.some(o=>['forage','hunt'].includes(o.action)),
+        canHunt:options.some(o=>o.action==='hunt'),camouflage:options.some(o=>o.action==='camouflage'),
+        ink:options.some(o=>o.action==='ink')},['feeds','canHunt','camouflage','ink']),
+      combat:{...bools(c.combat,['predator','hunter','enraged','protected','keptSafe']),stance:stance(c.combat?.stance)},
+      weights:Object.fromEntries(WEIGHTS.map(k=>[k,finite(c.weights?.[k],0,3)?c.weights[k]:1])),
+      vitality:finite(c.vitality,0,10)?c.vitality:1,stealth:finite(c.stealth,0,1)?c.stealth:0,
       locomotion:['swimmer','bottom walker','cephalopod','drifting watcher'].includes(c.locomotion) ? c.locomotion : 'swimmer',
       comfort:finite(c.comfort,0,1)?c.comfort:.5,depth:finite(c.depth,0,1)?c.depth:0 },
     neighbors: neighbors.map(n => ({species:n.species,distance:n.distance,relativeSize:n.relativeSize,role:n.role,
-      sameSpecies:n.species===c.species,aggression:finite(n.aggression,0,10)?n.aggression:1})),
-    options: options.map(o => ({action:o.action, distance:finite(o.distance,0,1000) ? o.distance : 0})),
+      sameSpecies:n.species===c.species,aggression:finite(n.aggression,0,10)?n.aggression:1,
+      protected:n.protected===true,stance:stance(n.stance)})),
+    environment:Object.fromEntries(['darkness','pollution','mismatch','aggression','current'].map(k=>
+      [k,finite(input.environment?.[k],0,1)?input.environment[k]:0])),
+    options: options.map(o => ({action:o.action, distance:finite(o.distance,0,1000) ? o.distance : 0,
+      weight:finite(o.weight,0,3)?o.weight:1})),
     memory: memory.map(m => ({event:m.event,species:m.species})),
   };
 }
@@ -75,6 +89,11 @@ function createMindService({ key = process.env.TYPESAFE_API_KEY, model = process
             instructions: 'Choose this rare aquatic creature\'s next action from the available options. ' +
               'Role-play its temperament using creature intellect, aggression, hunger, traits, rarity and upgrade levels. ' +
               'Higher intellect supports caution and learning from the recorded encounters; aggression favors risk, not suicidal attacks. ' +
+              'Creature tags and working vitality/stealth describe this individual, not just its species. ' +
+              'Combat describes actual predator, awakened hunter, rage and protection status; keptSafe protects from recycling only. ' +
+              'Respect creature abilities and neighbor protection/stance. Cull targets are preferred only when hunting is available. ' +
+              'Creature weights and option weight are deterministic temperament preferences (larger means stronger tendency), not probabilities or commands. ' +
+              'Use environment darkness, polluted water, salinity mismatch, current and local aggression to weigh discomfort and risk. ' +
               'Depth runs from shallow (0) to deepest (1). Use locomotion, comfort and depth to distinguish swimmers, bottom walkers, cephalopods and Watchers. ' +
               'Same-species neighbors can provide companionship; other neighbors differ in size and aggression. ' +
               'Only the listed neighbors are perceived. Options have already been checked for wet routes and allowed prey. ' +

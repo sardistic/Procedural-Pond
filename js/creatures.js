@@ -273,6 +273,14 @@ class Fish extends Creature {
     } else {
       const hungry = !this.life || this.life.energy < 0.8;
       const intent = typeof mindIntent === 'function' ? mindIntent(world, this) : null;
+      if(intent?.motor){
+        // Continuous body-relative motor drive. The existing turn, acceleration,
+        // collision, shoreline and body-chain integration still move the fish.
+        const angle=this.heading+intent.turn*this.turnRate*dt;
+        gx=Math.cos(angle);gy=Math.sin(angle);want=this.maxSpeed*(intent.startle?1:intent.thrust);
+        this.chasing=false;
+        if(intent.feeding && typeof mindMotorMeal==='function')mindMotorMeal(world,this);
+      } else {
       const prey = intent ? intent.prey || null : this.prey && !this.prey.caught && !this.prey.gone ? this.prey : null;
       let f = intent ? intent.food || prey : prey || world.nearestFood(this.x, this.y, this.sight * (hungry ? 1.4 : 1),
         (fd) => (hungry || fd.fed) && (!this.foodFilter || this.foodFilter(fd)));
@@ -293,6 +301,7 @@ class Fish extends Creature {
         if (this.timer <= 0 || Math.hypot(this.tx - this.x, this.ty - this.y) < 8) this.wander(world);
         gx = this.tx - this.x; gy = this.ty - this.y;
         want = this.cruiseNow * activity(world, this);
+      }
       }
       const p = world.pointer;
       if (this.skittish && p.inside && !world.grab) {

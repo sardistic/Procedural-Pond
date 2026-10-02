@@ -238,15 +238,18 @@ approved prey, underwater cover, retreat, waiting, nearby exploration, resting,
 companionship, investigating neighbors, keeping distance or waiting in ambush based on
 its perceived neighbors, hunger, temperament, traits, upgrades and four recent
 encounters. The card shows its current intent and a decision log (twenty recent returned
-choices, including discarded ones). Choose **Use TypeSafe** for semantic decisions
-or **Use Fly Brain** for experimental neural control, then **Awaken mind**. The selection and memory persist
+choices, including discarded ones). Choose **Use TypeSafe** for semantic decisions,
+**Use Fly Brain** for experimental connectome control, **Use Fish Brain** for
+continuous sensorimotor control, or **Use Higher Brain + Fish Brain** for Jev goals
+with fast Fish Brain motors, then **Awaken mind**. The two new fish modes support
+swimming Fish; the original modes also support the other creature bodies. The selection and memory persist
 in local saves and server-backed pond links; compact fragment links retain their
 existing format. Movement, shore avoidance and immediate escape remain local. Fish, bottom walkers
 (including axolotls, turtles, crabs and their deep/prehistoric relatives), octopuses
 and their relatives, and Watchers support awakening. Cephalopods can also choose
 camouflage and an ink escape using their existing behaviors.
 
-Both controllers require a server-backed pond owned by the current browser or signed-in
+All controllers require a server-backed pond owned by the current browser or signed-in
 account. TypeSafe needs `TYPESAFE_API_KEY` in the API service environment. Keep that key
 server-side. `TYPESAFE_MODEL` optionally selects a model (default `jev-latest`).
 Installing the TypeSafe development skill does not activate the inference service
@@ -255,20 +258,33 @@ and show when a controller is unavailable. Configure the key in the API's protec
 server environment, recreate that service, and verify `/api/minds` reports
 `enabled: true` before expecting TypeSafe choices.
 The API makes at most one decision per pond per 30 real seconds, 120 per pond per
-hour, 600 total per hour and two concurrently. Missing configuration, network
+hour, 600 total per hour and two concurrently. Awakened creatures also reconsider
+exploring, resting and watching when alone. Each decision includes the individual's
+traits, behavioral tags, hunting upgrades, combat/protection status, available
+abilities and temperament weights, plus nearby water stress. Missing configuration, network
 failure, stale decisions or uncertain threatening encounters retain ordinary
 behavior.
 
 Fly Brain imports the actual pinned [Eon fly-brain PyTorch model](https://github.com/eonsystemspbc/fly-brain)
-and full connectome in a separate private Python worker. Food, danger and locomotion
-drive stimulate published neural populations; measured firing rates become locally
-checked swimming, turning, feeding, retreat and waiting. Motor rates aggregate
+and full connectome in a separate private Python worker. Food/prey, looming danger,
+water pollution, salinity discomfort, close crowding, current and blocked routes
+stimulate published sugar, LC4, bitter, Or56a and Johnston's organ populations.
+Target bearing biases the published left/right P9 locomotion drive. Measured firing
+rates become locally checked movement, turning (including turning in place), feeding,
+approved hunting, ink escape, retreat and waiting; aDN1 grooming output maps to a
+quiet pause. Traits and upgrades weight sensing, turning and movement. Motor rates aggregate
 completed spike windows over at most 50 ms of neural time for steadier control. This is an experimental
 game adapter of a fruit-fly brain, not validated fish cognition. It retains neural
 state between requests; silence produces waiting, and startup responses can take
 several windows. The decision log labels the controller and exposes the latest
 neural activity in Hz. Controller choice and bounded history persist, while neural
 membrane state starts fresh after worker restart or two idle minutes.
+
+Following an animal adds `follow=<creature seed>` to the address and copied links.
+Opening that link restores following after the pond loads. Stopping or losing the
+animal removes the parameter; a missing animal leaves the saved camera view.
+Observer shares retain `observe=1` and do not upload the pond. The query works with
+server links and compact fragments without changing their save format.
 
 Build `server/flybrain/Dockerfile` as a private service on the API's network, without
 published ports, and set the API's `FLY_BRAIN_URL` to its internal HTTP address
@@ -282,8 +298,31 @@ compute budget may shorten the window while preserving completed neural state.
 The API caps calls at one in flight, one per pond per two seconds, 600 per pond per
 hour and 1,800 total per hour. Missing or interrupted service returns to instincts.
 
-Run service checks with `node --test server/minds.test.js server/flybrain.test.js`
+Fish Brain is a compact **biologically inspired recurrent network**, not a full
+real zebrafish brain. Its private standard-library Python worker receives sixteen
+creature-relative sectors for food, threats, companions, other creatures, obstacles,
+motion, approved prey and cover, plus bounded internal state and trait-dependent
+gains. It returns continuous left/right/thrust and startle/feeding readouts every
+200 ms. Turning and desired speed enter the existing fish movement system.
+Per-creature state has a two-minute idle TTL and a 32-session cap. Hybrid runs
+Jev's thirty-second goal choices independently: forage boosts food salience, flee
+threat avoidance, shoal companionship and rest lowers drive. Goals only change
+bounded sensory gains; Jev never steers in hybrid mode. Without Jev, hybrid keeps
+autonomous Fish Brain; without Fish Brain, both fish modes use normal instincts.
+No training or reinforcement is included.
+
+Build `server/fishbrain/Dockerfile` with `server/fishbrain` as its context and run
+it privately on the API network. Set `FISH_BRAIN_URL` in the API environment
+(for example, `http://fishbrain:8091`) and check `/api/minds` reports `fishBrain: true`.
+The secured `/api/minds/fish-brain` route uses the same origin and ownership checks
+as Fly Brain. The nginx configuration gives motor sampling a separate six-per-second
+rate limit so it can run alongside normal API traffic. See the
+[Fish Brain interface and limits](server/fishbrain/README.md).
+
+Run service/client/route checks on Node 24 with
+`node --test server/minds.test.js server/flybrain.test.js server/fishbrain.test.js server/minds_client.test.js server/minds_routes.test.js`
 and adapter checks with `python -m unittest discover -s server/flybrain -p test_worker.py`.
+Run Fish Brain worker checks with `python -m unittest discover -s server/fishbrain -p test_worker.py`.
 For an actual model smoke check, install `server/flybrain/requirements.txt`, run
 `python server/flybrain/setup.py`, set `FLY_BRAIN_ROOT=.agent/runtime/fly-brain-upstream`,
 then run `python server/flybrain/worker.py --smoke --smoke-windows 5`.

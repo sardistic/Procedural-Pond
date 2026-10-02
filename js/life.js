@@ -563,6 +563,7 @@ function initLife(c, { genome, gen = 0, scale = 1, age, alpha = 1, parents = nul
 function eat(world, c, f) {
   let gain;
   if (f instanceof Creature) {
+    if (f.caught || f.gone || (typeof huntable==='function' && !huntable(world,f))) { if(c.prey===f)c.prey=null;return; }
     f.caught = true;
     noteGone(world, f, 'eaten');
     addHeat(world, f.x, f.y, 0.5);
@@ -1142,7 +1143,7 @@ function assignHunts(world) {
     const rage = typeof rageOf === 'function' ? rageOf(world, p) : 1, mad = typeof enraged === 'function' && enraged(world, p);
     if (!p.life || p.life.satedUntil > world.t || (!mad && p.life.energy > huntThreshold(p, Math.min(0.92, 0.6 * P.aggression * rage * (0.4 + 0.6 * activity(world, p)))))) { p.prey = null; continue; }
     const cur = p.prey;
-    if (cur && !cur.caught && !cur.gone && Math.hypot(cur.x - p.x, cur.y - p.y) < 60 + 110 * h) continue;
+    if (cur && !cur.caught && !cur.gone && (typeof huntable!=='function' || huntable(world,cur)) && Math.hypot(cur.x - p.x, cur.y - p.y) < 60 + 110 * h) continue;
     // (The merely enraged look again every fourth pass, each on its own beat.)
     if (mad && !isPredator(p) && (p.id + stamp) % 4) { if (cur && (cur.caught || cur.gone)) p.prey = null; continue; }
     let best = null, bd = Infinity;
@@ -1152,7 +1153,7 @@ function assignHunts(world) {
       // (A culled kind looks nearer than it is; a protected one, or one in a refuge, isn't there at all: interact.js.)
       const d = typeof huntWeight === 'function' ? d0 / huntWeight(world, q) : d0;
       if (q === p || d >= bd || Math.abs(q.z - p.z) > 14) return;
-      if (typeof huntable === 'function' && q.preyT === stamp && !huntable(world, q)) return;
+      if (typeof huntable === 'function' && !huntable(world, q)) return;
       if (q.preyT !== stamp) { if (!extra || !q.life || q.grabbed || q.leaving || q.gone || q.caught || q.dying || !(huntExtra(p, q) || (starving && desperateFor(p, q)) || (mad && rageTarget(p, q)))) return; }
       else if (extra && q.dying) return;
       const Q = geneBuffs(q);

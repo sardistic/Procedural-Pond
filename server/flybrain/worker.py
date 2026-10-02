@@ -22,6 +22,7 @@ import sys
 import threading
 import time
 from typing import Any
+from populations import SENSORY_IDS
 
 
 UPSTREAM_REVISION = "a3db62f9436074e485c0278290c2164ed6150808"
@@ -83,6 +84,7 @@ READOUT_IDS = {
         720575940616026939, 720575940631082808,
         720575940640331472, 720575940610236514,
     ),
+    "grooming": (720575940616185531, 720575940624319124),
 }
 SESSION_PATTERN = re.compile(r"[A-Za-z0-9_/-]{1,96}\Z")
 MAX_BODY_BYTES = 16_384
@@ -109,10 +111,10 @@ def validate_input(body: Any) -> tuple[str, dict[str, float], bool]:
         raise InvalidInput("Invalid session")
     if type(reset) is not bool or not isinstance(values, dict):
         raise InvalidInput("Invalid inputs")
-    if set(values) != {"food", "danger", "drive"}:
+    if not {"food", "danger", "drive"} <= set(values) or set(values) - {"food", "danger", "drive", "bitter", "odor", "touch", "turn"}:
         raise InvalidInput("Invalid inputs")
-    for value in values.values():
-        if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
+    for key, value in values.items():
+        if type(value) not in (int, float) or not math.isfinite(value) or not (-1 if key == "turn" else 0) <= value <= 1:
             raise InvalidInput("Invalid input range")
     return session, {key: float(value) for key, value in values.items()}, reset
 
@@ -130,6 +132,7 @@ def decode_motor(activity: dict[str, float]) -> dict[str, Any]:
         "feeding": activity["feeding"] >= 5.0,
         "escape": activity["escape"] >= 5.0,
         "reverse": activity["reverse"] >= 5.0,
+        "grooming": activity["grooming"] >= 5.0,
     }
 
 
@@ -226,6 +229,7 @@ class FlyBrain:
             "food": [self.id_to_index[neuron] for neuron in benchmark.EXPERIMENTS["sugar"]["neu_exc"]],
             "danger": [self.id_to_index[neuron] for neuron in LC4_IDS],
             "drive": [self.id_to_index[neuron] for neuron in benchmark.EXPERIMENTS["p9"]["neu_exc"]],
+            **{name: [self.id_to_index[neuron] for neuron in neurons] for name, neurons in SENSORY_IDS.items()},
         }
         self.readout_indices = {
             name: [self.id_to_index[neuron] for neuron in neurons]
@@ -284,8 +288,15 @@ class FlyBrain:
             started = time.monotonic()
             state = self._session(session, reset)
             self.rates.zero_()
-            for name, multiplier in {"food": 200.0, "danger": 200.0, "drive": 100.0}.items():
-                self.rates[:, self.input_indices[name]] = inputs[name] * multiplier
+            for name, multiplier in {"food": 200.0, "danger": 200.0, "drive": 100.0,
+                                     "bitter": 200.0, "odor": 250.0, "touch": 300.0}.items():
+                self.rates[:, self.input_indices[name]] = inputs.get(name, 0.0) * multiplier
+            # P9 has published left/right identities; no guessed hemispheres for
+            # LC4 or taste. Bearing biases explicit descending locomotion drive,
+            # while turn output still comes solely from measured DNa firing.
+            turn = inputs.get("turn", 0.0)
+            for side, gain in enumerate((1 - max(0.0, turn), 1 + min(0.0, turn))):
+                self.rates[:, self.input_indices["drive"][side]] *= gain
             counts = self.torch.zeros(len(self.readout_flat), device=self.device)
             completed = 0
             with self.torch.no_grad():

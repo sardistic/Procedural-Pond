@@ -195,7 +195,7 @@ function restoreCreature(world, r, a = {}) {
     fed: r.L.fed || 0, comfort: r.L.comfort ?? 0.5, corruption: r.L.corruption || 0, bound: !!r.L.bound,
     absorbed: r.L.absorbed || 0, ascended: !!r.L.ascended, boosts: r.L.boosts || null,
     quirks: r.L.quirks || [], ill: r.L.ill || [], hunt: r.L.hunt || null, hunter: !!r.L.hunter, madCount: r.L.madCount || 0,
-    mind: r.L.mind === true, mindController: r.L.mindController==='fly-brain'?'fly-brain':'typesafe',
+    mind: r.L.mind === true, mindController: typeof MIND_CONTROLLERS!=='undefined' && Object.hasOwn(MIND_CONTROLLERS,r.L.mindController)?r.L.mindController:'typesafe',
     mindMemory: Array.isArray(r.L.mindMemory) ? r.L.mindMemory.slice(-4).filter(m =>
       ['fed','threat','prey_lost'].includes(m?.event) && typeof m.species === 'string' && m.species.length<=40) : [],
     mindLog: typeof mindCleanLog==='function' ? mindCleanLog(r.L.mindLog) : [],

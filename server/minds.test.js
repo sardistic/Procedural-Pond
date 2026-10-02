@@ -83,3 +83,22 @@ test('expanded action choices and creature context reach TypeSafe without arbitr
   assert.equal(Object.keys(sent.questions.action.criteria).length,13);
   state.options.push({action:'teleport'});assert.equal(cleanScenario(state),null);
 });
+
+test('individual abilities, combat tags, habitat stress and temperament weights are bounded observations', async () => {
+  const state=encounter();
+  Object.assign(state.creature,{tags:['hunter','feral','kept safe','<script>'],vitality:1.8,stealth:.6,
+    abilities:{feeds:true,canHunt:true,ink:false,code:'bad'},
+    combat:{hunter:true,predator:true,protected:false,keptSafe:true,stance:'cull',command:'bad'},
+    weights:{food:1.2,hunt:2.4,motor:.8,turn:Infinity,command:99}});
+  state.environment={darkness:.8,pollution:.7,mismatch:.4,current:.2,aggression:.5,command:'bad'};
+  state.options[2].weight=1.2;state.neighbors[0].protected=true;state.neighbors[0].stance='protect';
+  let payload;
+  const service=createMindService({key:'test-only',request:async(url,options)=>{payload=JSON.parse(options.body);return answer()}});
+  assert.equal((await service.decide('pond',state)).status,200);
+  const c=payload.state.creature;
+  assert.deepEqual(c.tags,['hunter','feral','kept safe']);assert.equal(c.combat.hunter,true);
+  assert.equal(c.combat.keptSafe,true);assert.equal(c.abilities.canHunt,true);
+  assert.equal(c.weights.hunt,2.4);assert.equal(c.weights.turn,1);assert.equal(c.weights.command,undefined);
+  assert.equal(payload.state.environment.pollution,.7);assert.equal(payload.state.environment.command,undefined);
+  assert.equal(payload.state.neighbors[0].protected,true);assert.equal(payload.state.options[2].weight,1.2);
+});

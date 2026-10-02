@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/wh
 COPY setup.py upstream.json ./
 RUN python setup.py --root /opt/fly-brain && useradd --create-home --uid 1000 brain \
     && chown -R brain:brain /opt/fly-brain /app
-COPY worker.py ./
+COPY worker.py populations.py ./
 USER brain
 EXPOSE 8090
 HEALTHCHECK --interval=30s --timeout=3s --start-period=120s --retries=3 \

@@ -8,7 +8,7 @@ from pathlib import Path
 import threading
 import unittest
 
-from worker import Busy, FlyBrain, READOUT_IDS, WorkerServer, decode_motor, readout_activity, validate_input
+from worker import Busy, FlyBrain, InvalidInput, READOUT_IDS, WorkerServer, decode_motor, readout_activity, validate_input
 
 
 class InputTests(unittest.TestCase):
@@ -36,11 +36,11 @@ class InputTests(unittest.TestCase):
     def test_silent_model_produces_no_fabricated_activity(self):
         motor = decode_motor({name: 0.0 for name in READOUT_IDS})
         self.assertEqual(motor, {"drive": 0.0, "turn": 0.0, "feeding": False,
-                                 "escape": False, "reverse": False})
+                                 "escape": False, "reverse": False, "grooming": False})
 
     def test_motor_limits_and_direction_preserve_measured_readouts(self):
         activity = {"forward": 1000.0, "left": 0.0, "right": 1000.0,
-                    "feeding": 20.0, "escape": 40.0, "reverse": 10.0}
+                    "feeding": 20.0, "escape": 40.0, "reverse": 10.0, "grooming": 20.0}
         motor = decode_motor(activity)
         self.assertGreater(motor["drive"], 0)
         self.assertLessEqual(motor["drive"], 1)
@@ -49,6 +49,14 @@ class InputTests(unittest.TestCase):
         self.assertTrue(all(motor[key] for key in ("feeding", "escape", "reverse")))
         with self.assertRaises(RuntimeError):
             decode_motor({**activity, "forward": math.nan})
+
+    def test_extended_senses_keep_legacy_inputs_and_bound_direction(self):
+        values = {"food": .5, "danger": .1, "drive": .4, "bitter": 1, "odor": .2, "touch": .9, "turn": -1}
+        _, clean, _ = validate_input({"session": "pond/123", "inputs": values})
+        self.assertEqual(clean, values)
+        for key, value in (("turn", -1.01), ("turn", True), ("odor", -1), ("touch", math.nan)):
+            with self.assertRaises(InvalidInput):
+                validate_input({"session": "pond/123", "inputs": {**values, key: value}})
 
     def test_rolling_activity_uses_real_counts_and_expires_them(self):
         from collections import deque
@@ -190,14 +198,16 @@ class UpstreamParityTests(unittest.TestCase):
         direct_state = tuple(tensor.clone() for tensor in session.state)
         direct_generator = torch.Generator(device=brain.device)
         direct_generator.set_state(session.generator.get_state().clone())
-        inputs = {"food": 1.0, "danger": 0.5, "drive": 0.25}
+        inputs = {"food": 1.0, "danger": 0.5, "drive": 0.25, "bitter": .75, "odor": .6, "touch": .2, "turn": .5}
         total_counts = torch.zeros(len(brain.readout_flat), device=brain.device)
         total_ms = 0.0
         for _ in range(2):
             result = brain.step("parity/full-connectome", inputs)
             self.assertEqual(brain.rates[0, brain.input_indices["food"]].unique().tolist(), [200.0])
             self.assertEqual(brain.rates[0, brain.input_indices["danger"]].unique().tolist(), [100.0])
-            self.assertEqual(brain.rates[0, brain.input_indices["drive"]].unique().tolist(), [25.0])
+            self.assertEqual(brain.rates[0, brain.input_indices["drive"]].tolist(), [12.5, 25.0])
+            for name, expected in (("bitter", 150.0), ("odor", 150.0), ("touch", 60.0)):
+                self.assertEqual(brain.rates[0, brain.input_indices[name]].unique().tolist(), [expected])
             counts = torch.zeros(len(brain.readout_flat), device=brain.device)
             with torch.no_grad():
                 for _ in range(round(result["simulatedMs"] / brain.dt)):

@@ -1186,14 +1186,18 @@ function viewParams(u) {
   u.searchParams.set('tx', String(Math.round(view.tx)));
   u.searchParams.set('ty', String(Math.round(view.ty)));
   if (view.r) u.searchParams.set('r', String(view.r)); else u.searchParams.delete('r');
+  if (alive(cam.follow) && Number.isSafeInteger(cam.follow.seed) && cam.follow.seed >= 0)
+    u.searchParams.set('follow', String(cam.follow.seed));
+  else u.searchParams.delete('follow');
   return u;
 }
 function scheduleViewUrl() {
-  if (!viewUrlReady) return;
-  clearTimeout(viewUrlTimer);
+  if (!viewUrlReady || viewUrlTimer) return;
   viewUrlTimer = setTimeout(() => {
+    viewUrlTimer = 0;
     const u = viewParams(new URL(location.href));
-    history.replaceState(null, '', `${u.pathname}${u.search}${u.hash}`);
+    const next = `${u.pathname}${u.search}${u.hash}`;
+    if (next !== location.pathname + location.search + location.hash) history.replaceState(null, '', next);
   }, 250);
 }
 // The view can be turned a quarter at a time (r), so a neighbour's pond shows with
@@ -1465,6 +1469,7 @@ function follow(c) {
   cam.fx = view.tx; cam.fy = view.ty;
   if (c && c.life) showCreature(c, true); // riding along (or touring) shows who it is
   updateChip();
+  scheduleViewUrl();
 }
 
 function stopFollow() {
@@ -1473,6 +1478,7 @@ function stopFollow() {
   if (typeof creatureUi !== 'undefined' && creatureUi.auto) hideCreature();
   document.getElementById('tour')?.setAttribute('aria-pressed', false);
   updateChip();
+  scheduleViewUrl();
 }
 
 function pickInteresting() {
@@ -1489,6 +1495,7 @@ function updateCamera(dt) {
   } else if (cam.follow && !alive(cam.follow)) {
     cam.follow = null;
     updateChip();
+    scheduleViewUrl();
   }
   const c = cam.follow;
   if (!c) return;
@@ -2208,7 +2215,8 @@ function shareUrl() {
 }
 function viewSearch() {
   const source = viewParams(new URL(location.href)).searchParams, query = new URLSearchParams();
-  for (const key of ['x', 'y', 'z', 'r', 'tx', 'ty']) if (source.has(key)) query.set(key, source.get(key));
+  for (const key of ['x', 'y', 'z', 'r', 'tx', 'ty', 'follow']) if (source.has(key)) query.set(key, source.get(key));
+  if (world.observe) query.set('observe', '1');
   return `?${query}`;
 }
 
@@ -2663,11 +2671,13 @@ $('reset').addEventListener('click', () => {
 // does it fall back to a long link that carries the pond itself.
 async function sharePond() {
   let url = null;
-  if (Net.base) {
+  if (world.observe) url = `${shortUrl(linkName(world.observe))}${viewSearch()}`;
+  if (!url && Net.base) {
     try { await pushPond(world); saveNow(); refreshBoard(); url = `${shortUrl(linkName(world.link))}${viewSearch()}`; } catch { /* fall back to the long link */ }
   }
   if (!url) url = `${shareUrl()}#s=${await encodePond(world)}`;
-  const note = world.link ? `Link copied: ${url.replace(/^https?:\/\//, '')}, the same as your address bar. It opens your pond as it grows`
+  const note = world.observe ? 'Link copied: it opens this pond in observer mode with your current view'
+    : world.link ? `Link copied: ${url.replace(/^https?:\/\//, '')}, the same as your address bar. It opens your pond as it grows`
     : 'Link copied: the pond server is out of reach, so this long link carries the pond itself';
   try {
     if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ title: 'Procedural Pond', text: `Come see my pond, ${world.seed}`, url });
@@ -3006,6 +3016,13 @@ async function boot() {
     }
   }
   viewUrlReady = true;
+  const followSeed = params.get('follow');
+  if (followSeed !== null) {
+    const seed = /^(0|[1-9][0-9]{0,15})$/.test(followSeed) ? Number(followSeed) : NaN;
+    const target = Number.isSafeInteger(seed) && world.creatures.find(c => c.seed === seed && alive(c));
+    if (target) follow(target);
+    else { scheduleViewUrl(); showTicker('The linked creature is no longer in this pond'); }
+  }
   if (edge === 'west' || edge === 'east') startAtEdge(edge);
   if (observe) {
     $('observe-name').textContent = `${observe.title || observe.id}${observe.by ? ` · ${observe.by}'s pond` : ''}`;

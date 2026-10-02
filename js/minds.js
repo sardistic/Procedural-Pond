@@ -1,11 +1,26 @@
 'use strict';
 
-// One owner-selected rare creature thinks at encounters; all motion stays local.
+// One owner-selected creature; controller descriptors compose slow/fast lanes.
 const MINDS = { next: 0, config: null, configAt: 0, configPending: null, configError: false, configRetryAt: 0,
-  pending: false, backoff: 0, flyBackoff: 0, flyNext: 0, targets: new WeakMap(), targetId: 0 };
-const MIND_CONTROLLERS = {'typesafe':'TypeSafe','fly-brain':'Fly Brain'};
-const FLY_ACTIVITY = ['forward','left','right','feeding','escape','reverse'];
-const mindController = (c) => c.life?.mindController==='fly-brain' ? 'fly-brain' : 'typesafe';
+  pending: false, backoff: 0, flyBackoff: 0, flyNext: 0, fishPending:false, fishBackoff:0, fishNext:0,
+  targets: new WeakMap(), targetId: 0 };
+const MIND_MODES = {
+  typesafe:{label:'TypeSafe',lanes:['choice'],defaultLane:'choice',allowed:c=>mindSupported(c),
+    thinking:'Considering the encounter',status:action=>({forage:'Going for the food',hunt:'Pursuing its chosen prey',shelter:'Taking cover',
+      flee:'Retreating from danger',wait:'Waiting and watching',explore:'Investigating nearby water',rest:'Resting quietly',
+      shoal:'Joining its own kind',investigate:'Studying a nearby creature',avoid:'Keeping its distance',
+      ambush:'Waiting for prey in cover',camouflage:'Blending into the pond floor',ink:'Escaping behind an ink cloud'}[action])},
+  'fly-brain':{label:'Fly Brain',lanes:['fly'],defaultLane:'fly',allowed:c=>mindSupported(c),
+    note:'Fly Brain · experimental control from food, danger and movement signals.'},
+  'fish-brain':{label:'Fish Brain',lanes:['fish'],defaultLane:'fish',allowed:c=>c instanceof Fish,motor:true,
+    note:'Fish Brain · biologically inspired recurrent sensorimotor network. Not a full zebrafish brain.'},
+  'hybrid-brain':{label:'Higher Brain + Fish Brain',lanes:['fish','choice'],defaultLane:'fish',allowed:c=>c instanceof Fish,motor:true,higher:true,
+    note:'Jev chooses goals; Fish Brain supplies steering and thrust. Fish Brain is biologically inspired.'},
+};
+const MIND_CONTROLLERS = Object.fromEntries(Object.entries(MIND_MODES).map(([k,v])=>[k,v.label]));
+const FLY_ACTIVITY = ['forward','left','right','feeding','escape','reverse','grooming'];
+const mindController = (c) => Object.hasOwn(MIND_MODES,c.life?.mindController) ? c.life.mindController : 'typesafe';
+const mindControllerAllowed = (c,controller=mindController(c)) => MIND_MODES[controller]?.allowed(c)===true;
 function mindAvailability(controller) {
   if(MINDS.configPending)return 'checking';
   if(MINDS.configError)return 'unknown';
@@ -27,7 +42,10 @@ function mindSyncAvailability(w) {
         brain.status='Watching for an encounter';
         if(!MINDS.pending){brain.next=0;MINDS.next=0;}
       }
-    } else {brain.plan=null;brain.status=mindAvailabilityText(mindController(c),state);}
+    } else {brain.plan=null;brain.motor=null;brain.goal=null;brain.status=mindAvailabilityText(mindController(c),state);}
+    if(MIND_MODES[mindController(c)].higher && !MINDS.config?.typesafe){
+      brain.goal=null;brain.higherStatus='Jev unavailable; Fish Brain instincts';
+    }
     brain.availability=state;
   }
 }
@@ -45,8 +63,9 @@ async function mindCheckCapabilities(force=false) {
       const response=await fetch(`${Net.base}/minds`,{cache:'no-store',signal:AbortSignal.timeout(5000)});
       if(!response.ok)throw Error('unavailable');
       const capabilities=await response.json();
-      if(typeof capabilities?.enabled!=='boolean' || (capabilities.flyBrain!==undefined && typeof capabilities.flyBrain!=='boolean'))throw Error('invalid');
-      MINDS.config={typesafe:capabilities.enabled,'fly-brain':capabilities.flyBrain===true};
+      if(typeof capabilities?.enabled!=='boolean' || ['flyBrain','fishBrain'].some(k=>capabilities[k]!==undefined && typeof capabilities[k]!=='boolean'))throw Error('invalid');
+      MINDS.config={typesafe:capabilities.enabled,'fly-brain':capabilities.flyBrain===true,
+        'fish-brain':capabilities.fishBrain===true,'hybrid-brain':capabilities.fishBrain===true};
       MINDS.configAt=performance.now();MINDS.configError=false;MINDS.configRetryAt=0;
     }catch{MINDS.configError=true;MINDS.configRetryAt=performance.now()+10000;}
     finally{MINDS.configPending=null;mindSyncAvailability(world);}
@@ -56,8 +75,9 @@ async function mindCheckCapabilities(force=false) {
   return MINDS.configPending;
 }
 function mindCleanActivity(activity) {
-  if(!activity || FLY_ACTIVITY.some(k=>!Number.isFinite(activity[k]) || activity[k]<0 || activity[k]>10000))return null;
-  return Object.fromEntries(FLY_ACTIVITY.map(k=>[k,Math.round(activity[k]*100)/100]));
+  if(!activity || FLY_ACTIVITY.some(k=>k!=='grooming' && !Number.isFinite(activity[k]) ||
+    (activity[k]!==undefined && (!Number.isFinite(activity[k]) || activity[k]<0 || activity[k]>10000))))return null;
+  return Object.fromEntries(FLY_ACTIVITY.filter(k=>activity[k]!==undefined).map(k=>[k,Math.round(activity[k]*100)/100]));
 }
 const MIND_LABELS = {forage:'Forage',hunt:'Hunt',shelter:'Take cover',flee:'Flee',wait:'Watch',explore:'Explore',
   rest:'Rest',shoal:'Join its kind',investigate:'Investigate',avoid:'Keep distance',ambush:'Wait in ambush',camouflage:'Camouflage',ink:'Ink escape'};
@@ -70,20 +90,24 @@ function mindCleanLog(log) {
     const entry={at:e.at,action:e.action,source,outcome:e.outcome,
       target:typeof e.target==='string' && /^[a-zA-Z][a-zA-Z0-9 -]{0,39}$/.test(e.target)?e.target:null};
     if(source==='fly-brain'){
-      if(!['wait','explore','flee','forage'].includes(e.action) || e.outcome==='uncertain')return [];
+      if(!['wait','explore','flee','forage','hunt','rest','avoid','ink'].includes(e.action) || e.outcome==='uncertain')return [];
       const activity=mindCleanActivity(e.activity);if(!activity)return [];
       entry.activity=activity;
+    } else if(MIND_MODES[source].motor && e.confidence===undefined){
+      const motor=mindFishResult({source:'fish-brain',motor:e.motor});if(!motor || e.outcome==='uncertain')return [];
+      entry.motor=motor.motor;
     } else {
+      if(source==='fish-brain')return [];
       if(!Number.isFinite(e.confidence) || e.confidence<0 || e.confidence>1)return [];
       entry.confidence=e.confidence;
     }
     return [entry];
   });
 }
-function mindLogChoice(c,plan,confidence,outcome,source='typesafe',activity=null) {
+function mindLogChoice(c,plan,confidence,outcome,source='typesafe',activity=null,motor=null) {
   const log= c.life.mindLog || (c.life.mindLog=[]);
   const target=plan.prey||plan.watchPrey||plan.companion||plan.avoid||plan.threat;
-  const entries=mindCleanLog([{at:Date.now(),action:plan.action,confidence,outcome,source,activity,target:target?mindSpecies(target):null}]);
+  const entries=mindCleanLog([{at:Date.now(),action:plan.action,confidence,outcome,source,activity,motor,target:target?mindSpecies(target):null}]);
   if(!entries.length)return;
   log.push(entries[0]);
   if(log.length>20)log.shift();
@@ -104,7 +128,7 @@ const mindWetRoute = (w, c, p) => p && Number.isFinite(p.x) && Number.isFinite(p
   (typeof islandWaterRoute !== 'function' || islandWaterRoute(w,c.x,c.y,p.x,p.y));
 
 function awakenMind(w, c) {
-  if (w.observe || !mindHere(c) || (!c.life?.mind && !mindEligible(c))) return false;
+  if (w.observe || !mindHere(c) || (!c.life?.mind && (!mindEligible(c)||!mindControllerAllowed(c)))) return false;
   const on = !c.life.mind;
   if(on){void mindCheckCapabilities();if(mindAvailability(mindController(c))!=='ready')return false;}
   for (const other of w.creatures) if (other.life?.mind) { other.life.mind=false; other.mind=null; }
@@ -118,7 +142,7 @@ function awakenMind(w, c) {
 }
 
 function setMindController(w,c,controller) {
-  if(w.observe || !mindHere(c) || !Object.hasOwn(MIND_CONTROLLERS,controller) || (!c.life?.mind && !mindEligible(c)))return false;
+  if(w.observe || !mindHere(c) || !Object.hasOwn(MIND_CONTROLLERS,controller) || !mindControllerAllowed(c,controller) || (!c.life?.mind && !mindEligible(c)))return false;
   if(mindController(c)===controller){c.life.mindController=controller;void mindCheckCapabilities();return true;}
   c.life.mindController=controller;
   if(c.life.mind)c.mind={status:'Watching for an encounter',token:0};
@@ -133,17 +157,47 @@ function mindRemember(c, event, species) {
   memory.push({event,species}); if(memory.length>4)memory.shift();
 }
 
+function mindProfile(w,c) {
+  const b=geneBuffs(c),L=c.life,lv=k=>typeof huntLv==='function'?huntLv(c,k):0;
+  const predator=isPredator(c),hunter=!!L.hunter,enragedNow=typeof enraged==='function' && enraged(w,c);
+  const stance=w.game?.stance?.[c.species==='tadpole'?'frog':c.species] || 'neutral';
+  const feeds=!(c instanceof Watcher),canHunt=feeds && (predator||enragedNow) &&
+    !(L.satedUntil>w.t) && (enragedNow || L.energy<= (typeof huntThreshold==='function'?
+      huntThreshold(c,Math.min(.92,.6*b.aggression*(typeof rageOf==='function'?rageOf(w,c):1)*
+        (.4+.6*(typeof activity==='function'?activity(w,c):1)))):.9));
+  const tags=[...new Set([...(L.traits||[]),...(L.warps||[]),...(L.quirks||[]),
+    ...(predator?['predator']:[]),...(hunter?['hunter']:[]),...(enragedNow?['enraged']:[]),
+    ...(L.safe?['kept safe']:[]),...(stance!=='neutral'?[stance]:[]),...(L.paragon?['paragon']:[])])].slice(0,24);
+  const weights={
+    food:feeds?clamp((b.appetite||1)*(.8+.04*lv('hunger')), .4,2):0,
+    danger:clamp((.8+.25*b.intellect)*(1-.35*(b.resilience||0)),.4,2),
+    hunt:canHunt?clamp(b.aggression*(1+.08*lv('hunger')+.04*lv('jaws')+.04*lv('maw')), .4,3):0,
+    explore:clamp(b.intellect*(1-.3*(b.territory||1)),.25,2),
+    social:clamp((1+(b.calming||0))/(.6+b.aggression),.25,2),
+    shelter:clamp(.7+(b.stealth||0)+.3*(1-(L.comfort??.5)),.4,2),
+    motor:clamp(.65+.35*L.energy+.02*lv('tenacity'),.4,1),
+    turn:clamp(.75+.25*b.intellect,.5,1.5),
+  };
+  return {tags,weights,abilities:{feeds,canHunt,camouflage:c instanceof Octopus && c.jet<=0,
+    ink:c instanceof Octopus && c.jet<=0 && typeof c.inkEscape==='function'},
+    combat:{predator,hunter,enraged:enragedNow,protected:typeof huntable==='function'?!huntable(w,c):false,
+      keptSafe:!!L.safe,stance}};
+}
+
+const mindProfileSignature = (profile) => JSON.stringify([profile.tags,profile.abilities,profile.combat,
+  Object.values(profile.weights).map(v=>Math.floor(v*4))]);
+
 function mindEncounter(w, c) {
-  const radius=Math.min(120,c.sight || 60), neighbors=[];
+  const profile=mindProfile(w,c),radius=Math.min(180,(c.sight || 60)*(typeof huntRange==='function'?huntRange(c):1)), neighbors=[];
   forNear(w,c.x,c.y,radius,(q,d) => {
     if(q===c || !mindHere(q) || Math.abs((q.z||0)-c.z)>14) return;
-    if(Math.sqrt(d)>radius*(1-Math.min(.9,geneBuffs(q).stealth||0)*.7)) return;
+    if(Math.sqrt(d)>radius*(1-Math.min(.9,geneBuffs(q).stealth||0)*.7*(typeof huntSees==='function'?huntSees(c):1))) return;
     neighbors.push(q);
   });
   neighbors.sort((a,b)=>mindDistance(c,a)-mindDistance(c,b)); neighbors.length=Math.min(8,neighbors.length);
   const threat=neighbors.find(q=>q===c.threat || q===c.dread ||
     (isPredator(q) && (q.body?.w[0]||1)>(c.body.w[0]||1)*1.3 && (q.prey===c || mindDistance(c,q)<26)));
-  const prey=!(c instanceof Watcher) && c.prey && neighbors.includes(c.prey) && isPredator(c) &&
+  const prey=profile.abilities.canHunt && c.prey && neighbors.includes(c.prey) &&
     (typeof huntable!=='function' || huntable(w,c.prey)) ? c.prey : null;
   const feeds=!(c instanceof Watcher);
   const food=feeds ? w.nearestFood(c.x,c.y,radius,fd=>(!c.foodFilter||c.foodFilter(fd)) &&
@@ -185,45 +239,70 @@ function mindEncounter(w, c) {
   const state={creature:{species:mindSpecies(c),hunger:clamp(1-c.life.energy,0,1),intellect:geneBuffs(c).intellect,
     aggression:geneBuffs(c).aggression,rarity:mindRarity(c),levels,traits:c.life.traits,
     locomotion:c instanceof Walker?'bottom walker':c instanceof Octopus?'cephalopod':c instanceof Watcher?'drifting watcher':'swimmer',
-    comfort:clamp(c.life.comfort??.5,0,1),depth:clamp(depthAt(w,c.x,c.y),0,1)},
+    comfort:clamp(c.life.comfort??.5,0,1),depth:clamp(depthAt(w,c.x,c.y),0,1),...profile,
+    vitality:clamp(geneBuffs(c).vitality,0,10),stealth:clamp(geneBuffs(c).stealth||0,0,1)},
     neighbors:neighbors.map(q=>({species:mindSpecies(q),distance:Math.round(mindDistance(c,q)),
       relativeSize:Math.min(100,(q.body?.w[0]||1)/(c.body.w[0]||1)),role:q===threat?'threat':q===prey?'prey':'neighbor',
-      sameSpecies:q.species===c.species,aggression:clamp(geneBuffs(q).aggression,0,10)})),
-    options:options.map(o=>({action:o.action,distance:Math.round(mindDistance(c,o))})),memory:c.life.mindMemory||[]};
+      sameSpecies:q.species===c.species,aggression:clamp(geneBuffs(q).aggression,0,10),
+      protected:typeof huntable==='function'?!huntable(w,q):false,
+      stance:w.game?.stance?.[q.species==='tadpole'?'frog':q.species]||'neutral'})),
+    environment:{darkness:clamp(w.darkness||0,0,1),pollution:clamp(typeof pollutionAt==='function'?pollutionAt(w,c.x,c.y):0,0,1),
+      mismatch:clamp(typeof mismatch==='function'?mismatch(w,c):0,0,1),aggression:clamp(typeof aggressionAt==='function'?aggressionAt(w,c.x,c.y):0,0,1),
+      current:clamp(w.current?.s||0,0,1)},
+    options:options.map(o=>({action:o.action,distance:Math.round(mindDistance(c,o)),weight:
+      profile.weights[{forage:'food',flee:'danger',avoid:'danger',ambush:'hunt',shoal:'social',investigate:'explore',rest:'shelter',camouflage:'shelter',ink:'danger'}[o.action]||o.action] ?? 1})),memory:c.life.mindMemory||[]};
   // Recheck coarse needs and identities after the asynchronous decision.
   const signature=[Math.floor(state.creature.hunger*4),geneBuffs(c).intellect,geneBuffs(c).aggression,JSON.stringify(levels),
     threat?.id||0,prey?.id||0,mindTargetId(food),mindTargetId(cover),Math.floor(state.creature.comfort*4),
-    ...neighbors.map(q=>q.id),...options.map(o=>o.action)].join('/');
-  return {state,options,signature,threat,meaningful:!!(threat||prey||food||neighbors.length)};
+    mindProfileSignature(profile),JSON.stringify(Object.values(state.environment).map(v=>Math.floor(v*4))),
+    ...neighbors.map(q=>q.id).sort((a,b)=>a-b),...options.map(o=>o.action)].join('/');
+  return {state,options,signature,threat,radius,meaningful:!!(threat||prey||food||neighbors.length||state.environment.pollution>.2||state.environment.mismatch>.3)};
 }
 
 function mindFlyInputs(w,c,encounter) {
-  const radius=Math.min(120,c.sight || 60),hunger=clamp(encounter.state.creature.hunger,0,1);
+  const radius=encounter.radius,hunger=clamp(encounter.state.creature.hunger,0,1),{weights}=encounter.state.creature;
   const food=encounter.options.find(o=>o.action==='forage')?.food;
+  const prey=encounter.options.find(o=>o.action==='hunt')?.prey;
+  const companion=encounter.options.find(o=>o.action==='shoal')?.companion;
+  const target=encounter.threat || prey || food || companion;
+  const bearing=target?Math.sin(Math.atan2(target.y-c.y,target.x-c.x)-c.heading)*(encounter.threat?-1:1):0;
+  const near=q=>q?clamp(1-mindDistance(c,q)/radius,0,1):0;
+  const env=encounter.state.environment;
+  const ahead={x:c.x+Math.cos(c.heading)*12,y:c.y+Math.sin(c.heading)*12};
+  const blocked=ahead.x<1 || ahead.y<1 || ahead.x>w.W-2 || ahead.y>w.H-2 || !mindWetRoute(w,c,ahead);
   const resting=c.hold>w.t || c.state==='sit';
-  return {food:food?hunger*clamp(1-mindDistance(c,food)/radius,0,1):0,
-    danger:encounter.threat?clamp(1-mindDistance(c,encounter.threat)/radius,0,1):0,
-    drive:c.life.energy>=.9 || resting?0:clamp(.18+hunger*.12,0,1)};
+  return {food:clamp(Math.max(hunger*near(food)*weights.food,hunger*near(prey)*weights.hunt),0,1),
+    danger:clamp(near(encounter.threat)*weights.danger,0,1),
+    drive:resting?0:clamp((.12+.3*hunger+.18*near(prey)*weights.hunt+.12*near(companion)*weights.social)*weights.explore*weights.motor,0,1),
+    bitter:clamp(Math.max(env.pollution,env.mismatch)*(1-(geneBuffs(c).tolerance||0)),0,1),
+    odor:clamp(env.pollution*(1-(geneBuffs(c).resilience||0)),0,1),
+    touch:clamp((blocked?1:0)+env.current*.25+encounter.state.neighbors.filter(n=>n.distance<12).length*.15,0,1),
+    turn:clamp(bearing*near(target),-1,1)};
 }
 
 function mindFlyResult(result) {
   const m=result?.motor,activity=mindCleanActivity(result?.activity);
   if(result?.source!=='fly-brain' || !m || !Number.isFinite(m.drive) || m.drive<0 || m.drive>1 ||
     !Number.isFinite(m.turn) || m.turn< -1 || m.turn>1 ||
-    ['feeding','escape','reverse'].some(k=>typeof m[k]!=='boolean') || !activity)return null;
-  return {motor:{drive:m.drive,turn:m.turn,feeding:m.feeding,escape:m.escape,reverse:m.reverse},activity};
+    ['feeding','escape','reverse'].some(k=>typeof m[k]!=='boolean') ||
+    (m.grooming!==undefined && typeof m.grooming!=='boolean') || !activity)return null;
+  return {motor:{drive:m.drive,turn:m.turn,feeding:m.feeding,escape:m.escape,reverse:m.reverse,grooming:m.grooming===true},activity};
 }
 
 function mindFlyPlan(w,c,encounter,motor) {
-  const escape=motor.escape && encounter.options.find(o=>o.action==='flee');
+  const weights=encounter.state.creature.weights;
+  const escape=motor.escape && encounter.options.find(o=>o.action==='ink' || o.action==='flee');
   if(escape)return escape;
-  const food=motor.feeding && encounter.options.find(o=>o.action==='forage');
+  const food=motor.feeding && (encounter.options.find(o=>o.action==='hunt') || encounter.options.find(o=>o.action==='forage'));
   if(food)return food;
   const wait={action:'wait',x:c.x,y:c.y,speed:0};
-  if(motor.drive<=.02)return wait;
-  const angle=c.heading+motor.turn*Math.PI*.5+(motor.reverse?Math.PI:0),distance=12+motor.drive*12;
+  if(motor.grooming && !encounter.threat)return encounter.options.find(o=>o.action==='rest') || wait;
+  if(motor.reverse && encounter.threat)return encounter.options.find(o=>o.action==='avoid') || wait;
+  if(motor.drive<=.02 && Math.abs(motor.turn)<=.02)return wait;
+  const drive=motor.drive*weights.motor;
+  const angle=c.heading+clamp(motor.turn*weights.turn,-1,1)*Math.PI*.5+(motor.reverse?Math.PI:0),distance=12+drive*12;
   const plan={action:'explore',x:clamp(c.x+Math.cos(angle)*distance,1,w.W-2),
-    y:clamp(c.y+Math.sin(angle)*distance,1,w.H-2),speed:c.maxSpeed*motor.drive};
+    y:clamp(c.y+Math.sin(angle)*distance,1,w.H-2),speed:c.maxSpeed*drive};
   return mindWetRoute(w,c,plan)?plan:wait;
 }
 
@@ -231,90 +310,207 @@ function mindDecisionSignature(w,c,encounter,controller) {
   if(controller!=='fly-brain')return encounter.signature;
   const inputs=mindFlyInputs(w,c,encounter);
   const food=encounter.options.find(o=>o.action==='forage')?.food;
-  // Harmless neighbors are not neural inputs; their movement cannot stale a
-  // measured motor response. Food/threat identities and sensory changes can.
-  return [mindTargetId(food),mindTargetId(encounter.threat),Math.floor(inputs.food*4),
-    Math.floor(inputs.danger*4),Math.floor(inputs.drive*4)].join('/');
+  // Ordering alone is not an input. Changed targets, close crowding, abilities
+  // and coarse sensory values invalidate a measured motor response.
+  return [mindTargetId(food),mindTargetId(encounter.threat),
+    mindTargetId(encounter.options.find(o=>o.action==='hunt')?.prey),
+    ...Object.values(inputs).map(v=>Math.floor(v*4)),mindProfileSignature(encounter.state.creature),
+    ...encounter.options.map(o=>o.action)].join('/');
 }
 
-async function mindThink(w,c,encounter) {
-  const brain=c.mind, token=++brain.token, started=performance.now(),controller=mindController(c);
-  const signature=mindDecisionSignature(w,c,encounter,controller);
-  const inputs=controller==='fly-brain'?mindFlyInputs(w,c,encounter):null;
-  MINDS.pending=true;
+const FISH_CHANNELS=['food','threat','same','other','obstacle','motion','prey','cover'];
+const FISH_GOAL_GAINS={
+  forage:{food:1.8,prey:.4,same:.5}, hunt:{prey:1.8,food:.25,same:.3,drive:1.3},
+  flee:{threat:1.8,food:.1,prey:0,same:.1,drive:1.5}, ink:{threat:1.8,food:.1,prey:0,drive:1.5},
+  shoal:{same:1.8,other:.2}, investigate:{other:1.8}, explore:{other:1.4,drive:1.2},
+  shelter:{cover:1.8,drive:.5}, avoid:{threat:1.6,other:0}, ambush:{cover:1.8,prey:1.2,drive:.1},
+  rest:{drive:.05,food:0,prey:0,other:0}, wait:{drive:.05,food:0,prey:0,other:0},
+  camouflage:{drive:.05,food:0,prey:0,other:0},
+};
+function mindFishGoal(w,c,encounter) {
+  const goal=c.mind?.goal;
+  if(!goal)return null;
+  if(mindAvailability('typesafe')!=='ready' || performance.now()>goal.until ||
+    !encounter.options.some(o=>o.action===goal.action)){
+    c.mind.goal=null;c.mind.higherStatus='Jev has no current goal; Fish Brain instincts';return null;
+  }
+  return goal;
+}
+function mindFishInputs(w,c,encounter) {
+  const sectors=Array.from({length:16},()=>Object.fromEntries(FISH_CHANNELS.map(k=>[k,0]))),radius=encounter.radius;
+  const put=(p,key,strength=1)=>{
+    const distance=mindDistance(c,p);if(distance>radius)return;
+    const angle=Math.atan2(p.y-c.y,p.x-c.x)-c.heading;
+    const index=((Math.round(angle/(Math.PI*2)*16)%16)+16)%16;
+    sectors[index][key]=clamp(sectors[index][key]+clamp(1-distance/radius,0,1)*strength,0,1);
+  };
+  const profile=encounter.state.creature,prey=encounter.options.find(o=>o.action==='hunt')?.prey;
+  if(profile.abilities.feeds && c.life.energy<.95)for(const fd of w.food){
+    if(!fd.eaten && Math.abs((fd.z||0)-c.z)<14 && (!c.foodFilter||c.foodFilter(fd)) && mindWetRoute(w,c,fd))put(fd,'food');
+  }
+  forNear(w,c.x,c.y,radius,(q,d)=>{
+    if(q===c || !mindHere(q) || Math.abs((q.z||0)-c.z)>14 ||
+      Math.sqrt(d)>radius*(1-Math.min(.9,geneBuffs(q).stealth||0)*.7*(typeof huntSees==='function'?huntSees(c):1)))return;
+    const threat=q===c.threat || q===c.dread || q.prey===c || (isPredator(q) &&
+      (q.body?.w[0]||1)>(c.body.w[0]||1)*1.3 && Math.sqrt(d)<26);
+    put(q,threat?'threat':q===prey?'prey':q.species===c.species?'same':'other');
+    const vx=(q.speed||0)*Math.cos(q.heading||0)-(c.speed||0)*Math.cos(c.heading);
+    const vy=(q.speed||0)*Math.sin(q.heading||0)-(c.speed||0)*Math.sin(c.heading);
+    put(q,'motion',clamp(Math.hypot(vx,vy)/Math.max(1,c.maxSpeed*2),0,1));
+  });
+  for(const p of w.plants)if(mindWetRoute(w,c,p))put(p,'cover');
+  for(const p of w.rocks||[])put(p,'obstacle',.5);
+  for(let i=0;i<16;i++)for(const distance of [6,14,28]){
+    const angle=c.heading+i*Math.PI*2/16,p={x:c.x+Math.cos(angle)*distance,y:c.y+Math.sin(angle)*distance};
+    if(p.x<1 || p.y<1 || p.x>w.W-2 || p.y>w.H-2 || !mindWetRoute(w,c,p))
+      sectors[i].obstacle=Math.max(sectors[i].obstacle,1-distance/36);
+  }
+  const weights=profile.weights,gains={food:weights.food,threat:weights.danger,same:weights.social,
+    other:weights.explore*.2,obstacle:1.5,motion:1,prey:weights.hunt,cover:weights.shelter,drive:weights.motor*weights.explore};
+  const goal=MIND_MODES[mindController(c)].higher?mindFishGoal(w,c,encounter):null;
+  for(const key of Object.keys(gains))gains[key]=clamp(gains[key]*(goal?FISH_GOAL_GAINS[goal.action]?.[key]??1:1),0,2);
+  if(c.hold>w.t || c.state==='sit')gains.drive=0;
+  return {sectors,internal:{hunger:profile.hunger,energy:clamp(c.life.energy,0,1),speed:clamp((c.speed||0)/c.maxSpeed,0,1),
+    depth:profile.depth,comfort:profile.comfort},gains};
+}
+function mindFishResult(result) {
+  const m=result?.motor;
+  if(result?.source!=='fish-brain' || !m || ['left','right','thrust'].some(k=>!Number.isFinite(m[k]) || m[k]<0 || m[k]>1) ||
+    ['startle','feeding'].some(k=>typeof m[k]!=='boolean'))return null;
+  return {motor:{left:m.left,right:m.right,thrust:m.thrust,startle:m.startle,feeding:m.feeding}};
+}
+function mindMotorIntent(w,c) {
+  const output=c.mind?.motor;
+  if(output && performance.now()>output.until){c.mind.motor=null;c.mind.status='Instincts · waiting for Fish Brain';return null;}
+  if(!output || !c.life?.mind || !mindEligible(c) || !mindControllerAllowed(c) || w.paused || w.observe || document.hidden ||
+    c.grabbed || !mindHere(c) || !w.creatures.includes(c) || output.controller!==mindController(c) || performance.now()>output.until ||
+    mindAvailability(mindController(c))!=='ready')return null;
+  return {motor:true,...output.value,turn:output.value.right-output.value.left};
+}
+function mindMotorMeal(w,c) {
+  const reach=c.widths[0]+1.2,prey=c.prey;
+  if(prey && mindProfile(w,c).abilities.canHunt && mindHere(prey) && huntable(w,prey) &&
+    mindDistance(c,prey)<(reach+prey.body.w[0])*(typeof huntReach==='function'?huntReach(c):1) && Math.abs(prey.z-c.z)<8){eat(w,c,prey);return;}
+  const food=w.nearestFood(c.x,c.y,reach,fd=>(!c.foodFilter||c.foodFilter(fd)) && Math.abs((fd.z||0)-c.z)<8 && mindWetRoute(w,c,fd));
+  if(food && c.life.energy<.95)eat(w,c,food);
+}
+
+function mindApplyPlan(w,c,e,result,controller,started,duration) {
+  const brain=c.mind;
+  brain.plan={...result.plan,until:w.t+duration,energy:c.life.energy,threat:e.threat,controller};
+  brain.signature=e.signature;brain.activity=result.activity||null;
+  brain.status=MIND_MODES[controller].status?.(result.plan.action) || `${MIND_CONTROLLERS[controller]} · ${MIND_LABELS[result.plan.action].toLowerCase()}`;
+}
+function mindApplyChoice(w,c,e,result,controller,started) {
+  if(MIND_MODES[controller].higher){
+    c.mind.goal={action:result.plan.action,until:performance.now()+45000};
+    c.mind.higherStatus=`Jev goal: ${MIND_LABELS[result.plan.action].toLowerCase()}`;
+  } else mindApplyPlan(w,c,e,result,controller,started,8);
+}
+function mindApplyMotor(w,c,e,result,controller,started) {
+  const brain=c.mind;
+  brain.motor={value:result.motor,controller,until:started+600};
+  brain.status=`${MIND_CONTROLLERS[controller]} · ${MIND_LABELS[result.plan.action].toLowerCase()}`;
+  if(MIND_MODES[controller].higher)brain.status+=` · ${brain.higherStatus||'Fish Brain instincts; Jev has no current goal'}`;
+}
+const mindNeuralBody = (w,c,inputs)=>({pond:w.link.id,creature:String(c.seed),inputs});
+const MIND_LANES={
+  choice:{path:'decide',interval:30000,poll:1000,timeout:8000,pending:'pending',backoff:'backoff',next:'next',token:'token',retry:60000,
+    ready:()=>mindAvailability('typesafe')==='ready',inputs:(w,c,e)=>e.state,
+    body:(w,c,inputs)=>({pond:w.link.id,scenario:inputs}),signature:(w,c,e)=>e.signature,
+    decode:(w,c,e,r)=>Number.isFinite(r?.confidence) && r.confidence>=0 && r.confidence<=1 &&
+      e.options.some(o=>o.action===r.action)?{plan:e.options.find(o=>o.action===r.action),confidence:r.confidence}:null,
+    apply:mindApplyChoice,clear:(brain,mode)=>{if(mode.higher){brain.goal=null;brain.higherStatus='Jev unavailable; Fish Brain instincts';}else brain.plan=null;}},
+  fly:{path:'fly-brain',interval:2000,poll:1000,timeout:8000,pending:'pending',backoff:'flyBackoff',reserve:'flyNext',next:'next',token:'token',retry:10000,
+    ready:()=>mindAvailability('fly-brain')==='ready',inputs:mindFlyInputs,body:mindNeuralBody,
+    signature:(w,c,e)=>mindDecisionSignature(w,c,e,'fly-brain'),
+    decode:(w,c,e,r)=>{const neural=mindFlyResult(r);return neural?{plan:mindFlyPlan(w,c,e,neural.motor),activity:neural.activity}:null;},
+    apply:(w,c,e,r,controller,started)=>mindApplyPlan(w,c,e,r,controller,started,3),clear:brain=>{brain.plan=null;}},
+  fish:{path:'fish-brain',interval:200,poll:0,timeout:1000,maxAge:600,pending:'fishPending',backoff:'fishBackoff',reserve:'fishNext',next:'motorNext',token:'motorToken',retry:2000,
+    ready:()=>mindAvailability('fish-brain')==='ready',inputs:mindFishInputs,body:mindNeuralBody,
+    signature:(w,c,e)=>[mindProfileSignature(e.state.creature),mindTargetId(e.threat),mindTargetId(e.options.find(o=>o.action==='hunt')?.prey),
+      MIND_MODES[mindController(c)].higher?mindFishGoal(w,c,e)?.action||'':null].join('/'),
+    decode:(w,c,e,r)=>{const neural=mindFishResult(r);return neural?{motor:neural.motor,plan:{action:
+      neural.motor.startle?'flee':neural.motor.feeding?(e.options.some(o=>o.action==='hunt')?'hunt':'forage'):neural.motor.thrust>.02?'explore':'wait'}}:null;},
+    apply:mindApplyMotor,clear:brain=>{brain.motor=null;}},
+};
+function mindRequestCurrent(w,c,brain,controller,lane,token) {
+  return w===world && !w.observe && !w.paused && !document.hidden && c.life?.mind && mindHere(c) &&
+    w.creatures.includes(c) && !c.grabbed && brain===c.mind && token===brain[lane.token] && controller===mindController(c) &&
+    mindEligible(c) && mindControllerAllowed(c) && mindAvailability(controller)==='ready' && lane.ready();
+}
+async function mindThink(w,c,encounter,laneName=MIND_MODES[mindController(c)].defaultLane) {
+  const controller=mindController(c),mode=MIND_MODES[controller],lane=MIND_LANES[laneName],brain=c.mind;
+  if(!brain || !mode.lanes.includes(laneName) || MINDS[lane.pending])return;
+  const token=brain[lane.token]=(brain[lane.token]||0)+1,started=performance.now();
+  const signature=lane.signature(w,c,encounter),inputs=lane.inputs(w,c,encounter);
+  MINDS[lane.pending]=true;
   try {
     await mindCheckCapabilities();
-    if(mindAvailability(controller)!=='ready'){brain.plan=null;brain.status=mindAvailabilityText(controller);return;}
+    if(mindAvailability(controller)!=='ready' || !lane.ready()){lane.clear(brain,mode);brain.status=mindAvailabilityText(controller);return;}
     if(!w.link?.id){brain.status='Instincts · share this pond to awaken its mind';return;}
-    // Switching controllers during capability discovery must not start the old request.
-    if(w!==world || w.observe || w.paused || !c.life.mind || !mindHere(c) || !w.creatures.includes(c) ||
-      c.grabbed || brain!==c.mind || token!==brain.token || controller!==mindController(c))return;
-    brain.status=controller==='fly-brain'?'Sensing through Fly Brain':'Considering the encounter';
-    const headers={'Content-Type':'application/json'};
-    if(w.link.key)headers['X-Pond-Key']=w.link.key;
-    const isFly=controller==='fly-brain';
-    const body=isFly?{pond:w.link.id,creature:String(c.seed),inputs}:
-      {pond:w.link.id,scenario:encounter.state};
-    if(isFly)MINDS.flyNext=performance.now()+2000;
-    const response=await fetch(`${Net.base}/minds/${isFly?'fly-brain':'decide'}`,{method:'POST',headers,signal:AbortSignal.timeout(8000),
-      body:JSON.stringify(body)});
+    if(!mindRequestCurrent(w,c,brain,controller,lane,token))return;
+    if(!mode.higher)brain.status=mode.thinking || `Sensing through ${MIND_CONTROLLERS[controller]}`;
+    const headers={'Content-Type':'application/json'};if(w.link.key)headers['X-Pond-Key']=w.link.key;
+    if(lane.reserve)MINDS[lane.reserve]=performance.now()+lane.interval;
+    const response=await fetch(`${Net.base}/minds/${lane.path}`,{method:'POST',headers,signal:AbortSignal.timeout(lane.timeout),
+      body:JSON.stringify(lane.body(w,c,inputs))});
     if(!response.ok)throw Error('unavailable');
-    const result=await response.json(),neural=isFly?mindFlyResult(result):null;
-    const plan=isFly?(neural && mindFlyPlan(w,c,encounter,neural.motor)):encounter.options.find(o=>o.action===result.action);
-    if(!plan || (!isFly && (!Number.isFinite(result.confidence) || result.confidence<0 || result.confidence>1)))throw Error('invalid');
-    if(w!==world || w.observe || w.paused || !c.life.mind || !mindHere(c) || !w.creatures.includes(c) || brain!==c.mind || token!==brain.token ||
-      controller!==mindController(c) || mindAvailability(controller)!=='ready' || performance.now()-started>8000 ||
-      mindDecisionSignature(w,c,mindEncounter(w,c),controller)!==signature) {
-      if(w===world)mindLogChoice(c,plan,result.confidence,'stale',controller,neural?.activity);
-      brain.status='Watching the changed encounter';return;
+    const result=lane.decode(w,c,encounter,await response.json());if(!result)throw Error('invalid');
+    if(!mindRequestCurrent(w,c,brain,controller,lane,token) || performance.now()-started>(lane.maxAge||lane.timeout) ||
+      lane.signature(w,c,mindEncounter(w,c))!==signature){
+      if(w===world && !result.motor)mindLogChoice(c,result.plan,result.confidence,'stale',controller,result.activity);
+      if(!mode.motor && brain===c.mind && controller===mindController(c))brain.status='Watching the changed encounter';
+      return;
     }
-    // TypeSafe confidence describes its choice distribution, not neural activity.
-    if(!isFly && encounter.threat && result.confidence<.55){
-      mindLogChoice(c,plan,result.confidence,'uncertain',controller);brain.status='Instincts · uncertain about the danger';return;
+    if(result.confidence!==undefined && encounter.threat && result.confidence<.55){
+      mindLogChoice(c,result.plan,result.confidence,'uncertain',controller);lane.clear(brain,mode);
+      if(!mode.higher)brain.status='Instincts · uncertain about the danger';return;
     }
-    mindLogChoice(c,plan,result.confidence,'chosen',controller,neural?.activity);
-    brain.plan={...plan,until:w.t+(isFly?3:8),energy:c.life.energy,threat:encounter.threat,controller};brain.signature=encounter.signature;
-    brain.activity=isFly?neural.activity:null;
-    brain.status=isFly?`Fly Brain · ${MIND_LABELS[plan.action].toLowerCase()}`:
-      {forage:'Going for the food',hunt:'Pursuing its chosen prey',shelter:'Taking cover',
-        flee:'Retreating from danger',wait:'Waiting and watching',explore:'Investigating nearby water',
-        rest:'Resting quietly',shoal:'Joining its own kind',investigate:'Studying a nearby creature',avoid:'Keeping its distance',
-        ambush:'Waiting for prey in cover',camouflage:'Blending into the pond floor',ink:'Escaping behind an ink cloud'}[plan.action];
+    // Continuous motor samples are displayed live; history samples at 1 Hz or
+    // behavioral changes, so 5 Hz control does not erase every higher-level goal.
+    if(!result.motor || started-(brain.motorLogAt||0)>=1000 || brain.motorLogAction!==result.plan.action){
+      mindLogChoice(c,result.plan,result.confidence,'chosen',controller,result.activity,result.motor);
+      if(result.motor){brain.motorLogAt=started;brain.motorLogAction=result.plan.action;}
+    }
+    lane.apply(w,c,encounter,result,controller,started);brain.senses=inputs;
   } catch {
-    if(controller==='fly-brain')MINDS.flyBackoff=performance.now()+10000;else MINDS.backoff=performance.now()+60000;
-    brain.plan=null;
-    brain.status=`Instincts · ${MIND_CONTROLLERS[controller]} interrupted`;
-  }
-  finally {MINDS.pending=false;}
+    MINDS[lane.backoff]=performance.now()+lane.retry;
+    lane.clear(brain,mode);
+    if(!mode.higher || laneName===mode.defaultLane)brain.status=`Instincts · ${MIND_CONTROLLERS[controller]} interrupted`;
+  } finally {MINDS[lane.pending]=false;}
 }
 
 function mindTick(w) {
   const now=performance.now();
-  if(w.paused || w.observe || document.hidden || now<MINDS.next || MINDS.pending)return;
-  MINDS.next=now+1000;
-  const c=w.creatures.find(c=>c.life?.mind && mindHere(c) && mindEligible(c));
+  if(w.paused || w.observe || document.hidden || now<MINDS.next)return;
+  const c=w.creatures.find(c=>c.life?.mind && mindHere(c) && mindEligible(c) && mindControllerAllowed(c));
   if(!c)return;
-  const controller=mindController(c);
-  void mindCheckCapabilities();
-  if(mindAvailability(controller)!=='ready')return;
-  if(now<(controller==='fly-brain'?Math.max(MINDS.flyBackoff,MINDS.flyNext):MINDS.backoff))return;
+  const controller=mindController(c),mode=MIND_MODES[controller];
+  MINDS.next=now+Math.min(...mode.lanes.map(k=>MIND_LANES[k].poll));
+  void mindCheckCapabilities();if(mindAvailability(controller)!=='ready')return;
   const brain=c.mind || (c.mind={status:'Watching for an encounter',token:0});
-  if(c.grabbed || now<(brain.next||0))return;
-  const encounter=mindEncounter(w,c);
-  if(encounter.threat)mindRemember(c,'threat',mindSpecies(encounter.threat));
-  if(controller==='typesafe' && (!encounter.meaningful || encounter.options.length<2 || encounter.signature===brain.signature))return;
-  brain.next=now+(controller==='fly-brain'?2000:30000); void mindThink(w,c,encounter);
+  if(c.grabbed)return;
+  let encounter;
+  for(const name of mode.lanes){
+    const lane=MIND_LANES[name],nextKey=mode.higher && name==='choice'?'higherNext':lane.next;
+    if(!lane.ready() || MINDS[lane.pending] || now<Math.max(MINDS[lane.backoff]||0,MINDS[lane.reserve]||0,brain[nextKey]||0))continue;
+    encounter ||= mindEncounter(w,c);if(name==='choice' && encounter.options.length<2)continue;
+    if(encounter.threat)mindRemember(c,'threat',mindSpecies(encounter.threat));
+    brain[nextKey]=now+lane.interval;void mindThink(w,c,encounter,name);
+  }
 }
 
 function mindIntent(w,c) {
+  if(MIND_MODES[mindController(c)].motor)return mindMotorIntent(w,c);
   const brain=c.mind,p=brain?.plan;
   if(!c.life?.mind || !p || w.observe)return null;
   if(!mindEligible(c) || c.grabbed || w.t>p.until || !mindHere(c) || !w.creatures.includes(c) ||
     (p.controller && p.controller!==mindController(c)) ||
     (c.threat && c.threat!==p.threat) || c.dread || (p.prey && (!mindHere(p.prey)||!huntable(w,p.prey)||
-      c.life.satedUntil>w.t||c.life.energy>.9)) ||
+      c.life.satedUntil>w.t||!mindProfile(w,c).abilities.canHunt)) ||
     (p.companion && (!mindHere(p.companion)||!w.creatures.includes(p.companion)||mindDistance(c,p.companion)>(c.sight||60))) ||
-    (p.watchPrey && (!mindHere(p.watchPrey)||!huntable(w,p.watchPrey))) ||
+    (p.watchPrey && (!mindHere(p.watchPrey)||!huntable(w,p.watchPrey)||!mindProfile(w,c).abilities.canHunt)) ||
     (p.food && (p.food.eaten||!w.food.includes(p.food)||c.life.energy>=.95)) || (p.cover&&!w.plants.includes(p.cover))){
     if(p.food&&c.life.energy>p.energy+.05)mindRemember(c,'fed',mindSpecies(c));
     if(p.prey&&!mindHere(p.prey))mindRemember(c,'prey_lost',mindSpecies(p.prey));

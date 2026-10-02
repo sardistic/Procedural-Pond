@@ -38,3 +38,19 @@ test('reserve capacity before await, enforce budgets, and release after failure'
   assert.equal((await service.step('second',input())).status,429);
   clock=3600001;const reset=service.step('first',input());resolve({ok:true,json:async()=>motor()});assert.equal((await reset).status,200);
 });
+
+test('extended sensory channels reach the worker with direction and grooming readout bounded',async()=>{
+  const body=input();Object.assign(body.inputs,{bitter:.7,odor:.5,touch:.2,turn:-.8});
+  assert.deepEqual(cleanFlyInput(body),body);
+  for(const [key,value] of [['turn',-1.01],['touch',2],['odor',true],['bitter',NaN]])
+    assert.equal(cleanFlyInput({...body,inputs:{...body.inputs,[key]:value}}),null);
+  const result=motor();result.activity.grooming=25;result.motor.grooming=true;result.motor.command='bad';
+  let sent;
+  const service=createFlyBrainService({url:'http://worker:8090',request:async(url,options)=>{
+    sent=JSON.parse(options.body);return{ok:true,json:async()=>result};
+  }});
+  const response=await service.step('pond',body);
+  assert.deepEqual(sent.inputs,body.inputs);assert.equal(response.body.motor.grooming,true);
+  assert.equal(response.body.activity.grooming,25);assert.equal(response.body.motor.command,undefined);
+  assert.equal(cleanMotor({...result,activity:{...result.activity,grooming:Infinity}}),null);
+});

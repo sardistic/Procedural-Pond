@@ -1289,8 +1289,11 @@ function renderCreature() {
     mind.append(el('b', null, 'Awakened mind'), el('p', 'note', L.mind ?
       c.mind?.status || 'Watching for an encounter' : 'A rare, intelligent creature can learn from encounters and choose how to respond. One mind per pond.'));
     if(availability!=='ready' && !L.mind)mind.append(el('p','note',mindAvailabilityText(controller,availability)));
-    if(controller==='fly-brain')mind.append(el('p','note','Fly Brain · experimental control from food, danger and movement signals.'));
-    if(mindEligible(c) && controller==='typesafe') {
+    if(MIND_MODES[controller].note)mind.append(el('p','note',MIND_MODES[controller].note));
+    if(MIND_MODES[controller].higher && availability==='ready' && mindAvailability('typesafe')!=='ready')
+      mind.append(el('p','note','Jev is unavailable. Fish Brain continues with its own sensory drive.'));
+    if(!mindControllerAllowed(c))mind.append(el('p','note','This controller supports swimming fish. Choose TypeSafe or Fly Brain for this creature.'));
+    if(mindEligible(c) && MIND_MODES[controller].lanes.includes('choice')) {
       const labels={wait:'watch',forage:'forage',hunt:'hunt',shelter:'shelter',flee:'flee',explore:'explore',
         rest:'rest',shoal:'join its kind',investigate:'investigate',avoid:'keep distance',ambush:'wait in ambush',camouflage:'camouflage',ink:'ink escape'};
       mind.append(el('p','note','Choices here: '+mindEncounter(world,c).options.map(o=>labels[o.action]).join(' · ')));
@@ -1299,14 +1302,14 @@ function renderCreature() {
       const controls=el('div','mind-controls');controls.setAttribute('aria-label','Creature controller');
       for(const [mode,label] of Object.entries(MIND_CONTROLLERS)){
         const choose=el('button',null,`Use ${label}`);choose.type='button';
-        choose.disabled=!L.mind && !mindEligible(c);choose.setAttribute('aria-pressed',String(controller===mode));
+        choose.disabled=(!L.mind && !mindEligible(c)) || !mindControllerAllowed(c,mode);choose.setAttribute('aria-pressed',String(controller===mode));
         choose.addEventListener('click',()=>{setMindController(world,c,mode);renderCreature();});controls.append(choose);
       }
       mind.append(controls);
       const label=availability==='ready'?'Awaken mind':availability==='checking'?`Checking ${MIND_CONTROLLERS[controller]}`:
         availability==='unavailable'?`${MIND_CONTROLLERS[controller]} unavailable`:`${MIND_CONTROLLERS[controller]} connection unknown`;
       const button = el('button', null, L.mind ? 'Return to instincts' : label);
-      button.type = 'button'; button.disabled = !L.mind && (!mindEligible(c) || availability!=='ready');
+      button.type = 'button'; button.disabled = !L.mind && (!mindEligible(c) || !mindControllerAllowed(c) || availability!=='ready');
       button.setAttribute('aria-pressed', String(!!L.mind));
       button.addEventListener('click', () => { awakenMind(world,c); renderCreature(); });
       mind.append(button);
@@ -1326,7 +1329,7 @@ function renderCreature() {
         time.dateTime=new Date(entry.at).toISOString();
         const target=entry.target?` · ${SINGULAR[entry.target]||entry.target}`:'';
         const outcome=entry.outcome==='stale'?' · discarded: encounter changed':entry.outcome==='uncertain'?' · instincts: uncertain about danger':'';
-        const source=entry.source==='fly-brain'?'Fly Brain':'TypeSafe';
+        const source=MIND_CONTROLLERS[entry.source] || 'TypeSafe';
         row.append(time,el('span',null,`${source} · ${MIND_LABELS[entry.action]}${target}${outcome}`));list.append(row);
       }
       log.append(list);
@@ -1335,7 +1338,8 @@ function renderCreature() {
         const activity=el('details');activity.open=creatureUi.neuralMore;
         activity.addEventListener('toggle',()=>{if(creatureUi.c===c)creatureUi.neuralMore=activity.open;});
         activity.append(el('summary',null,'Latest Fly Brain activity'));
-        activity.append(el('p','note',FLY_ACTIVITY.map(k=>`${k} ${neural.activity[k].toFixed(1)} Hz`).join(' · ')));
+        activity.append(el('p','note',FLY_ACTIVITY.filter(k=>neural.activity[k]!==undefined).map(k=>`${k} ${neural.activity[k].toFixed(1)} Hz`).join(' · ')));
+        if(c.mind?.senses && !c.mind.senses.sectors && !c.mind.senses.creature)activity.append(el('p','note',`Sensory input: ${Object.entries(c.mind.senses).map(([k,v])=>`${k} ${v.toFixed(2)}`).join(' · ')}`));
         log.append(activity);
       }
       if(entries.length>3){
@@ -1345,6 +1349,10 @@ function renderCreature() {
       }
     }
     parts.push(log);
+  }
+  if(MIND_MODES[mindController(c)].motor && c.mind?.motor){
+    const motor=c.mind.motor.value;
+    parts.push(el('p','note',`Fish Brain motor · left ${motor.left.toFixed(2)} · right ${motor.right.toFixed(2)} · thrust ${motor.thrust.toFixed(2)}${motor.startle?' · startle':''}${motor.feeding?' · feeding':''}`));
   }
   const gradeChip = chip(`${GRADES[gr]} quality`, GRADE_COLOR[gr]);
   gradeChip.title = 'Graded from its genes: its working genes against the average, gifts up, curses down. It sets what it is worth.';
