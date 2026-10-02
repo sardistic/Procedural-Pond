@@ -1,20 +1,22 @@
-"""Biologically inspired fish-like recurrent sensorimotor controller.
+"""Fish1 HMI connectome-constrained controller with modeled sensory/motor coupling.
 
-Hand-designed sector populations and bilateral recurrent motor units; no real
-zebrafish connectome, fitted biological parameters, training or reinforcement.
-Only normalized sensory channels and internal state enter this network.
+Partial measured hindbrain connectivity; not a full zebrafish brain, recorded
+activity or a trained model. See README.md and UPSTREAM.md for assumptions.
 """
 from __future__ import annotations
 
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import math
 import os
 import re
+import struct
 import threading
 import time
+
+from connectome import Connectome, ConnectomeError, NeuralState, MODEL, REVISION
 
 SECTORS = 16
 CHANNELS = ("food", "threat", "same", "other", "obstacle", "motion", "prey", "cover")
@@ -58,19 +60,17 @@ def validate_input(body):
 @dataclass
 class Session:
     last_used: float
-    attraction: list = field(default_factory=lambda: [0.0] * SECTORS)
-    aversion: list = field(default_factory=lambda: [0.0] * SECTORS)
-    left: float = 0.0
-    right: float = 0.0
-    thrust: float = 0.0
+    neural: NeuralState
     feeding: float = 0.0
     startle: float = 0.0
     refractory: float = 0.0
 
 
 class FishBrain:
-    def __init__(self, max_sessions=32, ttl=120.0, clock=time.monotonic):
+    def __init__(self, max_sessions=32, ttl=120.0, clock=time.monotonic, data_root=None, noise=.25):
         self.max_sessions, self.ttl, self.clock = max_sessions, ttl, clock
+        self.network = Connectome(data_root)
+        self.noise = noise
         self.sessions = OrderedDict()
         self.lock = threading.Lock()
         # Sector 0 faces forward, positive angles face the creature's right.
@@ -87,7 +87,7 @@ class FishBrain:
         if name not in self.sessions:
             if len(self.sessions) >= self.max_sessions:
                 self.sessions.popitem(last=False)
-            self.sessions[name] = Session(now)
+            self.sessions[name] = Session(now, self.network.new_state(name))
         self.sessions.move_to_end(name)
         self.sessions[name].last_used = now
         return self.sessions[name]
@@ -108,36 +108,29 @@ class FishBrain:
             danger = max(x["threat"] for x in s)
             front_food = max((x["food"] * g["food"] + x["prey"] * g["prey"]) * max(0, self.cos[i])**4 for i, x in enumerate(s))
             front_obstacle = max(x["obstacle"] * max(0, self.cos[i])**4 for i, x in enumerate(s))
-            startle_event = False
-            # Ten 20 ms neural steps per 200 ms control sample. Sector recurrence
-            # retains recent stimuli; mutual motor inhibition selects a side.
-            for _ in range(10):
-                old_a, old_v = state.attraction[:], state.aversion[:]
-                for i in range(SECTORS):
-                    recurrence = .28 * old_a[i] + .08 * (old_a[i-1] + old_a[(i+1) % SECTORS])
-                    state.attraction[i] += .22 * (math.tanh(attraction[i] + recurrence) - state.attraction[i])
-                    recurrence = .22 * old_v[i] + .06 * (old_v[i-1] + old_v[(i+1) % SECTORS])
-                    state.aversion[i] += .3 * (math.tanh(aversion[i] + recurrence) - state.aversion[i])
-                steering = sum((a - v) * self.sin[i] for i, (a, v) in enumerate(zip(state.attraction, state.aversion))) / 2
-                # Obstacles directly ahead recruit one escape side without
-                # choosing a world-coordinate destination.
-                steering += .35 * front_obstacle
-                left_target = max(0, math.tanh(-steering + .2*state.left - .15*state.right))
-                right_target = max(0, math.tanh(steering + .2*state.right - .15*state.left))
-                state.left += .3 * (left_target - state.left)
-                state.right += .3 * (right_target - state.right)
-                state.refractory = max(0, state.refractory - .02)
-                state.startle += .4 * (danger - state.startle)
-                if state.startle > .72 and state.refractory == 0:
-                    startle_event = True
-                    state.refractory = .8
-                drive = min(1, g["drive"] * (.2 + .35*hunger + .25*max(state.attraction) + .3*danger))
-                drive *= (.25 + .75*energy) * (1 - .8*front_obstacle)
-                state.thrust += .22 * (drive + .12*state.thrust*(1-drive) - state.thrust)
-                state.feeding += .25 * (min(1, front_food*hunger)*(1-danger) - state.feeding)
+            # Game channels are modeled evidence, not biological cell labels.
+            # Project evidence only into the published traced input layer.
+            evidence = sum((a - v) * self.sin[i] for i, (a, v) in enumerate(zip(attraction, aversion))) / 2
+            evidence += .35 * front_obstacle
+            drive = min(1, g["drive"] * (.2 + .35*hunger + .25*max(attraction) + .3*danger))
+            drive *= (.25 + .75*energy) * (1 - .8*front_obstacle)
+            strengths = [min(1, max(0, drive * (1 + direction * evidence))) for direction in (-1, 1)]
+            activity = self.network.advance(state.neural, *strengths, noise=self.noise)
+            left, right = activity["spn-turning"]
+            # Scaling descending rates into the existing game's speed/turn range
+            # is a modeled motor plant. Silent readouts stay silent.
+            thrust = 8 * sum(activity["spn-forward"]) / 2
+            # Feeding and startle are supplementary modeled reflexes: the HMI
+            # artifact contains no identified feeding or startle populations.
+            state.refractory = max(0, state.refractory - .2)
+            state.startle += .95 * (danger - state.startle)
+            startle_event = state.startle > .72 and state.refractory == 0
+            if startle_event:
+                state.refractory = .8
+            state.feeding += .9 * (min(1, front_food*hunger)*(1-danger) - state.feeding)
             return {"source": "fish-brain", "motor": {
-                "left": min(1, max(0, state.left)), "right": min(1, max(0, state.right)),
-                "thrust": min(1, max(0, state.thrust)), "startle": startle_event,
+                "left": min(1, max(0, 4*left)), "right": min(1, max(0, 4*right)),
+                "thrust": min(1, max(0, thrust)), "startle": startle_event,
                 "feeding": state.feeding > .2,
             }}
         except Exception:
@@ -151,9 +144,12 @@ class WorkerServer(ThreadingHTTPServer):
     daemon_threads = True
     request_queue_size = 8
 
-    def __init__(self, address, brain=None):
+    def __init__(self, address, brain=None, data_root=None):
         super().__init__(address, Handler)
-        self.brain = brain or FishBrain()
+        try:
+            self.brain = brain if brain is not None else FishBrain(data_root=data_root)
+        except (OSError, ConnectomeError, ValueError, KeyError, struct.error):
+            self.brain = None
         self.request_slot = threading.BoundedSemaphore(1)
 
 
@@ -176,11 +172,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path != "/health":
             return self.send(404, {"error": "Not found"})
-        self.send(200, {"ready": True, "source": "fish-brain", "model": "biologically-inspired-recurrent-v1", "sectors": SECTORS})
+        ready = self.server.brain is not None
+        self.send(200 if ready else 503, {"ready": ready, "source": "fish-brain", "model": MODEL,
+                                         "revision": REVISION, "sectors": SECTORS,
+                                         "measuredNeurons": 865, "measuredEdges": 1235,
+                                         "simulatedNeurons": 1730, "fullBrain": False})
 
     def do_POST(self):
         if self.path != "/step":
             return self.send(404, {"error": "Not found"})
+        if self.server.brain is None:
+            return self.send(503, {"error": "Fish1 circuit unavailable"})
         if not self.server.request_slot.acquire(blocking=False):
             return self.send(429, {"error": "Fish Brain is busy"})
         try:
@@ -201,4 +203,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    WorkerServer((os.environ.get("FISH_BRAIN_HOST", "0.0.0.0"), int(os.environ.get("FISH_BRAIN_PORT", "8091")))).serve_forever()
+    WorkerServer((os.environ.get("FISH_BRAIN_HOST", "0.0.0.0"), int(os.environ.get("FISH_BRAIN_PORT", "8091"))),
+                 data_root=os.environ.get("FISH_BRAIN_DATA_DIR")).serve_forever()

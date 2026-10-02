@@ -1,16 +1,65 @@
 # Fish Brain
 
-A compact **biologically inspired**, hand-designed recurrent sensorimotor network.
-It is not a full real zebrafish brain, a zebrafish connectome implementation, or a
-trained model. It has no reinforcement learning. The pure Python standard-library
-worker needs no model download, GPU or third-party dependencies.
+Fish Brain now runs the **Fish1 Hindbrain Motion Integrator (HMI)** data from
+[jamieswrld/zebrafishconnectome](https://github.com/jamieswrld/zebrafishconnectome),
+pinned at `7d5b58a54dd314c70ee2ea550a896dbeed7f951f`. It replaces the initial
+hand-designed sector-ring network. This is a **connectome-constrained partial
+hindbrain model**, not a full real zebrafish brain or recorded neural activity.
+Connectivity is measured; dynamics and the game interface are modeled.
 
-Sixteen leaky attraction and aversion populations form recurrent angular rings.
-Bilateral motor populations combine these signals with mutual inhibition; separate
-leaky units supply locomotor drive, feeding and a refractory startle response.
-Each sample advances ten 20 ms neural steps. State persists between samples;
-parameters and synapses remain fixed. This is a starting point for observing game
-behavior, not a claim of biological fidelity or learned intelligence.
+The 865 positioned neurons and 1,235 measured directed pairs (1,568 contacts)
+are mirrored into a 1,730-neuron bilateral simulation with 2,470 pairs. Published
+labels supply 76 input-layer cells, 246 Class I and 246 Class II cells, 28 turning
+and 19 forward spinal projection neurons on each simulated side. The mirror
+is derived, not additional biological measurement. Only 46 original cells have
+traced outgoing contacts; missing edges do not imply biological absence.
+See [data provenance and attribution](UPSTREAM.md).
+
+The independent standard-library Python runtime decodes the unchanged, packaged
+HMI1 data after SHA-256 verification. It needs no GPU, scientific dependencies,
+download, CAVE token or training. No upstream application code is included.
+
+## Neural dynamics and motor coupling
+
+Each 200 ms control sample advances forty fixed 5 ms rate-network steps:
+
+```text
+tau dx_i/dt = -x_i + sum_j W_ij clamp(x_j, 0, 1) + P_i + I_i + noise
+r_i = clamp(x_i, 0, 1)
+tau = 0.1 s
+```
+
+Weights use `log1p(contact count)`, normalized by all measured incoming contact
+weights per destination, then multiplied by 0.9 and the presynaptic transmitter
+sign. Unknown transmitter remains zero; no signs are guessed from morphology.
+The measured graph has 929 excitatory, 98 inhibitory and 208 unsigned pairs.
+
+`P_i` is a separately modeled projection: the opposite-side Class II population
+mean inhibits Class I with gain 0.9. No individual unmeasured outgoing synapses
+are added. Noise has a per-session reproducible random stream (sigma 0.25,
+scaled by the square root of the timestep inside the drive). Time constants,
+normalization and all gains are model parameters, not fitted physiology.
+
+Angular attraction/aversion evidence and bounded locomotor drive are projected
+bilaterally **only into the published traced input-layer population** with
+sensory gain 0.55. This population is a tracing layer, not a biological food or
+vision receptor identification. Food, approved prey, companions and cover supply
+attraction; threat, obstacles and threat-associated motion supply aversion.
+Hunger, energy and comfort modulate this evidence. Goal/trait gains still come
+from existing deterministic game code and the slow Jev goal adapter.
+
+Mean descending `spn-turning` rates become left/right motor drive with scale 4;
+mean bilateral `spn-forward` rate becomes thrust with scale 8, all clamped to
+[0, 1]. Motor output is continuous, without the upstream demo's discrete choice
+threshold. Neither readout receives direct sensory drive. Silencing measured
+connections produces no evoked turning or thrust in the noise-free ablation;
+silent descending activity stays zero. Rates carry history between samples.
+
+**Feeding and startle remain supplementary modeled game reflexes**, computed
+from frontal food/threat evidence with leaky state and a startle refractory
+period. This dataset has no identified feeding or startle circuit. Existing
+local movement, collision, protection and immediate survival reflexes remain
+in ordinary game code. No training or reinforcement learning is included.
 
 ## Run
 
@@ -22,7 +71,12 @@ docker build -t pond-fishbrain server/fishbrain
 
 The worker listens on port 8091 (`FISH_BRAIN_PORT` overrides it;
 `FISH_BRAIN_HOST` overrides the bind address). `/health` returns `ready: true`,
-`source: fish-brain`, `model: biologically-inspired-recurrent-v1` and `sectors: 16`.
+`source: fish-brain`, `model: fish1-hmi-rate-v1`, the pinned revision, circuit
+counts, `fullBrain: false` and `sectors: 16`. Missing/corrupt data makes health
+return HTTP 503 with `ready: false` and steps return HTTP 503 without motor
+commands; the API then reports Fish Brain unavailable and clients use instincts.
+`FISH_BRAIN_DATA_DIR` can override the packaged data directory for local validation;
+both pinned artifacts and their checksums are required.
 Run it as a private service on the API network with **no published worker port**.
 Set the API's `FISH_BRAIN_URL` to its internal HTTP address, for example
 `http://fishbrain:8091`. The supplied Dockerfile runs as a non-root user and checks
@@ -86,7 +140,8 @@ hidden pages and observers cannot apply them. Worker errors trigger a two-second
 client backoff and ordinary instincts. Missing/failed Jev leaves hybrid running
 autonomous Fish Brain with baseline gains; missing/failed Fish Brain leaves it
 using ordinary local instincts. Controller and bounded history persist in the
-existing local/server saves; goals and neural membrane state do not.
+existing local/server saves; goals, neural rate/activation state and random
+streams do not.
 
 The API times out worker steps at 800 ms, tolerates cooldown jitter down to 180 ms,
 and permits up to 18,000 steps per pond/hour, 72,000 total/hour and eight API calls
@@ -104,4 +159,7 @@ python -m unittest discover -s server/fishbrain -p test_worker.py -v
 Run the route tests on Node 24 (the API's existing runtime with built-in SQLite).
 They use an isolated in-memory pond database and local mock upstream, including
 authorization and timeouts; the Python suite also exercises the actual worker's
-HTTP interface, recurrent behavior, independent sessions, expiry and capacity.
+HTTP interface, signed measured connectivity, mirrored populations, pathway
+ablations, seeded neural history, independent sessions, expiry, capacity and
+missing/corrupt-data availability. These are simulation tests, not a validation
+of biological cognition or learned performance.

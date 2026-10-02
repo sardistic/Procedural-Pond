@@ -298,11 +298,16 @@ compute budget may shorten the window while preserving completed neural state.
 The API caps calls at one in flight, one per pond per two seconds, 600 per pond per
 hour and 1,800 total per hour. Missing or interrupted service returns to instincts.
 
-Fish Brain is a compact **biologically inspired recurrent network**, not a full
-real zebrafish brain. Its private standard-library Python worker receives sixteen
+Fish Brain uses the pinned **Fish1 hindbrain circuit** from
+[jamieswrld/zebrafishconnectome](https://github.com/jamieswrld/zebrafishconnectome):
+865 measured neurons and 1,235 directed pairs, mirrored into a modeled bilateral
+rate network. It is a partial connectome with modeled dynamics and sensory
+coupling, not a full real zebrafish brain. Its private Python worker receives sixteen
 creature-relative sectors for food, threats, companions, other creatures, obstacles,
 motion, approved prey and cover, plus bounded internal state and trait-dependent
-gains. It returns continuous left/right/thrust and startle/feeding readouts every
+gains. Descending spinal populations supply continuous left/right/thrust; feeding and
+startle are supplementary modeled reflexes. Packaged scientific data is
+checksum-verified; missing/corrupt data reports unavailable. The worker samples every
 200 ms. Turning and desired speed enter the existing fish movement system.
 Per-creature state has a two-minute idle TTL and a 32-session cap. Hybrid runs
 Jev's thirty-second goal choices independently: forage boosts food salience, flee

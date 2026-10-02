@@ -13,9 +13,9 @@ const MIND_MODES = {
   'fly-brain':{label:'Fly Brain',lanes:['fly'],defaultLane:'fly',allowed:c=>mindSupported(c),
     note:'Fly Brain · experimental control from food, danger and movement signals.'},
   'fish-brain':{label:'Fish Brain',lanes:['fish'],defaultLane:'fish',allowed:c=>c instanceof Fish,motor:true,
-    note:'Fish Brain · biologically inspired recurrent sensorimotor network. Not a full zebrafish brain.'},
+    note:'Fish Brain · measured Fish1 hindbrain circuit with modeled dynamics and sensory coupling. Not a full zebrafish brain.'},
   'hybrid-brain':{label:'Higher Brain + Fish Brain',lanes:['fish','choice'],defaultLane:'fish',allowed:c=>c instanceof Fish,motor:true,higher:true,
-    note:'Jev chooses goals; Fish Brain supplies steering and thrust. Fish Brain is biologically inspired.'},
+    note:'Jev chooses goals; the Fish1 hindbrain circuit supplies steering and thrust through modeled sensory coupling. Not a full zebrafish brain.'},
 };
 const MIND_CONTROLLERS = Object.fromEntries(Object.entries(MIND_MODES).map(([k,v])=>[k,v.label]));
 const FLY_ACTIVITY = ['forward','left','right','feeding','escape','reverse','grooming'];
