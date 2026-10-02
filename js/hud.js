@@ -1284,9 +1284,11 @@ function renderCreature() {
   }
   const gr = gradeOf(L.genome);
   if (here && typeof mindEligible === 'function' && (mindEligible(c) || L.mind)) {
-    const mind = el('div', 'eld'),controller=mindController(c);
+    void mindCheckCapabilities();
+    const mind = el('div', 'eld'),controller=mindController(c),availability=mindAvailability(controller);
     mind.append(el('b', null, 'Awakened mind'), el('p', 'note', L.mind ?
       c.mind?.status || 'Watching for an encounter' : 'A rare, intelligent creature can learn from encounters and choose how to respond. One mind per pond.'));
+    if(availability!=='ready' && !L.mind)mind.append(el('p','note',mindAvailabilityText(controller,availability)));
     if(controller==='fly-brain')mind.append(el('p','note','Fly Brain · experimental control from food, danger and movement signals.'));
     if(mindEligible(c) && controller==='typesafe') {
       const labels={wait:'watch',forage:'forage',hunt:'hunt',shelter:'shelter',flee:'flee',explore:'explore',
@@ -1301,9 +1303,10 @@ function renderCreature() {
         choose.addEventListener('click',()=>{setMindController(world,c,mode);renderCreature();});controls.append(choose);
       }
       mind.append(controls);
-      if(MINDS.config && !MINDS.config[controller])mind.append(el('p','note',`${MIND_CONTROLLERS[controller]} is resting. It will use instincts until the service is ready.`));
-      const button = el('button', null, L.mind ? 'Return to instincts' : 'Awaken mind');
-      button.type = 'button'; button.disabled = !L.mind && !mindEligible(c);
+      const label=availability==='ready'?'Awaken mind':availability==='checking'?`Checking ${MIND_CONTROLLERS[controller]}`:
+        availability==='unavailable'?`${MIND_CONTROLLERS[controller]} unavailable`:`${MIND_CONTROLLERS[controller]} connection unknown`;
+      const button = el('button', null, L.mind ? 'Return to instincts' : label);
+      button.type = 'button'; button.disabled = !L.mind && (!mindEligible(c) || availability!=='ready');
       button.setAttribute('aria-pressed', String(!!L.mind));
       button.addEventListener('click', () => { awakenMind(world,c); renderCreature(); });
       mind.append(button);

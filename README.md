@@ -249,6 +249,11 @@ camouflage and an ink escape using their existing behaviors.
 Both controllers require a server-backed pond owned by the current browser or signed-in
 account. TypeSafe needs `TYPESAFE_API_KEY` in the API service environment. Keep that key
 server-side. `TYPESAFE_MODEL` optionally selects a model (default `jev-latest`).
+Installing the TypeSafe development skill does not activate the inference service
+or supply an API key. Creature cards check service availability before awakening
+and show when a controller is unavailable. Configure the key in the API's protected
+server environment, recreate that service, and verify `/api/minds` reports
+`enabled: true` before expecting TypeSafe choices.
 The API makes at most one decision per pond per 30 real seconds, 120 per pond per
 hour, 600 total per hour and two concurrently. Missing configuration, network
 failure, stale decisions or uncertain threatening encounters retain ordinary

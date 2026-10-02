@@ -1,10 +1,60 @@
 'use strict';
 
 // One owner-selected rare creature thinks at encounters; all motion stays local.
-const MINDS = { next: 0, config: null, configAt: 0, pending: false, backoff: 0, flyBackoff: 0, flyNext: 0, targets: new WeakMap(), targetId: 0 };
+const MINDS = { next: 0, config: null, configAt: 0, configPending: null, configError: false, configRetryAt: 0,
+  pending: false, backoff: 0, flyBackoff: 0, flyNext: 0, targets: new WeakMap(), targetId: 0 };
 const MIND_CONTROLLERS = {'typesafe':'TypeSafe','fly-brain':'Fly Brain'};
 const FLY_ACTIVITY = ['forward','left','right','feeding','escape','reverse'];
 const mindController = (c) => c.life?.mindController==='fly-brain' ? 'fly-brain' : 'typesafe';
+function mindAvailability(controller) {
+  if(MINDS.configPending)return 'checking';
+  if(MINDS.configError)return 'unknown';
+  if(MINDS.config===null)return 'checking';
+  return MINDS.config[controller]?'ready':'unavailable';
+}
+function mindAvailabilityText(controller,state=mindAvailability(controller)) {
+  const name=MIND_CONTROLLERS[controller];
+  if(state==='checking')return `Checking ${name} connection. Using instincts.`;
+  if(state==='unknown')return `Couldn't check the ${name} connection. Using instincts.`;
+  if(state==='unavailable')return `${name} isn't connected on this server. Using instincts.`;
+  return '';
+}
+function mindSyncAvailability(w) {
+  for(const c of w.creatures)if(c.life?.mind){
+    const brain=c.mind || (c.mind={status:'Watching for an encounter',token:0}),state=mindAvailability(mindController(c));
+    if(state==='ready'){
+      if(brain.availability && brain.availability!=='ready'){
+        brain.status='Watching for an encounter';
+        if(!MINDS.pending){brain.next=0;MINDS.next=0;}
+      }
+    } else {brain.plan=null;brain.status=mindAvailabilityText(mindController(c),state);}
+    brain.availability=state;
+  }
+}
+async function mindCheckCapabilities(force=false) {
+  const now=performance.now();
+  if(MINDS.configPending)return MINDS.configPending;
+  if(!force && (now<MINDS.configRetryAt || (!MINDS.configError && MINDS.config!==null && now-MINDS.configAt<60000))){
+    mindSyncAvailability(world);return MINDS.config;
+  }
+  MINDS.configPending=(async()=>{
+    // Defer synchronous failures until the pending promise has been assigned.
+    await Promise.resolve();
+    try{
+      if(!Net.base)throw Error('unavailable');
+      const response=await fetch(`${Net.base}/minds`,{cache:'no-store',signal:AbortSignal.timeout(5000)});
+      if(!response.ok)throw Error('unavailable');
+      const capabilities=await response.json();
+      if(typeof capabilities?.enabled!=='boolean' || (capabilities.flyBrain!==undefined && typeof capabilities.flyBrain!=='boolean'))throw Error('invalid');
+      MINDS.config={typesafe:capabilities.enabled,'fly-brain':capabilities.flyBrain===true};
+      MINDS.configAt=performance.now();MINDS.configError=false;MINDS.configRetryAt=0;
+    }catch{MINDS.configError=true;MINDS.configRetryAt=performance.now()+10000;}
+    finally{MINDS.configPending=null;mindSyncAvailability(world);}
+    return MINDS.config;
+  })();
+  mindSyncAvailability(world);
+  return MINDS.configPending;
+}
 function mindCleanActivity(activity) {
   if(!activity || FLY_ACTIVITY.some(k=>!Number.isFinite(activity[k]) || activity[k]<0 || activity[k]>10000))return null;
   return Object.fromEntries(FLY_ACTIVITY.map(k=>[k,Math.round(activity[k]*100)/100]));
@@ -56,21 +106,24 @@ const mindWetRoute = (w, c, p) => p && Number.isFinite(p.x) && Number.isFinite(p
 function awakenMind(w, c) {
   if (w.observe || !mindHere(c) || (!c.life?.mind && !mindEligible(c))) return false;
   const on = !c.life.mind;
+  if(on){void mindCheckCapabilities();if(mindAvailability(mindController(c))!=='ready')return false;}
   for (const other of w.creatures) if (other.life?.mind) { other.life.mind=false; other.mind=null; }
   if (on) {
     c.life.mindController=mindController(c);
     c.life.mind=true; c.mind={status:'Watching for an encounter', token:0};
     MINDS.next=0;
+    void mindCheckCapabilities();
   }
   return true;
 }
 
 function setMindController(w,c,controller) {
   if(w.observe || !mindHere(c) || !Object.hasOwn(MIND_CONTROLLERS,controller) || (!c.life?.mind && !mindEligible(c)))return false;
-  if(mindController(c)===controller){c.life.mindController=controller;return true;}
+  if(mindController(c)===controller){c.life.mindController=controller;void mindCheckCapabilities();return true;}
   c.life.mindController=controller;
   if(c.life.mind)c.mind={status:'Watching for an encounter',token:0};
   MINDS.next=0;
+  void mindCheckCapabilities();
   return true;
 }
 
@@ -188,19 +241,15 @@ async function mindThink(w,c,encounter) {
   const brain=c.mind, token=++brain.token, started=performance.now(),controller=mindController(c);
   const signature=mindDecisionSignature(w,c,encounter,controller);
   const inputs=controller==='fly-brain'?mindFlyInputs(w,c,encounter):null;
-  MINDS.pending=true; brain.status=controller==='fly-brain'?'Sensing through Fly Brain':'Considering the encounter';
+  MINDS.pending=true;
   try {
-    if(!Net.base || !w.link?.id){brain.status='Instincts · share this pond to awaken its mind';return;}
-    if(MINDS.config===null || started-MINDS.configAt>60000){
-      const config=await fetch(`${Net.base}/minds`,{cache:'no-store',signal:AbortSignal.timeout(8000)});
-      if(!config.ok)throw Error('unavailable');
-      const capabilities=await config.json();
-      MINDS.config={typesafe:capabilities.enabled===true,'fly-brain':capabilities.flyBrain===true};MINDS.configAt=performance.now();
-    }
-    if(!MINDS.config[controller]){brain.plan=null;brain.status=`Instincts · ${MIND_CONTROLLERS[controller]} is resting`;return;}
+    await mindCheckCapabilities();
+    if(mindAvailability(controller)!=='ready'){brain.plan=null;brain.status=mindAvailabilityText(controller);return;}
+    if(!w.link?.id){brain.status='Instincts · share this pond to awaken its mind';return;}
     // Switching controllers during capability discovery must not start the old request.
     if(w!==world || w.observe || w.paused || !c.life.mind || !mindHere(c) || !w.creatures.includes(c) ||
       c.grabbed || brain!==c.mind || token!==brain.token || controller!==mindController(c))return;
+    brain.status=controller==='fly-brain'?'Sensing through Fly Brain':'Considering the encounter';
     const headers={'Content-Type':'application/json'};
     if(w.link.key)headers['X-Pond-Key']=w.link.key;
     const isFly=controller==='fly-brain';
@@ -214,7 +263,7 @@ async function mindThink(w,c,encounter) {
     const plan=isFly?(neural && mindFlyPlan(w,c,encounter,neural.motor)):encounter.options.find(o=>o.action===result.action);
     if(!plan || (!isFly && (!Number.isFinite(result.confidence) || result.confidence<0 || result.confidence>1)))throw Error('invalid');
     if(w!==world || w.observe || w.paused || !c.life.mind || !mindHere(c) || !w.creatures.includes(c) || brain!==c.mind || token!==brain.token ||
-      controller!==mindController(c) || performance.now()-started>8000 ||
+      controller!==mindController(c) || mindAvailability(controller)!=='ready' || performance.now()-started>8000 ||
       mindDecisionSignature(w,c,mindEncounter(w,c),controller)!==signature) {
       if(w===world)mindLogChoice(c,plan,result.confidence,'stale',controller,neural?.activity);
       brain.status='Watching the changed encounter';return;
@@ -246,6 +295,8 @@ function mindTick(w) {
   const c=w.creatures.find(c=>c.life?.mind && mindHere(c) && mindEligible(c));
   if(!c)return;
   const controller=mindController(c);
+  void mindCheckCapabilities();
+  if(mindAvailability(controller)!=='ready')return;
   if(now<(controller==='fly-brain'?Math.max(MINDS.flyBackoff,MINDS.flyNext):MINDS.backoff))return;
   const brain=c.mind || (c.mind={status:'Watching for an encounter',token:0});
   if(c.grabbed || now<(brain.next||0))return;
