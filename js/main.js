@@ -3103,6 +3103,7 @@ async function boot() {
   syncTimer = world.link ? 30 : adopt ? 2 : 8; // a pond without a link gets one in a few seconds
   requestAnimationFrame(frame);
   if (window.Entry) { Entry.status('Waking the animals…', 0.95); await entryPaint(); Entry.ready(entryInfo(observe)); }
+  else document.getElementById('entry')?.remove(); // (no controller ran: never leave the screen over the pond)
   // Back from signing in (or not); either way, your ponds go into your account.
   const login = params.get('login');
   meP.then(async () => {
