@@ -372,6 +372,8 @@ function isleOf(s) {
 // For the island's bake (structures.js): its sand and grass, and whether it has the palm.
 function isleLook(s) {
   const K = ISLE_KINDS[isleOf(s)];
+  const realm = typeof realmShown === 'function' && realmShown(s); // (a realm grounds it in its own stone: realms.js)
+  if (realm) return { palm: false, sand: realm.sand, grass: realm.grass, kind: isleOf(s) };
   return { palm: !!K.palm, sand: K.sand ? LAND_M[K.sand] || SM[K.sand] : SM.sand, grass: K.grass ? LAND_M[K.grass] || SM[K.grass] : SM.grass, kind: isleOf(s) };
 }
 const pickWeighted = (w) => { let r = Math.random() * Object.values(w).reduce((a, b) => a + b, 0); for (const [k, v] of Object.entries(w)) if ((r -= v) <= 0) return k; return Object.keys(w)[0]; };

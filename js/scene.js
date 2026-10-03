@@ -553,7 +553,7 @@ function bakeBackground(world, rect = null) {
             const sand = islandSands[islandGround[p] - 1];
             const grain = (hash2(x >> 2, y >> 2, 91) * sand.length) | 0;
             // A broad pale shore, with less sand showing under the higher greenery.
-            const beach = 0.8 - 0.35 * smoothstep(0.48, 0.94, shore[p] / 255);
+            const beach = world.islandGroundRealm && world.islandGroundRealm[islandGround[p] - 1] ? 0.94 : 0.8 - 0.35 * smoothstep(0.48, 0.94, shore[p] / 255);
             c = mixColor(c, sand[grain], beach);
           }
           if (sh[p] > 1.2) c = shadeColor(c);

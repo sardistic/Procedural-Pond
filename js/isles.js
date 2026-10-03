@@ -47,7 +47,7 @@ const isleG = (s) => s.ig || (s.ig = { sz: 1, st: 0, f: {}, lob: 0, bar: 0 });
 const isleLv = (s, k) => (s.ig && s.ig.f && s.ig.f[k]) || 0;
 const isleSaltHere = (world, s) => world.opts.habitat === 'salt' || (world.opts.habitat === 'mixed' && typeof saltAt === 'function' && saltAt(world, s.x, s.y) > 0);
 const isleDeep = (s) => (s.deep || 0) > 0.15;
-const isleName = (s) => `the ${((typeof ISLE_KINDS !== 'undefined' && ISLE_KINDS[isleOf(s)]) || { name: 'island' }).name.replace(/^an? /, '')}`;
+const isleName = (s) => `the ${((typeof realmShown === 'function' && realmShown(s)) || (typeof ISLE_KINDS !== 'undefined' && ISLE_KINDS[isleOf(s)]) || { name: 'island' }).name.replace(/^an? /, '')}`;
 const isleBySeed = (world, seed) => (world.structures || []).find((s) => s.kind === 'island' && s.seed === seed && !s.anim) || null;
 
 // Living island flora needs ground that remains above spring high tide. The
@@ -304,7 +304,8 @@ const ISLE_FORMS = {
 function isleForm(world, s) {
   const K = ISLE_FORMS[isleOf(s)] || ISLE_FORMS.palm, h = (k) => hash2(s.seed % 997, k, 131);
   const ang = ((world && world.current && world.current.base) || 0) + (h(1) - 0.5) * 0.8; // (along the pond's current, and down it)
-  return { ...K, ang, bayAng: h(2) * TAU, flats: K.flats * clamp(1 - 2.2 * (s.deep || 0), 0, 1), cliff: K.cliff + 8 * (s.deep || 0) };
+  const F = { ...K, ang, bayAng: h(2) * TAU, flats: K.flats * clamp(1 - 2.2 * (s.deep || 0), 0, 1), cliff: K.cliff + 8 * (s.deep || 0) };
+  return typeof realmForm === 'function' ? realmForm(s, F) : F; // (and its realm's: realms.js)
 }
 // How far out its coast lies along a bearing, as a share of its radius.
 function isleOutline(world, s, a, F = isleForm(world, s)) {
@@ -312,6 +313,7 @@ function isleOutline(world, s, a, F = isleForm(world, s)) {
   let o = 1 / Math.sqrt((c / st) ** 2 + (sn * st) ** 2); // (an ellipse along the current, the same size)
   o *= 1 + 0.06 * F.rough * (Math.sin(7 * a + (h % 17)) + 0.7 * Math.sin(11 * a + (h % 23) * 0.5) + 0.5 * Math.sin(17 * a + (h % 29)));
   if (F.bay) o *= 1 - F.bay * Math.max(0, Math.cos(a - F.bayAng)) ** 6;
+  if ((F.facets || F.spike) && typeof realmOutline === 'function') o *= realmOutline(F, a); // (facets, crystal points: realms.js)
   o *= isleLobe(s, a);
   for (const L of G.lava || []) { const da = Math.abs(wrapAngle(a - L.a)); if (da < L.w) o += L.len * (1 - (da / L.w) ** 2); } // (the lava it has put out)
   return o;
@@ -355,7 +357,7 @@ function isleLobe(s, a) {
   const h = s.seed | 0;
   return 1 + k * (0.1 * Math.sin(2 * a + (h % 7)) + 0.07 * Math.sin(3 * a + (h % 11) * 0.7) + 0.05 * Math.sin(5 * a + (h % 13) * 0.5));
 }
-const isleShapeKey = (s) => (s.ig ? `${Math.round((s.ig.lob || 0) * 10)}:${Math.round((s.ig.bar || 0) * 8)}:${(s.ig.lava || []).length}:${s.ig.cone || 0}` : '');
+const isleShapeKey = (s) => (s.ig ? `${Math.round((s.ig.lob || 0) * 10)}:${Math.round((s.ig.bar || 0) * 8)}:${(s.ig.lava || []).length}:${s.ig.cone || 0}:${s.ig.realm ? `${s.ig.realm.k}${Math.round((s.ig.realm.g || 0) * 4)}` : ''}` : '');
 // How far out the island reaches (with its flats, its lava and its reef), for redrawing round it.
 const isleReach = (world, s) => islandRadius(world, s) * Math.max(s.ig && s.ig.bar ? 2.35 : 0, isleReachK(world, s));
 // (The barrier reef is drawn into the island's stamp: coast.js islandStamp.)
@@ -991,6 +993,7 @@ function drawIsleExtras(r, s, t, world) {
 // Its fire lights the night (depths.js lights, through land.js).
 function isleLights(M, world, big) {
   for (const s of world.structures || []) {
+    if (s.kind === 'island' && typeof realmLights === 'function') realmLights(M, world, s, big);
     const f = s.kind === 'island' && s.ig && s.ig.f;
     if (!f || !f.fire) continue;
     const hot = s.ig.erupt != null && world.t - s.ig.erupt < 14 ? 2 : 1;
@@ -1018,5 +1021,6 @@ function isleStatus(world, s) {
   const bar = (G.bar || 0) >= 1 ? ', and a barrier reef offshore' : G.bar > 0 ? ', and a barrier reef rising offshore' : '';
   const lava = (G.lava || []).length ? `; ${G.lava.length} lava flow${G.lava.length > 1 ? 's' : ''} have built it out, and its cone stands ${G.cone || 0} high` : '';
   const F = isleForm(world, s), flats = F.flats > 0.2 ? ' Flats round it bare at low tide.' : isleDeep(s) ? ' It stands in deep water: cliffs, no flats.' : '';
-  return ` ${capFirst(ISLE_STAGES[G.st || 0].word)}, ${Math.round((G.sz || 1) * 100)}% of its first size${feats.length ? `; ${feats.join(', ')}` : ''}${bar}${lava}.${flats}`;
+  const R0 = typeof realmOf === 'function' && realmOf(s), realm = R0 ? ` ${realmG(s) >= 0.5 ? `It has become ${REALMS[R0.k].name}` : `It is turning into ${REALMS[R0.k].name}`} (${Math.round(realmG(s) * 100)}%), with the depth and the land around it.` : '';
+  return `${realm} ${capFirst(ISLE_STAGES[G.st || 0].word)}, ${Math.round((G.sz || 1) * 100)}% of its first size${feats.length ? `; ${feats.join(', ')}` : ''}${bar}${lava}.${flats}`;
 }

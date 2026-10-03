@@ -230,6 +230,8 @@ function applyIslands(world) {
   world.islandGround = ground;
   world.islandGroundIsles = islands;
   world.islandGroundSands = islands.map((s) => typeof isleLook === 'function' ? isleLook(s).sand : SM.sand);
+  // (A realm's own stone covers its island outright rather than lightening the floor like sand: realms.js.)
+  world.islandGroundRealm = islands.map((s) => typeof realmShown === 'function' && !!realmShown(s));
   for (let k = 0; k < islands.length; k++) {
     const s = islands[k];
     // (Its shape is worked out once, as a stamp round its middle, and laid on the beach each time the beach is
