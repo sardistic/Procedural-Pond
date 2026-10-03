@@ -83,7 +83,7 @@ function mindStrike(w, c, q) {
   N.mindStrikes = (N.mindStrikes || 0) + 1;
   c.mind.strikeAt = w.t;
   if (mindWidth(q) < mindWidth(c) * 0.45) { eat(w, c, q); return q.caught ? 'kill' : null; }
-  const power = (x, first) => (0.25 + 0.7 * (x.life.hp ?? 1) + 0.3 * x.life.energy) * (1 + (x.life.grown || 0)) * (geneBuffs(x).vitality || 1) * (typeof rageOf === 'function' ? rageOf(w, x) : 1) *
+  const power = (x, first) => (0.25 + 0.7 * (x.life.hp ?? 1) + 0.3 * x.life.energy) * (typeof growPower === 'function' ? growPower(x.life.grown) : 1) * (geneBuffs(x).vitality || 1) * (typeof rageOf === 'function' ? rageOf(w, x) : 1) *
     Math.max(0.5, mindWidth(x)) * (1 + 0.05 * (typeof huntLv === 'function' ? huntLv(x, 'jaws') : 0)) *
     (1 + 0.5 * mindFightDrive(w, x).value) * (first ? 1.15 * (typeof forageStrikeBonus === 'function' ? forageStrikeBonus(w, x, q) : 1) : 1) * rand(0.6, 1.4);
   if (typeof forageCallKin === 'function' && (c.mind.plan?.action === 'gang' || MIND_MODES[mindController(c)]?.motor)) forageCallKin(w, c, q);

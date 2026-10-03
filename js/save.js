@@ -198,7 +198,7 @@ function restoreCreature(world, r, a = {}) {
     fed: r.L.fed || 0, comfort: r.L.comfort ?? 0.5, corruption: r.L.corruption || 0, bound: !!r.L.bound,
     absorbed: r.L.absorbed || 0, ascended: !!r.L.ascended, boosts: r.L.boosts || null,
     quirks: r.L.quirks || [], ill: r.L.ill || [], hunt: r.L.hunt || null, hunter: !!r.L.hunter, madCount: r.L.madCount || 0,
-    hp: Number.isFinite(r.L.hp) ? clamp(r.L.hp, 0.05, 1) : 1, grown: Number.isFinite(r.L.grown) ? clamp(r.L.grown, 0, 0.6) : 0,
+    hp: Number.isFinite(r.L.hp) ? clamp(r.L.hp, 0.05, 1) : 1, grown: Number.isFinite(r.L.grown) ? clamp(r.L.grown, 0, 50) : 0,
     meals: Number.isFinite(r.L.meals) ? Math.floor(clamp(r.L.meals, 0, 1e7)) : 0,
     devoured: typeof cleanDevoured === 'function' ? cleanDevoured(r.L.devoured) : null,
     mind: r.L.mind === true, mindController: typeof MIND_CONTROLLERS!=='undefined' && Object.hasOwn(MIND_CONTROLLERS,r.L.mindController)?r.L.mindController:'typesafe',

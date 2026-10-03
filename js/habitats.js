@@ -153,7 +153,7 @@ function updateBalance(world, dt) {
       if (Math.random() < 0.35) {
         const a = pick(list), b = list.find((o) => o !== a && (o.x - a.x) ** 2 + (o.y - a.y) ** 2 < 400 && o.life.scale > 0.8);
         if (b && a.life.scale > 0.8) {
-          const score = (c) => (c.life.hp ?? 1) * geneBuffs(c).vitality * geneBuffs(c).aggression * (1 + (c.life.grown || 0)) * rand(0.6, 1.4);
+          const score = (c) => (c.life.hp ?? 1) * geneBuffs(c).vitality * geneBuffs(c).aggression * (typeof growPower === 'function' ? growPower(c.life.grown) : 1) * rand(0.6, 1.4);
           const loser = score(a) < score(b) ? a : b;
           if (typeof animStrike === 'function') animStrike(world, loser === a ? b : a, loser);
           if (typeof hurt === 'function') hurt(world, loser, 0.35, { why: 'killed in a fight' });

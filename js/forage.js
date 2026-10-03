@@ -27,8 +27,10 @@ const FORAGE_TIERS = [
 const FORAGE_SPECIES_RE = /^[a-zA-Z][a-zA-Z0-9 -]{0,39}$/;
 
 const bodyWidth = (q) => (q.body && q.body.w ? Math.max(...q.body.w) : q.R || 1);
-// Biomass, relative: width squared along its length, and bigger for growth from feeding.
-const biomassOf = (q) => bodyWidth(q) ** 2 * Math.max(1, (q.body && q.body.n) || 3) * (1 + ((q.life && q.life.grown) || 0));
+// Biomass, relative: width squared along its length. (A scalable body's width already shows its growth from
+// feeding; the others' growth is counted here instead.)
+const biomassOf = (q) => bodyWidth(q) ** 2 * Math.max(1, (q.body && q.body.n) || 3) *
+  (typeof SCALABLE !== 'undefined' && SCALABLE.has(q.species) ? 1 : 1 + ((q.life && q.life.grown) || 0));
 
 function forageMemory(c) {
   const M = typeof mindLearn === 'function' ? mindLearn(c) : (c.life.mindLearn || (c.life.mindLearn = {}));

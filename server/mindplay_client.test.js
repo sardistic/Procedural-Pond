@@ -97,14 +97,21 @@ test('meals grow an animal with diminishing returns, kills pass on only better g
     var prey=fish('Prey','koi',100);prey.life.genome={size:1.3,speed:1.2,vit:.9,iq:.1,lon:.5,fert:.5,res:.2,tol:.3};`);
   run('for(let i=0;i<10;i++)mealGrowth(world,eater,{kind:"pellet"},.3)');
   const afterFood=run('eater.life.grown');assert.ok(afterFood>0 && afterFood<.05);
-  run('for(let i=0;i<400;i++)mealGrowth(world,eater,{kind:"pellet"},.5)');
-  assert.ok(run('eater.life.grown')<=.6);
+  // No ceiling, but diminishing: each meal adds less the bigger it is, and it keeps rising.
+  const step=(g)=>run(`(()=>{eater.life.grown=${g};const b=eater.life.grown;mealGrowth(world,eater,{kind:"pellet"},.5);return eater.life.grown-b;})()`);
+  assert.ok(step(0)>step(1) && step(1)>step(3) && step(3)>0);
+  run('eater.life.grown=0;for(let i=0;i<4000;i++)mealGrowth(world,eater,{kind:"brine"},.5)');
+  assert.ok(run('eater.life.grown')>.6,'growth passes the old cap');
+  // A bigger kill grows it more than a small one.
+  const kill=(w)=>run(`(()=>{eater.life.grown=0;const q=fish('Q','koi',100);q.body.w=[${w}];q.body.n=5;eater.body.n=5;mealGrowth(world,eater,q,.5);return eater.life.grown;})()`);
+  assert.ok(kill(3)>kill(1));
+
   const gains=JSON.parse(run('JSON.stringify(absorbGenes(world,eater,prey).map(g=>g[0]))'));
   assert.deepEqual(gains.sort(),['size','speed','strength']);
   assert.equal(run('eater.life.genome.iq'),.8,'worse genes are not taken');
   assert.ok(run('eater.life.genome.speed')>.9 && run('eater.maxSpeed')>10,'speed gene speeds it up');
   assert.equal(run('eater.life.devoured.n'),1);
-  run('eater.life.hp=.5;eater.life.energy=.8;eater.life.buffs={vitality:1};tickHealth(eater,10)');
+  run('eater.life.grown=0.3;eater.life.hp=.5;eater.life.energy=.8;eater.life.buffs={vitality:1};tickHealth(eater,10)');
   assert.ok(run('eater.life.hp')>.5);
   run('eater.life.energy=0;const g0=eater.life.grown;tickHealth(eater,10)');
   assert.ok(run('eater.life.hp')<.62);

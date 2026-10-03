@@ -53,9 +53,9 @@ visitors, litter and the risk of a blight, what you earned lately, the leaderboa
   close in front of their claws.
 - **Health, growth and genes from food:** every animal has health as well as hunger. Health bars
   (Scene → Health bars) show health from green to red, fullness in amber, and a pip for each tenth it has
-  grown. Fights wound; a fed animal heals; an empty one starves slowly instead of dropping dead. Every
-  meal puts on size, more from a kill and less the bigger it already is, up to 60% past what its genes
-  give it, and the pond pays a few pearls at each tenth. Starving melts it off again. Bigger animals hit
+  grown. Fights wound; a fed animal heals; an empty one starves slowly instead of dropping dead. Every meal puts on size with no ceiling but diminishing returns: a kill counts the prey's biomass against
+  the eater's, food its meal size, and each meal adds less the bigger the animal already is (in a test, 100
+  same-size kills doubled a koi's size and 1,000 tripled it). The pond pays a few pearls at each tenth up to double size, then each quarter. Starving melts it off again. Bigger animals hit
   harder and take less from a blow. Eating another animal moves the eater's genes toward any of the
   prey's that were better (size, speed, strength, longevity, fertility, intellect, resilience,
   tolerance), and those pass to its young. The card shows its health, its size from feeding, its meals
