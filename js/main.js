@@ -481,13 +481,15 @@ function update(dt) {
   if (typeof updateLand === 'function') updateLand(world, dt);
   if (typeof updateCycle === 'function') updateCycle(world, dt);
   if (typeof updateInteract === 'function') updateInteract(world, dt);
+  if (typeof updateAnims === 'function') updateAnims(world, dt);
   updateDark(world, dt);
   updateStory(world, dt);
   updateZones(world, dt);
   updateGame(world, dt);
   for (const c of world.creatures) {
     if (c.dread && (c.dread.t -= dt) <= 0) c.dread = null;
-    if (!c.dying && !c.absorbing) {
+    // (Held in an octopus's arms, an animal only struggles: anims.js moves it.)
+    if (!c.dying && !c.absorbing && !c.heldBy) {
       if (c.life && c.life.mind && typeof mindSteer === 'function') mindSteer(world, c);
       c.update(dt, world);
       if (c.life && !(c instanceof Fish) && typeof islandKeepSwimmerWet === 'function') islandKeepSwimmerWet(world, c);
@@ -600,9 +602,11 @@ function render(full = false) {
     r.alpha = a;
     FADE[c.id] = a < 1 ? 1 : 0;
     if (THICK[c.id]) anyThick = true;
-    if (c.flare) r.setScale(c.x, c.y, 1 + 0.16 * c.flare); // (flaring up at a rival, or a warning)
+    // (Flaring up at a rival, or a warning; and the lunge, flinch, chomp or dash of an action: anims.js.)
+    const act = typeof animScale === 'function' ? animScale(c, world.t) : null, flare = c.flare ? 1 + 0.16 * c.flare : 1;
+    if (act) r.setScale(act[0], act[1], act[2] * flare); else if (c.flare) r.setScale(c.x, c.y, flare);
     c.draw(r, t, world);
-    if (c.flare) r.setScale();
+    if (act || c.flare) r.setScale();
     if (c.life && c.life.genome.eld) drawEldritch(r, c, t, world);
     if (c.life) drawQuirks(r, c, t);
   }

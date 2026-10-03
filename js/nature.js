@@ -167,6 +167,7 @@ function updateNature(world, dt) {
         addBlood(world, loser.x, loser.y, loser.z || 6, 0.5);
         addRipple(world, loser.x, loser.y, 1, true);
         startle(world, loser, winner.x, winner.y, 1.5);
+        if (typeof animStrike === 'function') animStrike(world, winner, loser);
         if (died) { N.kills++; if (winner.life.wanderer) winner.life.wanderer.kills++; }
         logEvent(world, `${winner.life.name} the ${describe(winner).label} savaged ${loser.life.name} the ${describe(loser).label}`, winner, {
           cat: 'hunt', pri: 1, key: 'brawl', data: 1, merge: (e) => `Fights break out in the dark: ${e.n} animals savaged`,

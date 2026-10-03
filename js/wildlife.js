@@ -262,7 +262,9 @@ class Octopus extends Creature {
       const f = intent ? intent.food || prey : prey || world.nearestFood(this.x, this.y, this.sight, (fd) => fd.z < 3);
       if (f) {
         gx = f.x - this.x; gy = f.y - this.y; want = prey ? this.maxSpeed : this.cruise * 1.4;
-        if (Math.hypot(gx, gy) < (prey ? 5 : 3)) eat(world, this, f);
+        // (Prey within an arm's reach is grabbed, wrapped and hauled in to be eaten: anims.js.)
+        if (prey && typeof tentacleGrab === 'function' && (this.grip || tentacleGrab(world, this, prey))) { gx = 0; gy = 0; want = 0; }
+        else if (Math.hypot(gx, gy) < (prey ? 5 : 3)) eat(world, this, f);
       } else if (intent) {
         gx=intent.x-this.x;gy=intent.y-this.y;want=intent.speed;
       } else if (this.mode === 'walk') {
@@ -291,6 +293,7 @@ class Octopus extends Creature {
     let stepping = this.arms.filter((a) => a.stepping).length;
     for (const arm of this.arms) {
       const [bx, by, a] = this.armBase(arm);
+      if (this.grip && typeof gripArm === 'function' && gripArm(this, arm, bx, by)) continue;
       if (swimming) {
         arm.ch.resolve(bx, by, a + PI);
         arm.stepping = false; arm.lift = 2;

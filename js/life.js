@@ -608,6 +608,8 @@ function eat(world, c, f) {
   if ((f.z ?? 0) > 32) addRipple(world, f.x, f.y, 0.6);
   // Every meal puts on size; a kill passes on the prey's better genes (growth.js).
   if (c.life && typeof mealGrowth === 'function') mealGrowth(world, c, f, gain);
+  // The chomp, or the lunge and the prey drawn into the mouth (anims.js).
+  if (typeof animMeal === 'function') animMeal(world, c, f);
   // An awakened mind learns from the meal.
   if (c.life && c.life.mind && typeof mindReward === 'function') mindReward(world, c, f instanceof Creature ? 'kill' : 'fed', f);
 }

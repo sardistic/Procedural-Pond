@@ -90,6 +90,7 @@ function mindStrike(w, c, q) {
   addBlood(w, loser.x, loser.y, loser.z || 6, 0.35);
   addRipple(w, loser.x, loser.y, 0.8, true);
   startle(w, loser, winner.x, winner.y, 1.2);
+  if (typeof animStrike === 'function') animStrike(w, winner, loser);
   if (typeof glyph === 'function') glyph(w, winner, 'bang');
   if (killed) {
     N.mindKills = (N.mindKills || 0) + 1;

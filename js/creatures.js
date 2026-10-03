@@ -105,6 +105,7 @@ function makeCreature(kind, world, x, y, args = {}, seed) {
 // Something frightening at (x, y): run from it for a while. Fish steer away from
 // it (their dread); everything else picks somewhere well away to be.
 function startle(world, o, x, y, secs) {
+  if (typeof animFlee === 'function') animFlee(world, o);
   const dx = o.x - x, dy = o.y - y, d = Math.hypot(dx, dy) || 1, run = rand(60, 130);
   o.dread = { x, y, t: secs };
   o.tx = clamp(o.x + dx / d * run, 8, world.W - 8); o.ty = clamp(o.y + dy / d * run, 8, world.H - 8);

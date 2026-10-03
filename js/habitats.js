@@ -155,6 +155,7 @@ function updateBalance(world, dt) {
         if (b && a.life.scale > 0.8) {
           const score = (c) => (c.life.hp ?? 1) * geneBuffs(c).vitality * geneBuffs(c).aggression * (1 + (c.life.grown || 0)) * rand(0.6, 1.4);
           const loser = score(a) < score(b) ? a : b;
+          if (typeof animStrike === 'function') animStrike(world, loser === a ? b : a, loser);
           if (typeof hurt === 'function') hurt(world, loser, 0.35, { why: 'killed in a fight' });
           loser.life.comfort = Math.max(0, loser.life.comfort - 0.2);
           addHeat(world, loser.x, loser.y, 0.2);
