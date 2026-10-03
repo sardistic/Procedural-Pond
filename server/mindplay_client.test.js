@@ -11,7 +11,7 @@ function pond() {
   const run=code=>vm.runInContext(code,context);
   run(`
     class Creature {} class Fish extends Creature {} class Walker extends Creature {} class Octopus extends Creature {} class Watcher extends Creature {}
-    const clamp=(n,a,b)=>Math.max(a,Math.min(b,n)), rand=(a,b)=>(a+b)/2;
+    const clamp=(n,a,b)=>Math.max(a,Math.min(b,n)), rand=(a,b)=>(a+b)/2, lerp=(a,b,t)=>a+(b-a)*t;
     const tierOf=()=>3, SPECIES_STATS={koi:{rarity:3}}, SINGULAR={koi:'Koi',pike:'Pike'}, DEEP={};
     const geneBuffs=c=>c.buffs, isPredator=q=>q.predator===true, huntLv=(c,k)=>c.life.hunt?.[k]||0, huntReach=()=>1;
     const rageOf=()=>1, enraged=()=>false, eldStage=L=>!L.genome.eld?-1:L.corruption>=1/3?1:0, widthOf=q=>Math.max(...q.body.w);
@@ -32,6 +32,7 @@ function pond() {
   run(read('js/growth.js'));
   run(read('js/minds.js'));
   run(read('js/mindplay.js'));
+  run(read('js/forage.js'));
   return run;
 }
 test('fight drive rises with aggression, hunting upgrades, corruption and won fights, and stays bounded',()=>{
@@ -74,7 +75,7 @@ test('learning: rewarded approach strengthens a channel, fights shape boldness a
   const fear=run(`(()=>{const pike={species:'pike'};me.life.mindLearn.sp.pike=-.8;return mindLearnedFear(me,{neighbors:[pike]}).strength})()`);
   assert.ok(fear>.35);
   const clean=run(`mindCleanLearn({g:{food:9,prey:NaN,x:1},sp:{koi:.5,'__proto__':1,'<b>':1},bias:5,wins:-3,notes:[{at:1,kind:'win',species:'koi'},{at:2,kind:'eval',species:'koi'},{at:3,kind:'lose',species:'<img>'}]})`);
-  assert.deepEqual(JSON.parse(JSON.stringify(clean)),{g:{food:2},sp:{koi:.5},bias:.3,wins:0,losses:0,notes:[{at:1,kind:'win',species:'koi'}]});
+  assert.deepEqual(JSON.parse(JSON.stringify(clean)),{g:{food:2},sp:{koi:.5},bias:.3,wins:0,losses:0,notes:[{at:1,kind:'win',species:'koi'}],prey:{}});
 });
 test('strikes hurt the loser, catch much smaller rivals and cap deaths per day',()=>{
   const run=pond();
@@ -108,4 +109,31 @@ test('meals grow an animal with diminishing returns, kills pass on only better g
   run('eater.life.energy=0;const g0=eater.life.grown;tickHealth(eater,10)');
   assert.ok(run('eater.life.hp')<.62);
   assert.equal(JSON.stringify(run('cleanDevoured({n:3,gains:{speed:.1,evil:5}})')),JSON.stringify({n:3,gains:{speed:.1}}));
+});
+test('foraging: biomass and defences set expected worth, learning overrides priors, bad kinds are avoided, experience opens tiers',()=>{
+  const run=pond();
+  run(`var me=fish('Me','pike',100,{predator:true});me.buffs.aggression=1.6;me.life.mind=true;me.mind={token:0};me.life.energy=.3;
+    var big=fish('Big','koi',110);big.body.w=[3];big.body.n=5;var small=fish('Small','koi',112);small.body.w=[1];small.body.n=5;
+    var puff=fish('Puff','puffer',114);puff.body.w=[2];puff.body.n=5;me.body.n=5;world.creatures=[me,big,small,puff];`);
+  const bigV=run('forageEstimate(me,big)'),smallV=run('forageEstimate(me,small)'),puffV=run('forageEstimate(me,puff)');
+  assert.ok(bigV.gain>smallV.gain,'more biomass, more food');
+  assert.ok(puffV.harm>smallV.harm,'a pufferfish is known to be dangerous');
+  for(let i=0;i<4;i++)run("forageLearn(me,'puffer',.2,.6)");
+  assert.ok(run('forageValue(world,me,puff).value')<-0.05);
+  assert.equal(run('mindRivalFor(world,me,[puff])'),null,'it has learned to leave pufferfish alone');
+  assert.equal(run('forageTier(me)'),1);
+  for(let i=0;i<8;i++)run("forageLearn(me,'koi',.5,.02)");
+  assert.equal(run('forageTier(me)'),2);
+  for(let i=0;i<10;i++)run("forageLearn(me,'koi',.5,.02)");
+  assert.equal(run('FORAGE_TIERS[forageTier(me)].name'),'pack hunter');
+  const clean=JSON.parse(run('JSON.stringify(cleanForageMemory({koi:{n:3,gain:2,harm:-1},"<x>":{n:1}}))'));
+  assert.deepEqual(clean,{koi:{n:3,gain:1,harm:0}});
+  run('me.life.mind=false');run("forageLearn(me,'eel',1,0)");assert.equal(run('!!me.life.mindLearn.prey.eel'),false,'only minds learn');
+});
+test('defences: eating a toxic kind hurts the eater, less for the resilient',()=>{
+  const run=pond();
+  run(`var a=fish('A','pike',100);var b=fish('B','pike',100);b.buffs.resilience=.6;var p=fish('P','puffer',101);`);
+  const ha=run('preyDefence(world,a,p)'),hb=run('preyDefence(world,b,p)');
+  assert.ok(ha>0 && hb>0 && hb<ha);
+  assert.equal(run("preyDefence(world,a,fish('K','koi',100))"),0);
 });

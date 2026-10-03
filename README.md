@@ -296,6 +296,14 @@ face to face with the rival. A much smaller rival is caught. Otherwise energy,
 vitality, rage, size, jaws and drive decide, and the loser bleeds. Fight deaths are
 capped at six per pond day, and the marked gain a little corruption from winning.
 
+Bigger animals are bigger meals, and some cost to take: pufferfish and lionfish poison or spike whoever
+eats them, jellies sting, crabs pinch, rays barb, and anything big enough fights back. Each mind learns, kind
+by kind, what a meal or a fight was worth and what it cost, and weighs targets by that against its hunger and
+boldness: a fed fish learns to leave pufferfish alone, a starving one may still risk it. Experience opens
+more choices: a *hunter* after 4 hunts, a *stalker* after 10 (a slow approach lands its first strike harder),
+a *pack hunter* after 20 (its kin join the attack). Jev sees the learned worth, risk and tries of each
+neighbour and the new choices; Fish and Fly Brain get the same targeting, bonuses and dangers.
+
 Minds learn from food, kills, fights won and lost, and danger that gets close: a
 reward strengthens the senses they were heading toward (food, prey and rivals, their
 kind, cover, strangers) and a punishment sharpens danger. Wins make them bolder and

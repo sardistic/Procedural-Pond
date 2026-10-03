@@ -1302,7 +1302,7 @@ function renderCreature() {
       mind.append(el('p','note','Jev is unavailable. Fish Brain continues with its own sensory drive.'));
     if(mindEligible(c) && MIND_MODES[controller].lanes.includes('choice')) {
       const labels={wait:'watch',forage:'forage',hunt:'hunt',shelter:'shelter',flee:'flee',explore:'explore',
-        rest:'rest',shoal:'join its kind',investigate:'investigate',avoid:'keep distance',ambush:'wait in ambush',camouflage:'camouflage',ink:'ink escape',fight:'fight'};
+        rest:'rest',shoal:'join its kind',investigate:'investigate',avoid:'keep distance',ambush:'wait in ambush',camouflage:'camouflage',ink:'ink escape',fight:'fight',stalk:'stalk',gang:'hunt as a pack'};
       mind.append(el('p','note','Choices here: '+mindEncounter(world,c).options.map(o=>labels[o.action]).join(' · ')));
     }
     if (!world.observe) {

@@ -139,3 +139,12 @@ test('common creatures and every body type are valid scenarios', () => {
   }
   const bad=encounter();bad.creature.rarity=6;assert.equal(cleanScenario(bad),null);
 });
+test('stalk and pack-hunting choices, with learned value, risk and tries per neighbor', () => {
+  const state={...encounter(),neighbors:[{species:'koi',distance:12,relativeSize:.8,role:'rival',value:.42,risk:.05,tries:6},
+    {species:'puffer',distance:20,relativeSize:.6,role:'neighbor',value:5,risk:2,tries:-1}],
+    options:[{action:'wait',distance:0},{action:'stalk',distance:12},{action:'gang',distance:12},{action:'fight',distance:12}]};
+  const clean=cleanScenario(state);
+  assert.deepEqual(clean.options.map(o=>o.action),['wait','stalk','gang','fight']);
+  assert.equal(clean.neighbors[0].value,.42);assert.equal(clean.neighbors[0].tries,6);
+  assert.equal(clean.neighbors[1].value,undefined);assert.equal(clean.neighbors[1].risk,undefined);assert.equal(clean.neighbors[1].tries,undefined);
+});

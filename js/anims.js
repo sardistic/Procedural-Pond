@@ -232,10 +232,12 @@ function updateStings(world, dt) {
       victim.hold = world.t + 1.2;
       animFx(world, new Dazed(victim, 1.2));
       if (typeof hurt === 'function') hurt(world, victim, 0.08, { why: `stung by a ${describe(c).label.toLowerCase()}`, canKill: false });
+      if (typeof forageLearn === 'function') forageLearn(victim, c.species, 0, 0.08); // (a mind remembers what stung it)
     } else {
       playAnim(world, c, 'attack');
       animFx(world, new Jaws(c, true)); // (a pinch, not jaws)
       if (typeof hurt === 'function') hurt(world, victim, 0.05, { why: 'pinched by a crab', canKill: false });
+      if (typeof forageLearn === 'function') forageLearn(victim, c.species, 0, 0.05);
     }
     playAnim(world, victim, 'hit');
     if (typeof startle === 'function') startle(world, victim, c.x, c.y, 1.5);

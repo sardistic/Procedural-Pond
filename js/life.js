@@ -606,6 +606,11 @@ function eat(world, c, f) {
     if (CONDITIONING.has(f.kind)) L.cooldown = Math.min(L.cooldown, 5);
   }
   if ((f.z ?? 0) > 32) addRipple(world, f.x, f.y, 0.6);
+  // Poison and spines cost the eater; a mind learns what this kind was worth and what it cost (forage.js).
+  if (f instanceof Creature && c.life && typeof preyDefence === 'function') {
+    const harm = preyDefence(world, c, f);
+    if (typeof forageLearn === 'function') forageLearn(c, f.species, gain + 0.3 * Math.min(1, gain), harm);
+  }
   // Every meal puts on size; a kill passes on the prey's better genes (growth.js).
   if (c.life && typeof mealGrowth === 'function') mealGrowth(world, c, f, gain);
   // The chomp, or the lunge and the prey drawn into the mouth (anims.js).

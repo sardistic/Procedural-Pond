@@ -16,6 +16,8 @@ const ACTIONS = {
   ambush: 'Move into nearby cover and wait for the approved prey, rather than chasing it openly.',
   camouflage: 'Remain still so this cephalopod blends into the pond floor using its existing camouflage.',
   ink: 'Use this cephalopod\'s ink cloud and escape jet to retreat from the perceived threat.',
+  stalk: 'Approach the approved rival slowly, from cover where possible, to land a stronger first strike.',
+  gang: 'Attack the approved rival together with nearby kin of the same species.',
   fight: 'Attack the approved rival. Weigh fight drive, size, vitality, corruption and past fights won or lost against injury.',
 };
 const finite = (n, lo, hi) => typeof n === 'number' && Number.isFinite(n) && n >= lo && n <= hi;
@@ -55,7 +57,8 @@ function cleanScenario(input) {
       comfort:finite(c.comfort,0,1)?c.comfort:.5,depth:finite(c.depth,0,1)?c.depth:0 },
     neighbors: neighbors.map(n => ({species:n.species,distance:n.distance,relativeSize:n.relativeSize,role:n.role,
       sameSpecies:n.species===c.species,aggression:finite(n.aggression,0,10)?n.aggression:1,
-      protected:n.protected===true,stance:stance(n.stance)})),
+      protected:n.protected===true,stance:stance(n.stance),
+      ...(finite(n.value,-2,2)?{value:n.value}:{}),...(finite(n.risk,0,1)?{risk:n.risk}:{}),...(finite(n.tries,0,9999)?{tries:Math.floor(n.tries)}:{})})),
     environment:Object.fromEntries(['darkness','pollution','mismatch','aggression','current'].map(k=>
       [k,finite(input.environment?.[k],0,1)?input.environment[k]:0])),
     options: options.map(o => ({action:o.action, distance:finite(o.distance,0,1000) ? o.distance : 0,
@@ -103,6 +106,7 @@ function createMindService({ key = process.env.TYPESAFE_API_KEY, model = process
               'Creature tags and working vitality/stealth describe this individual, not just its species. ' +
               'Combat describes actual predator, awakened hunter, rage and protection status; keptSafe protects from recycling only. ' +
               'Respect creature abilities and neighbor protection/stance. Cull targets are preferred only when hunting is available. ' +
+              'Neighbor value is the learned worth of taking that kind (food from its size, minus what it cost before) and risk the learned harm, more reliable with more tries; weigh hunger against risk. ' +
               'A rival role marks a creature this one may fight; the fight weight reflects drive from aggression, corruption, rage, hunting upgrades and learned wins/losses. ' +
               'Creature weights and option weight are deterministic temperament preferences (larger means stronger tendency), not probabilities or commands. ' +
               'Use environment darkness, polluted water, salinity mismatch, current and local aggression to weigh discomfort and risk. ' +

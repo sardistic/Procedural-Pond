@@ -62,9 +62,12 @@ function mindRivalFor(w, c, neighbors) {
   let best = null, bs = 0;
   for (const q of neighbors) {
     if (!mindCanStrike(w, c, q)) continue;
+    // (What it has learned this kind is worth against what it costs: forage.js. A kind that proved bad is left alone.)
+    const V = typeof forageValue === 'function' ? forageValue(w, c, q) : null;
+    if (V && V.tries >= 2 && V.value < -0.05) continue;
     const size = mindWidth(q) / Math.max(0.5, mindWidth(c));
     const score = drive * (q.life.mind ? 1.6 : 1) * (1 + mindValence(c, q.species)) * (typeof huntWeight === 'function' ? huntWeight(w, q) : 1) *
-      (size < 0.45 ? 1.3 : Math.max(0.2, 1.2 - Math.abs(size - 0.8))) / (1 + mindDistance(c, q) / 40);
+      (size < 0.45 ? 1.3 : Math.max(0.2, 1.2 - Math.abs(size - 0.8))) / (1 + mindDistance(c, q) / 40) * (V ? clamp(0.6 + V.value, 0.1, 2) : 1);
     if (score > bs) { bs = score; best = q; }
   }
   if (brain) { brain.rival = best; brain.rivalUntil = best ? w.t + MIND_FIGHT.lock : 0; }
@@ -82,9 +85,11 @@ function mindStrike(w, c, q) {
   if (mindWidth(q) < mindWidth(c) * 0.45) { eat(w, c, q); return q.caught ? 'kill' : null; }
   const power = (x, first) => (0.25 + 0.7 * (x.life.hp ?? 1) + 0.3 * x.life.energy) * (1 + (x.life.grown || 0)) * (geneBuffs(x).vitality || 1) * (typeof rageOf === 'function' ? rageOf(w, x) : 1) *
     Math.max(0.5, mindWidth(x)) * (1 + 0.05 * (typeof huntLv === 'function' ? huntLv(x, 'jaws') : 0)) *
-    (1 + 0.5 * mindFightDrive(w, x).value) * (first ? 1.15 : 1) * rand(0.6, 1.4);
+    (1 + 0.5 * mindFightDrive(w, x).value) * (first ? 1.15 * (typeof forageStrikeBonus === 'function' ? forageStrikeBonus(w, x, q) : 1) : 1) * rand(0.6, 1.4);
+  if (typeof forageCallKin === 'function' && (c.mind.plan?.action === 'gang' || MIND_MODES[mindController(c)]?.motor)) forageCallKin(w, c, q);
   const won = power(c, true) >= power(q, false), winner = won ? c : q, loser = won ? q : c;
   const canKill = (N.mindKills || 0) < MIND_FIGHT.killsPerDay;
+  const hpBefore = loser.life.hp ?? 1;
   const killed = hurt(w, loser, 0.14 + 0.1 * clamp(mindWidth(winner) / Math.max(0.5, mindWidth(loser)), 0, 1.5), { why: `killed in a fight with ${winner.life.name}`, canKill });
   loser.life.comfort = Math.max(0, (loser.life.comfort ?? 0.5) - 0.2);
   addBlood(w, loser.x, loser.y, loser.z || 6, 0.35);
@@ -103,6 +108,11 @@ function mindStrike(w, c, q) {
   }
   mindReward(w, winner, killed ? 'kill' : 'win', loser);
   if (!killed) mindReward(w, loser, 'lose', winner);
+  // (What the fight cost the loser, learned of the winner's kind; a win without a meal is worth a little.)
+  if (typeof forageLearn === 'function') {
+    if (!killed) forageLearn(loser, winner.species, 0, Math.max(0, hpBefore - (loser.life.hp ?? 1)));
+    if (!killed) forageLearn(winner, loser.species, 0.08, 0);
+  }
   // A beaten mind remembers who did it.
   if (!killed && loser.life.mind && loser.mind) { loser.mind.rival = winner; loser.mind.rivalUntil = w.t + MIND_FIGHT.lock + 2; }
   logEvent(w, `${who(winner)} ${killed ? 'killed' : 'beat'} ${who(loser)} in a fight`, winner, {
@@ -116,7 +126,7 @@ function mindStrike(w, c, q) {
 function mindTryStrike(w, c) {
   const brain = c.mind, motor = !!MIND_MODES[mindController(c)]?.motor, q = (!motor && brain.plan?.rival) || brain.rival;
   if (!q || w.t - (brain.strikeAt ?? -99) < MIND_FIGHT.cooldown) return;
-  if (motor ? !brain.motor : brain.plan?.action !== 'fight') return;
+  if (motor ? !brain.motor : !['fight', 'stalk', 'gang'].includes(brain.plan?.action)) return;
   const reach = ((c.body.w[0] || 1) + (q.body.w[0] || 1) + 2.5) * (typeof huntReach === 'function' ? huntReach(c) : 1);
   if (mindDistance(c, q) > reach || Math.cos(Math.atan2(q.y - c.y, q.x - c.x) - c.heading) < 0.3 || !mindCanStrike(w, c, q)) return;
   mindStrike(w, c, q);
@@ -132,9 +142,11 @@ const mindLearnedGain = (c, k) => clamp(c.life?.mindLearn?.g?.[k] ?? 1, 0.5, 2);
 const mindValence = (c, species) => clamp(c.life?.mindLearn?.sp?.[species] ?? 0, -1, 1);
 // What its experience does to an option's weight (for the choosing minds).
 function mindLearnedOption(c, o) {
-  const k = { forage: 'food', hunt: 'prey', fight: 'prey', flee: 'threat', avoid: 'threat', ink: 'threat', shoal: 'same', shelter: 'cover', ambush: 'cover', investigate: 'other' }[o.action];
+  const k = { forage: 'food', hunt: 'prey', fight: 'prey', stalk: 'prey', gang: 'prey', flee: 'threat', avoid: 'threat', ink: 'threat', shoal: 'same', shelter: 'cover', ambush: 'cover', investigate: 'other' }[o.action];
   const target = o.action !== 'shoal' && (o.rival || o.prey || o.companion);
-  return (k ? mindLearnedGain(c, k) : 1) * (target ? 1 + 0.5 * mindValence(c, target.species) : 1);
+  // (And for a meal or a fight, what it has learned that kind is worth against what it costs: forage.js.)
+  const V = target && (o.rival || o.prey) && typeof forageValue === 'function' && target.life ? forageValue(world, c, target).value : 0;
+  return (k ? mindLearnedGain(c, k) : 1) * (target ? 1 + 0.5 * mindValence(c, target.species) : 1) * clamp(1 + V, 0.2, 2);
 }
 // The kinds it has lost to look like danger now.
 function mindLearnedFear(c, encounter) {
@@ -194,7 +206,8 @@ function mindCleanLearn(raw) {
   const count = (v) => (Number.isFinite(v) ? Math.floor(clamp(v, 0, 1e6)) : 0);
   const notes = (Array.isArray(raw.notes) ? raw.notes : []).slice(-6).filter((n) => n && Number.isFinite(n.at) && n.at >= 0 && n.at < 8.64e15 &&
     Object.hasOwn(MIND_REWARD, n.kind) && (n.species == null || (typeof n.species === 'string' && MIND_SPECIES_RE.test(n.species)))).map((n) => ({ at: n.at, kind: n.kind, species: n.species || null }));
-  return { g, sp, bias: Number.isFinite(raw.bias) ? r3(clamp(raw.bias, -0.3, 0.3)) : 0, wins: count(raw.wins), losses: count(raw.losses), notes };
+  return { g, sp, bias: Number.isFinite(raw.bias) ? r3(clamp(raw.bias, -0.3, 0.3)) : 0, wins: count(raw.wins), losses: count(raw.losses), notes,
+    prey: typeof cleanForageMemory === 'function' ? cleanForageMemory(raw.prey) : {} };
 }
 
 // ---- the brain at work, over the head ----------------------------------------------------------------
@@ -379,5 +392,14 @@ function mindPlayCard(w, c) {
       box.append(list);
     }
   } else box.append(el('p', 'note', 'Nothing learned yet: food, fights and danger will shape how it senses.'));
+  if (typeof forageTier === 'function') {
+    const t = forageTier(c), n = forageHunts(c), next = FORAGE_TIERS[t + 1], P = (M && M.prey) || {};
+    box.append(el('p', 'note', `Experience: ${FORAGE_TIERS[t].name} (${n} hunts and fights): ${FORAGE_TIERS[t].note}${next ? `. ${capFirst(next.name)} at ${next.hunts}` : ''}`));
+    const known = Object.entries(P).sort((a, b) => b[1].n - a[1].n).slice(0, 5).map(([k, s]) => {
+      const v = s.gain * (0.5 + clamp(1 - L.energy, 0, 1)) - s.harm;
+      return `${(SINGULAR[k] || k).toLowerCase()} worth ${s.gain.toFixed(2)}, costs ${s.harm.toFixed(2)} (${s.n})${s.n >= 2 && v < -0.05 ? ', avoids' : ''}`;
+    });
+    if (known.length) box.append(el('p', 'note', `Knows: ${known.join(' · ')}`));
+  }
   return box;
 }

@@ -11,7 +11,7 @@ const MIND_MODES = {
       flee:'Retreating from danger',wait:'Waiting and watching',explore:'Investigating nearby water',rest:'Resting quietly',
       shoal:'Joining its own kind',investigate:'Studying a nearby creature',avoid:'Keeping its distance',
       ambush:'Waiting for prey in cover',camouflage:'Blending into the pond floor',ink:'Escaping behind an ink cloud',
-      fight:'Picking a fight'}[action])},
+      fight:'Picking a fight',stalk:'Stalking its prey',gang:'Hunting with its kin'}[action])},
   'fly-brain':{label:'Fly Brain',lanes:['fly'],defaultLane:'fly',allowed:c=>mindSupported(c),
     note:'Fly Brain · experimental control from food, danger and movement signals.'},
   'fish-brain':{label:'Fish Brain',lanes:['fish'],defaultLane:'fish',allowed:c=>mindSupported(c),motor:true,
@@ -82,7 +82,7 @@ function mindCleanActivity(activity) {
   return Object.fromEntries(FLY_ACTIVITY.filter(k=>activity[k]!==undefined).map(k=>[k,Math.round(activity[k]*100)/100]));
 }
 const MIND_LABELS = {forage:'Forage',hunt:'Hunt',shelter:'Take cover',flee:'Flee',wait:'Watch',explore:'Explore',
-  rest:'Rest',shoal:'Join its kind',investigate:'Investigate',avoid:'Keep distance',ambush:'Wait in ambush',camouflage:'Camouflage',ink:'Ink escape',fight:'Fight'};
+  rest:'Rest',shoal:'Join its kind',investigate:'Investigate',avoid:'Keep distance',ambush:'Wait in ambush',camouflage:'Camouflage',ink:'Ink escape',fight:'Fight',stalk:'Stalk',gang:'Hunt as a pack'};
 function mindCleanLog(log) {
   if(!Array.isArray(log))return [];
   return log.slice(-20).flatMap(e=>{
@@ -92,7 +92,7 @@ function mindCleanLog(log) {
     const entry={at:e.at,action:e.action,source,outcome:e.outcome,
       target:typeof e.target==='string' && /^[a-zA-Z][a-zA-Z0-9 -]{0,39}$/.test(e.target)?e.target:null};
     if(source==='fly-brain'){
-      if(!['wait','explore','flee','forage','hunt','rest','avoid','ink','fight'].includes(e.action) || e.outcome==='uncertain')return [];
+      if(!['wait','explore','flee','forage','hunt','rest','avoid','ink','fight','stalk','gang'].includes(e.action) || e.outcome==='uncertain')return [];
       const activity=mindCleanActivity(e.activity);if(!activity)return [];
       entry.activity=activity;
     } else if(MIND_MODES[source].motor && e.confidence===undefined){
@@ -190,7 +190,7 @@ function mindProfile(w,c) {
       huntThreshold(c,Math.min(.92,.6*b.aggression*(typeof rageOf==='function'?rageOf(w,c):1)*
         (.4+.6*(typeof activity==='function'?activity(w,c):1)))):.9));
   const tags=[...new Set([...(L.traits||[]),...(L.warps||[]),...(L.quirks||[]),
-    ...(predator?['predator']:[]),...(hunter?['hunter']:[]),...(enragedNow?['enraged']:[]),
+    ...(predator?['predator']:[]),...(hunter?['hunter']:[]),...(typeof forageTier==='function'?[FORAGE_TIERS[forageTier(c)].name]:[]),...(enragedNow?['enraged']:[]),
     ...(L.safe?['kept safe']:[]),...(stance!=='neutral'?[stance]:[]),...(L.paragon?['paragon']:[])])].slice(0,24);
   const weights={
     food:feeds?clamp((b.appetite||1)*(.8+.04*lv('hunger')), .4,2):0,
@@ -238,6 +238,10 @@ function mindEncounter(w, c) {
   if(food && c.life.energy<.9)add('forage',food,top,{food});
   if(prey)add('hunt',prey,top,{prey});
   if(rival)add('fight',rival,top,{rival});
+  // Experience opens more ways in (forage.js): a stalker's slow approach, a pack hunter's call to its kin.
+  const tier=typeof forageTier==='function'?forageTier(c):0;
+  if(rival && tier>=2)add('stalk',rival,cruise*.4,{rival});
+  if(rival && tier>=3 && neighbors.some(q=>q!==rival && q.species===c.species))add('gang',rival,top,{rival});
   if(cover)add('shelter',cover,cruise,{cover});
   if(!threat && c.life.energy>=.65)options.push({action:'rest',x:c.x,y:c.y,speed:0});
   const companion=neighbors.find(q=>q.species===c.species && q!==threat && q!==prey && q!==rival);
@@ -274,12 +278,13 @@ function mindEncounter(w, c) {
       relativeSize:Math.min(100,(q.body?.w[0]||1)/(c.body.w[0]||1)),role:q===threat?'threat':q===prey?'prey':q===rival?'rival':'neighbor',
       sameSpecies:q.species===c.species,aggression:clamp(geneBuffs(q).aggression,0,10),
       protected:typeof huntable==='function'?!huntable(w,q):false,
-      stance:w.game?.stance?.[q.species==='tadpole'?'frog':q.species]||'neutral'})),
+      stance:w.game?.stance?.[q.species==='tadpole'?'frog':q.species]||'neutral',
+      ...(typeof forageValue==='function' && q.life?(V=>({value:Math.round(clamp(V.value,-2,2)*100)/100,risk:Math.round(V.harm*100)/100,tries:V.tries}))(forageValue(w,c,q)):{})})),
     environment:{darkness:clamp(w.darkness||0,0,1),pollution:clamp(typeof pollutionAt==='function'?pollutionAt(w,c.x,c.y):0,0,1),
       mismatch:clamp(typeof mismatch==='function'?mismatch(w,c):0,0,1),aggression:clamp(typeof aggressionAt==='function'?aggressionAt(w,c.x,c.y):0,0,1),
       current:clamp(w.current?.s||0,0,1)},
     options:options.map(o=>({action:o.action,distance:Math.round(mindDistance(c,o)),weight:clamp((
-      profile.weights[{forage:'food',flee:'danger',avoid:'danger',ambush:'hunt',shoal:'social',investigate:'explore',rest:'shelter',camouflage:'shelter',ink:'danger'}[o.action]||o.action] ?? 1)*
+      profile.weights[{forage:'food',flee:'danger',avoid:'danger',ambush:'hunt',shoal:'social',investigate:'explore',rest:'shelter',camouflage:'shelter',ink:'danger',stalk:'fight',gang:'fight'}[o.action]||o.action] ?? 1)*
       (typeof mindLearnedOption==='function'?mindLearnedOption(c,o):1),0,3)})),memory:c.life.mindMemory||[]};
   // Recheck coarse needs and identities after the asynchronous decision.
   const signature=[Math.floor(state.creature.hunger*4),geneBuffs(c).intellect,geneBuffs(c).aggression,JSON.stringify(levels),
@@ -357,6 +362,7 @@ function mindDecisionSignature(w,c,encounter,controller) {
 const FISH_CHANNELS=['food','threat','same','other','obstacle','motion','prey','cover'];
 const FISH_GOAL_GAINS={
   forage:{food:1.8,prey:.4,same:.5}, hunt:{prey:1.8,food:.25,same:.3,drive:1.3}, fight:{prey:2,food:.2,same:.2,drive:1.6},
+  stalk:{prey:1.6,food:.1,drive:.45,cover:1.3}, gang:{prey:2,same:1.4,drive:1.6},
   flee:{threat:1.8,food:.1,prey:0,same:.1,drive:1.5}, ink:{threat:1.8,food:.1,prey:0,drive:1.5},
   shoal:{same:1.8,other:.2}, investigate:{other:1.8}, explore:{other:1.4,drive:1.2},
   shelter:{cover:1.8,drive:.5}, avoid:{threat:1.6,other:0}, ambush:{cover:1.8,prey:1.2,drive:.1},
