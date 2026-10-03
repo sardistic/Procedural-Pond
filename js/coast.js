@@ -214,10 +214,16 @@ function islandTerraces(s) {
   s.terr = { n, r: R, list };
   return list;
 }
+// How far out a terrace's edge reaches at a world point, as a share of its ellipse (0.6 to 1): one noise
+// field per island at two scales, so its terraces are ragged and nest like contour lines, not smooth discs.
+const terraceEdge = (s, wx, wy) => 1 - 0.32 * fbm(wx * 0.05, wy * 0.05, (s.seed % 89) + 31) - 0.12 * fbm(wx * 0.17, wy * 0.17, (s.seed % 83) + 37);
 // How high the ground stands at a point on the island (offsets from its centre).
 function islandTopAt(s, ox, oy) {
   let z = 0;
-  for (const [tx, ty, rr, , top] of islandTerraces(s)) if ((ox - tx) ** 2 + (oy - ty) ** 2 < rr * rr * 0.9) z = top;
+  const T = islandTerraces(s);
+  if (!T.length) return 0;
+  const e = terraceEdge(s, s.x + ox, s.y + oy);
+  for (const [tx, ty, rr, , top] of T) if ((ox - tx) ** 2 + (oy - ty) ** 2 < rr * rr * 0.9 * e * e) z = top;
   return z;
 }
 
@@ -276,18 +282,22 @@ function islandStamp(world, s) {
   const deepHere = Math.round(depthAt(world, s.x, s.y) * 20);
   const key = [R0.toFixed(2), typeof isleShapeKey === 'function' ? isleShapeKey(s) : '', s.stack || 1, s.deep || 0, F ? F.ang.toFixed(2) : '-', deepHere, world.opts.habitat].join('|');
   if (s.stamp && s.stamp.key === key) return s.stamp;
-  const bar = (s.ig && s.ig.bar) || 0, reachK = Math.max(F ? isleReachK(world, s, F) : 1.4 * (lobed ? 1.22 : 1), bar ? 2.35 : 0), r = Math.ceil(R0 * reachK) + 2, n = 2 * r + 1;
+  const bar = (s.ig && s.ig.bar) || 0, reachK = Math.max(F ? isleReachK(world, s, F) : 1.4 * (lobed ? 1.22 : 1), bar ? 2.35 : 0), r = Math.ceil(R0 * reachK * 1.2) + 2, n = 2 * r + 1; // (×1.2: room for the warp)
   const top = Math.min(1.5, 0.97 + 0.06 * ((s.stack || 1) - 1)), cliff = 2 + (F ? F.cliff : 8 * (s.deep || 0)), v = new Uint8Array(n * n);
   // (Its coast and its flats, along 256 bearings.)
   const NB = 256, OUT = new Float32Array(NB), FL = new Float32Array(NB), dm = world.depth, cx = Math.round(s.x), cy = Math.round(s.y), seed = s.seed % 997;
   for (let k = 0; k < NB; k++) { const a = k / NB * TAU - PI; OUT[k] = F ? isleOutline(world, s, a, F) : lobed ? isleLobe(s, a) : 1; FL[k] = F ? isleFlatsAt(F, a) : 0; }
-  const rc0 = R0 * 1.75, rc1 = R0 * 2.15, crest = 0.3 + 0.16 * bar, mid = (rc0 + rc1) / 2, half = (rc1 - rc0) / 2;
+  const rc0 = R0 * 1.75, rc1 = R0 * 2.15, crest = 0.3 + 0.16 * bar, mid = (rc0 + rc1) / 2, half = (rc1 - rc0) / 2, rough = F ? Math.min(1.5, F.rough) : 0.5;
   for (let j = 0; j < n; j++) {
     const dy = j - r, wy = cy + dy;
     for (let i = 0; i < n; i++) {
       const dx = i - r, dist = Math.hypot(dx, dy);
       if (dist > r) continue;
-      const a = Math.atan2(dy, dx), bi = (((a + PI) / TAU * NB) | 0) & (NB - 1), d = dist / R0 / OUT[bi], wx = cx + dx;
+      const a = Math.atan2(dy, dx), bi = (((a + PI) / TAU * NB) | 0) & (NB - 1), wx = cx + dx;
+      // The coast and flats warped by noise at two scales (in world coordinates, so joined islands agree): coves,
+      // spits and ragged flats, not only the smooth bearing-by-bearing outline. Rougher kinds are more ragged.
+      const warp = (fbm(wx * 0.045, wy * 0.045, 71) - 0.5) * (0.22 + 0.1 * rough) + (fbm(wx * 0.16, wy * 0.16, 73) - 0.5) * (0.1 + 0.06 * rough);
+      const d = dist / R0 / OUT[bi] * (1.09 + warp); // (+0.09: inward warp grows land more than outward warp shrinks it; this keeps its size)
       let e = d < 1.4 ? top * (1 - (d / 1.4) ** cliff) : 0;
       const fl = FL[bi];
       if (fl > 0.02 && d > 0.8 && d < 1 + fl) {

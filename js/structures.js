@@ -235,10 +235,12 @@ const BAKE = {
     // each edge, sand low down, then grass (or, on the stone's island, dead black moss).
     if (typeof islandTerraces === 'function') {
       const T = islandTerraces(s);
+      // (Each terrace's ellipse is only its outer bound: its edge follows the island's own noise field, coast.js terraceEdge.)
+      const edged = (m, grow) => (lx, ly, px, py) => (Math.sqrt(lx * lx + ly * ly) < terraceEdge(s, px, py) + grow ? m : null);
       T.forEach(([tx, ty, rr, ang, top], i) => {
         const z0 = top - TERRACE_STEP, m = i < T.length / 3 ? IK.sand : dark && i >= T.length / 2 ? SM.moss2 : IK.grass;
-        r.ellipsoid(x + tx, y + ty, rr + 1.3, (rr + 1.3) * 0.92, ang, z0 - 0.2, TERRACE_STEP * 0.7, SM.soil, next(SM.soil));
-        r.ellipsoid(x + tx, y + ty, rr, rr * 0.92, ang, z0, TERRACE_STEP, m, next(m));
+        r.ellipsoid(x + tx, y + ty, rr + 1.3, (rr + 1.3) * 0.92, ang, z0 - 0.2, TERRACE_STEP * 0.7, edged(SM.soil, 1.3 / (rr + 1.3)), next(SM.soil));
+        r.ellipsoid(x + tx, y + ty, rr, rr * 0.92, ang, z0, TERRACE_STEP, edged(m, 0), next(m));
       });
     }
     // Out over the deep, its edge is a cliff: a ring of dark rock where the sea meets it.

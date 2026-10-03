@@ -359,7 +359,7 @@ function isleLobe(s, a) {
 }
 const isleShapeKey = (s) => (s.ig ? `${Math.round((s.ig.lob || 0) * 10)}:${Math.round((s.ig.bar || 0) * 8)}:${(s.ig.lava || []).length}:${s.ig.cone || 0}:${s.ig.realm ? `${s.ig.realm.k}${Math.round((s.ig.realm.g || 0) * 4)}` : ''}` : '');
 // How far out the island reaches (with its flats, its lava and its reef), for redrawing round it.
-const isleReach = (world, s) => islandRadius(world, s) * Math.max(s.ig && s.ig.bar ? 2.35 : 0, isleReachK(world, s));
+const isleReach = (world, s) => islandRadius(world, s) * Math.max(s.ig && s.ig.bar ? 2.35 : 0, isleReachK(world, s)) * 1.2; // (the coast warp: coast.js)
 // (The barrier reef is drawn into the island's stamp: coast.js islandStamp.)
 
 // ---- what it can grow ---------------------------------------------------------------------------------
@@ -909,11 +909,14 @@ function bakeIsleFeatures(r, s, next, world) {
     if (typeof FLORA === 'object') for (let k = 0; k < 4; k++) { const a = k / 4 * TAU + 0.4; withSeed(`spring/${s.seed}/${k}`, () => FLORA.reed(r, x0 + ox + Math.cos(a) * (pr + 1), y0 + oy + Math.sin(a) * (pr + 1) * 0.85, z, 0.7, id)); }
   }
   // Lava that has run out and cooled: a tongue of black rock over the new land, out to its coast, rubble on it.
+  // (Each lobe's edge is cut by noise and its rock mottled basalt and ash: smooth ellipses read as flat discs.)
+  const flow = (px, py) => fbm(px * 0.07, py * 0.07, (s.seed % 71) + 3) * 0.75 + fbm(px * 0.22, py * 0.22, (s.seed % 67) + 5) * 0.25;
+  const lavaRock = (lx, ly, px, py) => { const n = flow(px, py), d = Math.sqrt(lx * lx + ly * ly); return d < 0.55 + 0.6 * n ? (n > 0.62 ? IM.ash : SM.basalt) : null; };
   for (const [i, L] of (G.lava || []).entries()) {
     const o = typeof world === 'undefined' ? 1 : isleOutline(world, s, L.a);
     for (let j = 0; j <= 7; j++) {
       const u = j / 7, dd = R * (0.55 + (o - 0.6) * u), half = Math.max(1.5, dd * Math.sin(L.w * (1 - 0.45 * u)) * 0.8), ox = Math.cos(L.a) * dd, oy = Math.sin(L.a) * dd;
-      r.ellipsoid(x0 + ox, y0 + oy, R * (o - 0.55) / 7 + 2, half, L.a, zAt(ox, oy), 0.35, SM.basalt, id(SM.basalt));
+      r.ellipsoid(x0 + ox, y0 + oy, (R * (o - 0.55) / 7 + 2) * 1.15, half * 1.15, L.a, zAt(ox, oy), 0.35, lavaRock, id(SM.basalt));
     }
     const n = Math.round(14 + L.len * R * L.w * 2.2);
     for (let k = 0; k < n; k++) {

@@ -547,7 +547,7 @@ function landRepaint(world, L, step) {
 // Each cell's tint: a colour and how much of it, from what the land holds there.
 function landTints(world, L) {
   const n = L.cols * L.rows;
-  if (!L.tint || L.tint.length !== n) { L.tint = new Uint32Array(n); L.amt = new Float32Array(n); L.fk = new Uint8Array(n); L.fv = new Float32Array(n); }
+  if (!L.tint || L.tint.length !== n) { L.tint = new Uint32Array(n); L.amt = new Float32Array(n); L.fk = new Uint8Array(n); L.fv = new Float32Array(n); L.near = new Uint8Array(n); }
   let any = false;
   for (let q = 0; q < n; q++) {
     let r = 0, g = 0, b = 0, wsum = 0, top = 0, tv = 0;
@@ -565,20 +565,31 @@ function landTints(world, L) {
     L.fk[q] = top; L.fv[q] = tv;
   }
   L.any = any;
+  // Cells within two of any land colour (the sampling warp reaches about that far): the rest skip it entirely.
+  L.near.fill(0);
+  if (any) for (let y = 0; y < L.rows; y++) for (let x = 0; x < L.cols; x++) {
+    if (!L.amt[x + y * L.cols]) continue;
+    for (let j = Math.max(0, y - 2); j <= Math.min(L.rows - 1, y + 2); j++) for (let i = Math.max(0, x - 2); i <= Math.min(L.cols - 1, x + 2); i++) L.near[i + j * L.cols] = 1;
+  }
 }
 // Used by applyStains (structures.js), pixel by pixel: the land over the floor (not over things on it).
 function landTintAt(world, x, y, c, dry = false) {
   const L = world.land;
   if (!L || !L.any || !L.tint) return c;
+  if (L.near && !L.near[landCell(L, x, y)]) return c;
+  // Where it samples the grid is warped by noise at two scales, so patches lie in organic shapes rather than the
+  // circles they were added in, and their edges don't step along the 16 px cells.
+  const sx = x + (fbm(x * 0.035, y * 0.035, 41) - 0.5) * LAND_CELL * 3.2 + (vnoise(x * 0.12, y * 0.12, 45) - 0.5) * LAND_CELL * 0.8;
+  const sy = y + (fbm(x * 0.035 + 9.1, y * 0.035 - 4.7, 43) - 0.5) * LAND_CELL * 3.2 + (vnoise(x * 0.12 + 3.3, y * 0.12 + 7.7, 47) - 0.5) * LAND_CELL * 0.8;
   // How much: blended between the four nearest cells, then broken up with noise so it lies in patches.
-  const fx = x / LAND_CELL - 0.5, fy = y / LAND_CELL - 0.5, ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
+  const fx = sx / LAND_CELL - 0.5, fy = sy / LAND_CELL - 0.5, ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
   const cx0 = clamp(ix, 0, L.cols - 1), cx1 = clamp(ix + 1, 0, L.cols - 1), cy0 = clamp(iy, 0, L.rows - 1), cy1 = clamp(iy + 1, 0, L.rows - 1), A = L.amt;
   const a00 = A[cx0 + cy0 * L.cols], a10 = A[cx1 + cy0 * L.cols], a01 = A[cx0 + cy1 * L.cols], a11 = A[cx1 + cy1 * L.cols];
   if (!(a00 || a10 || a01 || a11)) return c;
   const amt = (a00 * (1 - tx) + a10 * tx) * (1 - ty) + (a01 * (1 - tx) + a11 * tx) * ty;
-  const a = amt * (0.3 + 1.4 * vnoise(x * 0.09, y * 0.09, 17));
-  // Which colour: the cell a dithered step away (so borders between kinds of ground interleave).
-  const q = landCell(L, x + (dither(x, y) - 0.5) * LAND_CELL * 0.9, y + (dither(y + 1, x + 2) - 0.5) * LAND_CELL * 0.9);
+  const a = amt * (0.25 + 1.0 * fbm(x * 0.07, y * 0.07, 17) + 0.5 * vnoise(x * 0.23, y * 0.23, 19));
+  // Which colour: the warped cell, a small dithered step away (so borders between kinds of ground interleave).
+  const q = landCell(L, sx + (dither(x, y) - 0.5) * LAND_CELL * 0.35, sy + (dither(y + 1, x + 2) - 0.5) * LAND_CELL * 0.35);
   if (!L.amt[q]) return c;
   const v = Math.floor((Math.min(0.55, a) * (dry ? 0.6 : 1) + dither(x, y) * 0.1) * 8) / 8;
   let out = v > 0 ? mixColor(c, L.tint[q], v) : c;

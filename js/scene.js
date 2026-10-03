@@ -551,7 +551,9 @@ function bakeBackground(world, rect = null) {
           if (world.depth && world.depth[p]) c = mixColor(c, DEEP_SILT, Math.min(1, world.depth[p] / 160));
           if (islandGround && islandGround[p]) {
             const sand = islandSands[islandGround[p] - 1];
-            const grain = (hash2(x >> 2, y >> 2, 91) * sand.length) | 0;
+            // (Shades in organic patches at two scales with a little per-pixel grain: a 4 px block hash showed squares.)
+            const nz = fbm(x * 0.09, y * 0.09, 91) * 0.7 + fbm(x * 0.35, y * 0.35, 93) * 0.2 + hash2(x, y, 92) * 0.1;
+            const grain = Math.min(sand.length - 1, Math.max(0, ((nz - 0.2) / 0.6 * sand.length) | 0));
             // A broad pale shore, with less sand showing under the higher greenery.
             const beach = world.islandGroundRealm && world.islandGroundRealm[islandGround[p] - 1] ? 0.94 : 0.8 - 0.35 * smoothstep(0.48, 0.94, shore[p] / 255);
             c = mixColor(c, sand[grain], beach);
