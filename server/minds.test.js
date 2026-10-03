@@ -132,3 +132,10 @@ test('fight is a bounded choice against a rival, with fight weight and fight mem
   assert.equal(clean.creature.weights.fight,1.4);assert.deepEqual(clean.memory,[{event:'won_fight',species:'koi'}]);
   assert.equal(cleanScenario({...state,neighbors:[{species:'koi',distance:12,relativeSize:.8,role:'enemy'}]}),null);
 });
+test('common creatures and every body type are valid scenarios', () => {
+  for(const locomotion of ['hopper','drifter','surface swimmer','flier','crawler']){
+    const state=encounter();state.creature.rarity=0;state.creature.locomotion=locomotion;
+    const clean=cleanScenario(state);assert.equal(clean.creature.rarity,0);assert.equal(clean.creature.locomotion,locomotion);
+  }
+  const bad=encounter();bad.creature.rarity=6;assert.equal(cleanScenario(bad),null);
+});

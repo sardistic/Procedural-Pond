@@ -232,8 +232,8 @@ With **Life** on (Scene section), the pond runs itself:
 
 ## Hosting
 
-Rare creatures (by species or traits) with an intellect multiplier of at least 1.1 have an **Awaken mind**
-button in their creature card. Up to five awakened individuals per pond can choose food,
+Every creature with a card (everything but ambient island and shore life) has an
+**Awaken mind** button in its card. Up to five awakened individuals per pond can choose food,
 approved prey, underwater cover, retreat, waiting, nearby exploration, resting,
 companionship, investigating neighbors, keeping distance or waiting in ambush based on
 its perceived neighbors, hunger, temperament, traits, upgrades and four recent
@@ -246,7 +246,9 @@ swimming Fish; the original modes also support the other creature bodies. The se
 in local saves and server-backed pond links; compact fragment links retain their
 existing format. Movement, shore avoidance and immediate escape remain local. Fish, bottom walkers
 (including axolotls, turtles, crabs and their deep/prehistoric relatives), octopuses
-and their relatives, and Watchers support awakening. Cephalopods can also choose
+and their relatives, and Watchers act on a mind's choice in their own movement code.
+Frogs, jellies, ducks, dragonflies, starfish and other bodies are steered by pointing
+their own wander target at the chosen place, so they still hop, pulse, paddle or dart. Cephalopods can also choose
 camouflage and an ink escape using their existing behaviors.
 
 **Fights, learning and the brain at work.** Every awakened mind has a *fight drive*

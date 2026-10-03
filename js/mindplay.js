@@ -229,6 +229,20 @@ function mindActivity(c) {
   return { level, mode };
 }
 
+// ---- steering the bodies that don't ask ------------------------------------------------------------
+// Frogs, jellies, ducks, dragonflies, starfish and the like wander toward a target of their own; an
+// awakened one's target becomes the place its mind chose, so it still hops, pulses, paddles or darts.
+function mindSteer(w, c) {
+  if (mindNative(c) || !c.life?.mind || c.grabbed || w.observe) return;
+  const intent = mindIntent(w, c);
+  if (!intent || !Number.isFinite(intent.x) || !Number.isFinite(intent.y)) return;
+  const still = intent.speed === 0;
+  c.tx = still ? c.x : intent.x; c.ty = still ? c.y : intent.y;
+  c.timer = Math.max(c.timer || 0, still ? 0.5 : 1.5);
+  if (!still && (c.mode === 'pause' || c.mode === 'hover')) c.mode = c.mode === 'hover' ? 'dart' : 'walk';
+  if (!still && 'targetPad' in c) c.targetPad = null;
+}
+
 // ---- every frame -------------------------------------------------------------------------------------
 function mindPlayTick(w, dt) {
   if (!w.creatures || w.observe || typeof mindControlled !== 'function') return;

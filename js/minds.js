@@ -119,9 +119,24 @@ const mindTargetId = (target) => {
   if (!MINDS.targets.has(target)) MINDS.targets.set(target, ++MINDS.targetId);
   return MINDS.targets.get(target);
 };
-const mindSupported = (c) => c instanceof Fish || c instanceof Walker || c instanceof Octopus || c instanceof Watcher;
+// Every animal with a life record can take a mind; ambient island and shore life has none.
+const mindSupported = (c) => !!c?.life && !c.ambient;
+// Bodies whose own movement code asks for the mind's intent; the rest are steered by mindSteer.
+const mindNative = (c) => c instanceof Fish || c instanceof Walker || c instanceof Octopus || c instanceof Watcher;
+function mindLocomotion(c) {
+  if (c instanceof Walker) return 'bottom walker';
+  if (c instanceof Octopus) return 'cephalopod';
+  if (c instanceof Watcher) return 'drifting watcher';
+  if (c instanceof Fish) return 'swimmer';
+  // (Script-scope classes are not globalThis properties; test each name for itself.)
+  if (typeof Frog !== 'undefined' && c instanceof Frog) return 'hopper';
+  if (typeof Jelly !== 'undefined' && c instanceof Jelly) return 'drifter';
+  if (typeof Duck !== 'undefined' && c instanceof Duck) return 'surface swimmer';
+  if (typeof Dragonfly !== 'undefined' && c instanceof Dragonfly) return 'flier';
+  return 'crawler';
+}
 const mindRarity = (c) => Math.max(tierOf(c.life?.traits || []), SPECIES_STATS[c.species]?.rarity || 0);
-const mindEligible = (c) => mindSupported(c) && !c.ambient && c.life && mindRarity(c) >= 2 && geneBuffs(c).intellect >= 1.1;
+const mindEligible = (c) => mindSupported(c);
 const mindHere = (c) => c && !c.gone && !c.caught && !c.leaving && !c.dying;
 const mindControlled = (w) => w.creatures.filter(c=>c.life?.mind && mindHere(c));
 const mindSpecies = (c) => /^[a-zA-Z][a-zA-Z0-9 -]{0,39}$/.test(c.species) ? c.species : 'fish';
@@ -196,6 +211,8 @@ const mindProfileSignature = (profile) => JSON.stringify([profile.tags,profile.a
   Object.values(profile.weights).map(v=>Math.floor(v*4))]);
 
 function mindEncounter(w, c) {
+  // (Dragonflies, jellies and other bodies without cruise/max speeds still get finite option speeds.)
+  const top=Number.isFinite(c.maxSpeed)&&c.maxSpeed>0?c.maxSpeed:Number.isFinite(c.cruise)&&c.cruise>0?c.cruise*1.6:10,cruise=Number.isFinite(c.cruise)&&c.cruise>0?c.cruise:top*.6;
   const profile=mindProfile(w,c),radius=Math.min(180,(c.sight || 60)*(typeof huntRange==='function'?huntRange(c):1)), neighbors=[];
   forNear(w,c.x,c.y,radius,(q,d) => {
     if(q===c || !mindHere(q) || Math.abs((q.z||0)-c.z)>14) return;
@@ -216,39 +233,39 @@ function mindEncounter(w, c) {
   const options=[{action:'wait',x:c.x,y:c.y,speed:0}], add=(action,p,speed,extra={})=>{
     if(mindWetRoute(w,c,p))options.push({action,x:p.x,y:p.y,speed,...extra});
   };
-  if(food && c.life.energy<.9)add('forage',food,c.maxSpeed,{food});
-  if(prey)add('hunt',prey,c.maxSpeed,{prey});
-  if(rival)add('fight',rival,c.maxSpeed,{rival});
-  if(cover)add('shelter',cover,c.cruise,{cover});
+  if(food && c.life.energy<.9)add('forage',food,top,{food});
+  if(prey)add('hunt',prey,top,{prey});
+  if(rival)add('fight',rival,top,{rival});
+  if(cover)add('shelter',cover,cruise,{cover});
   if(!threat && c.life.energy>=.65)options.push({action:'rest',x:c.x,y:c.y,speed:0});
   const companion=neighbors.find(q=>q.species===c.species && q!==threat && q!==prey && q!==rival);
-  if(companion && !threat)add('shoal',companion,c.cruise*.7,{companion,spacing:10});
+  if(companion && !threat)add('shoal',companion,cruise*.7,{companion,spacing:10});
   const curious=neighbors.find(q=>q!==threat && q!==prey && q!==companion && q!==rival);
-  if(curious && !threat)add('investigate',curious,c.cruise*.5,{companion:curious,spacing:18});
+  if(curious && !threat)add('investigate',curious,cruise*.5,{companion:curious,spacing:18});
   const avoid=threat || neighbors.find(q=>q!==companion && mindDistance(c,q)<30);
   if(avoid){
     const away=Math.atan2(c.y-avoid.y,c.x-avoid.x);
-    add('avoid',{x:clamp(c.x+Math.cos(away)*24,1,w.W-2),y:clamp(c.y+Math.sin(away)*24,1,w.H-2)},c.cruise,{avoid});
+    add('avoid',{x:clamp(c.x+Math.cos(away)*24,1,w.W-2),y:clamp(c.y+Math.sin(away)*24,1,w.H-2)},cruise,{avoid});
   }
-  if(prey && cover)add('ambush',cover,c.cruise*.5,{cover,watchPrey:prey});
+  if(prey && cover)add('ambush',cover,cruise*.5,{cover,watchPrey:prey});
   if(c instanceof Octopus && c.jet<=0){
     options.push({action:'camouflage',x:c.x,y:c.y,speed:0});
-    if(threat && typeof c.inkEscape==='function')options.push({action:'ink',x:c.x,y:c.y,speed:c.maxSpeed});
+    if(threat && typeof c.inkEscape==='function')options.push({action:'ink',x:c.x,y:c.y,speed:top});
   }
   if(threat){
     const heading=Math.atan2(c.y-threat.y,c.x-threat.x);
     for(const angle of [0,.6,-.6,1.2,-1.2]){
       const p={x:clamp(c.x+Math.cos(heading+angle)*35,1,w.W-2),y:clamp(c.y+Math.sin(heading+angle)*35,1,w.H-2)};
-      if(mindWetRoute(w,c,p)){add('flee',p,c.maxSpeed,{threat});break;}
+      if(mindWetRoute(w,c,p)){add('flee',p,top,{threat});break;}
     }
   }
   const angle=c.heading+.7;
-  add('explore',{x:clamp(c.x+Math.cos(angle)*24,1,w.W-2),y:clamp(c.y+Math.sin(angle)*24,1,w.H-2)},c.cruise*.8);
+  add('explore',{x:clamp(c.x+Math.cos(angle)*24,1,w.W-2),y:clamp(c.y+Math.sin(angle)*24,1,w.H-2)},cruise*.8);
   const levels={...(c.life.boosts||{})};
   for(const [k,v] of Object.entries(c.life.hunt||{}))levels[`hunt${k[0].toUpperCase()}${k.slice(1)}`]=v;
   const state={creature:{species:mindSpecies(c),hunger:clamp(1-c.life.energy,0,1),intellect:geneBuffs(c).intellect,
-    aggression:geneBuffs(c).aggression,rarity:mindRarity(c),levels,traits:c.life.traits,
-    locomotion:c instanceof Walker?'bottom walker':c instanceof Octopus?'cephalopod':c instanceof Watcher?'drifting watcher':'swimmer',
+    aggression:geneBuffs(c).aggression,rarity:clamp(mindRarity(c),0,5),levels,traits:c.life.traits,
+    locomotion:mindLocomotion(c),
     comfort:clamp(c.life.comfort??.5,0,1),depth:clamp(depthAt(w,c.x,c.y),0,1),...profile,
     vitality:clamp(geneBuffs(c).vitality,0,10),stealth:clamp(geneBuffs(c).stealth||0,0,1)},
     neighbors:neighbors.map(q=>({species:mindSpecies(q),distance:Math.round(mindDistance(c,q)),

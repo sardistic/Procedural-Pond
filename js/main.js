@@ -488,6 +488,7 @@ function update(dt) {
   for (const c of world.creatures) {
     if (c.dread && (c.dread.t -= dt) <= 0) c.dread = null;
     if (!c.dying && !c.absorbing) {
+      if (c.life && c.life.mind && typeof mindSteer === 'function') mindSteer(world, c);
       c.update(dt, world);
       if (c.life && !(c instanceof Fish) && typeof islandKeepSwimmerWet === 'function') islandKeepSwimmerWet(world, c);
     }

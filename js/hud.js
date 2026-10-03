@@ -1287,12 +1287,12 @@ function renderCreature() {
     void mindCheckCapabilities();
     const mind = el('div', 'eld'),controller=mindController(c),availability=mindAvailability(controller);
     mind.append(el('b', null, 'Awakened mind'), el('p', 'note', L.mind ?
-      c.mind?.status || 'Watching for an encounter' : 'A rare, intelligent creature can learn from encounters and choose how to respond. Up to five minds per pond.'));
+      c.mind?.status || 'Watching for an encounter' : 'Any creature can be awakened to learn from encounters and choose how to respond. Up to five minds per pond.'));
     if(availability!=='ready' && !L.mind)mind.append(el('p','note',mindAvailabilityText(controller,availability)));
     if(MIND_MODES[controller].note)mind.append(el('p','note',MIND_MODES[controller].note));
     if(MIND_MODES[controller].higher && availability==='ready' && mindAvailability('typesafe')!=='ready')
       mind.append(el('p','note','Jev is unavailable. Fish Brain continues with its own sensory drive.'));
-    if(!mindControllerAllowed(c))mind.append(el('p','note','This controller supports swimming fish. Choose TypeSafe or Fly Brain for this creature.'));
+    if(!mindControllerAllowed(c))mind.append(el('p','note','Fish Brain controls swimming fish. Choose TypeSafe or Fly Brain for this creature.'));
     if(mindEligible(c) && MIND_MODES[controller].lanes.includes('choice')) {
       const labels={wait:'watch',forage:'forage',hunt:'hunt',shelter:'shelter',flee:'flee',explore:'explore',
         rest:'rest',shoal:'join its kind',investigate:'investigate',avoid:'keep distance',ambush:'wait in ambush',camouflage:'camouflage',ink:'ink escape',fight:'fight'};
