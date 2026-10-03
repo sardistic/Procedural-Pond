@@ -12,6 +12,12 @@ leaderboard need the small API in `server/`; without it the pond runs as before 
 
 ## Using it
 
+Opening the page shows an **entry screen** at once: fish swim past, bubbles rise and a line fills as the
+pond loads. When it's ready, a card shows the pond's name, day, depth, water and animals, a small map of
+the whole pond with its animals as points, and **Dive in** (Enter, Space or Esc work too). Tick *Skip this
+screen next time* to go straight in. Visitors walking along the beach into another pond skip it.
+
+
 The **item bar** along the bottom holds pinned tools and ▴ for all actions: food, tools, plants and builds. Choose one, then click the pond; the expanded panel closes, and a small chip shows the selected action and its cost. Press **Look** there or **Esc** to stop using it. Hover an action and press **+** to pin it (**−** removes it). New actions wear a **NEW** badge. The animated **☰ menu**, beside the day at the top-right, holds your ponds, habitat and scene options. Scene → Text switches between readable beta and classic pixel text. The rail’s **?** or **G** opens the searchable guide.
 
 The **animals** run down the left: the rail shows up to ten kinds that fit the screen, ranked by value. The **▸** arrow expands a scrollable list with names and kinds yet to arrive. Click a kind for one species card: spawn it with optional gene boosts and quality, lure or summon it if undiscovered, or recycle its present members. The census count opens the pond’s animals and its breeding room: size gives the base capacity, while deep structures and planted deep habitat add room at dawn.

@@ -63,10 +63,12 @@ const world = {
 
   nearestFood(x, y, range, filter) {
     let best = null, bd = range * range;
+    // (Distance first: only food nearer than the best so far is checked for being stranded on dry island or filtered.)
     for (const f of this.food) {
-      if (f.eaten || (this.islandGround && islandAt(this, f.x, f.y) && isDry(this, f.x, f.y)) || (filter && !filter(f))) continue;
+      if (f.eaten) continue;
       const d = (f.x - x) ** 2 + (f.y - y) ** 2;
-      if (d < bd) { bd = d; best = f; }
+      if (d >= bd || (this.islandGround && islandAt(this, f.x, f.y) && isDry(this, f.x, f.y)) || (filter && !filter(f))) continue;
+      bd = d; best = f;
     }
     return best;
   },
@@ -501,8 +503,14 @@ function update(dt) {
     if (world.grab && (world.grab.gone || world.grab.caught)) release();
     world.creatures = world.creatures.filter((c) => !c.gone && !c.caught);
   }
-  for (const p of world.plants) p.update(dt, world);
-  for (const p of world.pads) p.update(dt, world);
+  // Plants and pads in view move every frame; those out of it catch up in steps of about 0.15 s
+  // (a big pond's thousands of plants swaying unseen cost more than everything that could be seen).
+  const vr = visibleRect(), pad = 48, inView = (p) => p.x > vr[0] - pad && p.x < vr[2] + pad && p.y > vr[1] - pad && p.y < vr[3] + pad;
+  for (const list of [world.plants, world.pads]) for (const p of list) {
+    if (inView(p)) { if (p.lag) { p.update(Math.min(0.15, p.lag), world); p.lag = 0; } p.update(dt, world); continue; }
+    p.lag = (p.lag || 0) + dt;
+    if (p.lag >= 0.15) { p.update(Math.min(0.15, p.lag), world); p.lag = 0; }
+  }
   updateStructures(world, dt);
   updateBuildAnims(dt);
   updatePlantLife(world, dt);
@@ -656,7 +664,7 @@ function render(full = false) {
   else ctx.putImageData(image, 0, 0, rect[0], rect[1], rect[2] - rect[0] + 1, rect[3] - rect[1] + 1);
   if (meshReady) {
     const waterRect = full ? visibleRect() : rect;
-    if (!drawWaterMesh(canvas, world, waterState, waterRect)) {
+    if (!drawWaterMesh(canvas, world, waterState, waterRect, image)) {
       // A context/texture failure must never cover the pond with an empty layer.
       renderWater3D(out, world, waterRect, waterState);
       ctx.putImageData(image, 0, 0, waterRect[0], waterRect[1], waterRect[2] - waterRect[0] + 1, waterRect[3] - waterRect[1] + 1);
@@ -2921,7 +2929,48 @@ function syncControls() {
 //    becomes your own copy, with its own score.
 //  - ?pond=<name> you have saved: yours. One you don't have starts on day 1.
 //  - no link: the pond you last had open, or a brand-new one.
+// ---- the entry screen's card (index.html): a small rendering of the whole pond, and what it is -------------
+// Each preview pixel is the pond as the minimap paints it: water tinted and darkened with depth, dry land
+// sunlit; with the animals as bright points.
+function pondPreview(maxW = 180, maxH = 110) {
+  const { W, H, bg, bgDry, shore } = world;
+  if (!bg || !W || !H) return null;
+  const k = Math.min(maxW / W, maxH / H, 1), w = Math.max(1, Math.round(W * k)), h = Math.max(1, Math.round(H * k));
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const g = cv.getContext('2d'), img = g.createImageData(w, h), out = new Uint32Array(img.data.buffer);
+  const water = world.waterColor, deep = DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed, tideL = shore ? world.tide.level * 255 : Infinity;
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    const p = Math.min(W - 1, Math.floor((i + 0.5) / k)) + Math.min(H - 1, Math.floor((j + 0.5) / k)) * W;
+    out[i + j * w] = (shore && shore[p] > tideL ? (bgDry ? bgDry[p] : mixColor(bg[p], SUN_DRY, 0.18))
+      : mixColor(mixColor(bg[p], water, 0.45), deep, ((world.depth ? world.depth[p] : 0) / 255) * 0.85)) | 0xff000000;
+  }
+  g.putImageData(img, 0, 0);
+  for (const c of world.creatures) {
+    if (!c.life || c.gone) continue;
+    g.fillStyle = c.life.mind ? '#ffd166' : c.life.traits && c.life.traits.length ? '#ff9aff' : '#e8f4f2';
+    g.fillRect(Math.floor(c.x * k), Math.floor(c.y * k), 1, 1);
+  }
+  return cv;
+}
+function entryInfo(observe) {
+  const G = world.game || {}, animals = world.creatures.filter((c) => c.life && !c.ambient), kinds = new Set(animals.map((c) => c.species)).size;
+  const minds = animals.filter((c) => c.life.mind).length, tier = (world.erosion && world.erosion.tier) || 0;
+  const depthName = typeof tierName === 'function' && world.erosion ? tierName(world, tier) : '';
+  const facts = [`Day ${Math.floor(world.days || 0) + 1}`, world.erosion ? `${fmt(pondFathoms(world))} fathoms` : null, ({ fresh: 'fresh water', salt: 'salt water', mixed: 'fresh and salt water' })[world.opts.habitat] || null,
+    `${animals.length} animals of ${kinds} kinds`, minds ? `${minds} awakened` : null].filter(Boolean).join(' · ');
+  const fresh = !world.resume;
+  const blurb = observe ? `Someone else's pond, to look around in. Nothing here is yours to touch.`
+    : fresh ? 'A new pond, just filled. Feed what arrives, plant and build, and it will deepen as it lives.'
+      : `${depthName ? `Its deepest water is ${depthName.toLowerCase()}. ` : ''}It kept living while you were away; feed it, build it, follow its animals.`;
+  return { name: pondTitle(world), facts, blurb, preview: pondPreview(), skip: !!observe, button: observe ? 'Look around' : fresh ? 'Fill it with life' : 'Dive in' };
+}
+// Let the entry screen paint its next line before a long, blocking step. (A frame, or 60 ms at most: a
+// background tab gets no frames, and loading must not wait for it to be looked at.)
+const entryPaint = () => new Promise((resolve) => { let done = false; const go = () => { if (!done) { done = true; resolve(); } };
+  requestAnimationFrame(() => setTimeout(go, 0)); setTimeout(go, 60); });
+
 async function boot() {
+  if (window.Entry) Entry.status('Finding the pond…', 0.62);
   setTool('pointer');
   initHud();
   const meP = Net.base ? fetchMe() : Promise.resolve(Account); // (who's signed in, if anyone)
@@ -2997,6 +3046,7 @@ async function boot() {
     world.autoSize = (resume.base || resume.size).slice();
   }
   syncControls();
+  if (window.Entry) { Entry.status(resume ? 'Filling the pond…' : 'Digging a new pond…', 0.75); await entryPaint(); }
   layout(true);
   world.linkAdopt = false;
   const vx = Number(params.get('x')), vy = Number(params.get('y')), vz = Number(params.get('z')), vr = Number(params.get('r'));
@@ -3052,6 +3102,7 @@ async function boot() {
   if (observe) { /* keep the address: it names the pond you're looking at */ } else if (HOME === '/') updateLink(); else history.replaceState(null, '', `${HOME}${new URL(shareUrl()).search}`);
   syncTimer = world.link ? 30 : adopt ? 2 : 8; // a pond without a link gets one in a few seconds
   requestAnimationFrame(frame);
+  if (window.Entry) { Entry.status('Waking the animals…', 0.95); await entryPaint(); Entry.ready(entryInfo(observe)); }
   // Back from signing in (or not); either way, your ponds go into your account.
   const login = params.get('login');
   meP.then(async () => {

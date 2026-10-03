@@ -104,6 +104,29 @@ function makeCreature(kind, world, x, y, args = {}, seed) {
 
 // Something frightening at (x, y): run from it for a while. Fish steer away from
 // it (their dread); everything else picks somewhere well away to be.
+// A coarse grid of the rocks, rebuilt when the rock list changes: creatures and rolling marimo look only nearby
+// (every animal checking every rock every frame was a cost that grew with both).
+const ROCK_CELL = 32;
+function rockGrid(world) {
+  const R = world.rocks || [], G = world.rockGrid;
+  if (G && G.src === R && G.n === R.length) return G;
+  const cols = Math.ceil(world.W / ROCK_CELL) + 1, cells = new Map();
+  let maxR = 0;
+  for (const r of R) {
+    maxR = Math.max(maxR, r.a || 0, r.b || 0);
+    const k = ((r.x / ROCK_CELL) | 0) + ((r.y / ROCK_CELL) | 0) * cols;
+    let list = cells.get(k);
+    if (!list) cells.set(k, (list = []));
+    list.push(r);
+  }
+  return (world.rockGrid = { src: R, n: R.length, cols, cells, maxR });
+}
+function forRocksNear(world, x, y, reach, fn) {
+  const G = rockGrid(world), r = reach + G.maxR;
+  const c0 = Math.max(0, ((x - r) / ROCK_CELL) | 0), c1 = ((x + r) / ROCK_CELL) | 0, r0 = Math.max(0, ((y - r) / ROCK_CELL) | 0), r1 = ((y + r) / ROCK_CELL) | 0;
+  for (let cy = r0; cy <= r1; cy++) for (let cx = c0; cx <= c1; cx++) { const list = G.cells.get(cx + cy * G.cols); if (list) for (const rk of list) fn(rk); }
+}
+
 function startle(world, o, x, y, secs) {
   if (typeof animFlee === 'function') animFlee(world, o);
   const dx = o.x - x, dy = o.y - y, d = Math.hypot(dx, dy) || 1, run = rand(60, 130);
@@ -165,15 +188,15 @@ class Creature {
         fx -= nx * f; fy -= ny * f;
       }
     }
-    for (const r of world.rocks) {
-      if (r.h + 2 < clearZ) continue;
+    forRocksNear(world, this.x, this.y, 6, (r) => {
+      if (r.h + 2 < clearZ) return;
       const dx = this.x - r.x, dy = this.y - r.y, d = Math.hypot(dx, dy) || 1;
       const lim = Math.max(r.a, r.b) + 6;
       if (d < lim) {
         const f = (lim - d) / lim * 1.6;
         fx += dx / d * f; fy += dy / d * f;
       }
-    }
+    });
     return [fx, fy];
   }
 

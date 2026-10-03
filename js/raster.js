@@ -23,6 +23,8 @@ class Raster {
     this.zBase = new Float32Array(n); // static scenery heights (rocks, pebbles), floor = 0
     this.id = new Uint16Array(n);
     this.sh = new Uint8Array(n);      // tallest caster whose shadow lands here
+    // Each row's span of drawn pixels (ids): compose skips the outline search on floor far from anything.
+    this.rowMin = new Int32Array(H).fill(W); this.rowMax = new Int32Array(H).fill(-1);
     this.alpha = 1;                   // < 1 draws an ordered-dither fraction of pixels (fades)
     this.castShadows = true;
     this.clip = [0, 0, W - 1, H - 1]; // only this rectangle is rasterized (the visible part)
@@ -39,7 +41,8 @@ class Raster {
   // Clear the frame, only as far as the clip (compose only reads inside it; a big pond needn't wipe it all).
   begin() {
     const [x0, y0, x1, y1] = this.clip, W = this.W;
-    if (x0 === 0 && y0 === 0 && x1 === W - 1 && y1 === this.H - 1) { this.z.set(this.zBase); this.id.fill(0); this.sh.fill(0); return; }
+    if (x0 === 0 && y0 === 0 && x1 === W - 1 && y1 === this.H - 1) { this.z.set(this.zBase); this.id.fill(0); this.sh.fill(0); this.rowMin.fill(W); this.rowMax.fill(-1); return; }
+    this.rowMin.fill(W, y0, y1 + 1); this.rowMax.fill(-1, y0, y1 + 1);
     for (let y = y0; y <= y1; y++) {
       const a = x0 + y * W, b = x1 + 1 + y * W;
       this.z.set(this.zBase.subarray(a, b), a); this.id.fill(0, a, b); this.sh.fill(0, a, b);
@@ -62,6 +65,8 @@ class Raster {
     this.col[p] = m[l < 0.3 ? 0 : l < 0.55 ? 1 : l < 0.88 ? 2 : 3];
     this.z[p] = h;
     this.id[p] = id;
+    if (x < this.rowMin[y]) this.rowMin[y] = x;
+    if (x > this.rowMax[y]) this.rowMax[y] = x;
   }
 
   // Tapered capsule from a to b. Radii ar/br, base heights az/bz, hs = height
@@ -215,6 +220,7 @@ class Raster {
   //   and surf that rolls in toward it; shallow water is clearer
   // - an optional light tint (emissive ids resist it: level 1 half, level 2 fully)
   compose(out, s, rect = [0, 0, this.W - 1, this.H - 1]) {
+    const WAVE_EDGE_LO = 40, WAVE_EDGE_HI = 80; // (shore units either side of the tide that a crest's wet edge can reach)
     const { W, H, id, col, z, zBase, sh } = this;
     const { bg, bgLight, caustic, outline, emissive, tint, fade, thick, wob, fog } = s;
     // The floor where the caustics light it, and the sunlit dry beach: blended from the floor as it's
@@ -277,14 +283,20 @@ class Raster {
     const meshWaves = s.waveMode === 'mesh';
     const hdWaves = surfaceVis > 0 && (s.waveMode === 'hd' || meshWaves) && typeof waveField === 'function';
     const physical = hdWaves ? waveField({ ...s, t: s.waveT ?? s.t }) : null, surface = hdWaves ? new Float32Array(4) : null;
-    const [rx0, ry0, rx1, ry1] = rect;
+    const [rx0, ry0, rx1, ry1] = rect, rowMin = this.rowMin, rowMax = this.rowMax, ring = anyThick ? 2 : 1;
     for (let y = ry0; y <= ry1; y++) {
+      // (The outline search reaches one pixel, or two for a thick outline: only near this row's or a neighbour's drawn span.)
+      let oLo = W, oHi = -1;
+      for (let yy = Math.max(0, y - ring); yy <= Math.min(H - 1, y + ring); yy++) { if (rowMin[yy] < oLo) oLo = rowMin[yy]; if (rowMax[yy] > oHi) oHi = rowMax[yy]; }
+      oLo -= ring; oHi += ring;
       for (let x = rx0, p = rx0 + y * W; x <= rx1; x++, p++) {
         const i = id[p];
-        // With a mesh, only the moving shoreline needs a CPU surface sample.
-        // Open water is evaluated once by the GPU (or software fallback).
-        if (hdWaves && (!meshWaves || shore && shore[p])) waveAt(physical, x, y, p, surface);
-        const localTide = hdWaves && shore && shore[p] ? tideL + surface[0] * 2.5 * surfaceVis : tideL;
+        // With a mesh, only the moving shoreline needs a CPU surface sample, and only near the tide line:
+        // the sample only shifts the wet edge (by well under WAVE_EDGE_LO/HI), so ground far above or
+        // below it is dry or wet either way. Open water is evaluated once by the GPU (or software fallback).
+        const edge = hdWaves && shore && shore[p] && shore[p] > tideL - WAVE_EDGE_LO && shore[p] < tideL + WAVE_EDGE_HI;
+        if (hdWaves && (!meshWaves || edge)) waveAt(physical, x, y, p, surface);
+        const localTide = edge ? tideL + surface[0] * 2.5 * surfaceVis : tideL;
         let c, n, depth, fogScale = 1, waveS = 0, waveC = 0, refl = 0, dry = false, stroke = 0;
         if (shore) {
           const sp = shore[p];
@@ -293,7 +305,7 @@ class Raster {
         if (i === 0) {
           const zb = zBase[p];
           let best = 0, bz = zb + 0.5;
-          if (doOutlines) {
+          if (doOutlines && x >= oLo && x <= oHi) {
             if (x > 0 && id[n = p - 1] && (!fineCreature || !fineCreature[id[n]]) && z[n] > bz) { best = id[n]; bz = z[n]; }
             if (x < W - 1 && id[n = p + 1] && (!fineCreature || !fineCreature[id[n]]) && z[n] > bz) { best = id[n]; bz = z[n]; }
             if (y > 0 && id[n = p - W] && (!fineCreature || !fineCreature[id[n]]) && z[n] > bz) { best = id[n]; bz = z[n]; }

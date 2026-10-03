@@ -169,10 +169,10 @@ class Marimo {
     this.vx += tx * 40 * dt; this.vy += ty * 40 * dt;
     const k = 1 - Math.min(1, dt * 1.5);
     this.vx *= k; this.vy *= k;
-    for (const rk of world.rocks) {
+    forRocksNear(world, this.x, this.y, this.r, (rk) => {
       const dx = this.x - rk.x, dy = this.y - rk.y, d = Math.hypot(dx, dy) || 1, lim = Math.max(rk.a, rk.b) + this.r;
       if (d < lim) { this.x = rk.x + dx / d * lim; this.y = rk.y + dy / d * lim; this.vx += dx / d * 2; this.vy += dy / d * 2; }
-    }
+    });
     this.x += this.vx * dt; this.y += this.vy * dt;
     if (this.x < this.r || this.x > world.W - this.r) this.vx = -this.vx;
     if (this.y < this.r || this.y > world.H - this.r) this.vy = -this.vy;

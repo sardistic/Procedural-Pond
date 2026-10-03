@@ -186,7 +186,7 @@ function placeWaterMesh() {
     cv.style.transform = `translate(${x}px, ${y}px) scale(${view.k}) rotate(${view.r * 90}deg)`;
   }
 }
-function drawWaterMesh(scene, w, state, rect) {
+function drawWaterMesh(scene, w, state, rect, img = null) {
   if (!waterMeshAvailable()) return false;
   const G = WATER_GPU, gl = G.gl;
   // Large old ponds can be longer than MAX_TEXTURE_SIZE. Keep both the mesh
@@ -197,10 +197,10 @@ function drawWaterMesh(scene, w, state, rect) {
   const x1 = Math.min(w.W, Math.ceil((rect[2] + margin + 1) / snap) * snap);
   const y1 = Math.min(w.H, Math.ceil((rect[3] + margin + 1) / snap) * snap);
   const W = x1 - x0, H = y1 - y0;
-  const maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+  const maxSize = G.maxSize || (G.maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE));
   if (!W || !H || W > maxSize || H > maxSize) { hideWaterMesh(); return false; }
   if (G.W !== W || G.H !== H || G.x !== x0 || G.y !== y0) {
-    G.W = W; G.H = H; G.x = x0; G.y = y0; G.cv.width = W; G.cv.height = H;
+    G.W = W; G.H = H; G.x = x0; G.y = y0; G.cv.width = W; G.cv.height = H; G.frames = 0;
     G.cv.style.width = `${W}px`; G.cv.style.height = `${H}px`;
     const step = Math.max(2, Math.ceil(Math.max(W, H) / 380)), cols = Math.ceil(W / step), rows = Math.ceil(H / step);
     const verts = new Float32Array((cols + 1) * (rows + 1) * 2), faces = new Uint32Array(cols * rows * 6);
@@ -216,10 +216,18 @@ function drawWaterMesh(scene, w, state, rect) {
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, G.textures[0]);
   // Typed rows begin at the top of the tile; texture v=0 therefore reads
-  // that top row, matching the world coordinates in the shader.
-  const source = scene.getContext('2d').getImageData(x0, y0, W, H);
+  // that top row, matching the world coordinates in the shader. The tile is uploaded straight out of the
+  // pond's own image buffer (row length and skips select it), rather than read back from the canvas.
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, source.data);
+  if (img && img.width === w.W) {
+    const bytes = G.bytes && G.bytes.buffer === img.data.buffer ? G.bytes : (G.bytes = new Uint8Array(img.data.buffer, img.data.byteOffset, img.data.byteLength));
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, w.W); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, x0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, y0);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+  } else {
+    const source = scene.getContext('2d').getImageData(x0, y0, W, H);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, source.data);
+  }
   if (G.terrain !== w.shore || G.depth !== w.depth || G.river !== w.riverMask || performance.now() - (G.terrainAt || 0) > 2000) {
     const flat = new Uint8Array(W * H);
     for (let i = 1; i <= 2; i++) {
@@ -241,19 +249,23 @@ function drawWaterMesh(scene, w, state, rect) {
   }
   const F = waveField({ t: state.time ?? waveTime(w), swell: state.swell, swellDir: w.shore ? w.shoreN : [0.8, 0.6], gust: w.weather.gust,
     rain: w.weather.rain, surf: w.tide.surf, tide: w.tide.level, shore: w.shore, depth: w.depth, riverMask: w.riverMask });
-  const set1 = (name, value) => gl.uniform1f(gl.getUniformLocation(G.program, name), value);
-  const set2 = (name, x, y) => gl.uniform2f(gl.getUniformLocation(G.program, name), x, y);
+  // (Uniform locations are looked up once.)
+  const U = G.uniforms || (G.uniforms = {}), loc = (name) => U[name] ?? (U[name] = gl.getUniformLocation(G.program, name));
+  const set1 = (name, value) => gl.uniform1f(loc(name), value);
+  const set2 = (name, x, y) => gl.uniform2f(loc(name), x, y);
   set2('u_size', W, H); set2('u_origin', x0, y0); set2('u_dir', F.x, F.y);
   for (const [name, value] of Object.entries({ u_t: F.t, u_k: F.k, u_omega: F.omega, u_amp: F.amp,
     u_chop: F.chop, u_surf: F.surf, u_tide: F.tide, u_visibility: state.visibility,
     u_day: 1 - (state.darkness || 0), u_rain: w.weather.rain || 0 })) set1(name, value);
-  const sky = state.sky; gl.uniform3f(gl.getUniformLocation(G.program, 'u_sky'), (sky & 255) / 255, (sky >> 8 & 255) / 255, (sky >>> 16 & 255) / 255);
+  const sky = state.sky; gl.uniform3f(loc('u_sky'), (sky & 255) / 255, (sky >> 8 & 255) / 255, (sky >>> 16 & 255) / 255);
   const water = w.waterColor || 0xff7c6a1b;
-  gl.uniform3f(gl.getUniformLocation(G.program, 'u_water'), (water & 255) / 255, (water >> 8 & 255) / 255, (water >>> 16 & 255) / 255);
+  gl.uniform3f(loc('u_water'), (water & 255) / 255, (water >> 8 & 255) / 255, (water >>> 16 & 255) / 255);
   gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
   gl.drawElements(gl.TRIANGLES, G.count, gl.UNSIGNED_INT, 0);
-  if (gl.getError() !== gl.NO_ERROR) { G.failed = true; hideWaterMesh(); return false; }
+  // (getError stalls the pipeline: checked on the first frames after a tile change, then now and then.)
+  G.frames = (G.frames || 0) + 1;
+  if ((G.frames < 4 || G.frames % 120 === 0) && gl.getError() !== gl.NO_ERROR) { G.failed = true; hideWaterMesh(); return false; }
   G.cv.hidden = false; placeWaterMesh();
   return true;
 }
