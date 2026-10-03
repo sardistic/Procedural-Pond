@@ -362,44 +362,50 @@ function mindBrainPanel(c) {
   mindDrawBrain(cv, c);
   return cv;
 }
-// The card's section: the live brain, what drives it to fight, and what it has learned.
+// The card's mind section, in two parts: what shows at once (the live brain, a colour key, its fight drive
+// with the reasons in a tooltip, its rival) and what folds away (what it has learned, its experience).
 function mindPlayCard(w, c) {
-  const L = c.life, box = el('section', 'mind-play');
-  box.setAttribute('aria-label', 'Brain activity and learning');
-  box.append(el('b', null, 'Brain at work'), mindBrainPanel(c));
-  box.append(el('p', 'note mind-legend', 'Senses: red rivals and prey · orange danger · green food · blue its kind · teal cover.'));
-  const d = c.mind?.drive || mindFightDrive(w, c), pct = (n) => `${n > 0 ? '+' : ''}${Math.round(n * 100)}`;
-  const fight = el('p', 'note', `Fight drive ${Math.round(d.value * 100)}%${d.value < MIND_FIGHT.threshold ? ' (too calm to pick fights)' : ''}: ` +
-    d.parts.map(([k, v]) => `${k} ${pct(v)}`).join(' · '));
-  const rival = c.mind?.rival;
-  box.append(fight);
-  if (rival && mindHere(rival)) box.append(el('p', 'note', `Rival: ${rival.life?.name || ''} the ${SINGULAR[rival.species] || rival.species}${rival.life?.mind ? ' (another mind)' : ''}`));
-  const M = L.mindLearn;
-  if (M) {
-    const gains = MIND_LEARN_KEYS.filter((k) => Math.abs((M.g[k] ?? 1) - 1) >= 0.05).map((k) => `${MIND_LEARN_LABEL[k]} ×${(M.g[k]).toFixed(2)}`);
-    const feelings = Object.entries(M.sp).filter(([, v]) => Math.abs(v) >= 0.1).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 4)
-      .map(([k, v]) => `${SINGULAR[k] || k} ${v > 0 ? 'as easy prey' : 'as danger'}`);
-    box.append(el('p', 'note', `Record: ${M.wins || 0} won · ${M.losses || 0} lost${gains.length ? ` · learned to weigh ${gains.join(', ')}` : ''}`));
-    if (feelings.length) box.append(el('p', 'note', `Has learned to see ${feelings.join(', ')}`));
-    if (M.notes.length) {
-      const list = el('ol', 'mind-lessons');
-      for (const n of M.notes.slice(-3).reverse()) {
-        const row = el('li'), time = el('time', null, new Date(n.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-        time.dateTime = new Date(n.at).toISOString();
-        row.append(time, el('span', null, `${MIND_NOTE[n.kind]}${n.species ? ` a ${(SINGULAR[n.species] || n.species).toLowerCase()}` : ''}${n.kind === 'lose' || n.kind === 'hurt' ? ' · warier' : n.kind === 'fed' ? '' : ' · bolder'}`));
-        list.append(row);
-      }
-      box.append(list);
-    }
-  } else box.append(el('p', 'note', 'Nothing learned yet: food, fights and danger will shape how it senses.'));
-  if (typeof forageTier === 'function') {
-    const t = forageTier(c), n = forageHunts(c), next = FORAGE_TIERS[t + 1], P = (M && M.prey) || {};
-    box.append(el('p', 'note', `Experience: ${FORAGE_TIERS[t].name} (${n} hunts and fights): ${FORAGE_TIERS[t].note}${next ? `. ${capFirst(next.name)} at ${next.hunts}` : ''}`));
-    const known = Object.entries(P).sort((a, b) => b[1].n - a[1].n).slice(0, 5).map(([k, s]) => {
-      const v = s.gain * (0.5 + clamp(1 - L.energy, 0, 1)) - s.harm;
-      return `${(SINGULAR[k] || k).toLowerCase()} worth ${s.gain.toFixed(2)}, costs ${s.harm.toFixed(2)} (${s.n})${s.n >= 2 && v < -0.05 ? ', avoids' : ''}`;
-    });
-    if (known.length) box.append(el('p', 'note', `Knows: ${known.join(' · ')}`));
+  const L = c.life, box = el('div', 'mind-play');
+  box.setAttribute('aria-label', 'Brain activity');
+  box.append(mindBrainPanel(c));
+  const key = el('div', 'mind-key');
+  for (const [label, col] of [['rivals and prey', '#ff4a5a'], ['danger', '#ff9a3a'], ['food', '#7dff8a'], ['its kind', '#5aa8ff'], ['cover', '#3ad6b8']]) {
+    const sw = el('span'); sw.style.setProperty('--sw', col); sw.append(document.createTextNode(label)); key.append(sw);
   }
+  box.append(key);
+  const d = c.mind?.drive || mindFightDrive(w, c), pct = (n) => `${n > 0 ? '+' : ''}${Math.round(n * 100)}`;
+  const fight = el('p', 'note', `Fight drive ${Math.round(d.value * 100)}%${d.value < MIND_FIGHT.threshold ? ', too calm to pick fights' : ''}`);
+  fight.title = ['What drives it to fight:', ...d.parts.map(([k, v]) => `${k} ${pct(v)}`)].join('\n');
+  const rival = c.mind?.rival;
+  if (rival && mindHere(rival)) fight.append(document.createTextNode(` · rival: ${rival.life?.name || ''} the ${SINGULAR[rival.species] || rival.species}${rival.life?.mind ? ' (a mind)' : ''}`));
+  if (typeof forageTier === 'function') fight.append(document.createTextNode(` · ${FORAGE_TIERS[forageTier(c)].name}`));
+  box.append(fight);
   return box;
+}
+// What it has learned, for a fold of its own.
+function mindLearnedParts(w, c) {
+  const L = c.life, M = L.mindLearn, out = [];
+  if (typeof forageTier === 'function') {
+    const t = forageTier(c), n = forageHunts(c), next = FORAGE_TIERS[t + 1];
+    out.push(el('p', 'note', `${capFirst(FORAGE_TIERS[t].name)} after ${n} hunts and fights: ${FORAGE_TIERS[t].note}${next ? `. ${capFirst(next.name)} at ${next.hunts}.` : '.'}`));
+  }
+  if (!M) { out.push(el('p', 'note', 'Nothing learned yet: food, fights and danger will shape how it senses.')); return out; }
+  const gains = MIND_LEARN_KEYS.filter((k) => Math.abs((M.g[k] ?? 1) - 1) >= 0.05).map((k) => `${MIND_LEARN_LABEL[k]} ×${(M.g[k]).toFixed(2)}`);
+  out.push(el('p', 'note', `${M.wins || 0} fights won, ${M.losses || 0} lost${gains.length ? `. Weighs ${gains.join(', ')}` : ''}`));
+  const known = Object.entries(M.prey || {}).sort((a, b) => b[1].n - a[1].n).slice(0, 5).map(([k, s]) => {
+    const v = s.gain * (0.5 + clamp(1 - L.energy, 0, 1)) - s.harm, fe = M.sp[k] || 0;
+    return `${(SINGULAR[k] || k).toLowerCase()}: worth ${s.gain.toFixed(2)}, costs ${s.harm.toFixed(2)} (${s.n})${s.n >= 2 && v < -0.05 ? ', avoids' : fe > 0.1 ? ', easy prey' : fe < -0.1 ? ', danger' : ''}`;
+  });
+  if (known.length) { const ul = el('ul', 'mind-known'); for (const k of known) ul.append(el('li', null, k)); out.push(ul); }
+  if (M.notes.length) {
+    const list = el('ol', 'mind-lessons');
+    for (const n of M.notes.slice(-3).reverse()) {
+      const row = el('li'), time = el('time', null, new Date(n.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      time.dateTime = new Date(n.at).toISOString();
+      row.append(time, el('span', null, `${MIND_NOTE[n.kind]}${n.species ? ` a ${(SINGULAR[n.species] || n.species).toLowerCase()}` : ''}${n.kind === 'lose' || n.kind === 'hurt' ? ' · warier' : n.kind === 'fed' ? '' : ' · bolder'}`));
+      list.append(row);
+    }
+    out.push(list);
+  }
+  return out;
 }

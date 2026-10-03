@@ -1151,7 +1151,7 @@ function renderSpawnCard() {
 const masteryTip = (k, lv, max) => (typeof MASTERY_LOOKS === 'undefined' || !MASTERY_LOOKS[k] ? '' : lv >= max ? `. Built all the way: ${MASTERY_LOOKS[k]}` : `. At level ${max} it shows: ${MASTERY_LOOKS[k]}`);
 // Opened by clicking an animal, and shown automatically while following or touring.
 
-const creatureUi = { c: null, auto: false, timer: 0, rec: null, more: false, logMore: false, neuralMore: false };
+const creatureUi = { c: null, auto: false, timer: 0, rec: null, more: false, logMore: false, tab: 'about', open: new Set() };
 const LOCUS_INFO = {
   albino: ['albino', 'recessive'], melanistic: ['melanistic', 'recessive'], piebald: ['piebald', 'recessive'],
   xanthic: ['xanthic', 'recessive'], axanthic: ['axanthic', 'recessive'], leu: ['leucistic', 'incomplete'],
@@ -1177,7 +1177,7 @@ function showCreature(c, auto = false) {
   if (!c || !c.life) return;
   if (auto && creatureUi.c && !creatureUi.auto && alive(creatureUi.c)) return; // don't replace one you opened
   if (!auto) closeWindows('creature');
-  if(creatureUi.c!==c){creatureUi.more=false;creatureUi.logMore=false;creatureUi.neuralMore=false;}
+  if(creatureUi.c!==c){creatureUi.more=false;creatureUi.logMore=false;}
   creatureUi.c = c;
   creatureUi.auto = auto;
   creatureUi.rec = world.lineage && world.lineage.get(c.seed);
@@ -1247,134 +1247,92 @@ function familyTree(rec) {
   return { svg, parents, kids };
 }
 
-function renderCreature() {
-  const c = creatureUi.c, box = byId('creature');
-  if (!c) return;
-  const here = alive(c), L = c.life, d = describe(c), rec = creatureUi.rec || (world.lineage && world.lineage.get(c.seed));
-  const parts = [];
-  const head = el('header', 'cr-head'), nm = el('b', null, d.name);
-  nm.style.color = d.tier ? TIER_COLOR[d.tier] : 'var(--hot)';
-  const close = el('button', 'icon', '×');
-  close.type = 'button';
-  close.setAttribute('aria-label', 'Close');
-  close.addEventListener('click', hideCreature);
-  head.append(nm, d.tier ? chip(TIERS[d.tier], TIER_COLOR[d.tier]) : el('span'), close);
-  parts.push(head);
-  const water = waterOf(c), mm = mismatch(world, c), a = aggressionAt(world, c.x, c.y);
-  parts.push(colored('p', 'cr-sub', `${d.label} · ${d.stage} · gen ${d.gen} · ${ageLabel(L.age)} of ~${Math.round(L.lifespan / 60)}m`));
+// The creature window: its header, vitals and actions always in view; the rest in tabs (About, Mind, Grow,
+// Genes, Family), the longer parts folded. It is rebuilt twice a second, so the open tab, the folds, focus
+// and scroll position are kept across rebuilds.
+const CR_TABS = [['about', 'About'], ['mind', 'Mind'], ['grow', 'Grow'], ['genes', 'Genes'], ['family', 'Family']];
+const CR_SHORT = { typesafe: 'Jev', 'fly-brain': 'Fly', 'fish-brain': 'Fish', 'hybrid-brain': 'Jev + Fish' };
+function crFold(key, summary, children) {
+  const fold = el('details', 'cr-fold');
+  fold.open = creatureUi.open.has(key);
+  fold.addEventListener('toggle', () => { if (fold.open) creatureUi.open.add(key); else creatureUi.open.delete(key); });
+  const s = el('summary', null, summary);
+  s.dataset.focusKey = `fold:${key}`;
+  fold.append(s, ...children);
+  return fold;
+}
+function crMeter(label, value, cls, title) {
+  const m = el('div', 'cr-meter'), bar = el('div', `bar${cls ? ` ${cls}` : ''}`), fill = el('i'), pct = Math.round(clamp(value, 0, 1) * 100);
+  fill.style.width = `${pct}%`;
+  bar.append(fill);
+  m.title = title || `${label} ${pct}%`;
+  m.append(el('span', null, label), bar, el('b', null, `${pct}%`));
+  return m;
+}
+function crButton(text, cls, focusKey, onClick) {
+  const b = el('button', cls, text);
+  b.type = 'button';
+  if (focusKey) b.dataset.focusKey = focusKey;
+  if (onClick) b.addEventListener('click', onClick);
+  return b;
+}
+
+function crActions(c, d) {
+  const acts = el('div', 'cr-acts');
+  const f = crButton(cam.follow === c ? 'Following' : 'Follow', null, 'act:follow', () => { cam.tour = false; byId('tour').setAttribute('aria-pressed', false); follow(c); });
+  f.title = 'Follow\nThe camera rides along with it (F). Esc or dragging stops.';
+  const keep = crButton(isSafe(c) ? '🔒 Kept safe' : 'Keep safe', isSafe(c) ? 'keep on' : 'keep', 'act:keep', () => { toggleSafe(c); renderCreature(); });
+  keep.title = isSafe(c) ? 'Kept safe from recycling (the Net and recycle all skip it). Click to unmark' : 'Keep this animal safe from recycling';
+  const r = crButton('', 'recycle', 'act:recycle', () => {
+    if (d.tier >= 3 && !confirm(`Recycle ${d.name}, a ${TIERS[d.tier]} ${d.label}? It will be gone for good.`)) return;
+    recycle(c);
+    renderCreature();
+  });
+  r.append(document.createTextNode('Recycle +'), el('i', 'essence'), document.createTextNode(String(recycleValue(c))));
+  r.title = 'Return this animal to the pond for essence';
+  r.disabled = isSafe(c);
+  acts.append(f, keep, r);
+  if (world.hatchery && BREED[c.species === 'tadpole' ? 'frog' : c.species] && c.species !== 'tadpole') {
+    const h = crButton('To hatchery', 'to-hatch', 'act:hatch', () => {
+      const why = stockHatchery(world, c);
+      if (why) { showTicker(why); return; }
+      hideCreature();
+      setHatchery(true);
+    });
+    h.title = 'Move it into the hatchery as one of the breeding pair';
+    acts.append(h);
+  }
+  return acts;
+}
+
+function crAbout(c, d, here, rec) {
+  const L = c.life, out = [];
   const speciesNote = typeof SPECIES_NOTES !== 'undefined' && SPECIES_NOTES[c.species];
-  if(speciesNote){
-    const preview=speciesNote.length>64 ? speciesNote.slice(0,64).replace(/\s+\S*$/,'').replace(/[,;:.]$/,'')+'…' : speciesNote;
-    const description=el('div','cr-description');
-    description.append(colored('p',null,creatureUi.more?speciesNote:preview));
-    if(preview!==speciesNote){
-      const more=el('button','cr-more',creatureUi.more?'View less':'View more');more.type='button';
-      more.setAttribute('aria-expanded',String(creatureUi.more));
-      more.addEventListener('click',()=>{creatureUi.more=!creatureUi.more;renderCreature();});description.append(more);
+  if (speciesNote) {
+    const preview = speciesNote.length > 64 ? speciesNote.slice(0, 64).replace(/\s+\S*$/, '').replace(/[,;:.]$/, '') + '…' : speciesNote;
+    const description = el('div', 'cr-description');
+    description.append(colored('p', null, creatureUi.more ? speciesNote : preview));
+    if (preview !== speciesNote) {
+      const more = crButton(creatureUi.more ? 'Less' : 'More', 'cr-more', 'about:more', () => { creatureUi.more = !creatureUi.more; renderCreature(); });
+      more.setAttribute('aria-expanded', String(creatureUi.more));
+      description.append(more);
     }
-    parts.push(description);
+    out.push(description);
   }
-  if (!here) {
-    parts.push(colored('p', 'cr-gone', rec && rec.d != null ? `No longer in the pond: left on day ${Math.floor(rec.d) + 1}${rec.why ? ` (${rec.why})` : ''}` : 'No longer in the pond'));
-  } else {
-    const bar = el('div', 'bar'), fill = el('i');
-    fill.style.width = `${Math.round(L.energy * 100)}%`;
-    bar.append(fill);bar.title = `Fullness ${Math.round(L.energy * 100)}%`;
-    const hp = L.hp ?? 1, hpBar = el('div', 'bar hp'), hpFill = el('i');
-    hpFill.style.width = `${Math.round(hp * 100)}%`;hpBar.append(hpFill);hpBar.title = `Health ${Math.round(hp * 100)}%`;
-    hpBar.classList.toggle('low', hp <= 0.3);hpBar.classList.toggle('mid', hp > 0.3 && hp <= 0.6);
-    parts.push(hpBar);
-    const growth = [`Health ${Math.round(hp * 100)}%`, `size ${Math.round(100 + 100 * (L.grown || 0))}% from feeding`,
-      L.meals ? `${L.meals} meals` : null,
-      L.devoured?.n ? `took genes from ${L.devoured.n} kills: ${Object.entries(L.devoured.gains).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => `${k} +${Math.max(1, Math.round(v * 100))}%`).join(', ')}` : null].filter(Boolean);
-    parts.push(el('p', 'note cr-growth', growth.join(' · ')));
-    parts.push(bar, colored('p', 'cr-sub', [d.mood, comfortWord(L.comfort), aggressionWord(a), water && (mm > 0.3 ? `out of place in ${water === 'fresh' ? 'salt' : 'fresh'} water` : `in ${water} water`), d.fed && 'well fed', ...d.temper].filter(Boolean).join(' · ')));
-  }
-  const gr = gradeOf(L.genome);
-  if (here && typeof mindEligible === 'function' && (mindEligible(c) || L.mind)) {
-    void mindCheckCapabilities();
-    const mind = el('div', 'eld'),controller=mindController(c),availability=mindAvailability(controller);
-    mind.append(el('b', null, 'Awakened mind'), el('p', 'note', L.mind ?
-      c.mind?.status || 'Watching for an encounter' : 'Any creature can be awakened to learn from encounters and choose how to respond. Up to five minds per pond.'));
-    if(availability!=='ready' && !L.mind)mind.append(el('p','note',mindAvailabilityText(controller,availability)));
-    if(MIND_MODES[controller].note)mind.append(el('p','note',MIND_MODES[controller].note));
-    if(MIND_MODES[controller].higher && availability==='ready' && mindAvailability('typesafe')!=='ready')
-      mind.append(el('p','note','Jev is unavailable. Fish Brain continues with its own sensory drive.'));
-    if(mindEligible(c) && MIND_MODES[controller].lanes.includes('choice')) {
-      const labels={wait:'watch',forage:'forage',hunt:'hunt',shelter:'shelter',flee:'flee',explore:'explore',
-        rest:'rest',shoal:'join its kind',investigate:'investigate',avoid:'keep distance',ambush:'wait in ambush',camouflage:'camouflage',ink:'ink escape',fight:'fight',stalk:'stalk',gang:'hunt as a pack'};
-      mind.append(el('p','note','Choices here: '+mindEncounter(world,c).options.map(o=>labels[o.action]).join(' · ')));
-    }
-    if (!world.observe) {
-      const controls=el('div','mind-controls');controls.setAttribute('aria-label','Creature controller');
-      for(const [mode,label] of Object.entries(MIND_CONTROLLERS)){
-        const choose=el('button',null,`Use ${label}`);choose.type='button';
-        choose.disabled=(!L.mind && !mindEligible(c)) || !mindControllerAllowed(c,mode);choose.setAttribute('aria-pressed',String(controller===mode));
-        choose.addEventListener('click',()=>{setMindController(world,c,mode);renderCreature();});controls.append(choose);
-      }
-      mind.append(controls);
-      const label=availability==='ready'?'Awaken mind':availability==='checking'?`Checking ${MIND_CONTROLLERS[controller]}`:
-        availability==='unavailable'?`${MIND_CONTROLLERS[controller]} unavailable`:`${MIND_CONTROLLERS[controller]} connection unknown`;
-      const full=!L.mind && mindControlled(world).length>=MIND_LIMIT;
-      const button = el('button', null, L.mind ? 'Return to instincts' : full?'Five minds already awake':label);
-      button.type = 'button'; button.disabled = !L.mind && (full || !mindEligible(c) || !mindControllerAllowed(c) || availability!=='ready');
-      button.setAttribute('aria-pressed', String(!!L.mind));
-      button.addEventListener('click', () => { awakenMind(world,c); renderCreature(); });
-      mind.append(button);
-    }
-    parts.push(mind);
-  }
-  if(L.mind && here && typeof mindPlayCard==='function')parts.push(mindPlayCard(world,c));
-  if(L.mind || L.mindLog?.length){
-    const entries=L.mindLog||[];
-    const log=el('section','mind-log');log.setAttribute('aria-label',mindController(c)==='typesafe' &&
-      !entries.some(e=>e.source==='fly-brain')?'TypeSafe decision log':'Creature decision log');
-    log.append(el('b',null,'Decision log'));
-    if(!entries.length)log.append(el('p','note','No decisions yet.'));
-    else {
-      const list=el('ol');
-      for(const entry of entries.slice(creatureUi.logMore?-20:-3).reverse()){
-        const row=el('li'),time=el('time',null,new Date(entry.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
-        time.dateTime=new Date(entry.at).toISOString();
-        const target=entry.target?` · ${SINGULAR[entry.target]||entry.target}`:'';
-        const outcome=entry.outcome==='stale'?' · discarded: encounter changed':entry.outcome==='uncertain'?' · instincts: uncertain about danger':'';
-        const source=MIND_CONTROLLERS[entry.source] || 'TypeSafe';
-        row.append(time,el('span',null,`${source} · ${MIND_LABELS[entry.action]}${target}${outcome}`));list.append(row);
-      }
-      log.append(list);
-      const neural=entries.findLast(e=>e.source==='fly-brain' && e.activity);
-      if(neural){
-        const activity=el('details');activity.open=creatureUi.neuralMore;
-        activity.addEventListener('toggle',()=>{if(creatureUi.c===c)creatureUi.neuralMore=activity.open;});
-        activity.append(el('summary',null,'Latest Fly Brain activity'));
-        activity.append(el('p','note',FLY_ACTIVITY.filter(k=>neural.activity[k]!==undefined).map(k=>`${k} ${neural.activity[k].toFixed(1)} Hz`).join(' · ')));
-        if(c.mind?.senses && !c.mind.senses.sectors && !c.mind.senses.creature)activity.append(el('p','note',`Sensory input: ${Object.entries(c.mind.senses).map(([k,v])=>`${k} ${v.toFixed(2)}`).join(' · ')}`));
-        log.append(activity);
-      }
-      if(entries.length>3){
-        const more=el('button','cr-more',creatureUi.logMore?'Show recent':`View all (${entries.length})`);more.type='button';
-        more.setAttribute('aria-expanded',String(creatureUi.logMore));
-        more.addEventListener('click',()=>{creatureUi.logMore=!creatureUi.logMore;renderCreature();});log.append(more);
-      }
-    }
-    parts.push(log);
-  }
-  if(MIND_MODES[mindController(c)].motor && c.mind?.motor){
-    const motor=c.mind.motor.value;
-    parts.push(el('p','note',`Fish Brain motor · left ${motor.left.toFixed(2)} · right ${motor.right.toFixed(2)} · thrust ${motor.thrust.toFixed(2)}${motor.startle?' · startle':''}${motor.feeding?' · feeding':''}`));
-  }
-  const gradeChip = chip(`${GRADES[gr]} quality`, GRADE_COLOR[gr]);
-  gradeChip.title = 'Graded from its genes: its working genes against the average, gifts up, curses down. It sets what it is worth.';
-  parts.push(Object.assign(el('div', 'chips'), {}).appendChild(gradeChip).parentNode);
   if (d.traits.length || d.carries.length) {
     const t = el('div', 'chips');
     for (const tr of byRarity(d.traits)) {
-      const c = chip(traitName(tr), traitColor(tr));
-      if (TRAIT_NOTES[tr]) c.title = `${traitName(tr)}\n${TRAIT_NOTES[tr]}`;
-      t.append(c);
+      const ch = chip(traitName(tr), traitColor(tr));
+      if (TRAIT_NOTES[tr]) ch.title = `${traitName(tr)}\n${TRAIT_NOTES[tr]}`;
+      t.append(ch);
     }
     for (const k of d.carries) { const ch = chip(`carries ${k}`, CLASS_COLOR[k] || '#8fbcb8'); ch.classList.add('carrier'); t.append(ch); }
-    parts.push(t);
+    out.push(t);
+  }
+  // What feeding has done: meals, and the genes taken from its kills.
+  if (L.meals || L.devoured?.n) {
+    out.push(el('p', 'note cr-growth', [L.meals ? `${L.meals} meals` : null,
+      L.devoured?.n ? `took genes from ${L.devoured.n} kills: ${Object.entries(L.devoured.gains).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => `${k} +${Math.max(1, Math.round(v * 100))}%`).join(', ')}` : null].filter(Boolean).join(' · ')));
   }
   // The mark: its stage, how fast it's coming on, and what you can do about it.
   const st = eldStage(L);
@@ -1392,55 +1350,138 @@ function renderCreature() {
     box.append(stage, bar, markNote);
     if (here && !world.observe) {
       const acts = el('div', 'eld-acts');
-      const fd = el('button', null);
-      fd.type = 'button';
+      const fd = crButton('', null, 'mark:feed', () => { feedDream(world, c); renderCreature(); });
       fd.append(document.createTextNode('Feed the dream '), el('i', 'essence'), document.createTextNode(String(feedDreamCost(c))));
       fd.disabled = (world.game.essence || 0) < feedDreamCost(c) || L.corruption >= 1;
-      fd.addEventListener('click', () => { feedDream(world, c); renderCreature(); });
-      const bd = el('button', null);
-      bd.type = 'button';
+      const bd = crButton('', null, 'mark:bind', () => { bindMark(world, c); renderCreature(); });
       bd.append(document.createTextNode('Bind it '), el('i', 'essence'), document.createTextNode(String(bindCost(c))));
       bd.disabled = (world.game.essence || 0) < bindCost(c);
-      bd.addEventListener('click', () => { bindMark(world, c); renderCreature(); });
       acts.append(fd, bd);
       box.append(acts);
     }
-    parts.push(box);
+    out.push(box);
   }
-  // Growing its traits (traits.js): essence raises its genes; corruption, the eldritch.
+  const story = world.journal.filter((e) => e.subject === c).slice(0, 4);
+  if (story.length) {
+    const ul = el('ul', 'story');
+    for (const e of story) { const li = colored('li', null, e.text); li.prepend(el('time', null, entryTime(e))); ul.append(li); }
+    out.push(crFold('story', `Its story (${story.length})`, [ul]));
+  }
+  if (!out.length) out.push(el('p', 'note', 'Nothing more to tell yet.'));
+  return out;
+}
+
+function crMind(c, here) {
+  const L = c.life, out = [];
+  void mindCheckCapabilities();
+  const controller = mindController(c), availability = mindAvailability(controller), mode = MIND_MODES[controller];
+  // Its state, and the one button that matters most.
+  const top = el('div', 'cr-mind-top');
+  top.append(el('p', 'cr-status', L.mind ? c.mind?.status || 'Watching for an encounter' : 'Instincts'));
+  if (here && !world.observe && (L.mind || mindEligible(c))) {
+    const full = !L.mind && mindControlled(world).length >= MIND_LIMIT;
+    const name = MIND_CONTROLLERS[controller], label = L.mind ? 'Return to instincts' : full ? 'Five minds already awake' : availability === 'ready' ? 'Awaken mind'
+      : availability === 'checking' ? `Checking ${name}` : availability === 'unavailable' ? `${name} unavailable` : `${name} connection unknown`;
+    const awake = crButton(label, L.mind ? 'cr-awake on' : 'cr-awake', 'mind:awaken', () => { awakenMind(world, c); renderCreature(); });
+    awake.disabled = !L.mind && (full || !mindEligible(c) || !mindControllerAllowed(c) || availability !== 'ready');
+    awake.setAttribute('aria-pressed', String(!!L.mind));
+    top.append(awake);
+  }
+  out.push(top);
+  // Which brain steers it: a compact switch, each one's description in its tooltip.
   if (here && !world.observe) {
-    parts.push(el('h4', null, 'Grow its traits'));
-    const tree = el('div', 'trait-tree');
-    for (const key of ANIMAL_TRAITS) {
-      const E = ENHANCE[key], lv = animalLevel(c, key), cost = animalTraitCost(c, key);
-      tree.append(traitButton(E.label, 'essence', lv < ANIMAL_MAX ? cost : null, `${E.label}: ${E.note}${masteryTip(key, lv, ANIMAL_MAX)}`, lv >= ANIMAL_MAX, () => buyAnimalTrait(world, c, key), pips(lv, ANIMAL_MAX), (GENE_INFO[E.buff] || {}).color, renderCreature));
+    const controls = el('div', 'mind-controls');
+    controls.setAttribute('aria-label', 'Creature controller');
+    for (const [key, label] of Object.entries(MIND_CONTROLLERS)) {
+      const choose = crButton(CR_SHORT[key] || label, null, `mind:use:${key}`, () => { setMindController(world, c, key); renderCreature(); });
+      choose.setAttribute('aria-label', `Use ${label}`);
+      choose.title = `${label}${MIND_MODES[key].note ? `\n${MIND_MODES[key].note.replace(/^[^·]*·\s*/, '')}` : ''}`;
+      choose.disabled = (!L.mind && !mindEligible(c)) || !mindControllerAllowed(c, key);
+      choose.setAttribute('aria-pressed', String(controller === key));
+      controls.append(choose);
     }
-    const eldKeys = Object.entries(ELD_TRAITS).filter(([, T]) => T.ok(c) && (!T.path || eldPath(world, T.path)));
-    for (const [k, T] of eldKeys) tree.append(traitButton(T.label, 'corruption', T.cost(c), T.note, false, () => buyEldTrait(world, c, k), null, '#3aff9a', renderCreature));
-    parts.push(tree);
-    // The hunt (hunters.js): a predator's ten-level ladders, or waking a grazer to it.
-    if (isPredator(c)) {
-      parts.push(el('h4', null, 'The hunt'));
-      const hunt = el('div', 'trait-tree');
-      for (const [k, H] of Object.entries(HUNT)) {
-        const lv = huntLv(c, k);
-        hunt.append(traitButton(H.label, H.cur, lv < HUNT_MAX ? huntCost(c, k) : null, `${H.note}${masteryTip(k, lv, HUNT_MAX)}`, lv >= HUNT_MAX, () => buyHunt(world, c, k), pips(lv, HUNT_MAX), H.cur === 'corruption' ? '#3aff9a' : '#ef6f6c', renderCreature));
-      }
-      parts.push(hunt);
-    } else if (canBeHunter(c)) {
-      const wake = el('div', 'trait-tree');
-      const b = traitButton('Wake it to the hunt', 'corruption', AWAKEN.corruption, `it starts to hunt smaller animals (and ${AWAKEN.essence} essence)`, false, () => awakenHunter(world, c), null, '#ef6f6c', renderCreature);
-      b.disabled = b.disabled || (world.game.essence || 0) < AWAKEN.essence;
-      wake.append(b);
-      parts.push(wake);
-    }
+    out.push(controls);
   }
-  const geneHead = el('h4', null, 'Genes');
-  geneHead.title = 'Working genes\nPoint at a gene for what it changes. Multipliers centre on ×1; other genes are shown as percentages.';
-  parts.push(geneHead);
-  const genes = el('ul', 'genes');
+  if (availability !== 'ready' && !L.mind) out.push(el('p', 'note', mindAvailabilityText(controller, availability)));
+  else if (mode.higher && availability === 'ready' && mindAvailability('typesafe') !== 'ready') out.push(el('p', 'note', 'Jev is unavailable; Fish Brain steers on its own.'));
+  if (!L.mind && !(L.mindLog || []).length) out.push(el('p', 'note', 'Awaken it to let a brain steer it, learn from what happens and choose its own fights. Up to five per pond.'));
+  if (L.mind && here && typeof mindPlayCard === 'function') out.push(mindPlayCard(world, c));
+  if (L.mind && typeof mindLearnedParts === 'function') out.push(crFold('learned', 'What it has learned', mindLearnedParts(world, c)));
+  const entries = L.mindLog || [];
+  if (entries.length) {
+    const list = el('ol', 'mind-log-list');
+    for (const entry of entries.slice(creatureUi.logMore ? -20 : -5).reverse()) {
+      const row = el('li'), time = el('time', null, new Date(entry.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      time.dateTime = new Date(entry.at).toISOString();
+      const target = entry.target ? ` · ${SINGULAR[entry.target] || entry.target}` : '';
+      const outcome = entry.outcome === 'stale' ? ' · discarded' : entry.outcome === 'uncertain' ? ' · uncertain' : '';
+      row.append(time, el('span', null, `${CR_SHORT[entry.source] || 'Jev'} · ${MIND_LABELS[entry.action]}${target}${outcome}`));
+      list.append(row);
+    }
+    const logParts = [list];
+    if (entries.length > 5) {
+      const more = crButton(creatureUi.logMore ? 'Show recent' : `Show all ${entries.length}`, 'cr-more', 'mind:logmore', () => { creatureUi.logMore = !creatureUi.logMore; renderCreature(); });
+      more.setAttribute('aria-expanded', String(creatureUi.logMore));
+      logParts.push(more);
+    }
+    // (A region, so assistive tech can find it inside the fold.)
+    const region = el('section', 'mind-log');
+    region.setAttribute('aria-label', controller === 'typesafe' && !entries.some((e) => e.source === 'fly-brain') ? 'TypeSafe decision log' : 'Creature decision log');
+    region.append(...logParts);
+    out.push(crFold('log', `Decisions (${entries.length})`, [region]));
+  }
+  // The raw numbers, for the curious.
+  const neural = [];
+  const fly = entries.findLast((e) => e.source === 'fly-brain' && e.activity);
+  if (fly) neural.push(el('p', 'note', `Fly Brain: ${FLY_ACTIVITY.filter((k) => fly.activity[k] !== undefined).map((k) => `${k} ${fly.activity[k].toFixed(1)} Hz`).join(' · ')}`));
+  if (c.mind?.senses && !c.mind.senses.sectors && !c.mind.senses.creature) neural.push(el('p', 'note', `Senses: ${Object.entries(c.mind.senses).map(([k, v]) => `${k} ${v.toFixed(2)}`).join(' · ')}`));
+  if (mode.motor && c.mind?.motor) {
+    const m = c.mind.motor.value;
+    neural.push(el('p', 'note', `Fish Brain motor: left ${m.left.toFixed(2)} · right ${m.right.toFixed(2)} · thrust ${m.thrust.toFixed(2)}${m.startle ? ' · startle' : ''}${m.feeding ? ' · feeding' : ''}`));
+  }
+  if (neural.length) out.push(crFold('neural', 'Neural activity', neural));
+  if (here && mindEligible(c) && mode.lanes.includes('choice')) {
+    const labels = { wait: 'watch', forage: 'forage', hunt: 'hunt', shelter: 'shelter', flee: 'flee', explore: 'explore', rest: 'rest', shoal: 'join its kind',
+      investigate: 'investigate', avoid: 'keep distance', ambush: 'wait in ambush', camouflage: 'camouflage', ink: 'ink escape', fight: 'fight', stalk: 'stalk', gang: 'hunt as a pack' };
+    out.push(crFold('choices', 'What it can do here', [el('p', 'note', mindEncounter(world, c).options.map((o) => labels[o.action]).join(' · '))]));
+  }
+  return out;
+}
+
+function crGrow(c) {
+  const out = [], tree = el('div', 'trait-tree');
+  for (const key of ANIMAL_TRAITS) {
+    const E = ENHANCE[key], lv = animalLevel(c, key), cost = animalTraitCost(c, key);
+    tree.append(traitButton(E.label, 'essence', lv < ANIMAL_MAX ? cost : null, `${E.label}: ${E.note}${masteryTip(key, lv, ANIMAL_MAX)}`, lv >= ANIMAL_MAX, () => buyAnimalTrait(world, c, key), pips(lv, ANIMAL_MAX), (GENE_INFO[E.buff] || {}).color, renderCreature));
+  }
+  for (const [k, T] of Object.entries(ELD_TRAITS).filter(([, T]) => T.ok(c) && (!T.path || eldPath(world, T.path)))) {
+    tree.append(traitButton(T.label, 'corruption', T.cost(c), T.note, false, () => buyEldTrait(world, c, k), null, '#3aff9a', renderCreature));
+  }
+  out.push(el('h4', null, 'Traits'), tree);
+  // The hunt (hunters.js): a predator's ten-level ladders, or waking a grazer to it.
+  if (isPredator(c)) {
+    const hunt = el('div', 'trait-tree');
+    for (const [k, H] of Object.entries(HUNT)) {
+      const lv = huntLv(c, k);
+      hunt.append(traitButton(H.label, H.cur, lv < HUNT_MAX ? huntCost(c, k) : null, `${H.note}${masteryTip(k, lv, HUNT_MAX)}`, lv >= HUNT_MAX, () => buyHunt(world, c, k), pips(lv, HUNT_MAX), H.cur === 'corruption' ? '#3aff9a' : '#ef6f6c', renderCreature));
+    }
+    out.push(el('h4', null, 'The hunt'), hunt);
+  } else if (canBeHunter(c)) {
+    const wake = el('div', 'trait-tree');
+    const b = traitButton('Wake it to the hunt', 'corruption', AWAKEN.corruption, `it starts to hunt smaller animals (and ${AWAKEN.essence} essence)`, false, () => awakenHunter(world, c), null, '#ef6f6c', renderCreature);
+    b.disabled = b.disabled || (world.game.essence || 0) < AWAKEN.essence;
+    wake.append(b);
+    out.push(el('h4', null, 'The hunt'), wake);
+  }
+  return out;
+}
+
+function crGenes(c) {
+  const L = c.life, out = [], genes = el('ul', 'genes');
   for (const k of BUFF_ROWS) genes.append(geneBar(k, L.buffs[k]));
-  parts.push(genes);
+  const geneHead = el('h4', null, 'Working genes');
+  geneHead.title = 'Point at a gene for what it changes. Multipliers centre on ×1; other genes are shown as percentages.';
+  out.push(geneHead, genes);
   const g = L.genome, geno = el('ul', 'geno');
   for (const [k, [word, mode]] of Object.entries(LOCUS_INFO)) {
     const n = g[k] || 0;
@@ -1455,59 +1496,68 @@ function renderCreature() {
     geno.append(li);
   }
   if (g.chi) geno.append(colored('li', null, 'chimera: two lineages in one body (not inherited)'));
-  parts.push(el('h4', null, 'Genotype'));
-  parts.push(geno.children.length ? geno : el('p', 'note', 'No variant alleles: a wild-type animal.'));
-  parts.push(el('p', 'note', `Inbreeding ${Math.round((L.inbred || 0) * 100)}% · hybrid vigour +${Math.round((L.buffs.vigor - 1) * 100)}%`));
-  if (rec) {
-    parts.push(el('h4', null, 'Family'));
-    const { svg, parents, kids } = familyTree(rec);
-    parts.push(svg);
-    const pn = parents.length ? parents.map((p) => p.n).join(' & ') : rec.how === 'arrived' ? 'arrived from outside' : rec.how === 'bought' ? 'spawned by you' : 'a founder';
-    parts.push(colored('p', 'note', `Parents: ${pn} · ${kids.length} young · +${rec.pts} points · ${rec.how} on day ${Math.floor(rec.b || 0) + 1}`));
+  out.push(el('h4', null, 'Genotype'), geno.children.length ? geno : el('p', 'note', 'No variant alleles: a wild-type animal.'));
+  out.push(el('p', 'note', `Inbreeding ${Math.round((L.inbred || 0) * 100)}% · hybrid vigour +${Math.round((L.buffs.vigor - 1) * 100)}%`));
+  return out;
+}
+
+function crFamily(rec) {
+  const { svg, parents, kids } = familyTree(rec);
+  const pn = parents.length ? parents.map((p) => p.n).join(' & ') : rec.how === 'arrived' ? 'arrived from outside' : rec.how === 'bought' ? 'spawned by you' : 'a founder';
+  return [svg, colored('p', 'note', `Parents: ${pn} · ${kids.length} young · +${rec.pts} points · ${rec.how} on day ${Math.floor(rec.b || 0) + 1}`)];
+}
+
+function renderCreature() {
+  const c = creatureUi.c, box = byId('creature');
+  if (!c) return;
+  const focused = document.activeElement && box.contains(document.activeElement) ? document.activeElement.dataset.focusKey : null, scroll = box.scrollTop;
+  const here = alive(c), L = c.life, d = describe(c), rec = creatureUi.rec || (world.lineage && world.lineage.get(c.seed));
+  const parts = [];
+  const head = el('header', 'cr-head'), nm = el('b', null, d.name);
+  nm.style.color = d.tier ? TIER_COLOR[d.tier] : 'var(--hot)';
+  const close = crButton('×', 'icon', 'close', hideCreature);
+  close.setAttribute('aria-label', 'Close');
+  head.append(nm, d.tier ? chip(TIERS[d.tier], TIER_COLOR[d.tier]) : el('span'), close);
+  parts.push(head);
+  const gr = gradeOf(L.genome), gradeChip = chip(`${GRADES[gr]} quality`, GRADE_COLOR[gr]);
+  gradeChip.title = 'Graded from its genes: its working genes against the average, gifts up, curses down. It sets what it is worth.';
+  const subRow = el('div', 'cr-subrow');
+  subRow.append(colored('p', 'cr-sub', `${d.label} · ${d.stage} · gen ${d.gen} · ${ageLabel(L.age)} of ~${Math.round(L.lifespan / 60)}m`), gradeChip);
+  parts.push(subRow);
+  if (!here) {
+    parts.push(colored('p', 'cr-gone', rec && rec.d != null ? `No longer in the pond: left on day ${Math.floor(rec.d) + 1}${rec.why ? ` (${rec.why})` : ''}` : 'No longer in the pond'));
+  } else {
+    const hp = L.hp ?? 1, vitals = el('div', 'cr-vitals');
+    vitals.append(crMeter('Health', hp, `hp${hp <= 0.3 ? ' low' : hp <= 0.6 ? ' mid' : ''}`), crMeter('Fullness', L.energy, 'full'));
+    const size = el('span', 'cr-size', `Size ${Math.round(100 + 100 * (L.grown || 0))}%`);
+    size.title = 'Size from feeding: it keeps growing, more slowly the bigger it gets, faster on bigger meals.';
+    vitals.append(size);
+    parts.push(vitals);
+    const water = waterOf(c), mm = mismatch(world, c), a = aggressionAt(world, c.x, c.y);
+    parts.push(colored('p', 'cr-sub cr-mood', [d.mood, comfortWord(L.comfort), aggressionWord(a), water && (mm > 0.3 ? `out of place in ${water === 'fresh' ? 'salt' : 'fresh'} water` : `in ${water} water`), d.fed && 'well fed', ...d.temper].filter(Boolean).join(' · ')));
+    if (!world.observe) parts.push(crActions(c, d));
   }
-  const story = world.journal.filter((e) => e.subject === c).slice(0, 4);
-  if (story.length) {
-    parts.push(el('h4', null, 'Story'));
-    const ul = el('ul', 'story');
-    for (const e of story) { const li = colored('li', null, e.text); li.prepend(el('time', null, entryTime(e))); ul.append(li); }
-    parts.push(ul);
+  // The tabs it has something for.
+  const hasMind = typeof mindEligible === 'function' && (here && mindEligible(c) || L.mind || (L.mindLog || []).length);
+  const avail = CR_TABS.filter(([k]) => k === 'about' || k === 'genes' || (k === 'mind' && hasMind) || (k === 'grow' && here && !world.observe) || (k === 'family' && rec));
+  const tab = avail.some(([k]) => k === creatureUi.tab) ? creatureUi.tab : 'about';
+  const tabs = el('div', 'cr-tabs');
+  tabs.setAttribute('role', 'tablist');
+  for (const [k, label] of avail) {
+    const t = crButton(k === 'mind' && L.mind ? `${label} ●` : label, null, `tab:${k}`, () => { creatureUi.tab = k; renderCreature(); });
+    t.setAttribute('role', 'tab');
+    t.setAttribute('aria-selected', String(k === tab));
+    t.id = `cr-tab-${k}`;
+    tabs.append(t);
   }
-  const acts = el('div', 'cr-acts');
-  if (here && !world.observe) {
-    const f = el('button', null, cam.follow === c ? 'Following' : 'Follow');
-    f.title = 'Follow\nThe camera rides along with it (F). Esc or dragging stops.';
-    f.type = 'button';
-    f.addEventListener('click', () => { cam.tour = false; byId('tour').setAttribute('aria-pressed', false); follow(c); });
-    const r = el('button', 'recycle');
-    r.type = 'button';
-    r.append(document.createTextNode('Recycle +'), el('i', 'essence'), document.createTextNode(String(recycleValue(c))));
-    r.title = 'Return this animal to the pond for essence';
-    r.disabled = isSafe(c);
-    const keep = el('button', isSafe(c) ? 'keep on' : 'keep', isSafe(c) ? '🔒 Kept safe' : 'Keep safe');
-    keep.type = 'button';
-    keep.title = isSafe(c) ? 'Kept safe from recycling (the Net and recycle all skip it). Click to unmark' : 'Keep this animal safe from recycling';
-    keep.addEventListener('click', () => { toggleSafe(c); renderCreature(); });
-    r.addEventListener('click', () => {
-      if (d.tier >= 3 && !confirm(`Recycle ${d.name}, a ${TIERS[d.tier]} ${d.label}? It will be gone for good.`)) return;
-      recycle(c);
-      renderCreature();
-    });
-    acts.append(f, r, keep);
-    if (world.hatchery && BREED[c.species === 'tadpole' ? 'frog' : c.species] && c.species !== 'tadpole') {
-      const h = el('button', 'to-hatch', 'To hatchery');
-      h.type = 'button';
-      h.title = 'Move it into the hatchery as one of the breeding pair';
-      h.addEventListener('click', () => {
-        const why = stockHatchery(world, c);
-        if (why) { showTicker(why); return; }
-        hideCreature();
-        setHatchery(true);
-      });
-      acts.append(h);
-    }
-  }
-  parts.push(acts);
+  const panel = el('div', 'cr-panel');
+  panel.setAttribute('role', 'tabpanel');
+  panel.setAttribute('aria-labelledby', `cr-tab-${tab}`);
+  panel.append(...(tab === 'mind' ? crMind(c, here) : tab === 'grow' ? crGrow(c) : tab === 'genes' ? crGenes(c) : tab === 'family' ? crFamily(rec) : crAbout(c, d, here, rec)));
+  parts.push(tabs, panel);
   box.replaceChildren(...parts);
+  box.scrollTop = scroll;
+  if (focused) box.querySelector(`[data-focus-key="${CSS.escape(focused)}"]`)?.focus();
 }
 
 
