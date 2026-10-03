@@ -408,13 +408,17 @@ function captureBase(c) {
 }
 
 function applyScale(c, s) {
+  // (appliedScale stays the genetic/age scale its callers compare against; growth from feeding,
+  // growth.js, is folded in here so every caller includes it.)
+  c.appliedScale = s;
+  c.appliedGrown = c.life ? c.life.grown || 0 : 0;
+  s *= 1 + c.appliedGrown;
   const b = c.body, base = c.base, g = c.life ? c.life.genome : null;
   const ls = s * (g ? g.length : 1), ws = s * (g ? g.girth : 1);
   for (let i = 0; i < b.links.length; i++) b.links[i] = base.links[i] * ls;
   for (let i = 0; i < b.w.length; i++) b.w[i] = base.w[i] * ws;
   if (base.puff) c.baseW = base.puff.map((v) => v * ws);
   (c.legs || []).forEach((L, i) => { for (const k in base.legs[i]) L[k] = base.legs[i][k] * s; });
-  c.appliedScale = s;
 }
 
 const nameFor = (seed) => withSeed(`name/${seed}`, personName);
@@ -602,6 +606,8 @@ function eat(world, c, f) {
     if (CONDITIONING.has(f.kind)) L.cooldown = Math.min(L.cooldown, 5);
   }
   if ((f.z ?? 0) > 32) addRipple(world, f.x, f.y, 0.6);
+  // Every meal puts on size; a kill passes on the prey's better genes (growth.js).
+  if (c.life && typeof mealGrowth === 'function') mealGrowth(world, c, f, gain);
   // An awakened mind learns from the meal.
   if (c.life && c.life.mind && typeof mindReward === 'function') mindReward(world, c, f instanceof Creature ? 'kill' : 'fed', f);
 }
@@ -1071,6 +1077,7 @@ function updateLife(world, dt) {
     L.age += dt * ageRate(L);
     if (L.fed > 0) L.fed = Math.max(0, L.fed - dt);
     if (EATS.has(c.species)) L.energy = Math.max(0, L.energy - dt / (METABOLISM[c.species] || (c.body.w[0] > 2.5 ? 420 : 260)) / L.buffs.vitality * (L.buffs.appetite || 1));
+    if (typeof tickHealth === 'function') tickHealth(c, dt);
     L.cooldown -= dt;
     if (L.scale < 1) {
       L.scale = Math.min(1, L.scale + dt * (L.energy > 0.3 ? 0.008 : 0.003) * (L.genome.stunted ? 0.5 : 1));
@@ -1088,8 +1095,9 @@ function updateLife(world, dt) {
       });
     }
     if (c.species === 'tadpole' && L.age > 50 && L.scale > 0.65) metamorphose(world, c);
-    if (!c.leaving && !c.dying && !c.grabbed && (L.age > L.lifespan || L.energy <= 0)) {
-      c.dying = { t: 0, why: L.energy <= 0 ? 'of hunger' : 'of old age' };
+    // (Hunger drains health, growth.js; an animal dies when its health runs out.)
+    if (!c.leaving && !c.dying && !c.grabbed && (L.age > L.lifespan || (L.hp ?? 1) <= 0)) {
+      c.dying = { t: 0, why: L.age > L.lifespan ? 'of old age' : L.energy <= 0 ? 'of hunger' : 'of its wounds' };
     }
   }
 

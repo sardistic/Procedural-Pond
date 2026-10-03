@@ -120,13 +120,16 @@ test('missing Fish Brain disables hybrid and clears goals/motors for normal inst
   assert.equal(h.run('c.mind.goal'),null);
   assert.equal(h.run('mindIntent(world,c)'),null);
 });
-test('fish motor modes require the Fish movement body; original modes retain other bodies',()=>{
+test('every controller applies to every body; non-Fish bodies get a steering target from Fish Brain motors',async()=>{
   const h=client();h.run('Object.setPrototypeOf(c,Walker.prototype);');
-  assert.equal(h.run("mindControllerAllowed(c,'fish-brain')"),false);
-  assert.equal(h.run("mindControllerAllowed(c,'hybrid-brain')"),false);
-  assert.equal(h.run("mindControllerAllowed(c,'typesafe')"),true);
-  assert.equal(h.run("mindControllerAllowed(c,'fly-brain')"),true);
-  assert.equal(h.run("setMindController(world,c,'fish-brain')"),false);
+  for(const mode of ['fish-brain','hybrid-brain','typesafe','fly-brain'])assert.equal(h.run(`mindControllerAllowed(c,'${mode}')`),true,mode);
+  assert.equal(h.run("setMindController(world,c,'fish-brain')"),true);
+  await h.run('MINDS.configPending');
+  h.run(`c.mind={token:0,motor:{value:{left:0,right:.8,thrust:.5,startle:false,feeding:false},controller:'fish-brain',until:performance.now()+600}};
+    world.paused=false;`);
+  const intent=h.run('mindIntent(world,c)');
+  assert.ok(intent.motor && intent.speed===5 && intent.y>h.run('c.y'),'turns right (positive y with heading 0) at half speed');
+  h.run('c.ambient=true;');assert.equal(h.run("mindControllerAllowed(c,'fish-brain')"),false);
 });
 
 test('five creatures can awaken without displacing others; a sixth waits for a free slot',async()=>{

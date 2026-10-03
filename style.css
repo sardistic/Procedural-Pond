@@ -1503,3 +1503,8 @@ body.map-tall.map-open .mini-wrap .slice { height: auto; }
 .mind-lessons { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 4px; }
 .mind-lessons li { display: grid; grid-template-columns: auto 1fr; gap: 8px; line-height: 1.4; }
 .mind-lessons time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.creature .bar:not(.hp) i { background: #ffb04a; }
+.creature .bar.hp i { background: #5aff7a; }
+.creature .bar.hp.mid i { background: #ffd24a; }
+.creature .bar.hp.low i { background: #ff4a4a; }
+.creature .cr-growth { margin: 4px 0 0; }

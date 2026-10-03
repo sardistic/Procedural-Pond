@@ -1279,7 +1279,15 @@ function renderCreature() {
   } else {
     const bar = el('div', 'bar'), fill = el('i');
     fill.style.width = `${Math.round(L.energy * 100)}%`;
-    bar.append(fill);
+    bar.append(fill);bar.title = `Fullness ${Math.round(L.energy * 100)}%`;
+    const hp = L.hp ?? 1, hpBar = el('div', 'bar hp'), hpFill = el('i');
+    hpFill.style.width = `${Math.round(hp * 100)}%`;hpBar.append(hpFill);hpBar.title = `Health ${Math.round(hp * 100)}%`;
+    hpBar.classList.toggle('low', hp <= 0.3);hpBar.classList.toggle('mid', hp > 0.3 && hp <= 0.6);
+    parts.push(hpBar);
+    const growth = [`Health ${Math.round(hp * 100)}%`, `size ${Math.round(100 + 100 * (L.grown || 0))}% from feeding`,
+      L.meals ? `${L.meals} meals` : null,
+      L.devoured?.n ? `took genes from ${L.devoured.n} kills: ${Object.entries(L.devoured.gains).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => `${k} +${Math.max(1, Math.round(v * 100))}%`).join(', ')}` : null].filter(Boolean);
+    parts.push(el('p', 'note cr-growth', growth.join(' · ')));
     parts.push(bar, colored('p', 'cr-sub', [d.mood, comfortWord(L.comfort), aggressionWord(a), water && (mm > 0.3 ? `out of place in ${water === 'fresh' ? 'salt' : 'fresh'} water` : `in ${water} water`), d.fed && 'well fed', ...d.temper].filter(Boolean).join(' · ')));
   }
   const gr = gradeOf(L.genome);
@@ -1292,7 +1300,6 @@ function renderCreature() {
     if(MIND_MODES[controller].note)mind.append(el('p','note',MIND_MODES[controller].note));
     if(MIND_MODES[controller].higher && availability==='ready' && mindAvailability('typesafe')!=='ready')
       mind.append(el('p','note','Jev is unavailable. Fish Brain continues with its own sensory drive.'));
-    if(!mindControllerAllowed(c))mind.append(el('p','note','Fish Brain controls swimming fish. Choose TypeSafe or Fly Brain for this creature.'));
     if(mindEligible(c) && MIND_MODES[controller].lanes.includes('choice')) {
       const labels={wait:'watch',forage:'forage',hunt:'hunt',shelter:'shelter',flee:'flee',explore:'explore',
         rest:'rest',shoal:'join its kind',investigate:'investigate',avoid:'keep distance',ambush:'wait in ambush',camouflage:'camouflage',ink:'ink escape',fight:'fight'};

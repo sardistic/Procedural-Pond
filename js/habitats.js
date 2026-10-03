@@ -153,13 +153,12 @@ function updateBalance(world, dt) {
       if (Math.random() < 0.35) {
         const a = pick(list), b = list.find((o) => o !== a && (o.x - a.x) ** 2 + (o.y - a.y) ** 2 < 400 && o.life.scale > 0.8);
         if (b && a.life.scale > 0.8) {
-          const score = (c) => c.life.energy * geneBuffs(c).vitality * geneBuffs(c).aggression * rand(0.6, 1.4);
+          const score = (c) => (c.life.hp ?? 1) * geneBuffs(c).vitality * geneBuffs(c).aggression * (1 + (c.life.grown || 0)) * rand(0.6, 1.4);
           const loser = score(a) < score(b) ? a : b;
-          loser.life.energy -= 0.35;
+          if (typeof hurt === 'function') hurt(world, loser, 0.35, { why: 'killed in a fight' });
           loser.life.comfort = Math.max(0, loser.life.comfort - 0.2);
           addHeat(world, loser.x, loser.y, 0.2);
           addRipple(world, loser.x, loser.y, 1, true);
-          if (loser.life.energy <= 0.05) loser.dying = { t: 0, why: 'killed in a fight' };
           const label = describe(a).label;
           logEvent(world, `The crowded ${plural(label, 2).toLowerCase()} are fighting over room`, loser, { cat: 'hunt', pri: 0, key: `fight:${kind}`, merge: (e) => `The crowded ${plural(label, 2).toLowerCase()} keep fighting over room (${e.n} fights)` });
         }

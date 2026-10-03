@@ -14,9 +14,9 @@ const MIND_MODES = {
       fight:'Picking a fight'}[action])},
   'fly-brain':{label:'Fly Brain',lanes:['fly'],defaultLane:'fly',allowed:c=>mindSupported(c),
     note:'Fly Brain · experimental control from food, danger and movement signals.'},
-  'fish-brain':{label:'Fish Brain',lanes:['fish'],defaultLane:'fish',allowed:c=>c instanceof Fish,motor:true,
+  'fish-brain':{label:'Fish Brain',lanes:['fish'],defaultLane:'fish',allowed:c=>mindSupported(c),motor:true,
     note:'Fish Brain · measured Fish1 hindbrain circuit with modeled dynamics and sensory coupling. Not a full zebrafish brain.'},
-  'hybrid-brain':{label:'Higher Brain + Fish Brain',lanes:['fish','choice'],defaultLane:'fish',allowed:c=>c instanceof Fish,motor:true,higher:true,
+  'hybrid-brain':{label:'Higher Brain + Fish Brain',lanes:['fish','choice'],defaultLane:'fish',allowed:c=>mindSupported(c),motor:true,higher:true,
     note:'Jev chooses goals; the Fish1 hindbrain circuit supplies steering and thrust through modeled sensory coupling. Not a full zebrafish brain.'},
 };
 const MIND_CONTROLLERS = Object.fromEntries(Object.entries(MIND_MODES).map(([k,v])=>[k,v.label]));
@@ -137,6 +137,8 @@ function mindLocomotion(c) {
 }
 const mindRarity = (c) => Math.max(tierOf(c.life?.traits || []), SPECIES_STATS[c.species]?.rarity || 0);
 const mindEligible = (c) => mindSupported(c);
+// A finite top speed for any body (dragonflies and jellies have no maxSpeed).
+const mindTop = (c) => Number.isFinite(c.maxSpeed) && c.maxSpeed > 0 ? c.maxSpeed : Number.isFinite(c.cruise) && c.cruise > 0 ? c.cruise * 1.6 : 10;
 const mindHere = (c) => c && !c.gone && !c.caught && !c.leaving && !c.dying;
 const mindControlled = (w) => w.creatures.filter(c=>c.life?.mind && mindHere(c));
 const mindSpecies = (c) => /^[a-zA-Z][a-zA-Z0-9 -]{0,39}$/.test(c.species) ? c.species : 'fish';
@@ -212,7 +214,7 @@ const mindProfileSignature = (profile) => JSON.stringify([profile.tags,profile.a
 
 function mindEncounter(w, c) {
   // (Dragonflies, jellies and other bodies without cruise/max speeds still get finite option speeds.)
-  const top=Number.isFinite(c.maxSpeed)&&c.maxSpeed>0?c.maxSpeed:Number.isFinite(c.cruise)&&c.cruise>0?c.cruise*1.6:10,cruise=Number.isFinite(c.cruise)&&c.cruise>0?c.cruise:top*.6;
+  const top=mindTop(c),cruise=Number.isFinite(c.cruise)&&c.cruise>0?c.cruise:top*.6;
   const profile=mindProfile(w,c),radius=Math.min(180,(c.sight || 60)*(typeof huntRange==='function'?huntRange(c):1)), neighbors=[];
   forNear(w,c.x,c.y,radius,(q,d) => {
     if(q===c || !mindHere(q) || Math.abs((q.z||0)-c.z)>14) return;
@@ -336,7 +338,7 @@ function mindFlyPlan(w,c,encounter,motor) {
   const drive=motor.drive*weights.motor;
   const angle=c.heading+clamp(motor.turn*weights.turn,-1,1)*Math.PI*.5+(motor.reverse?Math.PI:0),distance=12+drive*12;
   const plan={action:'explore',x:clamp(c.x+Math.cos(angle)*distance,1,w.W-2),
-    y:clamp(c.y+Math.sin(angle)*distance,1,w.H-2),speed:c.maxSpeed*drive};
+    y:clamp(c.y+Math.sin(angle)*distance,1,w.H-2),speed:mindTop(c)*drive};
   return mindWetRoute(w,c,plan)?plan:wait;
 }
 
@@ -394,7 +396,7 @@ function mindFishInputs(w,c,encounter) {
     if(fear && q===fear.creature && !threat)put(q,'threat',fear.strength);
     const vx=(q.speed||0)*Math.cos(q.heading||0)-(c.speed||0)*Math.cos(c.heading);
     const vy=(q.speed||0)*Math.sin(q.heading||0)-(c.speed||0)*Math.sin(c.heading);
-    put(q,'motion',clamp(Math.hypot(vx,vy)/Math.max(1,c.maxSpeed*2),0,1));
+    put(q,'motion',clamp(Math.hypot(vx,vy)/Math.max(1,mindTop(c)*2),0,1));
   });
   for(const p of w.plants)if(mindWetRoute(w,c,p))put(p,'cover');
   for(const p of w.rocks||[])put(p,'obstacle',.5);
@@ -409,7 +411,7 @@ function mindFishInputs(w,c,encounter) {
   const goal=MIND_MODES[mindController(c)].higher?mindFishGoal(w,c,encounter):null;
   for(const key of Object.keys(gains))gains[key]=clamp(gains[key]*(goal?FISH_GOAL_GAINS[goal.action]?.[key]??1:1),0,2);
   if(c.hold>w.t || c.state==='sit')gains.drive=0;
-  return {sectors,internal:{hunger:profile.hunger,energy:clamp(c.life.energy,0,1),speed:clamp((c.speed||0)/c.maxSpeed,0,1),
+  return {sectors,internal:{hunger:profile.hunger,energy:clamp(c.life.energy,0,1),speed:clamp((c.speed||0)/mindTop(c),0,1),
     depth:profile.depth,comfort:profile.comfort,...(rival?{rage:fury}:{})},gains};
 }
 function mindFishResult(result) {
@@ -427,10 +429,16 @@ function mindMotorIntent(w,c) {
   if(!output || !c.life?.mind || !mindEligible(c) || !mindControllerAllowed(c) || w.paused || w.observe || document.hidden ||
     c.grabbed || !mindHere(c) || !w.creatures.includes(c) || output.controller!==mindController(c) || performance.now()>output.until ||
     mindAvailability(mindController(c))!=='ready')return null;
-  return {motor:true,...output.value,turn:output.value.right-output.value.left};
+  const v=output.value,turn=v.right-v.left;
+  // Bodies other than swimming Fish take the motor output as a short steering target and speed
+  // through their own movement code (Fish integrate turn and thrust directly).
+  const angle=c.heading+clamp(turn,-1,1)*Math.PI*.5,distance=12+v.thrust*12;
+  let x=clamp(c.x+Math.cos(angle)*distance,1,w.W-2),y=clamp(c.y+Math.sin(angle)*distance,1,w.H-2),speed=mindTop(c)*(v.startle?1:v.thrust);
+  if(!(c instanceof Fish) && !mindWetRoute(w,c,{x,y})){x=c.x;y=c.y;speed=0;}
+  return {motor:true,...v,turn,action:c.mind.action,x,y,speed};
 }
 function mindMotorMeal(w,c) {
-  const reach=c.widths[0]+1.2,prey=c.prey;
+  const reach=(c.widths?.[0] ?? c.body?.w?.[0] ?? 1)+1.2,prey=c.prey;
   if(prey && mindProfile(w,c).abilities.canHunt && mindHere(prey) && huntable(w,prey) &&
     mindDistance(c,prey)<(reach+prey.body.w[0])*(typeof huntReach==='function'?huntReach(c):1) && Math.abs(prey.z-c.z)<8){eat(w,c,prey);return;}
   const food=w.nearestFood(c.x,c.y,reach,fd=>(!c.foodFilter||c.foodFilter(fd)) && Math.abs((fd.z||0)-c.z)<8 && mindWetRoute(w,c,fd));

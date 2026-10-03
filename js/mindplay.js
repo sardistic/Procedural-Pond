@@ -80,21 +80,19 @@ function mindStrike(w, c, q) {
   N.mindStrikes = (N.mindStrikes || 0) + 1;
   c.mind.strikeAt = w.t;
   if (mindWidth(q) < mindWidth(c) * 0.45) { eat(w, c, q); return q.caught ? 'kill' : null; }
-  const power = (x, first) => (0.25 + x.life.energy) * (geneBuffs(x).vitality || 1) * (typeof rageOf === 'function' ? rageOf(w, x) : 1) *
+  const power = (x, first) => (0.25 + 0.7 * (x.life.hp ?? 1) + 0.3 * x.life.energy) * (1 + (x.life.grown || 0)) * (geneBuffs(x).vitality || 1) * (typeof rageOf === 'function' ? rageOf(w, x) : 1) *
     Math.max(0.5, mindWidth(x)) * (1 + 0.05 * (typeof huntLv === 'function' ? huntLv(x, 'jaws') : 0)) *
     (1 + 0.5 * mindFightDrive(w, x).value) * (first ? 1.15 : 1) * rand(0.6, 1.4);
   const won = power(c, true) >= power(q, false), winner = won ? c : q, loser = won ? q : c;
   const canKill = (N.mindKills || 0) < MIND_FIGHT.killsPerDay;
-  loser.life.energy = Math.max(canKill ? 0 : 0.08, loser.life.energy - (0.1 + 0.08 * clamp(mindWidth(winner) / Math.max(0.5, mindWidth(loser)), 0, 1.5)));
+  const killed = hurt(w, loser, 0.14 + 0.1 * clamp(mindWidth(winner) / Math.max(0.5, mindWidth(loser)), 0, 1.5), { why: `killed in a fight with ${winner.life.name}`, canKill });
   loser.life.comfort = Math.max(0, (loser.life.comfort ?? 0.5) - 0.2);
   addBlood(w, loser.x, loser.y, loser.z || 6, 0.35);
   addRipple(w, loser.x, loser.y, 0.8, true);
   startle(w, loser, winner.x, winner.y, 1.2);
   if (typeof glyph === 'function') glyph(w, winner, 'bang');
-  const killed = loser.life.energy <= 0.05 && canKill;
   if (killed) {
     N.mindKills = (N.mindKills || 0) + 1;
-    loser.dying = { t: 0, why: `killed in a fight with ${winner.life.name}` };
     if (typeof onKill === 'function') onKill(w, winner, loser);
   }
   // The marked feed on it: a little corruption for them and the pond.
@@ -267,6 +265,8 @@ function mindPlayTick(w, dt) {
     }
     if (!w.paused) {
       if (c.body) mindTryStrike(w, c);
+      // Fish integrate their own motor meals; other bodies driven by Fish Brain feed here.
+      if (!(c instanceof Fish) && brain.motor?.value?.feeding && MIND_MODES[mindController(c)]?.motor && mindIntent(w, c)) mindMotorMeal(w, c);
       const { level, mode } = mindActivity(c);
       brain.sparkT = (brain.sparkT || 0) + dt * (0.5 + 6 * level);
       if (brain.sparkT >= 1) { brain.sparkT = 0; mindSpark(w, c, mode); }

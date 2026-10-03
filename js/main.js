@@ -7,7 +7,7 @@ const OPTS_KEY = 'procedural-pond.opts';
 const DEFAULT_OPTS = {
   v: 4, world: 'auto', habitat: 'mixed', floor: 'sand', water: 'teal', light: 'cycle', dayLength: 180,
   current: 25, speed: 1, caustics: true, shadows: true, outlines: true, life: true, weather: true, sound: false,
-  music: false, musicLevel: 40, hard: false, neighbours: true, fine: true, hdWaves: true, // (the Classic water look remains selectable)
+  music: false, musicLevel: 40, hard: false, neighbours: true, fine: true, hdWaves: true, bars: true, // (the Classic water look remains selectable)
 };
 // The pond is a fixed-size world, larger than the screen at the default zoom.
 // "Fit screen" makes it the window at 2x pixels, so zoom 2 fills the screen exactly.
@@ -608,6 +608,7 @@ function render(full = false) {
   }
   r.alpha = 1;
   r.lod = 0;
+  if (world.opts.bars !== false && typeof drawBars === 'function') drawBars(r, world, near);
   for (const e of world.eggs) e.draw(r, t);
   world.motes.draw(r, world);
   r.castShadows = false;

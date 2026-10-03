@@ -26,6 +26,10 @@ function pond() {
       body:{w:[3],x:[x],y:[100]},buffs:{aggression:1,intellect:2,vitality:1},
       life:{name,mind:false,traits:[],energy:.8,comfort:.5,genome:{}},...extra});
   `);
+  run(`const SCALABLE=new Set(['koi']), GENE_LIMITS={size:[.7,1.5],speed:[.75,1.3]};let refreshed=0;const refreshBuffs=()=>refreshed++;
+    const award=()=>1, floatAward=()=>{}, solid=x=>x, newId=()=>1, hexToInt=()=>0, EMISSIVE={};
+    const applyScale=(c,s)=>{c.appliedScale=s;c.appliedGrown=c.life.grown||0;};`);
+  run(read('js/growth.js'));
   run(read('js/minds.js'));
   run(read('js/mindplay.js'));
   return run;
@@ -77,12 +81,31 @@ test('strikes hurt the loser, catch much smaller rivals and cap deaths per day',
   run(`var me=fish('Me','pike',100,{predator:true});me.buffs.aggression=1.8;me.life.mind=true;me.mind={token:0};me.life.energy=1;
     var foe=fish('Foe','koi',104);foe.life.energy=.5;world.creatures=[me,foe];`);
   assert.equal(run('mindStrike(world,me,foe)'),'win');
-  assert.ok(run('foe.life.energy')<.5);
+  assert.ok(run('foe.life.hp')<1,'the loser is wounded');assert.equal(run('foe.life.energy'),.5,'hunger is separate from health');
   assert.ok(run('me.life.mindLearn.wins')===1);
   run(`var minnow=fish('Minnow','koi',103);minnow.body.w=[1];world.creatures.push(minnow);`);
   assert.equal(run('mindStrike(world,me,minnow)'),'kill');
-  run(`N.mindKills=MIND_FIGHT.killsPerDay;foe.life.energy=.05;`);
+  run(`N.mindKills=MIND_FIGHT.killsPerDay;foe.life.hp=.05;me.mind.strikeAt=-99;`);
   run('mindStrike(world,me,foe)');
   assert.equal(run('foe.dying'),undefined);
-  assert.ok(run('foe.life.energy')>=.08);
+  assert.ok(run('foe.life.hp')>=.08);
+});
+test('meals grow an animal with diminishing returns, kills pass on only better genes, and health heals or starves',()=>{
+  const run=pond();
+  run(`var eater=fish('Eater','pike',100);eater.life.scale=1;eater.life.genome={size:1,speed:.9,vit:.4,iq:.8,lon:.5,fert:.5,res:.2,tol:.3};eater.maxSpeed=10;eater.cruise=5;
+    var prey=fish('Prey','koi',100);prey.life.genome={size:1.3,speed:1.2,vit:.9,iq:.1,lon:.5,fert:.5,res:.2,tol:.3};`);
+  run('for(let i=0;i<10;i++)mealGrowth(world,eater,{kind:"pellet"},.3)');
+  const afterFood=run('eater.life.grown');assert.ok(afterFood>0 && afterFood<.05);
+  run('for(let i=0;i<400;i++)mealGrowth(world,eater,{kind:"pellet"},.5)');
+  assert.ok(run('eater.life.grown')<=.6);
+  const gains=JSON.parse(run('JSON.stringify(absorbGenes(world,eater,prey).map(g=>g[0]))'));
+  assert.deepEqual(gains.sort(),['size','speed','strength']);
+  assert.equal(run('eater.life.genome.iq'),.8,'worse genes are not taken');
+  assert.ok(run('eater.life.genome.speed')>.9 && run('eater.maxSpeed')>10,'speed gene speeds it up');
+  assert.equal(run('eater.life.devoured.n'),1);
+  run('eater.life.hp=.5;eater.life.energy=.8;eater.life.buffs={vitality:1};tickHealth(eater,10)');
+  assert.ok(run('eater.life.hp')>.5);
+  run('eater.life.energy=0;const g0=eater.life.grown;tickHealth(eater,10)');
+  assert.ok(run('eater.life.hp')<.62);
+  assert.equal(JSON.stringify(run('cleanDevoured({n:3,gains:{speed:.1,evil:5}})')),JSON.stringify({n:3,gains:{speed:.1}}));
 });

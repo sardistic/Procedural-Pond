@@ -161,13 +161,13 @@ function updateNature(world, dt) {
       forNear(world, c.x, c.y, 26, (o) => { if (!foe && o !== c && o.life && o.body && !o.dying && !(DEEP[o.species] && DEEP[o.species].mythic) && Math.abs(widthOf(o) - w) < w * 0.35) foe = o; });
       if (foe) {
         N.fights++;
-        const score = (x) => x.life.energy * geneBuffs(x).vitality * rageOf(world, x) * rand(0.6, 1.4), loser = score(c) < score(foe) ? c : foe, winner = loser === c ? foe : c;
-        loser.life.energy = Math.max(N.kills < BRAWL_KILLS_PER_DAY ? 0 : 0.1, loser.life.energy - 0.2);
+        const score = (x) => (x.life.hp ?? 1) * geneBuffs(x).vitality * rageOf(world, x) * (1 + (x.life.grown || 0)) * rand(0.6, 1.4), loser = score(c) < score(foe) ? c : foe, winner = loser === c ? foe : c;
+        const died = hurt(world, loser, 0.3, { why: `torn apart by ${winner.life.name} in the dark`, canKill: N.kills < BRAWL_KILLS_PER_DAY });
         loser.life.comfort = Math.max(0, loser.life.comfort - 0.25);
         addBlood(world, loser.x, loser.y, loser.z || 6, 0.5);
         addRipple(world, loser.x, loser.y, 1, true);
         startle(world, loser, winner.x, winner.y, 1.5);
-        if (loser.life.energy <= 0.05 && N.kills < BRAWL_KILLS_PER_DAY) { N.kills++; loser.dying = { t: 0, why: `torn apart by ${winner.life.name} in the dark` }; if (winner.life.wanderer) winner.life.wanderer.kills++; }
+        if (died) { N.kills++; if (winner.life.wanderer) winner.life.wanderer.kills++; }
         logEvent(world, `${winner.life.name} the ${describe(winner).label} savaged ${loser.life.name} the ${describe(loser).label}`, winner, {
           cat: 'hunt', pri: 1, key: 'brawl', data: 1, merge: (e) => `Fights break out in the dark: ${e.n} animals savaged`,
         });

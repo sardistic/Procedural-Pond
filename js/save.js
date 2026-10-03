@@ -175,6 +175,8 @@ function creatureRecord(c, a = {}) {
       absorbed: L.absorbed || undefined, ascended: L.ascended || undefined, boosts: L.boosts || undefined,
       quirks: L.quirks && L.quirks.length ? L.quirks : undefined, ill: L.ill && L.ill.length ? L.ill : undefined,
       hunt: L.hunt || undefined, hunter: L.hunter || undefined, madCount: L.madCount || undefined,
+      hp: L.hp != null && L.hp < 1 ? r2(L.hp) : undefined, grown: L.grown ? Math.round(L.grown * 1000) / 1000 : undefined,
+      meals: L.meals || undefined, devoured: typeof cleanDevoured === 'function' && L.devoured ? cleanDevoured(L.devoured) : undefined,
       mind: L.mind || undefined, mindController: typeof mindController==='function' && L.mindController ? mindController(c) : undefined,
       mindMemory: L.mindMemory?.slice(-4),
       mindLog: typeof mindCleanLog==='function' && L.mindLog?.length ? mindCleanLog(L.mindLog) : undefined,
@@ -196,6 +198,9 @@ function restoreCreature(world, r, a = {}) {
     fed: r.L.fed || 0, comfort: r.L.comfort ?? 0.5, corruption: r.L.corruption || 0, bound: !!r.L.bound,
     absorbed: r.L.absorbed || 0, ascended: !!r.L.ascended, boosts: r.L.boosts || null,
     quirks: r.L.quirks || [], ill: r.L.ill || [], hunt: r.L.hunt || null, hunter: !!r.L.hunter, madCount: r.L.madCount || 0,
+    hp: Number.isFinite(r.L.hp) ? clamp(r.L.hp, 0.05, 1) : 1, grown: Number.isFinite(r.L.grown) ? clamp(r.L.grown, 0, 0.6) : 0,
+    meals: Number.isFinite(r.L.meals) ? Math.floor(clamp(r.L.meals, 0, 1e7)) : 0,
+    devoured: typeof cleanDevoured === 'function' ? cleanDevoured(r.L.devoured) : null,
     mind: r.L.mind === true, mindController: typeof MIND_CONTROLLERS!=='undefined' && Object.hasOwn(MIND_CONTROLLERS,r.L.mindController)?r.L.mindController:'typesafe',
     mindMemory: Array.isArray(r.L.mindMemory) ? r.L.mindMemory.slice(-4).filter(m =>
       (typeof MIND_MEMORY_EVENTS!=='undefined'?MIND_MEMORY_EVENTS:['fed','threat','prey_lost']).includes(m?.event) && typeof m.species === 'string' && m.species.length<=40) : [],
@@ -204,6 +209,7 @@ function restoreCreature(world, r, a = {}) {
     safe: !!r.L.safe, paragon: !!r.L.paragon, warps: r.L.warps && r.L.warps.length ? r.L.warps : null, wanderer: r.L.wanderer || null,
     para: r.L.para && typeof PARASITES !== 'undefined' && PARASITES[r.L.para.k] ? r.L.para : null,
   });
+  if (typeof applyGrowth === 'function') applyGrowth(c); // (initLife sized it before its growth from feeding was restored)
   if (r.L.paragon && c.id) { OUTLINE[c.id] = RARE_OUTLINE.paragon; THICK[c.id] = 1; }
   if (r.L.wanderer && c.id) { OUTLINE[c.id] = WANDER_OUTLINE; THICK[c.id] = 1; } // (a wanderer, still here: red-edged)
   c.life.traits = eldTraits(c.life);
