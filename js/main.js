@@ -2929,40 +2929,13 @@ function syncControls() {
 //    becomes your own copy, with its own score.
 //  - ?pond=<name> you have saved: yours. One you don't have starts on day 1.
 //  - no link: the pond you last had open, or a brand-new one.
-// ---- the entry screen's card (index.html): a small rendering of the whole pond, and what it is -------------
-// Each preview pixel is the pond as the minimap paints it: water tinted and darkened with depth, dry land
-// sunlit; with the animals as bright points.
-function pondPreview(maxW = 180, maxH = 110) {
-  const { W, H, bg, bgDry, shore } = world;
-  if (!bg || !W || !H) return null;
-  const k = Math.min(maxW / W, maxH / H, 1), w = Math.max(1, Math.round(W * k)), h = Math.max(1, Math.round(H * k));
-  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-  const g = cv.getContext('2d'), img = g.createImageData(w, h), out = new Uint32Array(img.data.buffer);
-  const water = world.waterColor, deep = DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed, tideL = shore ? world.tide.level * 255 : Infinity;
-  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
-    const p = Math.min(W - 1, Math.floor((i + 0.5) / k)) + Math.min(H - 1, Math.floor((j + 0.5) / k)) * W;
-    out[i + j * w] = (shore && shore[p] > tideL ? (bgDry ? bgDry[p] : mixColor(bg[p], SUN_DRY, 0.18))
-      : mixColor(mixColor(bg[p], water, 0.45), deep, ((world.depth ? world.depth[p] : 0) / 255) * 0.85)) | 0xff000000;
-  }
-  g.putImageData(img, 0, 0);
-  for (const c of world.creatures) {
-    if (!c.life || c.gone) continue;
-    g.fillStyle = c.life.mind ? '#ffd166' : c.life.traits && c.life.traits.length ? '#ff9aff' : '#e8f4f2';
-    g.fillRect(Math.floor(c.x * k), Math.floor(c.y * k), 1, 1);
-  }
-  return cv;
-}
+// ---- the entry screen (index.html, js/entry.js): which pond you are about to enter -------------------------
 function entryInfo(observe) {
-  const G = world.game || {}, animals = world.creatures.filter((c) => c.life && !c.ambient), kinds = new Set(animals.map((c) => c.species)).size;
-  const minds = animals.filter((c) => c.life.mind).length, tier = (world.erosion && world.erosion.tier) || 0;
-  const depthName = typeof tierName === 'function' && world.erosion ? tierName(world, tier) : '';
-  const facts = [`Day ${Math.floor(world.days || 0) + 1}`, world.erosion ? `${fmt(pondFathoms(world))} fathoms` : null, ({ fresh: 'fresh water', salt: 'salt water', mixed: 'fresh and salt water' })[world.opts.habitat] || null,
-    `${animals.length} animals of ${kinds} kinds`, minds ? `${minds} awakened` : null].filter(Boolean).join(' · ');
-  const fresh = !world.resume;
-  const blurb = observe ? `Someone else's pond, to look around in. Nothing here is yours to touch.`
-    : fresh ? 'A new pond, just filled. Feed what arrives, plant and build, and it will deepen as it lives.'
-      : `${depthName ? `Its deepest water is ${depthName.toLowerCase()}. ` : ''}It kept living while you were away; feed it, build it, follow its animals.`;
-  return { name: pondTitle(world), facts, blurb, preview: pondPreview(), skip: !!observe, button: observe ? 'Look around' : fresh ? 'Fill it with life' : 'Dive in' };
+  const animals = world.creatures.filter((c) => c.life && !c.ambient), kinds = new Set(animals.map((c) => c.species)).size;
+  const minds = animals.filter((c) => c.life.mind).length;
+  const facts = [`Day ${Math.floor(world.days || 0) + 1}`, world.erosion ? `${fmt(pondFathoms(world))} fathoms` : null,
+    animals.length ? `${animals.length} animals of ${kinds} kinds` : null, minds ? `${minds} awakened` : null].filter(Boolean).join(' · ');
+  return { name: pondTitle(world), lead: world.resume ? 'Your pond: ' : 'A new pond: ', facts, skip: !!observe, button: 'Enter' };
 }
 // Let the entry screen paint its next line before a long, blocking step. (A frame, or 60 ms at most: a
 // background tab gets no frames, and loading must not wait for it to be looked at.)
