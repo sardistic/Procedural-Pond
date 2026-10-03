@@ -1,5 +1,6 @@
-# Minimal CPU worker environment for the pinned upstream TorchModel.
+# Minimal CPU worker environment: the compiled engine (numba) by default, the pinned upstream TorchModel as fallback.
 torch==2.5.1+cpu
 numpy==1.26.4
 pandas==2.2.3
 pyarrow==17.0.0
+numba==0.60.0

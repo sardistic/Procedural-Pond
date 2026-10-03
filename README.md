@@ -337,8 +337,14 @@ abilities and temperament weights, plus nearby water stress. Missing configurati
 failure, stale decisions or uncertain threatening encounters retain ordinary
 behavior.
 
-Fly Brain imports the actual pinned [Eon fly-brain PyTorch model](https://github.com/eonsystemspbc/fly-brain)
-and full connectome in a separate private Python worker. Food/prey, looming danger,
+Fly Brain runs the pinned [Eon fly-brain](https://github.com/eonsystemspbc/fly-brain) leaky
+integrate-and-fire model over the full FlyWire v783 connectome (138,639 neurons, 15.1M connected
+pairs) in a separate private Python worker. By default it uses a compiled spike-driven engine
+(`server/flybrain/fastfly.py`, numba): the same equations and float32 arithmetic order, sweeping the
+neurons once per 0.1 ms step and sending input only from the few that spiked. With identical input
+it matches the upstream TorchModel bit for bit, and it is about 100× faster on two CPU threads
+(roughly 4,300 steps a second on a desktop, against about 43 for upstream on one thread);
+`FLY_BRAIN_ENGINE=torch` runs upstream's own model instead. Food/prey, looming danger,
 water pollution, salinity discomfort, close crowding, current and blocked routes
 stimulate published sugar, LC4, bitter, Or56a and Johnston's organ populations.
 Target bearing biases the published left/right P9 locomotion drive. Measured firing

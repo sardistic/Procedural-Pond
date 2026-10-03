@@ -8,6 +8,7 @@ This adapter does not train a network or substitute a synthetic brain.
 from __future__ import annotations
 
 import argparse
+import ast
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from hashlib import sha256
@@ -94,6 +95,22 @@ ACTIVITY_WINDOW_MS = 50.0
 
 class InvalidInput(ValueError):
     pass
+
+
+def upstream_constants(path: Path) -> tuple[dict[str, float], float]:
+    """MODEL_PARAMS and DT read from the verified upstream source as literals (nothing is executed),
+    so the compiled engine needs no torch import and stays tied to the pinned parameters."""
+    found = {}
+    for node in ast.parse(path.read_text(encoding="utf-8")).body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id in {"MODEL_PARAMS", "DT"}):
+            found[node.targets[0].id] = ast.literal_eval(node.value)
+    params, dt = found.get("MODEL_PARAMS"), found.get("DT")
+    if not isinstance(params, dict) or not isinstance(dt, (int, float)) or not all(
+            isinstance(params.get(k), (int, float)) and math.isfinite(params[k]) for k in (
+                "tauSyn", "tDelay", "v0", "vReset", "vRest", "vThreshold", "tauMem", "tRefrac", "scalePoisson", "wScale")):
+        raise RuntimeError("Upstream model constants could not be read")
+    return params, float(dt)
 
 
 class Busy(RuntimeError):
@@ -191,6 +208,16 @@ class FlyBrain:
                     digest.update(block)
             if digest.hexdigest() != expected:
                 raise RuntimeError(f"Pinned upstream file failed verification: {relative}")
+        # The compiled spike-driven engine (fastfly.py) is the default: the same equations, bit for bit
+        # with identical input, about two orders of magnitude faster on CPU. "torch" runs upstream's own model.
+        self.engine = os.environ.get("FLY_BRAIN_ENGINE", "fast")
+        if self.engine not in {"fast", "torch"}:
+            raise RuntimeError("Unknown fly-brain engine")
+        if self.engine == "fast":
+            if device != "cpu":
+                raise RuntimeError("The compiled engine runs on CPU")
+            self._init_fast(root)
+            return
 
         # The upstream model imports these in this order to avoid an Arrow/Torch
         # shared-library conflict. Do not load any downloaded pickle caches.
@@ -260,6 +287,78 @@ class FlyBrain:
         self.readout_flat = [index for group in self.readout_indices.values() for index in group]
         self.readout_tensor = torch.tensor(self.readout_flat, dtype=torch.long, device=device)
 
+    def _init_fast(self, root: Path):
+        import numpy as np
+        import pandas as pd
+        import pyarrow  # noqa: F401
+        import numba
+        from fastfly import FastConnectome
+        self.np = np
+        self.torch = None
+        self.device = "cpu"
+        threads = max(1, min(4, int(os.environ.get("FLY_BRAIN_THREADS", "1"))))
+        numba.set_num_threads(min(threads, numba.config.NUMBA_NUM_THREADS))
+        params, self.dt = upstream_constants(root / "code/run_pytorch.py")
+        benchmark_spec = importlib.util.spec_from_file_location("benchmark", root / "code/benchmark.py")
+        benchmark = importlib.util.module_from_spec(benchmark_spec)
+        sys.modules["benchmark"] = benchmark
+        benchmark_spec.loader.exec_module(benchmark)
+        self.step_ms = float(os.environ.get("FLY_BRAIN_STEP_MS", "50"))
+        if not math.isfinite(self.step_ms) or not 5 <= self.step_ms <= 50:
+            raise RuntimeError("Invalid configured neural step duration")
+        self.steps = int(round(self.step_ms / self.dt))
+        if not math.isclose(self.steps * self.dt, self.step_ms):
+            raise RuntimeError("Neural step duration must align with upstream timestep")
+        # (As upstream get_hash_tables: the completeness table's index order is the neuron order.)
+        completeness = pd.read_csv(root / "data/2025_Completeness_783.csv", index_col=0)
+        self.id_to_index = {neuron: i for i, neuron in enumerate(completeness.index)}
+        self.neuron_count = len(self.id_to_index)
+        self.input_indices = {
+            "food": [self.id_to_index[neuron] for neuron in benchmark.EXPERIMENTS["sugar"]["neu_exc"]],
+            "danger": [self.id_to_index[neuron] for neuron in LC4_IDS],
+            "drive": [self.id_to_index[neuron] for neuron in benchmark.EXPERIMENTS["p9"]["neu_exc"]],
+            **{name: [self.id_to_index[neuron] for neuron in neurons] for name, neurons in SENSORY_IDS.items()},
+        }
+        self.readout_indices = {name: [self.id_to_index[neuron] for neuron in neurons] for name, neurons in READOUT_IDS.items()}
+        self.readout_flat = [index for group in self.readout_indices.values() for index in group]
+        connections = pd.read_parquet(root / "data/2025_Connectivity_783.parquet", columns=[
+            "Postsynaptic_Index", "Presynaptic_Index", "Excitatory x Connectivity",
+        ])
+        stimulated = sorted(set(index for group in self.input_indices.values() for index in group))
+        self.fast = FastConnectome(
+            connections["Postsynaptic_Index"].to_numpy(dtype=np.int64),
+            connections["Presynaptic_Index"].to_numpy(dtype=np.int64),
+            connections["Excitatory x Connectivity"].to_numpy(dtype=np.float32), self.neuron_count, params, self.dt,
+            exc_indices=stimulated, stim_indices=stimulated, readout_flat=self.readout_flat, threads=threads)
+        del connections
+        self.synapse_count = self.fast.synapse_count
+        self.rates = np.zeros(self.neuron_count, dtype=np.float32)
+        self.fast.warm()
+
+    def _set_rates(self, inputs: dict[str, float]):
+        """The stimulation rates (Hz) of the input populations, for either engine."""
+        fast = getattr(self, "engine", "torch") == "fast"
+        rates = self.rates
+        if fast:
+            rates[:] = 0
+        else:
+            rates.zero_()
+        for name, multiplier in {"food": 200.0, "danger": 200.0, "drive": 100.0,
+                                 "bitter": 200.0, "odor": 250.0, "touch": 300.0}.items():
+            if fast:
+                rates[self.input_indices[name]] = inputs.get(name, 0.0) * multiplier
+            else:
+                rates[:, self.input_indices[name]] = inputs.get(name, 0.0) * multiplier
+        # P9 has published left/right identities; no guessed hemispheres for
+        # LC4 or taste. Bearing biases explicit descending locomotion drive,
+        # while turn output still comes solely from measured DNa firing.
+        turn = inputs.get("turn", 0.0)
+        for side, gain in enumerate((1 - max(0.0, turn), 1 + min(0.0, turn))):
+            if fast:
+                rates[self.input_indices["drive"][side]] *= gain
+            else:
+                rates[:, self.input_indices["drive"][side]] *= gain
+
     def _session(self, name: str, reset: bool) -> Session:
         now = self.clock()
         for key in list(self.sessions):
@@ -270,6 +369,14 @@ class FlyBrain:
         if name not in self.sessions:
             if len(self.sessions) >= self.max_sessions:
                 self.sessions.popitem(last=False)
+            if getattr(self, "engine", "torch") == "fast":
+                # The compiled engine's state carries its own per-creature random stream, seeded the same way.
+                seed = int.from_bytes(sha256(name.encode()).digest()[:8], "big") % (2**63 - 1)
+                self.sessions[name] = Session(self.fast.new_state(seed or 1), None, now)
+                session = self.sessions[name]
+                session.last_used = now
+                self.sessions.move_to_end(name)
+                return session
             generator = self.torch.Generator(device=self.device)
             # A stable per-creature seed makes fresh sessions reproducible;
             # independent generator state continues across subsequent steps.
@@ -287,16 +394,22 @@ class FlyBrain:
         try:
             started = time.monotonic()
             state = self._session(session, reset)
-            self.rates.zero_()
-            for name, multiplier in {"food": 200.0, "danger": 200.0, "drive": 100.0,
-                                     "bitter": 200.0, "odor": 250.0, "touch": 300.0}.items():
-                self.rates[:, self.input_indices[name]] = inputs.get(name, 0.0) * multiplier
-            # P9 has published left/right identities; no guessed hemispheres for
-            # LC4 or taste. Bearing biases explicit descending locomotion drive,
-            # while turn output still comes solely from measured DNa firing.
-            turn = inputs.get("turn", 0.0)
-            for side, gain in enumerate((1 - max(0.0, turn), 1 + min(0.0, turn))):
-                self.rates[:, self.input_indices["drive"][side]] *= gain
+            self._set_rates(inputs)
+            if getattr(self, "engine", "torch") == "fast":
+                counts = self.np.zeros(len(self.readout_flat), dtype=self.np.float64)
+                completed = 0
+                # 10 ms chunks: the same wall-clock budget check as the torch path's every ten steps.
+                while completed < self.steps:
+                    chunk = min(100, self.steps - completed)
+                    counts += self.fast.run(state.state, chunk, self.rates)
+                    completed += chunk
+                    if time.monotonic() - started >= STEP_BUDGET_SECONDS:
+                        break
+                activity, activity_window = readout_activity(state.history, counts.tolist(), completed * self.dt)
+                state.last_used = self.clock()
+                return {"motor": decode_motor(activity), "activity": activity, "source": "fly-brain",
+                        "simulatedMs": completed * self.dt, "activityWindowMs": activity_window,
+                        "elapsedMs": round((time.monotonic() - started) * 1000, 2)}
             counts = self.torch.zeros(len(self.readout_flat), device=self.device)
             completed = 0
             with self.torch.no_grad():
@@ -363,6 +476,7 @@ class WorkerHandler(BaseHTTPRequestHandler):
         self._send(200 if ready else 503, {
             "ready": ready, "source": "fly-brain", "revision": UPSTREAM_REVISION,
             "neuronCount": self.server.brain.neuron_count if ready else 0,
+            "engine": getattr(self.server.brain, "engine", "torch") if ready else None,
         })
 
     def do_POST(self):
@@ -413,7 +527,7 @@ def main():
         if not math.isfinite(args.smoke_drive) or not 0 <= args.smoke_drive <= 1:
             parser.error("--smoke-drive must be from 0 to 1")
         brain = FlyBrain(root, device)
-        print(json.dumps({"ready": True, "device": device, "neurons": brain.neuron_count,
+        print(json.dumps({"ready": True, "device": device, "engine": brain.engine, "neurons": brain.neuron_count,
                           "synapses": brain.synapse_count, "setupSeconds": round(time.monotonic() - started, 3)}), flush=True)
         for name, inputs in {
             "forward": {"food": 0, "danger": 0, "drive": args.smoke_drive},
@@ -434,7 +548,7 @@ def main():
     def load():
         try:
             server.brain = FlyBrain(root, device)
-            print(json.dumps({"ready": True, "source": "fly-brain", "device": device,
+            print(json.dumps({"ready": True, "source": "fly-brain", "device": device, "engine": server.brain.engine,
                               "neurons": server.brain.neuron_count,
                               "setupSeconds": round(time.monotonic() - started, 3)}), flush=True)
         except Exception:

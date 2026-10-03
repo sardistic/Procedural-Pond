@@ -190,7 +190,7 @@ class UpstreamParityTests(unittest.TestCase):
         # The real dataset and exact imported upstream TorchModel are required.
         # This checks state and spike counts, not a mocked motor response.
         from unittest.mock import patch
-        with patch.dict(os.environ, {"FLY_BRAIN_STEP_MS": "10"}):
+        with patch.dict(os.environ, {"FLY_BRAIN_STEP_MS": "10", "FLY_BRAIN_ENGINE": "torch"}):
             brain = FlyBrain(Path(os.environ["FLY_BRAIN_TEST_ROOT"]),
                              device=os.environ.get("FLY_BRAIN_DEVICE", "cpu"))
         torch = brain.torch
