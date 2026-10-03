@@ -631,7 +631,7 @@ async function route(req) {
     if (!ID_RE.test(id)) throw new HttpError(400, 'bad pond id');
     const row = q.get.get(id);
     if (!row || (!keyMatches(row, req.headers['x-pond-key']) && !ownsRow(req, row))) throw new HttpError(403, 'not your pond');
-    const result = await minds.decide(id, body.scenario);
+    const result = await minds.decide(id, body.scenario, body.creature);
     return [result.status, result.body];
   }
   // Is a pond name allowed? (Asked as the owner types one; every save is checked again anyway.)

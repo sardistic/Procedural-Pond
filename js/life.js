@@ -602,6 +602,8 @@ function eat(world, c, f) {
     if (CONDITIONING.has(f.kind)) L.cooldown = Math.min(L.cooldown, 5);
   }
   if ((f.z ?? 0) > 32) addRipple(world, f.x, f.y, 0.6);
+  // An awakened mind learns from the meal.
+  if (c.life && c.life.mind && typeof mindReward === 'function') mindReward(world, c, f instanceof Creature ? 'kill' : 'fed', f);
 }
 
 const FOOD_GAIN = { plankton: 0.1, pellet: 0.3, spawn: 0.3, brine: 0.5, spirulina: 0.35, krill: 0.5, bloodworm: 0.5, snow: 0.25 };

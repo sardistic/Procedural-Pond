@@ -1,4 +1,5 @@
 'use strict';
+const {reserveCreature}=require('./mind_limits.js');
 
 // The full connectome lives in a separate worker; this API owns authorization,
 // request budgets and the bounded interface to the game's movement code.
@@ -27,7 +28,7 @@ function cleanMotor(result) {
 }
 function createNeuralService({ url, request = fetch, now = Date.now,
   hourlyBudget = 1800, perPondBudget = 600, cooldownMs = 2000, timeoutMs = 7500,
-  maxActive = 1, cleanInput = cleanFlyInput, cleanOutput = cleanMotor, serviceName = 'fly brain' } = {}) {
+  maxActive = 1, perCreatureCooldownMs = 0, cleanInput = cleanFlyInput, cleanOutput = cleanMotor, serviceName = 'fly brain' } = {}) {
   let base = null;
   if (url) {
     const u = new URL(url);
@@ -62,6 +63,8 @@ function createNeuralService({ url, request = fetch, now = Date.now,
       }
       const limit=ponds.get(pond)||{n:0,at:-Infinity};
       if(active>=maxActive || used>=hourlyBudget || limit.n>=perPondBudget || t-limit.at<cooldownMs || limit.pending)
+        return {status:429,body:{error:'resting between neural steps'}};
+      if(perCreatureCooldownMs && !reserveCreature(limit,clean.creature,t,perCreatureCooldownMs))
         return {status:429,body:{error:'resting between neural steps'}};
       active++;used++;limit.n++;limit.at=t;limit.pending=true;ponds.set(pond,limit);
       try {

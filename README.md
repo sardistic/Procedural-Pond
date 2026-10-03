@@ -233,7 +233,7 @@ With **Life** on (Scene section), the pond runs itself:
 ## Hosting
 
 Rare creatures (by species or traits) with an intellect multiplier of at least 1.1 have an **Awaken mind**
-button in their creature card. One awakened individual per pond can choose food,
+button in their creature card. Up to five awakened individuals per pond can choose food,
 approved prey, underwater cover, retreat, waiting, nearby exploration, resting,
 companionship, investigating neighbors, keeping distance or waiting in ambush based on
 its perceived neighbors, hunger, temperament, traits, upgrades and four recent
@@ -249,6 +249,35 @@ existing format. Movement, shore avoidance and immediate escape remain local. Fi
 and their relatives, and Watchers support awakening. Cephalopods can also choose
 camouflage and an ink escape using their existing behaviors.
 
+**Fights, learning and the brain at work.** Every awakened mind has a *fight drive*
+built from its aggression, territory, predator or woken-hunter status, hunting
+upgrades, corruption (the marked), rage (darkness, feral, wanderers), stress and the
+fights it has won or lost. Above 25% it picks a rival among the creatures it can
+see: other minds first, nothing much bigger than itself, never protected kinds,
+creatures in a refuge, the mythic or (unless marked itself) the changed. Every
+controller sees that rival: Jev gets a **fight** choice, Fly Brain feels it as
+sugar-like feeding drive, and Fish Brain receives it as approachable evidence with
+a matching rage input. A strike lands only when the brain's own steering brings it
+face to face with the rival. A much smaller rival is caught. Otherwise energy,
+vitality, rage, size, jaws and drive decide, and the loser bleeds. Fight deaths are
+capped at six per pond day, and the marked gain a little corruption from winning.
+
+Minds learn from food, kills, fights won and lost, and danger that gets close: a
+reward strengthens the senses they were heading toward (food, prey and rivals, their
+kind, cover, strangers) and a punishment sharpens danger. Wins make them bolder and
+losses warier, and each kind they fight becomes easy prey or something to fear. The
+creature card shows the brain at work live: a ring of its senses, Fish1 population
+firing by side, Fly Brain readouts or Jev's weighted options, traces of drive, speed
+and turning, the fight drive's sources, its record, and recent lessons. Sparks over
+its head show how hard its brain is working and on what. What it learns is saved
+with the pond.
+
+The Guide (?) starts with the current controlled creatures, their controller and
+status. Click a creature to close the guide and follow it. Enabling another mind
+keeps existing minds awake; the sixth waits for a slot. Local/server saves retain
+up to five, and request lanes rotate fairly. Fish modes target 200 ms per creature;
+Fly modes share the existing heavy worker and its two-second request spacing.
+
 All controllers require a server-backed pond owned by the current browser or signed-in
 account. TypeSafe needs `TYPESAFE_API_KEY` in the API service environment. Keep that key
 server-side. `TYPESAFE_MODEL` optionally selects a model (default `jev-latest`).
@@ -257,8 +286,9 @@ or supply an API key. Creature cards check service availability before awakening
 and show when a controller is unavailable. Configure the key in the API's protected
 server environment, recreate that service, and verify `/api/minds` reports
 `enabled: true` before expecting TypeSafe choices.
-The API makes at most one decision per pond per 30 real seconds, 120 per pond per
-hour, 600 total per hour and two concurrently. Awakened creatures also reconsider
+The API makes at most one decision per creature per 30 real seconds, 120 per
+creature/hour, 600 per pond/hour, 3,000 total/hour and two concurrently. A pond
+has one thought in flight and a one-second minimum gap between requests. Awakened creatures also reconsider
 exploring, resting and watching when alone. Each decision includes the individual's
 traits, behavioral tags, hunting upgrades, combat/protection status, available
 abilities and temperament weights, plus nearby water stress. Missing configuration, network
@@ -320,7 +350,7 @@ Build `server/fishbrain/Dockerfile` with `server/fishbrain` as its context and r
 it privately on the API network. Set `FISH_BRAIN_URL` in the API environment
 (for example, `http://fishbrain:8091`) and check `/api/minds` reports `fishBrain: true`.
 The secured `/api/minds/fish-brain` route uses the same origin and ownership checks
-as Fly Brain. The nginx configuration gives motor sampling a separate six-per-second
+as Fly Brain. The nginx configuration gives motor sampling a separate thirty-per-second
 rate limit so it can run alongside normal API traffic. See the
 [Fish Brain interface and limits](server/fishbrain/README.md).
 

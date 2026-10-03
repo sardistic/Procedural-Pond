@@ -677,6 +677,7 @@ const guideHit = (e, q) => `${e.name} ${e.text} ${(e.facts || []).join(' ')} ${(
 
 function renderGuide() {
   if (!guideUi.open) return;
+  renderGuideMinds(performance.now(),true);
   const q = guideUi.q.trim().toLowerCase(), out = [];
   for (const b of byId('guide-nav').children) b.setAttribute('aria-pressed', !q && b.dataset.ch === guideUi.chapter);
   byId('guide-here').setAttribute('aria-pressed', guideUi.here);
@@ -700,6 +701,34 @@ function renderGuide() {
   const body = byId('guide-body');
   body.replaceChildren(...out);
   if (!q) byId('guide').scrollTop = 0;
+}
+
+function renderGuideMinds(now=performance.now(),force=false) {
+  if(!guideUi.open || (!force && now<(guideUi.mindsAt||0)))return;
+  guideUi.mindsAt=now+1000;
+  const creatures=mindControlled(world).slice(0,MIND_LIMIT),list=byId('guide-mind-list');
+  byId('guide-mind-count').textContent=`${creatures.length}/${MIND_LIMIT}`;
+  byId('guide-mind-empty').hidden=creatures.length>0;
+  // Keep existing buttons during status refreshes so keyboard focus is retained.
+  if(!guideUi.mindRows || creatures.length!==guideUi.mindRows.length || creatures.some((c,i)=>guideUi.mindRows[i].creature!==c)){
+    guideUi.mindRows=creatures.map(c=>{
+      const row=el('li'),button=el('button','g-mind'),name=el('b'),controller=el('span','g-mind-controller'),status=el('span','g-mind-status');
+      button.type='button';button.append(name,controller,status);row.append(button);
+      button.addEventListener('click',()=>{
+        if(!mindHere(c) || !c.life?.mind || !world.creatures.includes(c)){renderGuideMinds(performance.now(),true);return;}
+        setGuide(false);stopFollow();follow(c);
+      });
+      return {creature:c,row,button,name,controller,status};
+    });
+    list.replaceChildren(...guideUi.mindRows.map(r=>r.row));
+  }
+  for(const r of guideUi.mindRows){
+    const c=r.creature,mode=mindController(c),label=mode==='typesafe'?'TypeSafe / Jev':MIND_CONTROLLERS[mode];
+    const name=`${c.life.name || 'Unnamed'} the ${describe(c).label}`;
+    r.name.textContent=name;r.controller.textContent=label;
+    r.status.textContent=world.paused?'Paused':c.mind?.status||'Waiting for controller';
+    r.button.setAttribute('aria-label',`Follow ${name} · ${label}`);
+  }
 }
 
 function initGuide() {

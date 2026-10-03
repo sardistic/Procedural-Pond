@@ -1287,7 +1287,7 @@ function renderCreature() {
     void mindCheckCapabilities();
     const mind = el('div', 'eld'),controller=mindController(c),availability=mindAvailability(controller);
     mind.append(el('b', null, 'Awakened mind'), el('p', 'note', L.mind ?
-      c.mind?.status || 'Watching for an encounter' : 'A rare, intelligent creature can learn from encounters and choose how to respond. One mind per pond.'));
+      c.mind?.status || 'Watching for an encounter' : 'A rare, intelligent creature can learn from encounters and choose how to respond. Up to five minds per pond.'));
     if(availability!=='ready' && !L.mind)mind.append(el('p','note',mindAvailabilityText(controller,availability)));
     if(MIND_MODES[controller].note)mind.append(el('p','note',MIND_MODES[controller].note));
     if(MIND_MODES[controller].higher && availability==='ready' && mindAvailability('typesafe')!=='ready')
@@ -1295,7 +1295,7 @@ function renderCreature() {
     if(!mindControllerAllowed(c))mind.append(el('p','note','This controller supports swimming fish. Choose TypeSafe or Fly Brain for this creature.'));
     if(mindEligible(c) && MIND_MODES[controller].lanes.includes('choice')) {
       const labels={wait:'watch',forage:'forage',hunt:'hunt',shelter:'shelter',flee:'flee',explore:'explore',
-        rest:'rest',shoal:'join its kind',investigate:'investigate',avoid:'keep distance',ambush:'wait in ambush',camouflage:'camouflage',ink:'ink escape'};
+        rest:'rest',shoal:'join its kind',investigate:'investigate',avoid:'keep distance',ambush:'wait in ambush',camouflage:'camouflage',ink:'ink escape',fight:'fight'};
       mind.append(el('p','note','Choices here: '+mindEncounter(world,c).options.map(o=>labels[o.action]).join(' · ')));
     }
     if (!world.observe) {
@@ -1308,14 +1308,16 @@ function renderCreature() {
       mind.append(controls);
       const label=availability==='ready'?'Awaken mind':availability==='checking'?`Checking ${MIND_CONTROLLERS[controller]}`:
         availability==='unavailable'?`${MIND_CONTROLLERS[controller]} unavailable`:`${MIND_CONTROLLERS[controller]} connection unknown`;
-      const button = el('button', null, L.mind ? 'Return to instincts' : label);
-      button.type = 'button'; button.disabled = !L.mind && (!mindEligible(c) || !mindControllerAllowed(c) || availability!=='ready');
+      const full=!L.mind && mindControlled(world).length>=MIND_LIMIT;
+      const button = el('button', null, L.mind ? 'Return to instincts' : full?'Five minds already awake':label);
+      button.type = 'button'; button.disabled = !L.mind && (full || !mindEligible(c) || !mindControllerAllowed(c) || availability!=='ready');
       button.setAttribute('aria-pressed', String(!!L.mind));
       button.addEventListener('click', () => { awakenMind(world,c); renderCreature(); });
       mind.append(button);
     }
     parts.push(mind);
   }
+  if(L.mind && here && typeof mindPlayCard==='function')parts.push(mindPlayCard(world,c));
   if(L.mind || L.mindLog?.length){
     const entries=L.mindLog||[];
     const log=el('section','mind-log');log.setAttribute('aria-label',mindController(c)==='typesafe' &&

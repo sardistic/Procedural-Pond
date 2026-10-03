@@ -737,6 +737,7 @@ function frame(now) {
   }
   runJobs();
   if (typeof mindTick === 'function') mindTick(world);
+  if (typeof mindPlayTick === 'function') mindPlayTick(world, world.paused ? 0 : dt);
   growTick(now);
   updateCamera(dt);
   updateGlide(dt);
@@ -756,7 +757,7 @@ function frame(now) {
   boardTimer -= dt;
   if (boardTimer <= 0) { boardTimer = 300; refreshBoard(); }
   statusTimer -= dt;
-  if (statusTimer <= 0) { statusTimer = 1; updateSaveStatus(); }
+  if (statusTimer <= 0) { statusTimer = 1; updateSaveStatus(); if(typeof renderGuideMinds==='function')renderGuideMinds(now); }
   mapTimer -= dt;
   if (mapTimer <= 0) { mapTimer = 0.12; drawMinimap(); }
   requestAnimationFrame(frame);

@@ -51,6 +51,30 @@ class NetworkTests(unittest.TestCase):
         self.assertLess(brain.step("pond/rest", rest)["motor"]["thrust"], .01)
         self.assertFalse(brain.step("pond/rest", rest)["motor"]["feeding"])
 
+    def test_rage_drives_rival_approach_when_sated_and_activity_is_reported(self):
+        sated = inputs()
+        sated["internal"]["hunger"] = 0
+        sated["sectors"][4]["prey"] = 1
+        raging = copy.deepcopy(sated)
+        raging["internal"]["rage"] = 1
+        brain = FishBrain(noise=0)
+        calm = brain.step("pond/calm", sated)
+        angry = brain.step("pond/angry", raging)
+        self.assertGreater(angry["motor"]["right"] - angry["motor"]["left"], calm["motor"]["right"] - calm["motor"]["left"])
+        self.assertGreater(angry["motor"]["thrust"], calm["motor"]["thrust"])
+        self.assertEqual(set(angry["activity"]), {"input-layer", "class-I", "class-II", "spn-turning", "spn-forward"})
+        for pair in angry["activity"].values():
+            self.assertEqual(len(pair), 2)
+            self.assertTrue(all(0 <= v <= 1 for v in pair))
+        bad = copy.deepcopy(raging)
+        bad["internal"]["rage"] = 1.5
+        with self.assertRaises(ValueError):
+            validate_input({"session": "pond/x", "inputs": bad})
+        bad = copy.deepcopy(raging)
+        bad["internal"]["fury"] = .5
+        with self.assertRaises(ValueError):
+            validate_input({"session": "pond/x", "inputs": bad})
+
     def test_state_persists_between_samples_is_separate_and_expires(self):
         now = [0.0]
         brain = FishBrain(max_sessions=2, ttl=2, clock=lambda: now[0])

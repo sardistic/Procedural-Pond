@@ -84,6 +84,27 @@ test('expanded action choices and creature context reach TypeSafe without arbitr
   state.options.push({action:'teleport'});assert.equal(cleanScenario(state),null);
 });
 
+test('Jev cooldowns belong to five bounded creature identities while pond budgets remain shared',async()=>{
+  let t=0,calls=0;
+  const service=createMindService({key:'test-only',now:()=>t,request:async()=>{calls++;return answer()}});
+  for(let i=0;i<5;i++){
+    assert.equal((await service.decide('pond',encounter(),String(i))).status,200);t+=1100;
+  }
+  assert.equal((await service.decide('pond',encounter(),'5')).status,429);
+  assert.equal((await service.decide('pond',encounter(),'0')).status,429);
+  assert.equal((await service.decide('pond',encounter(),'../bad')).status,400);
+  assert.equal(calls,5);
+  t=30000;assert.equal((await service.decide('pond',encounter(),'0')).status,200);
+});
+
+test('hour rollover preserves a pending Jev pond reservation',async()=>{
+  let t=3599000,finish;
+  const service=createMindService({key:'test-only',now:()=>t,request:()=>new Promise(resolve=>finish=()=>resolve(answer()))});
+  const pending=service.decide('pond',encounter(),'1');t=3601000;
+  assert.equal((await service.decide('pond',encounter(),'2')).status,429);
+  finish();assert.equal((await pending).status,200);
+});
+
 test('individual abilities, combat tags, habitat stress and temperament weights are bounded observations', async () => {
   const state=encounter();
   Object.assign(state.creature,{tags:['hunter','feral','kept safe','<script>'],vitality:1.8,stealth:.6,
@@ -101,4 +122,13 @@ test('individual abilities, combat tags, habitat stress and temperament weights 
   assert.equal(c.weights.hunt,2.4);assert.equal(c.weights.turn,1);assert.equal(c.weights.command,undefined);
   assert.equal(payload.state.environment.pollution,.7);assert.equal(payload.state.environment.command,undefined);
   assert.equal(payload.state.neighbors[0].protected,true);assert.equal(payload.state.options[2].weight,1.2);
+});
+test('fight is a bounded choice against a rival, with fight weight and fight memories', () => {
+  const state={...encounter(),neighbors:[{species:'koi',distance:12,relativeSize:.8,role:'rival'}],
+    options:[{action:'wait',distance:0},{action:'fight',distance:12,weight:1.6}],memory:[{event:'won_fight',species:'koi'},{event:'gloat',species:'koi'}]};
+  state.creature.weights={fight:1.4};
+  const clean=cleanScenario(state);
+  assert.equal(clean.neighbors[0].role,'rival');assert.equal(clean.options[1].action,'fight');
+  assert.equal(clean.creature.weights.fight,1.4);assert.deepEqual(clean.memory,[{event:'won_fight',species:'koi'}]);
+  assert.equal(cleanScenario({...state,neighbors:[{species:'koi',distance:12,relativeSize:.8,role:'enemy'}]}),null);
 });

@@ -21,6 +21,10 @@ from connectome import Connectome, ConnectomeError, NeuralState, MODEL, REVISION
 SECTORS = 16
 CHANNELS = ("food", "threat", "same", "other", "obstacle", "motion", "prey", "cover")
 INTERNAL = ("hunger", "energy", "speed", "depth", "comfort")
+# Optional modeled urge to approach rivals, derived in game code from traits,
+# corruption and rage. Older clients omit it.
+OPTIONAL_INTERNAL = ("rage",)
+ACTIVITY = ("input-layer", "class-I", "class-II", "spn-turning", "spn-forward")
 GAINS = (*CHANNELS, "drive")
 SESSION_RE = re.compile(r"[A-Za-z0-9_/-]{1,96}\Z")
 
@@ -50,7 +54,7 @@ def validate_input(body):
         not isinstance(s, dict) or set(s) != set(CHANNELS) or any(not bounded(v) for v in s.values()) for s in sectors
     ):
         raise InvalidInput("Invalid sectors")
-    if not isinstance(internal, dict) or set(internal) != set(INTERNAL) or any(not bounded(v) for v in internal.values()):
+    if not isinstance(internal, dict) or not set(INTERNAL) <= set(internal) <= set(INTERNAL + OPTIONAL_INTERNAL) or any(not bounded(v) for v in internal.values()):
         raise InvalidInput("Invalid internal state")
     if not isinstance(gains, dict) or set(gains) - set(GAINS) or any(not bounded(v, 2) for v in gains.values()):
         raise InvalidInput("Invalid gains")
@@ -100,19 +104,22 @@ class FishBrain:
             state = self._session(name, reset)
             s, internal, g = inputs["sectors"], inputs["internal"], inputs["gains"]
             hunger, energy = internal["hunger"], internal["energy"]
-            attraction = [g["food"] * x["food"] * hunger + g["prey"] * x["prey"] * hunger +
+            # Prey/rival evidence is approached when hungry or when the game's
+            # rage drive is high; food stays hunger-driven.
+            urge = max(hunger, internal.get("rage", 0))
+            attraction = [g["food"] * x["food"] * hunger + g["prey"] * x["prey"] * urge +
                           .45 * g["same"] * x["same"] + .15 * g["other"] * x["other"] +
                           .35 * g["cover"] * x["cover"] * (1 - internal["comfort"]) for x in s]
             aversion = [1.8 * g["threat"] * x["threat"] + 2 * g["obstacle"] * x["obstacle"] +
                         .25 * g["motion"] * x["motion"] * x["threat"] for x in s]
             danger = max(x["threat"] for x in s)
-            front_food = max((x["food"] * g["food"] + x["prey"] * g["prey"]) * max(0, self.cos[i])**4 for i, x in enumerate(s))
+            front_food = max((x["food"] * g["food"] * hunger + x["prey"] * g["prey"] * urge) * max(0, self.cos[i])**4 for i, x in enumerate(s))
             front_obstacle = max(x["obstacle"] * max(0, self.cos[i])**4 for i, x in enumerate(s))
             # Game channels are modeled evidence, not biological cell labels.
             # Project evidence only into the published traced input layer.
             evidence = sum((a - v) * self.sin[i] for i, (a, v) in enumerate(zip(attraction, aversion))) / 2
             evidence += .35 * front_obstacle
-            drive = min(1, g["drive"] * (.2 + .35*hunger + .25*max(attraction) + .3*danger))
+            drive = min(1, g["drive"] * (.2 + .35*urge + .25*max(attraction) + .3*danger))
             drive *= (.25 + .75*energy) * (1 - .8*front_obstacle)
             strengths = [min(1, max(0, drive * (1 + direction * evidence))) for direction in (-1, 1)]
             activity = self.network.advance(state.neural, *strengths, noise=self.noise)
@@ -127,12 +134,12 @@ class FishBrain:
             startle_event = state.startle > .72 and state.refractory == 0
             if startle_event:
                 state.refractory = .8
-            state.feeding += .9 * (min(1, front_food*hunger)*(1-danger) - state.feeding)
+            state.feeding += .9 * (min(1, front_food)*(1-danger) - state.feeding)
             return {"source": "fish-brain", "motor": {
                 "left": min(1, max(0, 4*left)), "right": min(1, max(0, 4*right)),
                 "thrust": min(1, max(0, thrust)), "startle": startle_event,
                 "feeding": state.feeding > .2,
-            }}
+            }, "activity": {name: [round(min(1, max(0, v)), 4) for v in activity[name]] for name in ACTIVITY}}
         except Exception:
             self.sessions.pop(name, None)
             raise

@@ -178,6 +178,7 @@ function creatureRecord(c, a = {}) {
       mind: L.mind || undefined, mindController: typeof mindController==='function' && L.mindController ? mindController(c) : undefined,
       mindMemory: L.mindMemory?.slice(-4),
       mindLog: typeof mindCleanLog==='function' && L.mindLog?.length ? mindCleanLog(L.mindLog) : undefined,
+      mindLearn: typeof mindCleanLearn==='function' && L.mindLearn ? mindCleanLearn(L.mindLearn) : undefined,
       safe: L.safe || undefined, paragon: L.paragon || undefined, warps: L.warps && L.warps.length ? L.warps : undefined,
       wanderer: L.wanderer || undefined, para: L.para || undefined,
       lifespan: r2(L.lifespan), gen: L.gen, scale: L.scale, old: !!L.old, inbred: r2(L.inbred || 0),
@@ -197,8 +198,9 @@ function restoreCreature(world, r, a = {}) {
     quirks: r.L.quirks || [], ill: r.L.ill || [], hunt: r.L.hunt || null, hunter: !!r.L.hunter, madCount: r.L.madCount || 0,
     mind: r.L.mind === true, mindController: typeof MIND_CONTROLLERS!=='undefined' && Object.hasOwn(MIND_CONTROLLERS,r.L.mindController)?r.L.mindController:'typesafe',
     mindMemory: Array.isArray(r.L.mindMemory) ? r.L.mindMemory.slice(-4).filter(m =>
-      ['fed','threat','prey_lost'].includes(m?.event) && typeof m.species === 'string' && m.species.length<=40) : [],
+      (typeof MIND_MEMORY_EVENTS!=='undefined'?MIND_MEMORY_EVENTS:['fed','threat','prey_lost']).includes(m?.event) && typeof m.species === 'string' && m.species.length<=40) : [],
     mindLog: typeof mindCleanLog==='function' ? mindCleanLog(r.L.mindLog) : [],
+    mindLearn: typeof mindCleanLearn==='function' ? mindCleanLearn(r.L.mindLearn) : null,
     safe: !!r.L.safe, paragon: !!r.L.paragon, warps: r.L.warps && r.L.warps.length ? r.L.warps : null, wanderer: r.L.wanderer || null,
     para: r.L.para && typeof PARASITES !== 'undefined' && PARASITES[r.L.para.k] ? r.L.para : null,
   });
@@ -327,9 +329,9 @@ function restorePond(world, d) {
     if (c && r.a && r.a.leader != null && made[r.a.leader]) { c.leader = made[r.a.leader]; c.args.leader = c.leader; }
   });
   world.creatures = made.filter(Boolean);
-  let selectedMind=false;
+  let selectedMinds=0;
   for(const c of world.creatures)if(c.life?.mind){
-    if(selectedMind)c.life.mind=false;else selectedMind=true;
+    if(selectedMinds>=(typeof MIND_LIMIT==='number'?MIND_LIMIT:5))c.life.mind=false;else selectedMinds++;
   }
   world.spawnCount = d.spawnCount ?? world.creatures.reduce((n, c) => Math.max(n, (c.sn ?? -1) + 1), 0);
   seedLineage(world); // anyone missing from the family trees (older saves, links)

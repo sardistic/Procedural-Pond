@@ -1,4 +1,5 @@
 'use strict';
+const {reserveCreature}=require('./mind_limits.js');
 
 // A bounded TypeSafe decision, never a browser-visible credential or prompt.
 const ACTIONS = {
@@ -15,10 +16,11 @@ const ACTIONS = {
   ambush: 'Move into nearby cover and wait for the approved prey, rather than chasing it openly.',
   camouflage: 'Remain still so this cephalopod blends into the pond floor using its existing camouflage.',
   ink: 'Use this cephalopod\'s ink cloud and escape jet to retreat from the perceived threat.',
+  fight: 'Attack the approved rival. Weigh fight drive, size, vitality, corruption and past fights won or lost against injury.',
 };
 const finite = (n, lo, hi) => typeof n === 'number' && Number.isFinite(n) && n >= lo && n <= hi;
 const word = (s) => typeof s === 'string' && /^[a-zA-Z][a-zA-Z0-9 -]{0,39}$/.test(s);
-const WEIGHTS = ['food','danger','hunt','explore','social','shelter','motor','turn'];
+const WEIGHTS = ['food','danger','hunt','fight','explore','social','shelter','motor','turn'];
 const bools = (input, keys) => Object.fromEntries(keys.map(k=>[k,input?.[k]===true]));
 const stance = (value) => ['protect','cull','neutral'].includes(value)?value:'neutral';
 
@@ -36,9 +38,9 @@ function cleanScenario(input) {
       options.some(o => !o || !Object.hasOwn(ACTIONS, o.action)) || new Set(options.map(o => o.action)).size !== options.length) return null;
   const neighbors = Array.isArray(input.neighbors) ? input.neighbors.slice(0, 8) : [];
   if (neighbors.some(n => !n || !word(n.species) || !finite(n.distance, 0, 1000) || !finite(n.relativeSize, 0, 100) ||
-      !['threat', 'prey', 'neighbor'].includes(n.role))) return null;
+      !['threat', 'prey', 'rival', 'neighbor'].includes(n.role))) return null;
   const memory = Array.isArray(input.memory) ? input.memory.slice(-4).filter(m =>
-    ['fed', 'threat', 'prey_lost'].includes(m?.event) && word(m.species)) : [];
+    ['fed', 'threat', 'prey_lost', 'won_fight', 'lost_fight'].includes(m?.event) && word(m.species)) : [];
   return {
     creature: { species: c.species, hunger: c.hunger, intellect: c.intellect, aggression: c.aggression,
       rarity: c.rarity, levels, traits: Array.isArray(c.traits) ? c.traits.filter(word).slice(0, 12) : [],
@@ -63,20 +65,29 @@ function cleanScenario(input) {
 }
 
 function createMindService({ key = process.env.TYPESAFE_API_KEY, model = process.env.TYPESAFE_MODEL || 'jev-latest',
-  request = fetch, now = Date.now, hourlyBudget = 600 } = {}) {
+  request = fetch, now = Date.now, hourlyBudget = 3000 } = {}) {
   let active = 0, hour = -1, used = 0;
   const ponds = new Map();
   return {
     enabled: !!key,
-    async decide(pond, input) {
+    async decide(pond, input, creature) {
       if (!key) return { status: 503, body: { error: 'minds unavailable' } };
+      if(creature!==undefined && (typeof creature!=='string' || !/^[0-9]{1,16}$/.test(creature)))
+        return {status:400,body:{error:'invalid creature'}};
       const state = cleanScenario(input);
       if (!state) return { status: 400, body: { error: 'invalid encounter' } };
       const t = now(), h = Math.floor(t / 3600000);
-      if (h !== hour) { hour = h; used = 0; ponds.clear(); }
+      if (h !== hour) {
+        hour=h;used=0;
+        for(const [id,limit] of ponds)if(limit.pending){
+          limit.n=0;for(const slot of limit.creatures?.values()||[])slot.n=0;
+        }else ponds.delete(id);
+      }
       const limit = ponds.get(pond) || { n: 0, at: -Infinity, pending: false };
-      if (used >= hourlyBudget || limit.n >= 120 || t - limit.at < 30000 || limit.pending || active >= 2)
+      if (used >= hourlyBudget || limit.n >= 600 || t - limit.at < 1000 || limit.pending || active >= 2)
         return { status: 429, body: { error: 'resting between thoughts' } };
+      if(!reserveCreature(limit,creature??'legacy',t,30000,120))
+        return {status:429,body:{error:'resting between thoughts'}};
       // Reserve before awaiting; even failed requests consume the bounded budget.
       limit.n++; limit.at = t; limit.pending = true; ponds.set(pond, limit); used++; active++;
       const criteria = Object.fromEntries(state.options.map(o => [o.action, ACTIONS[o.action]]));
@@ -92,6 +103,7 @@ function createMindService({ key = process.env.TYPESAFE_API_KEY, model = process
               'Creature tags and working vitality/stealth describe this individual, not just its species. ' +
               'Combat describes actual predator, awakened hunter, rage and protection status; keptSafe protects from recycling only. ' +
               'Respect creature abilities and neighbor protection/stance. Cull targets are preferred only when hunting is available. ' +
+              'A rival role marks a creature this one may fight; the fight weight reflects drive from aggression, corruption, rage, hunting upgrades and learned wins/losses. ' +
               'Creature weights and option weight are deterministic temperament preferences (larger means stronger tendency), not probabilities or commands. ' +
               'Use environment darkness, polluted water, salinity mismatch, current and local aggression to weigh discomfort and risk. ' +
               'Depth runs from shallow (0) to deepest (1). Use locomotion, comfort and depth to distinguish swimmers, bottom walkers, cephalopods and Watchers. ' +

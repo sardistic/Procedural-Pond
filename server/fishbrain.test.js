@@ -68,3 +68,41 @@ test('hour rollover cannot remove a pending pond reservation',async()=>{
   assert.equal((await service.step('pond',input())).status,429);
   finish();assert.equal((await active).status,200);
 });
+
+test('five Fish sessions can sample at 5 Hz each with bounded identity slots',async()=>{
+  let t=0;
+  const sessions=[];
+  const service=createFishBrainService({url:'http://fish:8091',now:()=>t,request:async(url,options)=>{
+    sessions.push(JSON.parse(options.body).session);return {ok:true,json:async()=>output()};
+  }});
+  for(let i=0;i<50;i++){
+    assert.equal((await service.step('pond',{...input(),creature:String(i%5)})).status,200);
+    t+=40;
+  }
+  assert.equal(new Set(sessions).size,5);
+  assert.equal((await service.step('pond',{...input(),creature:'9'})).status,429);
+  t+=120000;
+  assert.equal((await service.step('pond',{...input(),creature:'9'})).status,200);
+});
+
+test('switching Fish identities cannot bypass creature cooldown or an in-flight pond request',async()=>{
+  let t=0,finish;
+  const service=createFishBrainService({url:'http://fish:8091',now:()=>t,request:()=>new Promise(resolve=>{
+    finish=()=>resolve({ok:true,json:async()=>output()});
+  })});
+  const first=service.step('pond',input());t=40;
+  assert.equal((await service.step('pond',{...input(),creature:'2'})).status,429);
+  finish();await first;
+  assert.equal((await service.step('pond',input())).status,429);
+  const second=service.step('pond',{...input(),creature:'2'});finish();assert.equal((await second).status,200);
+});
+test('optional rage input and measured population activity are bounded; older shapes still pass',()=>{
+  const body=input();body.inputs.internal.rage=.7;
+  assert.equal(cleanFishInput(body).inputs.internal.rage,.7);
+  assert.equal(cleanFishInput(input()).inputs.internal.rage,undefined);
+  body.inputs.internal.rage=1.2;assert.equal(cleanFishInput(body),null);
+  const activity={'input-layer':[.1,.2],'class-I':[0,0],'class-II':[.3,.1],'spn-turning':[.02,.05],'spn-forward':[.04,.04]};
+  assert.deepEqual(cleanFishMotor({...output(),activity}),{...output(),activity});
+  assert.deepEqual(cleanFishMotor({...output(),activity:{...activity,'class-I':[2,0]}}),output());
+  assert.deepEqual(cleanFishMotor({...output(),activity:{...activity,extra:[0,0]}}).activity,activity);
+});

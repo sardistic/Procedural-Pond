@@ -61,7 +61,8 @@ silent descending activity stays zero. Rates carry history between samples.
 from frontal food/threat evidence with leaky state and a startle refractory
 period. This dataset has no identified feeding or startle circuit. Existing
 local movement, collision, protection and immediate survival reflexes remain
-in ordinary game code. No training or reinforcement learning is included.
+in ordinary game code. The network itself is not trained. The game's learning
+layer only adjusts the bounded sensory gains it sends (see the main README).
 
 ## Run
 
@@ -105,6 +106,11 @@ upgrades, temperament, combat and protection tags determine allowed prey and
 bounded baseline gains. Hunger and energy modulate drive and feeding; comfort
 modulates cover attraction. Depth and speed are available observations for future
 network extensions; the current network does not directly use those two channels.
+An optional `internal.rage` in `[0, 1]` is the game's fight drive (from aggression,
+corruption, rage and hunting upgrades, computed in game code). When present, prey
+evidence (which then includes the chosen rival) is approached with
+`max(hunger, rage)` rather than hunger alone, in attraction, drive and the feeding
+reflex. Older clients omit it, and the result is unchanged.
 
 No action, target coordinates or goal string enters the worker. It returns only:
 
@@ -117,9 +123,20 @@ No action, target coordinates or goal string enters the worker. It returns only:
     "thrust": 0.0,
     "startle": false,
     "feeding": false
+  },
+  "activity": {
+    "input-layer": [0.0, 0.0],
+    "class-I": [0.0, 0.0],
+    "class-II": [0.0, 0.0],
+    "spn-turning": [0.0, 0.0],
+    "spn-forward": [0.0, 0.0]
   }
 }
 ```
+
+`activity` holds the mean simulated rate of each population on the left and right
+side after the sample, in `[0, 1]`. The creature card draws it. It is model state,
+not recorded physiology.
 
 The three drives are continuous and normalized. `right - left` controls turning,
 and `thrust` scales desired speed inside the existing `Fish.update()` system.
@@ -136,19 +153,24 @@ It only multiplies bounded gains: forage emphasizes food, hunt approved prey,
 flee threat avoidance, shoal same-species attraction, shelter cover, and rest
 reduces drive. Jev does not create a movement plan or directly steer the fish.
 
-Both fish modes target a 200 ms interval, with one motor request in flight per
-pond. Slow Jev requests cannot block fast Fish Brain requests. Motor outputs
+Up to five creatures can be awakened per pond. The Guide lists them with their
+controller/status and click-to-follow links. Both fish modes target a 200 ms
+interval per creature; round-robin requests are spaced 40 ms apart with five
+active fish and remain serialized per pond. Slow Jev requests cannot block fast
+Fish Brain requests. Motor outputs
 expire 600 ms after their input sample; late results, controller changes, pause,
 hidden pages and observers cannot apply them. Worker errors trigger a two-second
-client backoff and ordinary instincts. Missing/failed Jev leaves hybrid running
+client backoff for that creature and ordinary instincts. Missing/failed Jev leaves hybrid running
 autonomous Fish Brain with baseline gains; missing/failed Fish Brain leaves it
 using ordinary local instincts. Controller and bounded history persist in the
 existing local/server saves; goals, neural rate/activation state and random
 streams do not.
 
-The API times out worker steps at 800 ms, tolerates cooldown jitter down to 180 ms,
-and permits up to 18,000 steps per pond/hour, 72,000 total/hour and eight API calls
-in flight across ponds. Each pond has only one active step. The worker serializes
+The API times out worker steps at 800 ms, tolerates per-creature cooldown jitter
+down to 180 ms, enforces a 35 ms aggregate pond cooldown, and permits up to
+90,000 steps per pond/hour, 360,000 total/hour and eight API calls in flight
+across ponds. Each pond has only one active step and at most five recent
+creature identities per provider (idle identities expire after two minutes). The worker serializes
 short computations, rejects busy requests, limits bodies to 16 KiB, and bounds
 state to 32 sessions with LRU eviction and a two-minute idle TTL. Restart, expiry
 or eviction starts fresh. Direct worker requests may pass `reset: true`; the

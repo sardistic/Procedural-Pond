@@ -94,7 +94,7 @@ test('pending or failed Jev does not block Fish Brain; worker failure and expire
   await h.run("mindThink(world,c,encounter,'fish')");
   assert.equal(h.run('c.mind.motor'),null);
   assert.equal(h.run('mindIntent(world,c)'),null);
-  assert.ok(h.run('MINDS.fishBackoff>performance.now()'));
+  assert.ok(h.run('c.mind.fishBackoff>performance.now()'));
 });
 test('motor sampling is 200 ms, expires, and ignores late responses or controller switches',async()=>{
   const h=client({jev:false});await h.run('mindCheckCapabilities()');
@@ -127,4 +127,77 @@ test('fish motor modes require the Fish movement body; original modes retain oth
   assert.equal(h.run("mindControllerAllowed(c,'typesafe')"),true);
   assert.equal(h.run("mindControllerAllowed(c,'fly-brain')"),true);
   assert.equal(h.run("setMindController(world,c,'fish-brain')"),false);
+});
+
+test('five creatures can awaken without displacing others; a sixth waits for a free slot',async()=>{
+  const h=client();await h.run('mindCheckCapabilities()');
+  h.run(`world.creatures=Array.from({length:6},(_,i)=>Object.assign(new Fish(),{...c,seed:100+i,
+    life:{...c.life,mind:false},mind:null}));`);
+  assert.deepEqual(Array.from(h.run('world.creatures.map(q=>awakenMind(world,q))')),[true,true,true,true,true,false]);
+  assert.equal(h.run('mindControlled(world).length'),5);
+  assert.equal(h.run('awakenMind(world,world.creatures[2])'),true);
+  assert.equal(h.run('mindControlled(world).length'),4);
+  assert.equal(h.run('world.creatures[0].life.mind && world.creatures[1].life.mind'),true);
+  assert.equal(h.run('awakenMind(world,world.creatures[5])'),true);
+  h.run('world.observe={id:"observer"};');
+  assert.equal(h.run('awakenMind(world,world.creatures[0])'),false);
+  assert.equal(h.run('mindControlled(world).length'),5);
+});
+
+test('five Fish Brains receive independent 200 ms samples with round-robin fairness',async()=>{
+  const h=client({jev:false});await h.run('mindCheckCapabilities()');
+  h.run(`world.creatures=Array.from({length:5},(_,i)=>Object.assign(new Fish(),{...c,seed:100+i,
+    life:{...c.life,mindController:'fish-brain'},mind:{token:0}}));`);
+  for(let i=0;i<20;i++){h.run('mindTick(world)');await h.flush();h.advance(40);}
+  const calls=h.requests.filter(r=>r.url.endsWith('/fish-brain')).map(r=>JSON.parse(r.options.body).creature);
+  assert.equal(calls.length,20);
+  assert.deepEqual(calls.slice(0,5),['100','101','102','103','104']);
+  for(const seed of calls.slice(0,5))assert.equal(calls.filter(s=>s===seed).length,4);
+  assert.equal(h.run('world.creatures.every(q=>q.mind.motor && q.life.mind)'),true);
+});
+
+test('a failed creature does not starve other minds and Jev identities are included',async()=>{
+  const h=client({request:async(url,options)=>{
+    if(url.endsWith('/decide'))return new Response(JSON.stringify({action:'forage',confidence:.8}));
+    if(JSON.parse(options.body).creature==='100')return new Response('{}',{status:503});
+    return new Response(JSON.stringify({source:'fish-brain',motor:{left:0,right:.5,thrust:.4,startle:false,feeding:false}}));
+  }});await h.run('mindCheckCapabilities()');
+  h.run(`world.creatures=Array.from({length:2},(_,i)=>Object.assign(new Fish(),{...c,seed:100+i,
+    life:{...c.life},mind:{token:0}}));`);
+  h.run('mindTick(world)');await h.flush();h.advance(100);
+  h.run('mindTick(world)');await h.flush();
+  assert.equal(h.run('world.creatures[0].mind.motor==null'),true);
+  assert.equal(h.run('world.creatures[1].mind.motor.value.thrust'),.4);
+  const first=h.requests.find(r=>r.url.endsWith('/decide'));
+  assert.equal(JSON.parse(first.options.body).creature,'100');
+  h.advance(1000);h.run('mindTick(world)');await h.flush();
+  assert.ok(h.requests.some(r=>r.url.endsWith('/decide') && JSON.parse(r.options.body).creature==='101'));
+});
+
+test('Fly Brains rotate fairly while an independent Jev thought is pending',async()=>{
+  let finish;
+  const h=client({request:async url=>{
+    if(url.endsWith('/decide'))return new Promise(resolve=>{
+      finish=()=>resolve(new Response(JSON.stringify({action:'forage',confidence:.8})));
+    });
+    return new Response(JSON.stringify({source:'fly-brain',
+      motor:{drive:.4,turn:.2,feeding:false,escape:false,reverse:false},
+      activity:{forward:1,left:0,right:1,feeding:0,escape:0,reverse:0}}));
+  }});await h.run('mindCheckCapabilities()');
+  h.run(`profile.weights.turn=1;
+    MIND_LANES.fly.inputs=()=>({food:0,danger:0,drive:.3});
+    mindDecisionSignature=()=>encounter.signature;
+    world.creatures=Array.from({length:5},(_,i)=>Object.assign(new Fish(),{...c,seed:100+i,
+      life:{...c.life,mindController:i===4?'typesafe':'fly-brain'},mind:{token:0}}));`);
+  for(let i=0;i<4;i++){
+    h.run('mindTick(world)');await h.flush();
+    assert.equal(h.run('MINDS.pending'),true);
+    assert.equal(h.run('MINDS.flyPending'),false);
+    h.advance(2000);
+  }
+  const calls=h.requests.filter(r=>r.url.endsWith('/fly-brain')).map(r=>JSON.parse(r.options.body).creature);
+  assert.deepEqual(calls,['100','101','102','103']);
+  assert.equal(h.run('world.creatures.slice(0,4).every(q=>q.mind.plan && q.life.mind)'),true);
+  finish();await h.flush();
+  assert.equal(h.run('world.creatures[4].mind.plan.action'),'forage');
 });

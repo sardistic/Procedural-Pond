@@ -168,5 +168,5 @@ class Connectome:
             np.clip(state.activation, 0., 1., out=rates)
         return {
             name: tuple(self.mean(state.rates, members) for members in self.populations[name])
-            for name in ("spn-turning", "spn-forward", "class-I", "class-II")
+            for name in ("spn-turning", "spn-forward", "class-I", "class-II", "input-layer")
         }

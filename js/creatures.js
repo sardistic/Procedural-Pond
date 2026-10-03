@@ -278,14 +278,14 @@ class Fish extends Creature {
         // collision, shoreline and body-chain integration still move the fish.
         const angle=this.heading+intent.turn*this.turnRate*dt;
         gx=Math.cos(angle);gy=Math.sin(angle);want=this.maxSpeed*(intent.startle?1:intent.thrust);
-        this.chasing=false;
+        this.chasing=!!this.mind?.rival; // (a fighting mind shoulders in toward its rival)
         if(intent.feeding && typeof mindMotorMeal==='function')mindMotorMeal(world,this);
       } else {
       const prey = intent ? intent.prey || null : this.prey && !this.prey.caught && !this.prey.gone ? this.prey : null;
       let f = intent ? intent.food || prey : prey || world.nearestFood(this.x, this.y, this.sight * (hungry ? 1.4 : 1),
         (fd) => (hungry || fd.fed) && (!this.foodFilter || this.foodFilter(fd)));
       if (f && typeof islandWaterRoute === 'function' && !islandWaterRoute(world, this.x, this.y, f.x, f.y)) f = null;
-      this.chasing = !!f;
+      this.chasing = !!f || intent?.action === 'fight';
       if (f) {
         gx = f.x - this.x; gy = f.y - this.y;
         want = this.maxSpeed * (prey ? (1.05 + 0.4 * (typeof hungerOf === 'function' ? hungerOf(this) : 0.5)) * (typeof huntBurst === 'function' ? huntBurst(this) : 1) : 1); // the hungrier, the harder it chases
@@ -379,7 +379,7 @@ class Fish extends Creature {
     const R = Math.min(16, this.body.w[0] * 2.2 + 5);
     let sx = 0, sy = 0, n = 0;
     forNear(world, this.x, this.y, R, (o, d2) => {
-      if (o === this || n >= 14 || !o.body || o === this.prey || o.grabbed || Math.abs((o.z || 0) - this.z) > 8) return;
+      if (o === this || n >= 14 || !o.body || o === this.prey || (this.mind && o === this.mind.rival) || o.grabbed || Math.abs((o.z || 0) - this.z) > 8) return;
       n++;
       if (d2 < 0.01) { const a = Math.random() * TAU; sx += Math.cos(a); sy += Math.sin(a); return; }
       const d = Math.sqrt(d2), f = (R - d) / R;
