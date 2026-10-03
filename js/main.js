@@ -453,8 +453,8 @@ function update(dt) {
   cur.y = Math.sin(cur.angle) * cur.s;
   updateSky(world, dt);
   world.waveField = world.opts.hdWaves ? waveField({ t: waveTime(world), swell: surfaceSwell(world),
-    swellDir: world.shore ? world.shoreN : [0.8, 0.6], gust: world.weather.gust, rain: world.weather.rain,
-    surf: world.tide.surf, tide: world.tide.level, shore: world.shore, depth: world.depth, riverMask: world.riverMask }) : null;
+    swellDir: world.shore ? world.shoreN : [0.8, 0.6], gust: seaOf(world).gust, rain: seaOf(world).rain,
+    surf: seaOf(world).surf, tide: world.tide.level, shore: world.shore, depth: world.depth, riverMask: world.riverMask }) : null;
   if (world.shore) {
     // Tidal streams: the water floods toward the beach, then ebbs away.
     const k = world.tide.flow * 0.35;
@@ -652,8 +652,8 @@ function render(full = false) {
     voidSkin: world.eldMarks && world.eldMarks.length || world.plants.some((p) => p.tr && p.tr.eld) ? VOID_SKIN : null,
     swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6], clouds: q < 1 ? world.clouds : null, sky: skyColor, skyK: glass ? 1.4 : typeof heavenNow === 'function' && heavenNow(world, 'aurora') ? 1.6 : 1 - world.weather.rain * 0.7,
     lights: q < 2 ? buildLights(world, rect) : null, lightVis: light.darkness || 0, deepColor2: deepTint(world), trench: world.trench, trenchGlow: TRENCH_GLOW[branchOf(world)],
-    chop: q < 1 && !glass ? clamp(0.18 + Math.max(0, world.weather.gust) * 0.9 + world.tide.surf * 0.35, 0, 1.2) * surfaceVis : 0, spindrift: q < 1 ? clamp((swell - 0.75) * 2.5, 0, 1) * surfaceVis : 0,
-    waveMode: o.hdWaves ? 'mesh' : 'classic', waveT: waveTime(world), gust: glass ? 0 : world.weather.gust, rain: world.weather.rain,
+    chop: q < 1 && !glass ? clamp(0.12 + seaOf(world).gust * 0.6 + seaOf(world).surf * 0.25, 0, 0.9) * surfaceVis : 0, spindrift: q < 1 ? clamp((swell - 0.75) * 2.5, 0, 1) * surfaceVis : 0,
+    waveMode: o.hdWaves ? 'mesh' : 'classic', waveT: waveTime(world), wavePh: world.wavePh, gust: glass ? 0 : seaOf(world).gust, rain: seaOf(world).rain,
   }, rect);
   const waterState = { swell, sky: skyColor, darkness: light.darkness, visibility: surfaceVis, time: waveTime(world) };
   const meshReady = o.hdWaves && surfaceVis > 0.025 && typeof waterMeshAvailable === 'function' && waterMeshAvailable();
@@ -691,7 +691,8 @@ function skyReflection(light) {
 }
 function surfaceSwell(w, glass = typeof isGlass === 'function' && isGlass(w)) {
   if (glass || (w.opts.hdWaves && typeof deadCalm === 'function' && deadCalm(w))) return 0.02;
-  return clamp(0.3 + w.tide.surf * 0.35 + Math.max(0, w.weather.gust) * 0.45 + w.weather.rain * 0.15, 0, 1.2)
+  const sea = seaOf(w);
+  return clamp(0.3 + sea.surf * 0.35 + sea.gust * 0.4 + sea.rain * 0.12, 0, 1.1)
     * (w.opts.habitat === 'fresh' ? 0.7 : 1);
 }
 
@@ -747,6 +748,7 @@ function frame(now) {
   last = now;
   if (!world.paused) {
     world.waveTime = waveTime(world) + elapsed; // Wave periods follow real seconds even when the ecosystem is sped up.
+    seaStep(world, Math.min(elapsed, 1));
     update(dt * world.opts.speed * (hardMode(world) ? HARD_PACE : 1)); // (hard mode runs slower)
   }
   runJobs();
@@ -767,7 +769,7 @@ function frame(now) {
   if (syncTimer <= 0) { syncTimer = 90; syncPond(); }
   observeSync(dt);
   nbTimer -= dt;
-  if (nbTimer <= 0) { nbTimer = 1; edgeHints(); if (Date.now() - NB.at > 300000) refreshNeighbours(); }
+  if (nbTimer <= 0) { nbTimer = 1; checkNeighbours(); edgeHints(); if (Date.now() - NB.at > 300000) refreshNeighbours(); }
   boardTimer -= dt;
   if (boardTimer <= 0) { boardTimer = 300; refreshBoard(); }
   statusTimer -= dt;
@@ -1664,7 +1666,7 @@ function refreshMinimapBackground() {
   miniKey = key;
   const mw = mini.width, mh = mini.height, img = new ImageData(mw, mh), px = new Uint32Array(img.data.buffer);
   const waves = world.opts.hdWaves ? waveField({ t: waveTime(world), swell: surfaceSwell(world),
-    swellDir: shore ? world.shoreN : [0.8, 0.6], gust: world.weather.gust, rain, surf: world.tide.surf, tide: world.tide.level,
+    swellDir: shore ? world.shoreN : [0.8, 0.6], gust: seaOf(world).gust, rain: seaOf(world).rain, surf: seaOf(world).surf, tide: world.tide.level,
     shore, depth: world.depth, riverMask: world.riverMask }) : null;
   const surface = waves ? new Float32Array(4) : null;
   const tint = light.tint, sky = skyReflection(light);
@@ -1843,7 +1845,23 @@ function beyondLen(side) {
 }
 // Whether the ponds along the beach are shown past each end (Scene → Neighbours). Hidden, the view keeps to this
 // pond; a walk over (the arrows by its name) still shows the one it's walking into.
-const showNeighbours = () => world.opts.neighbours !== false || !!(view.glide && view.glide.side);
+// A young pond keeps to itself: the neighbours show once it has worn past the tide pools (erosion 3, about twenty
+// minutes of play), unless they were turned on or off by hand (Scene → Neighbours).
+const NEIGHBOUR_DEPTH = 3;
+const neighboursOn = () => world.opts.neighbours !== false && (!!world.opts.neighboursChosen || (world.erosion ? world.erosion.e : 0) >= NEIGHBOUR_DEPTH);
+const showNeighbours = () => neighboursOn() || !!(view.glide && view.glide.side);
+let neighboursWere = null;
+// (Once a second: the moment a pond grows deep enough, the beach opens out to its neighbours.)
+function checkNeighbours() {
+  const on = neighboursOn(), key = `${world.seed}|${on}`;
+  if (neighboursWere === key) return;
+  const opened = neighboursWere === `${world.seed}|false` && on && !world.opts.neighboursChosen;
+  neighboursWere = key;
+  const b = document.querySelector('[data-toggle="neighbours"]');
+  if (b) b.setAttribute('aria-pressed', on);
+  applyView(); edgeHints();
+  if (opened) showTicker('The pond has grown deep enough to see its neighbours along the beach');
+}
 // How far the view may go along the beach: the pond's own range, run on past an end that the view
 // may reach (view.reach) or is already past (cur).
 function beachRange(len, scr, cur) {
@@ -2632,8 +2650,14 @@ bindRange('opt-day', 'dayLength', (v) => `${v / 60}m`);
 
 for (const b of document.querySelectorAll('[data-toggle]')) {
   const key = b.dataset.toggle;
+  if (key === 'neighbours') {
+    // (Shown as it is now; a click is a choice that holds from then on, whatever the depth.)
+    b.setAttribute('aria-pressed', neighboursOn());
+    b.addEventListener('click', () => { const on = !neighboursOn(); setOpt('neighbours', on); setOpt('neighboursChosen', true); checkNeighbours(); });
+    continue;
+  }
   b.setAttribute('aria-pressed', world.opts[key]);
-  b.addEventListener('click', () => { setOpt(key, !world.opts[key]); b.setAttribute('aria-pressed', world.opts[key]); if (key === 'neighbours') { applyView(); edgeHints(); } });
+  b.addEventListener('click', () => { setOpt(key, !world.opts[key]); b.setAttribute('aria-pressed', world.opts[key]); });
 }
 
 // Light modes: L (or the sky panel) steps through them.

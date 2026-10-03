@@ -272,13 +272,17 @@ class Raster {
     const voidL = s.voidSkin || null, vox = Math.floor(t * 0.9), voy = Math.floor(t * 0.6), starT = Math.floor(t * 0.4) * 83492791;
     // Swell: two trains of waves rolling toward the beach, bigger over the deep, whitecaps on the biggest.
     // In a big swell the waves run longer and faster; calm water shows the sky instead.
-    const swell = s.swell || 0, sw = s.swellDir || [0, 1], L1 = 40 + 50 * swell, L2 = 26 + 20 * swell;
-    const w1x = sw[0] * 1024 / L1, w1y = sw[1] * 1024 / L1, w1t = t * (3 + 3.5 * swell) * 1024 / L1;
-    const c2 = Math.cos(0.7), s2 = Math.sin(0.7), w2x = (sw[0] * c2 - sw[1] * s2) * 1024 / L2, w2y = (sw[0] * s2 + sw[1] * c2) * 1024 / L2, w2t = t * (2 + 2 * swell) * 1024 / L2;
+    // (Fixed lengths, with their travel accumulated by the caller: rough weather raises and quickens them without
+    // the phase jumping across the pond.)
+    const swell = s.swell || 0, sw = s.swellDir || [0, 1], L1 = typeof WAVE_L1 === 'number' ? WAVE_L1 : 62, L2 = typeof WAVE_L2 === 'number' ? WAVE_L2 : 37, ph = s.wavePh || null;
+    const w1x = sw[0] * 1024 / L1, w1y = sw[1] * 1024 / L1, w1t = ph ? ph[0] : t * 3 * 1024 / L1;
+    const c2 = Math.cos(0.7), s2 = Math.sin(0.7), w2x = (sw[0] * c2 - sw[1] * s2) * 1024 / L2, w2y = (sw[0] * s2 + sw[1] * c2) * 1024 / L2, w2t = ph ? ph[1] : t * 2 * 1024 / L2;
+    // Sets: a slow envelope along and across the swell, so the waves come in groups with calmer water between.
+    const gkx = sw[0] * 1024 / (L1 * 8), gky = sw[1] * 1024 / (L1 * 8), gt = (t * 1.6 * 1024 / (L1 * 8)) % 1024, hkx = -sw[1] * 1024 / (L1 * 19), hky = sw[0] * 1024 / (L1 * 19), ht = (t * 2.1) % 1024;
     const clouds = s.clouds || null, sky = s.sky || 0xffe0d8c8, calm = clamp(1 - swell * 1.5, 0, 1) * (s.skyK ?? 1);
     const skr = sky & 255, skg = (sky >> 8) & 255, skb = (sky >>> 16) & 255, cdx = t * 1.1, cdy = t * 0.35, mdx = t * 0.2;
     // (Wave marks: always drawn level, the way top-down water is; they drift with the swell.)
-    const wd = t * (1.2 + 2 * swell), wdu = -sw[0] * wd, wdv = -sw[1] * wd;
+    const wd = ph ? ph[2] : t * 1.2, wdu = -sw[0] * wd, wdv = -sw[1] * wd;
     const surfaceVis = s.surfaceVis ?? 1;
     const meshWaves = s.waveMode === 'mesh';
     const hdWaves = surfaceVis > 0 && (s.waveMode === 'hd' || meshWaves) && typeof waveField === 'function';
@@ -358,7 +362,8 @@ class Raster {
                 // Each wave lit on the face toward the light and shadowed behind, broken up along
                 // its length by a slow patchy noise, and bigger over the deep.
                 const patch = 0.45 + caustic[(((x >> 2) + o1x) & TM) | ((((y >> 2) + o2y) & TM) << 7)] * 0.9;
-                const i1 = ((x * w1x + y * w1y - w1t) | 0) & 1023, i2 = ((x * w2x + y * w2y - w2t) | 0) & 1023, amp = swell * (0.55 + dd * 0.004) * patch;
+                const grp = 0.6 + 0.4 * WAVE_TAB[((x * gkx + y * gky - gt) | 0) & 1023] * (0.55 + 0.45 * WAVE_TAB[((x * hkx + y * hky - ht) | 0) & 1023]);
+                const i1 = ((x * w1x + y * w1y - w1t) | 0) & 1023, i2 = ((x * w2x + y * w2y - w2t) | 0) & 1023, amp = swell * (0.55 + dd * 0.004) * patch * grp;
                 waveS = (WAVE_TAB[(i1 + 24) & 1023] - WAVE_TAB[(i1 - 24) & 1023] + 0.5 * (WAVE_TAB[(i2 + 24) & 1023] - WAVE_TAB[(i2 - 24) & 1023])) * amp;
                 waveC = (WAVE_TAB[i1] + 0.5 * WAVE_TAB[i2]) * amp;
                 // Out over the deep the swell shows as wave marks: little arcs on a staggered grid,
@@ -391,13 +396,13 @@ class Raster {
                 if (spin > 0 && dd > 110) {
                   const a = x * sw[1] - y * sw[0], b = (x * sw[0] + y * sw[1]) * 0.12 - t * 3;
                   const v = caustic[((a | 0) & TM) | (((b | 0) & TM) << 7)];
-                  if (v < 0.035 * spin * (dd - 110) / 145 && ((x ^ y ^ starT) & 1)) waveC = 8;
+                  if (v < 0.035 * spin * (dd - 110) / 145 && ((x ^ y) & 1)) waveC = 8;
                 }
                 // Whitecaps: foam breaking in thin, ragged runs right along the tops of the biggest crests.
                 if (swell > 0.45 && amp > 0.8 && patch > 0.95) {
                   const top = Math.max(WAVE_TAB[i1] - 1.18, (WAVE_TAB[i2] - 1.24) * 0.8) * 6 * Math.min(1, (amp - 0.8) * 1.5) * Math.min(1, (patch - 0.95) * 3);
                   if (top > 0) {
-                    const h = Math.imul(Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1) ^ starT, 0x9e3779b1) >>> 24;
+                    const h = Math.imul(Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1), 0x9e3779b1) >>> 24;
                     if (h < top * 300) waveC = h < top * 140 ? 9 : 8;
                   }
                 }
@@ -521,7 +526,7 @@ class Raster {
           const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
           if (stroke > 0) { const a = (stroke * 150) | 0; c = (0xff000000 | ((cb + (((0xf0 - cb) * a) >> 8)) << 16) | ((cg + (((0xe8 - cg) * a) >> 8)) << 8) | (cr + (((0xdc - cr) * a) >> 8))) >>> 0; }
           else { const f = 256 - ((-stroke * 70) | 0); c = (0xff000000 | (((cb * f) >> 8) << 16) | (((cg * f) >> 8) << 8) | ((cr * f) >> 8)) >>> 0; }
-        } else if (waveC === 9) { c = (Math.imul(Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1) ^ starT, 0x9e3779b1) >>> 30) ? 0xfff0f4f6 : 0xffd6e4ea; }
+        } else if (waveC === 9) { c = (Math.imul(Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1), 0x9e3779b1) >>> 30) ? 0xfff0f4f6 : 0xffd6e4ea; }
         else if (waveC === 8) { const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255; c = (0xff000000 | ((cb + ((0xf2 - cb) >> 1)) << 16) | ((cg + ((0xf0 - cg) >> 1)) << 8) | (cr + ((0xe8 - cr) >> 1))) >>> 0; }
         else if (waveS || refl) {
           let cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;

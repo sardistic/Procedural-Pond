@@ -14,7 +14,7 @@ function renderWater3D(out, w, rect, state) {
   if (WATER_SCENE.length < out.length) WATER_SCENE = new Uint32Array(out.length);
   for (let y = y0; y <= y1; y++) WATER_SCENE.set(out.subarray(x0 + y * W, x1 + y * W + 1), x0 + y * W);
   const f = waveField({ t: state.time ?? waveTime(w), swell: state.swell, swellDir: w.shore ? w.shoreN : [0.8, 0.6],
-    gust: w.weather.gust, rain: w.weather.rain, surf: w.tide.surf, tide: w.tide.level,
+    gust: seaOf(w).gust, rain: seaOf(w).rain, surf: seaOf(w).surf, tide: w.tide.level,
     shore: w.shore, depth: w.depth, riverMask: w.riverMask });
   const sky = state.sky, sr = sky & 255, sg = sky >> 8 & 255, sb = sky >>> 16 & 255;
   const water = w.waterColor || 0xff7c6a1b, wr = water & 255, wg = water >> 8 & 255, wb = water >>> 16 & 255;
@@ -100,7 +100,7 @@ void main() {
   float wet = u_tide - se;
   float room = se > 0.5 ? max(0.4, wet * 0.24) : 20.0 + dd * 0.45;
   float shallow = min(1.0, room / 19.0);
-  float amp = min(u_amp * (1.0 + 0.55 * (1.0 - shallow)), room * 0.43);
+  float amp = min(u_amp * (1.0 + 0.55 * (1.0 - shallow)) * waveGroup(a_pos, u_dir, u_k, u_omega, u_t), room * 0.43);
   float height; vec2 slope, orbit;
   waveSpectrum(a_pos, u_dir, u_k, u_t, u_chop, height, slope, orbit);
   float ratio = amp * height / (room * 0.43);
@@ -247,8 +247,8 @@ function drawWaterMesh(scene, w, state, rect, img = null) {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, W, H, 0, gl.RED, gl.UNSIGNED_BYTE, flat);
     G.terrain = w.shore; G.depth = w.depth; G.river = w.riverMask; G.terrainAt = performance.now();
   }
-  const F = waveField({ t: state.time ?? waveTime(w), swell: state.swell, swellDir: w.shore ? w.shoreN : [0.8, 0.6], gust: w.weather.gust,
-    rain: w.weather.rain, surf: w.tide.surf, tide: w.tide.level, shore: w.shore, depth: w.depth, riverMask: w.riverMask });
+  const F = waveField({ t: state.time ?? waveTime(w), swell: state.swell, swellDir: w.shore ? w.shoreN : [0.8, 0.6], gust: seaOf(w).gust,
+    rain: seaOf(w).rain, surf: seaOf(w).surf, tide: w.tide.level, shore: w.shore, depth: w.depth, riverMask: w.riverMask });
   // (Uniform locations are looked up once.)
   const U = G.uniforms || (G.uniforms = {}), loc = (name) => U[name] ?? (U[name] = gl.getUniformLocation(G.program, name));
   const set1 = (name, value) => gl.uniform1f(loc(name), value);

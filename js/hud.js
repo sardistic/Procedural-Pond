@@ -1757,8 +1757,8 @@ function drawSlice() {
   if (cast) { sky0 = mixColor(sky0, cast.c, cast.k); sky1 = mixColor(sky1, cast.c, cast.k * 0.7); }
   const surfaceY = new Float32Array(S);
   const sliceWaves = world.opts.hdWaves && typeof waveField === 'function' ? waveField({ t: waveTime(world), swell: surfaceSwell(world),
-    swellDir: world.shore ? world.shoreN : [0.8, 0.6], gust: world.weather.gust, rain,
-    surf: world.tide.surf, tide: world.tide.level, shore: world.shore, depth: world.depth, riverMask: world.riverMask }) : null;
+    swellDir: world.shore ? world.shoreN : [0.8, 0.6], gust: seaOf(world).gust, rain: seaOf(world).rain,
+    surf: seaOf(world).surf, tide: world.tide.level, shore: world.shore, depth: world.depth, riverMask: world.riverMask }) : null;
   const crest = sliceWaves ? new Float32Array(4) : null;
   for (let i = 0; i < S; i++) {
     const gnd = ground[i], d = depth[i], wav = (fbm(i * 0.06, 3.1, 61 + seed) - 0.5) * 5;

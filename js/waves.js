@@ -12,6 +12,26 @@ const waveSin = (phase) => {
 const waveCos = (phase) => waveSin(phase + Math.PI * 0.5);
 const waveTime = (world) => world.waveTime ?? 0;
 
+// The sea answers the weather slowly: wind, rain and surf build a swell over many seconds and it dies down as
+// slowly, so a squall arriving or the gusts flickering never make the water jump. (Real seconds, from frame.)
+function seaStep(world, dt) {
+  const W = world.weather, S = world.sea || (world.sea = { gust: Math.max(0, W.gust || 0), rain: W.rain || 0, surf: world.tide ? world.tide.surf || 0 : 0 });
+  const k = 1 - Math.exp(-dt / 12);
+  S.gust += (Math.max(0, W.gust || 0) - S.gust) * k;
+  S.rain += ((W.rain || 0) - S.rain) * k;
+  S.surf += ((world.tide ? world.tide.surf || 0 : 0) - S.surf) * k;
+  // The classic waves' travel, accumulated: a rougher sea moves them along faster without their phase jumping.
+  const sw = typeof surfaceSwell === 'function' ? surfaceSwell(world) : 0.3, P = world.wavePh || (world.wavePh = [0, 0, 0]);
+  P[0] = (P[0] + dt * (2.4 + 1.6 * sw) * 1024 / WAVE_L1) % 1024;
+  P[1] = (P[1] + dt * (1.7 + 1.1 * sw) * 1024 / WAVE_L2) % 1024;
+  P[2] += dt * (0.8 + 0.9 * sw);
+}
+const seaOf = (w) => w.sea || { gust: Math.max(0, (w.weather && w.weather.gust) || 0), rain: (w.weather && w.weather.rain) || 0, surf: (w.tide && w.tide.surf) || 0 };
+// The classic waves' two trains: fixed lengths, so only their height and pace follow the weather.
+const WAVE_L1 = 62, WAVE_L2 = 37;
+// The swell's length is fixed too: changing it would slide every wave across the whole pond at once.
+const WAVE_LENGTH = 80;
+
 // angle, wavelength multiplier, amplitude, initial phase, wind-wave flag.
 // No spatial tile or common wavelength: the surface is evaluated in world
 // coordinates, including far beyond the original pond and GPU camera tile.
@@ -38,7 +58,7 @@ function waveComponents(dx, dy, k, chop) {
     components[j] = (dx * c - dy * s) * ki;
     components[j + 1] = (dy * c + dx * s) * ki;
     components[j + 2] = Math.sqrt(12 * ki);
-    components[j + 3] = weight * (wind ? Math.min(1.8, 0.25 + chop) : 1);
+    components[j + 3] = weight * (wind ? Math.min(1.1, 0.2 + chop * 0.8) : 1);
     components[j + 4] = phase;
     components[j + 5] = 0.48 / ki;
   }
@@ -56,21 +76,29 @@ void waveSpectrum(vec2 pos, vec2 dir, float k, float t, float chop,
     vec2 d = vec2(dir.x * ${Math.cos(angle).toFixed(9)} - dir.y * ${Math.sin(angle).toFixed(9)},
                   dir.y * ${Math.cos(angle).toFixed(9)} + dir.x * ${Math.sin(angle).toFixed(9)});
     float ki = k / ${length.toFixed(3)};
-    float a = ${weight.toFixed(3)} ${wind ? '* min(1.8, 0.25 + chop)' : ''};
+    float a = ${weight.toFixed(3)} ${wind ? '* min(1.1, 0.2 + chop * 0.8)' : ''};
     float phase = dot(pos, d) * ki - t * sqrt(12.0 * ki) + ${phase.toFixed(3)};
     height += a * sin(phase);
     slope += a * ki * d * cos(phase);
     orbit += a * 0.48 * d * cos(phase);
   }`).join('\n')}
+}
+// Waves come in sets: a slow envelope, travelling at half the swell's speed, with calmer water between.
+float waveGroup(vec2 pos, vec2 dir, float k, float omega, float t) {
+  float a = dot(pos, dir) * k * 0.12 - t * omega * 0.06 + 1.3;
+  float b = dot(pos, vec2(-dir.y, dir.x)) * k * 0.05 - t * omega * 0.011 + 4.1;
+  return 0.6 + 0.4 * sin(a) * (0.55 + 0.45 * sin(b));
 }`;
+const waveGroup = (f, x, y) => 0.6 + 0.4 * waveSin((x * f.x + y * f.y) * f.k * 0.12 - f.t * f.omega * 0.06 + 1.3)
+  * (0.55 + 0.45 * waveSin((-x * f.y + y * f.x) * f.k * 0.05 - f.t * f.omega * 0.011 + 4.1));
 
 function waveField(s) {
   const dir = s.swellDir || [0, 1], gust = Math.max(0, s.gust || 0), rain = s.rain || 0;
-  const energy = Math.max(0, s.swell || 0), L = 55 + energy * 60;
+  const energy = Math.max(0, s.swell || 0), L = WAVE_LENGTH;
   const k = Math.PI * 2 / L, omega = Math.sqrt(12 * k);
-  const chop = (0.12 + gust * 0.7 + rain * 0.35) * energy;
+  const chop = (0.1 + gust * 0.55 + rain * 0.25) * energy;
   return { x: dir[0], y: dir[1], k, omega, t: s.t || 0,
-    amp: energy * (3.1 + gust), chop, components: waveComponents(dir[0], dir[1], k, chop),
+    amp: energy * (2.9 + gust * 0.8), chop, components: waveComponents(dir[0], dir[1], k, chop),
     surf: s.surf || 0, tide: (s.tide ?? 1) * 255, shore: s.shore || null,
     depth: s.depth || null, river: s.riverMask || null };
 }
@@ -82,7 +110,7 @@ function waveAt(f, x, y, p, out) {
   const dd = f.depth ? f.depth[p] : 0;
   const room = f.shore && se ? Math.max(0.4, wet * 0.24) : 20 + dd * 0.45;
   const shallow = Math.min(1, room / 19), shoal = 1 + 0.55 * (1 - shallow);
-  const amp = Math.min(f.amp * shoal, room * 0.43);
+  const amp = Math.min(f.amp * shoal * waveGroup(f, x, y), room * 0.43);
   let height = 0, sx = 0, sy = 0, ox = 0, oy = 0;
   const C = f.components;
   for (let i = 0; i < C.length; i += 6) {
