@@ -1,7 +1,7 @@
 'use strict';
 // The entry screen's controller (index.html #entry). Loaded first, as its own file: the site's
 // Content-Security-Policy allows no inline scripts.
-// It draws its own night pond (the real one stays hidden behind the screen until you enter), shows loading
+// It draws its own rippling night pond (the real one stays hidden behind the screen until you enter), shows loading
 // on the Enter button, and fills the Ponds, High scores and sign-in parts from the server. main.js calls
 // Entry.status while it loads and Entry.ready when the pond is ready.
 (() => {
@@ -12,72 +12,90 @@
   let skip = false;
   try { skip = localStorage.getItem('pond.skipEntry') === '1'; } catch { /* no storage */ }
 
-  // ---- the night pond: posterized, dithered water, koi, pads, rain rings and fireflies ------------------
+  // ---- the night pond: a rippling surface over a pixel floor ---------------------------------------------
+  // A height field carries every disturbance outward as real ripples (rain, koi, your pointer); looking down
+  // through it, the floor is bent by the surface's slope, light gathers where it curves, and the moon catches
+  // the faces of the waves. Koi swim on the floor layer, so they wobble under the ripples; pads float on top.
   const cv = $('entry-bg'), g = cv.getContext('2d', { alpha: false });
-  const WATER = [0x1a0a05, 0x2a1008, 0x3d170b, 0x52200f, 0x6a2c14, 0x88401c, 0xa65a2a, 0xc88a4f].map((bgr) => bgr | 0xff000000); // (ABGR: deep navy to teal light)
   const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => v / 16 - 0.5);
-  const KOI = [['#f26b2a', '#fff4e0', '#b8401a'], ['#fff4e0', '#e8402a', '#c9b8a0'], ['#ffc53a', '#fff4e0', '#c88a1a'], ['#f04a5a', '#1a1420', '#a82a3a'], ['#fff4e0', '#1a1420', '#c9b8a0']];
-  let W = 0, H = 0, S = 4, img = null, px = null, radial = null, t = 0, last = 0, raf = 0, nextDrop = 0;
-  const rings = [], fish = [], pads = [], flies = [], stars = [];
+  // (Colours as ABGR words, the way the canvas's bytes read.)
+  const abgr = (hex) => { const n = parseInt(hex.slice(1), 16); return (0xff000000 | ((n & 255) << 16) | (n & 0xff00) | (n >> 16)) >>> 0; };
+  const KOI = [['#f26b2a', '#fff4e0', '#b8401a'], ['#fff4e0', '#e8402a', '#c9b8a0'], ['#ffc53a', '#fff4e0', '#c88a1a'], ['#f04a5a', '#2a2030', '#a82a3a'], ['#fff4e0', '#2a2030', '#c9b8a0'], ['#e8e0ff', '#7a8aff', '#b0a8d8']];
+  let W = 0, H = 0, S = 4, img = null, px = null, base = null, under = null, cur = null, prev = null, t = 0, last = 0, raf = 0, nextDrop = 0, acc = 0;
+  const fish = [], pads = [];
   const rnd = (a, b) => a + Math.random() * (b - a);
+  // Value noise for the floor.
+  const hash = (x, y) => { let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+  const smooth = (x, y) => { const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+    return (hash(xi, yi) * (1 - u) + hash(xi + 1, yi) * u) * (1 - v) + (hash(xi, yi + 1) * (1 - u) + hash(xi + 1, yi + 1) * u) * v; };
+  // The floor, seen through dark water: sand in dithered bands, pebbles with a lit side, weed at the edges.
+  function floor() {
+    const SAND = ['#071226', '#0a1a33', '#0d2240', '#112a4d', '#16345a'].map(abgr), PEB = ['#0c1c30', '#14283f', '#1e3550', '#2b4663'].map(abgr), WEED = ['#06231f', '#0b3a2c', '#12503a'].map(abgr);
+    base = new Uint32Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const n = smooth(x / 22, y / 22) * 0.6 + smooth(x / 7, y / 7) * 0.3 + smooth(x / 2.5, y / 2.5) * 0.1;
+      const edge = Math.min(1, Math.min(x, W - x, y * 1.4, (H - y) * 1.4) / (Math.min(W, H) * 0.35));
+      const k = Math.floor((n * 0.75 + edge * 0.45) * SAND.length - 0.2 + BAYER[(x & 3) + ((y & 3) << 2)] * 0.9);
+      base[x + y * W] = SAND[k < 0 ? 0 : k >= SAND.length ? SAND.length - 1 : k];
+    }
+    const pebbles = Math.round(W * H / 260);
+    for (let i = 0; i < pebbles; i++) {
+      const cx = rnd(0, W), cy = rnd(0, H), rx = rnd(1, 3.6), ry = rx * rnd(0.6, 0.9), tone = Math.floor(rnd(0, 2.99));
+      for (let y = Math.floor(cy - ry - 1); y <= cy + ry + 1; y++) for (let x = Math.floor(cx - rx - 1); x <= cx + rx + 1; x++) {
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        const d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
+        if (d <= 1) base[x + y * W] = PEB[(x - cx) + (y - cy) < -rx * 0.4 ? tone + 1 : tone];
+        else if (d <= 1.6 && x - cx > 0 && y - cy > 0) base[x + y * W] = SAND[0]; // (its shadow)
+      }
+    }
+    // Weed along the edges, in tufts of blades.
+    for (let i = 0; i < Math.round((W + H) / 6); i++) {
+      const side = Math.random(), x0 = side < 0.5 ? rnd(0, W) : (side < 0.75 ? rnd(0, W * 0.08) : rnd(W * 0.92, W)), y0 = side < 0.5 ? (Math.random() < 0.5 ? rnd(0, H * 0.1) : rnd(H * 0.9, H)) : rnd(0, H);
+      for (let b = 0; b < 5; b++) {
+        const len = rnd(4, 11), ang = rnd(-2.6, -0.5), bend = rnd(-0.08, 0.08), col = WEED[Math.floor(rnd(0, 2.99))];
+        let x = x0 + rnd(-2, 2), y = y0 + rnd(-2, 2), a = ang;
+        for (let s = 0; s < len; s++) { a += bend; x += Math.cos(a); y += Math.sin(a); const xi = Math.round(x), yi = Math.round(y); if (xi >= 0 && yi >= 0 && xi < W && yi < H) base[xi + yi * W] = col; }
+      }
+    }
+  }
   function size() {
     S = innerWidth < 700 ? 3 : 4;
     W = Math.ceil(innerWidth / S); H = Math.ceil(innerHeight / S);
     cv.width = W; cv.height = H;
     img = g.createImageData(W, H); px = new Uint32Array(img.data.buffer);
-    radial = new Float32Array(W * H);
-    const cx = W * 0.62, cy = H * 0.45;
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) radial[x + y * W] = Math.hypot(x - cx, (y - cy) * 1.3);
-    fish.length = pads.length = flies.length = stars.length = 0;
+    under = new Uint32Array(W * H); cur = new Float32Array(W * H); prev = new Float32Array(W * H);
+    floor();
+    fish.length = pads.length = 0;
     const n = Math.max(4, Math.min(9, Math.round(W * H / 5000)));
     for (let i = 0; i < n; i++) {
-      fish.push({ c: KOI[i % KOI.length], len: rnd(9, 15) * (S === 3 ? 0.9 : 1), ax: rnd(0.25, 0.45) * W, ay: rnd(0.2, 0.38) * H, cx: rnd(0.3, 0.7) * W, cy: rnd(0.3, 0.7) * H,
+      fish.push({ c: KOI[i % KOI.length].map(abgr), len: rnd(10, 16) * (S === 3 ? 0.9 : 1), ax: rnd(0.25, 0.45) * W, ay: rnd(0.2, 0.38) * H, cx: rnd(0.3, 0.7) * W, cy: rnd(0.3, 0.7) * H,
         fx: rnd(0.012, 0.03) * (Math.random() < 0.5 ? -1 : 1), fy: rnd(0.015, 0.035), p: rnd(0, 6.3), q: rnd(0, 6.3) });
     }
     for (let i = 0; i < Math.round(W * H / 3500); i++) {
       // Pads keep to the edges, clear of the title and the panel's middle.
       const edge = Math.random() < 0.5, x = edge ? rnd(0, W) : (Math.random() < 0.5 ? rnd(0, W * 0.12) : rnd(W * 0.88, W)), y = edge ? (Math.random() < 0.5 ? rnd(0, H * 0.14) : rnd(H * 0.86, H)) : rnd(0, H);
-      pads.push({ x, y, r: rnd(5, 11), a: rnd(0, 6.3), s: rnd(-0.05, 0.05), bloom: Math.random() < 0.3 });
+      pads.push({ x, y, r: rnd(5, 11), a: rnd(0, 6.3), s: rnd(-0.04, 0.04), bloom: Math.random() < 0.3 });
     }
-    for (let i = 0; i < 18; i++) flies.push({ x: rnd(0, W), y: rnd(0, H), vx: 0, vy: 0, p: rnd(0, 6.3) });
-    for (let i = 0; i < 40; i++) stars.push({ x: rnd(0, W) | 0, y: rnd(0, H) | 0, p: rnd(0, 6.3) });
   }
-  function drop(x, y, big) { rings.push({ x, y, r: 0, life: big ? 1.6 : rnd(0.8, 1.3), v: big ? 26 : rnd(12, 20), a: 1 }); if (rings.length > 30) rings.shift(); }
-  let light = null;
-  function water() {
-    if (!light || light.length !== W * H) light = new Float32Array(W * H);
-    const cols = new Float32Array(W), rows = new Float32Array(H), diag = new Float32Array(W + H);
-    for (let x = 0; x < W; x++) cols[x] = Math.sin(x * 0.075 + t * 0.6) * 0.8;
-    for (let y = 0; y < H; y++) rows[y] = Math.sin(y * 0.11 - t * 0.45) * 0.8;
-    for (let k = 0; k < W + H; k++) diag[k] = Math.sin(k * 0.05 + t * 0.35);
-    for (let y = 0; y < H; y++) {
-      const row = y * W, fade = 0.55 + 0.45 * Math.sin((y / H) * Math.PI); // (darker at the top and bottom)
-      for (let x = 0; x < W; x++) {
-        const i = row + x;
-        // Caustic lines: bright where the waves cancel.
-        const v = 1 - Math.abs(cols[x] + rows[y] + diag[x + y] + Math.sin(radial[i] * 0.16 - t * 0.9) * 0.6) * 0.42;
-        light[i] = v * v * v * fade * 0.9;
-      }
+  // A disturbance: pushes the surface down in a small disc; the waves do the rest.
+  function poke(x, y, r, depth) {
+    const x0 = Math.max(1, Math.floor(x - r)), x1 = Math.min(W - 2, Math.ceil(x + r)), y0 = Math.max(1, Math.floor(y - r)), y1 = Math.min(H - 2, Math.ceil(y + r));
+    for (let yy = y0; yy <= y1; yy++) for (let xx = x0; xx <= x1; xx++) {
+      const d = Math.hypot(xx - x, yy - y) / r;
+      if (d < 1) cur[xx + yy * W] -= depth * (0.5 + 0.5 * Math.cos(d * Math.PI));
     }
-    // Rain rings light only the pixels near each ring.
-    for (const r of rings) {
-      const R = r.r + 3, x0 = Math.max(0, Math.floor(r.x - R)), x1 = Math.min(W - 1, Math.ceil(r.x + R)), y0 = Math.max(0, Math.floor(r.y - R / 1.25)), y1 = Math.min(H - 1, Math.ceil(r.y + R / 1.25));
-      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-        const d = Math.abs(Math.hypot(x - r.x, (y - r.y) * 1.25) - r.r);
-        if (d < 2.2) light[x + y * W] += (2.2 - d) * 0.32 * r.a;
-      }
-    }
-    const top = WATER.length - 1;
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const i = x + y * W, k = Math.floor(light[i] * WATER.length + BAYER[(x & 3) + ((y & 3) << 2)] * 1.1);
-      px[i] = WATER[k < 0 ? 0 : k > top ? top : k];
-    }
-    for (const s of stars) {
-      const tw = Math.sin(t * 1.7 + s.p);
-      if (tw > 0.55) px[s.x + s.y * W] = tw > 0.9 ? 0xfffff4e8 : 0xffd8c0a0;
-    }
-    g.putImageData(img, 0, 0);
   }
+  // One step of the wave equation (each cell pulled toward its neighbours' average), damped so ripples fade.
+  function step() {
+    for (let y = 1; y < H - 1; y++) {
+      const row = y * W;
+      for (let i = row + 1, e = row + W - 1; i < e; i++) prev[i] = ((cur[i - 1] + cur[i + 1] + cur[i - W] + cur[i + W]) * 0.5 - prev[i]) * 0.986;
+    }
+    const tmp = cur; cur = prev; prev = tmp;
+  }
+  const dot = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < W && y < H) under[x + y * W] = c; };
+  const disc = (x, y, r, c) => { const R = Math.max(0.5, r); for (let yy = Math.floor(y - R); yy <= y + R; yy++) for (let xx = Math.floor(x - R); xx <= x + R; xx++) if ((xx - x) ** 2 + (yy - y) ** 2 <= R * R + 0.3) dot(xx, yy, c); };
+  const darken = (c, f) => (0xff000000 | ((((c >>> 16) & 255) * f) << 16) | ((((c >>> 8) & 255) * f) << 8) | ((c & 255) * f)) >>> 0;
   function koi(f) {
     // Its head swims a slow loop; the body trails back along its heading, rippling as it swims.
     const wx = f.fx * 6.28, wy = f.fy * 6.28, hx = f.cx + Math.sin(t * wx + f.p) * f.ax, hy = f.cy + Math.sin(t * wy + f.q) * f.ay;
@@ -85,36 +103,64 @@
     const dx = vx / vl, dy = vy / vl, n = Math.max(8, Math.round(f.len)), w = f.len / 5, pts = [];
     for (let i = 0; i < n; i++) {
       const k = i / n, sway = Math.sin(t * 5 + f.p - k * 4) * k * w * 0.9;
-      pts.push([hx - dx * i + -dy * sway, hy - dy * i + dx * sway, Math.max(0.5, w * (k < 0.15 ? 0.75 + k * 1.6 : 1 - (k - 0.15) * 1.05))]);
+      pts.push([hx - dx * i - dy * sway, hy - dy * i + dx * sway, Math.max(0.5, w * (k < 0.15 ? 0.75 + k * 1.6 : 1 - (k - 0.15) * 1.05))]);
     }
-    const [body, spot, fin] = f.c, box = (x, y, r) => g.fillRect(Math.round(x - r), Math.round(y - r), Math.max(1, Math.round(r * 2)), Math.max(1, Math.round(r * 2)));
-    g.fillStyle = 'rgba(2,4,12,0.45)';
-    for (const [x, y, r] of pts) box(x + 2, y + 3, r);
-    // Fins, tail, body, spots, eyes.
-    const [fx, fy] = pts[Math.round(n * 0.3)], fl = w * 1.6;
-    g.fillStyle = fin;
-    box(fx - dy * fl, fy + dx * fl, w * 0.45); box(fx + dy * fl, fy - dx * fl, w * 0.45);
+    // Its shadow on the floor, then fins, tail, body, spots and eyes, all under the water.
+    for (const [x, y, r] of pts) { const R = r; for (let yy = Math.floor(y + 3 - R); yy <= y + 3 + R; yy++) for (let xx = Math.floor(x + 3 - R); xx <= x + 3 + R; xx++) if (xx >= 0 && yy >= 0 && xx < W && yy < H) under[xx + yy * W] = darken(under[xx + yy * W], 0.55); }
+    const [body, spot, fin] = f.c, [fx0, fy0] = pts[Math.round(n * 0.3)], fl = w * 1.6;
+    disc(fx0 - dy * fl, fy0 + dx * fl, w * 0.45, fin); disc(fx0 + dy * fl, fy0 - dx * fl, w * 0.45, fin);
     const [tx, ty] = pts[n - 1], wag = Math.sin(t * 5 + f.p - 4) * w;
-    box(tx - dx * 1.5 - dy * wag, ty - dy * 1.5 + dx * wag, w * 0.55);
-    g.fillStyle = body;
-    for (let i = n - 1; i >= 0; i--) box(pts[i][0], pts[i][1], pts[i][2]);
-    g.fillStyle = spot;
-    for (const k of [0.35, 0.6]) { const [x, y, r] = pts[Math.round(n * k)]; box(x, y, r * 0.6); }
-    g.fillStyle = '#1a1420';
-    g.fillRect(Math.round(hx - dy * w * 0.5), Math.round(hy + dx * w * 0.5), 1, 1);
-    g.fillRect(Math.round(hx + dy * w * 0.5), Math.round(hy - dx * w * 0.5), 1, 1);
-    if (Math.random() < 0.002 && !still) drop(hx, hy, false); // (a koi nosing the surface)
+    disc(tx - dx * 1.5 - dy * wag, ty - dy * 1.5 + dx * wag, w * 0.6, fin);
+    for (let i = n - 1; i >= 0; i--) disc(pts[i][0], pts[i][1], pts[i][2], body);
+    for (const k of [0.35, 0.6]) { const [x, y, r] = pts[Math.round(n * k)]; disc(x, y, r * 0.55, spot); }
+    dot(hx - dy * w * 0.5, hy + dx * w * 0.5, 0xff20141a); dot(hx + dy * w * 0.5, hy - dx * w * 0.5, 0xff20141a);
+    // A koi stirs the surface a little as it goes, and now and then noses up to it.
+    if (!still) { poke(hx, hy, 1.5, 0.5); if (Math.random() < 0.003) poke(hx, hy, 2.5, 7); }
+  }
+  // The surface: the floor seen through it, bent by its slope, lit where it curves, glinting toward the moon.
+  function water() {
+    const R = 0.9, mx = W * 0.72, my = H * 0.28, top = H - 1, right = W - 1;
+    for (let y = 1; y < H - 1; y++) {
+      const row = y * W, sy0 = y;
+      for (let x = 1; x < W - 1; x++) {
+        const i = row + x, h = cur[i];
+        // Slope, with a slow breeze on top so the water is never glassy.
+        const sx = cur[i - 1] - cur[i + 1] + Math.sin(y * 0.09 + t * 0.7) * 0.4 + Math.sin((x + y) * 0.21 - t * 1.3) * 0.18, sy = cur[i - W] - cur[i + W] + Math.sin(x * 0.07 - t * 0.55) * 0.4 + Math.sin((x - y) * 0.17 + t * 1.1) * 0.18;
+        let fx = Math.round(x + sx * R), fy = Math.round(sy0 + sy * R);
+        fx = fx < 0 ? 0 : fx > right ? right : fx; fy = fy < 0 ? 0 : fy > top ? top : fy;
+        let c = under[fx + fy * W];
+        const curve = cur[i - 1] + cur[i + 1] + cur[i - W] + cur[i + W] - 4 * h, b = BAYER[(x & 3) + ((y & 3) << 2)];
+        // Light gathered where the surface curves like a lens; shade on faces turned away.
+        const lit = -curve * 0.9 + (sx * 0.35 + sy * 0.5) * 0.6;
+        const step = Math.max(-2, Math.min(3, Math.floor(lit * 2.8 + b)));
+        if (step > 0) {
+          const a = step * 34, cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
+          c = (0xff000000 | ((cb + (((0xd8 - cb) * a) >> 8)) << 16) | ((cg + (((0xd0 - cg) * a) >> 8)) << 8) | (cr + (((0x90 - cr) * a) >> 8))) >>> 0;
+        } else if (step < 0) c = darken(c, step === -1 ? 0.8 : 0.62);
+        // The moon on the water: a wide, broken path of glints near it.
+        const md = ((x - mx) / (W * 0.16)) ** 2 + ((y - my) / (H * 0.5)) ** 2;
+        if (md < 1 && sy * 0.8 - sx * 0.3 > 0.72 + md * 1.1 + b * 0.7) c = md < 0.25 ? 0xffe8f4ff : 0xffb8d4e8;
+        px[i] = c;
+      }
+    }
+    // (The border rows and columns copy their neighbours.)
+    for (let x = 0; x < W; x++) { px[x] = px[x + W]; px[x + (H - 1) * W] = px[x + (H - 2) * W]; }
+    for (let y = 0; y < H; y++) { px[y * W] = px[y * W + 1]; px[y * W + W - 1] = px[y * W + W - 2]; }
+    g.putImageData(img, 0, 0);
   }
   function pad(p) {
-    const a = p.a + t * p.s, r = p.r, notch = 0.45;
-    g.fillStyle = 'rgba(2,4,12,0.4)';
-    g.beginPath(); g.arc(p.x + 2, p.y + 3, r, 0, 6.29); g.fill();
+    // Floating on the surface: it rides the ripples and turns slowly.
+    const i = Math.max(0, Math.min(W * H - 1, Math.round(p.x) + Math.round(p.y) * W)), lift = cur[i] * 0.4;
+    const a = p.a + t * p.s, r = p.r, notch = 0.45, x = p.x, y = p.y + lift;
+    g.fillStyle = 'rgba(2,4,12,0.45)';
+    g.beginPath(); g.arc(x + 2, y + 3, r, 0, 6.29); g.fill();
     g.fillStyle = '#1f6b4a';
-    g.beginPath(); g.moveTo(p.x, p.y); g.arc(p.x, p.y, r, a + notch, a + 6.283 - notch); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(x, y); g.arc(x, y, r, a + notch, a + 6.283 - notch); g.closePath(); g.fill();
     g.fillStyle = '#2f8f5f';
-    g.beginPath(); g.moveTo(p.x, p.y); g.arc(p.x, p.y, r * 0.65, a + notch + 0.4, a + 3.3); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(x, y); g.arc(x, y, r * 0.65, a + notch + 0.4, a + 3.3); g.closePath(); g.fill();
+    g.fillStyle = '#3aa86e'; g.fillRect(Math.round(x - r * 0.4), Math.round(y - r * 0.5), 2, 1);
     if (p.bloom) {
-      const bx = Math.round(p.x - r * 0.3), by = Math.round(p.y - r * 0.2);
+      const bx = Math.round(x - r * 0.3), by = Math.round(y - r * 0.2);
       g.fillStyle = '#ff8ac8'; g.fillRect(bx - 2, by, 5, 1); g.fillRect(bx, by - 2, 1, 5); g.fillRect(bx - 1, by - 1, 3, 3);
       g.fillStyle = '#ffe0f0'; g.fillRect(bx, by, 1, 1);
     }
@@ -122,32 +168,28 @@
   function frame(now) {
     raf = 0;
     if (!root.isConnected || root.classList.contains('gone')) return;
-    const dt = Math.min(0.1, (now - (last || now)) / 1000);
     if (now - last < 33 && last) { raf = requestAnimationFrame(frame); return; } // (30 frames a second is plenty)
+    const dt = last ? Math.min(0.1, (now - last) / 1000) : 1 / 30;
     last = now; t += dt;
-    if (t > nextDrop && !still) { drop(rnd(0, W), rnd(0, H), false); nextDrop = t + rnd(0.4, 1.4); }
-    for (const r of rings) { r.r += r.v * dt; r.a = Math.max(0, 1 - r.r / (r.v * r.life)); }
-    while (rings.length && rings[0].a <= 0) rings.shift();
-    water();
+    if (t > nextDrop && !still) { poke(rnd(2, W - 2), rnd(2, H - 2), rnd(1.2, 2.2), rnd(5, 9)); nextDrop = t + rnd(0.25, 1.1); }
+    // The waves run at a fixed pace (two steps a frame at 30 fps), whatever the frame rate.
+    acc = Math.min(acc + dt * 60, 4);
+    while (acc >= 1) { step(); acc -= 1; }
+    under.set(base);
     for (const f of fish) koi(f);
+    water();
     for (const p of pads) pad(p);
-    for (const f of flies) {
-      f.vx = (f.vx + rnd(-4, 4) * dt) * 0.98; f.vy = (f.vy + rnd(-4, 4) * dt) * 0.98;
-      f.x = (f.x + f.vx * dt * 6 + W) % W; f.y = (f.y + f.vy * dt * 6 + H) % H;
-      const glow = Math.sin(t * 2.2 + f.p);
-      if (glow > -0.2) {
-        g.fillStyle = `rgba(255,224,120,${0.15 + glow * 0.12})`; g.fillRect(Math.round(f.x) - 1, Math.round(f.y) - 1, 3, 3);
-        g.fillStyle = glow > 0.5 ? '#fff4b0' : '#ffd166'; g.fillRect(Math.round(f.x), Math.round(f.y), 1, 1);
-      }
-    }
     if (!still && !document.hidden) raf = requestAnimationFrame(frame);
   }
   const start = () => { if (!raf) raf = requestAnimationFrame(frame); };
   size();
-  if (still) { t = 4; frame(performance.now()); } else start();
-  addEventListener('resize', () => { if (!root.isConnected) return; size(); if (still) frame(performance.now()); });
+  if (still) { t = 4; for (let i = 0; i < 6; i++) poke(rnd(0, W), rnd(0, H), 2, 8); for (let i = 0; i < 40; i++) step(); frame(performance.now()); } else start();
+  addEventListener('resize', () => { if (!root.isConnected) return; size(); if (still) { last = 0; frame(performance.now()); } });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && !still) start(); });
-  root.addEventListener('pointerdown', (e) => { if (e.target === root || e.target === cv) drop(e.clientX / S, e.clientY / S, true); });
+  // Your pointer trails ripples across the water; a click drops a big one.
+  let lastPoke = 0;
+  root.addEventListener('pointermove', (e) => { if (still || (e.target !== root && e.target !== cv) || e.timeStamp - lastPoke < 30) return; lastPoke = e.timeStamp; poke(e.clientX / S, e.clientY / S, 1.6, 2.2); });
+  root.addEventListener('pointerdown', (e) => { if (e.target === root || e.target === cv) { poke(e.clientX / S, e.clientY / S, 3, 16); if (still) { last = 0; frame(performance.now()); } } });
 
   // ---- loading, shown on the Enter button --------------------------------------------------------------
   let loaded = 0, phase = 0;
@@ -164,8 +206,25 @@
       if (!root.classList.contains('ready')) $('entry-label').textContent = `Loading ${Math.round(Math.min(1, p) * 100)}%`;
     }
   }
-  function done() {
+  let choose = null, waterPick = null;
+  function pickWater(k) {
+    waterPick = k;
+    for (const b of root.querySelectorAll('[data-water]')) b.setAttribute('aria-pressed', String(b.dataset.water === k));
+  }
+  for (const b of root.querySelectorAll('[data-water]')) b.addEventListener('click', () => pickWater(b.dataset.water));
+  $('entry-another').addEventListener('click', () => {
+    const open = $('entry-choose').hidden;
+    $('entry-choose').hidden = !open;
+    $('entry-another').setAttribute('aria-expanded', String(open));
+    if (open) root.querySelector('[data-water][aria-pressed="true"]')?.focus();
+  });
+  $('entry-create').addEventListener('click', () => done(true));
+  // Enter with a new pond's choices applies them; Create makes another pond with them.
+  function done(create) {
     if (!root.isConnected || root.classList.contains('gone') || !root.classList.contains('ready')) return;
+    if (choose && choose.apply && (choose.fresh || create === true)) {
+      try { choose.apply({ habitat: waterPick || choose.habitat, hard: $('entry-hard').checked, create: create === true }); } catch (e) { console.error(e); }
+    }
     try { localStorage.setItem('pond.skipEntry', $('entry-skip').checked ? '1' : '0'); } catch { /* no storage */ }
     root.classList.add('gone');
     setTimeout(() => root.remove(), 700);
@@ -176,9 +235,9 @@
   function key(e) {
     if (!root.classList.contains('ready')) return;
     const el = document.activeElement, own = el && el !== document.body && el !== root && el !== $('entry-enter') && root.contains(el);
-    if (e.key === 'Escape' || (e.key === 'Enter' && !own)) { e.preventDefault(); e.stopPropagation(); done(); }
+    if (e.key === 'Escape' || (e.key === 'Enter' && !own)) { e.preventDefault(); e.stopPropagation(); done(false); }
   }
-  $('entry-enter').addEventListener('click', done);
+  $('entry-enter').addEventListener('click', () => done(false));
 
   // ---- tabs ---------------------------------------------------------------------------------------------
   const tabs = ['ponds', 'scores', 'faq'];
@@ -281,6 +340,15 @@
       const b = $('entry-enter');
       b.disabled = false;
       $('entry-label').textContent = info.button || 'Enter';
+      choose = info.choose || null;
+      if (choose) {
+        pickWater(choose.habitat);
+        $('entry-hard').checked = !!choose.hard;
+        // New: the choices are for this pond, made when you enter. Returning: they make another pond, on request.
+        $('entry-choose').hidden = !choose.fresh;
+        $('entry-another').hidden = choose.fresh;
+        $('entry-create').hidden = choose.fresh;
+      }
       document.addEventListener('keydown', key, true);
       setTimeout(() => b.focus(), 50);
     },

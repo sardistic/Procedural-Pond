@@ -1,6 +1,6 @@
 {
-  "name": "Procedural Pond",
-  "short_name": "Pond",
+  "name": "pond.nz",
+  "short_name": "pond.nz",
   "description": "A living pixel-art pond of procedurally animated animals that grow, breed, hunt and migrate.",
   "start_url": "/",
   "scope": "/",

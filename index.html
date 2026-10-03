@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Procedural Pond · a living pixel-art aquarium</title>
+  <title>pond.nz · a living pixel-art aquarium</title>
   <meta name="description" content="A free virtual aquarium in your browser: a living pixel-art pond where procedural koi, frogs, octopus and new fish species hunt, breed and migrate.">
   <link rel="canonical" href="https://pond.nz/">
   <meta name="robots" content="index, follow, max-image-preview:large">
@@ -12,8 +12,8 @@
   <meta name="color-scheme" content="dark">
 
   <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Procedural Pond">
-  <meta property="og:title" content="Procedural Pond · a living pixel-art aquarium">
+  <meta property="og:site_name" content="pond.nz">
+  <meta property="og:title" content="pond.nz · a living pixel-art aquarium">
   <meta property="og:description" content="Procedurally animated koi, frogs, octopus and newly invented fish that grow, breed, hunt and migrate. Feed them, follow them, share your pond.">
   <meta property="og:url" content="https://pond.nz/">
   <meta property="og:image" content="https://pond.nz/og.png">
@@ -21,7 +21,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="A top-down pixel-art pond with koi, lily pads, a turtle and schooling fish">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Procedural Pond · a living pixel-art aquarium">
+  <meta name="twitter:title" content="pond.nz · a living pixel-art aquarium">
   <meta name="twitter:description" content="Procedurally animated koi, frogs, octopus and newly invented fish that grow, breed, hunt and migrate.">
   <meta name="twitter:image" content="https://pond.nz/og.png">
   <meta name="twitter:image:alt" content="A top-down pixel-art pond with koi, lily pads, a turtle and schooling fish">
@@ -60,9 +60,9 @@
     #entry button:focus-visible, #entry a:focus-visible, #entry summary:focus-visible, #entry input:focus-visible { outline: 2px solid #ffd166; outline-offset: 2px; }
     #entry .discord { background: #3b4bb8; border-color: #6f7ff0; }
     #entry .hero { grid-area: hero; align-self: center; display: grid; justify-items: start; gap: 14px; padding: 24px 0; max-width: 620px; }
-    #entry h1 { margin: 0; display: grid; font: 400 clamp(40px, 8vw, 92px)/.95 'Silkscreen', ui-monospace, monospace; letter-spacing: 2px; }
-    #entry h1 span:first-child { color: #7fd8e8; font-size: .52em; letter-spacing: 6px; text-shadow: 3px 3px 0 #02050f; }
-    #entry h1 span:last-child { color: #ffd166; text-shadow: 4px 4px 0 #b4472a, 8px 8px 0 #02050f; }
+    #entry h1 { margin: 0; display: flex; align-items: baseline; font: 400 clamp(56px, 11vw, 128px)/.95 'Silkscreen', ui-monospace, monospace; letter-spacing: 2px; }
+    #entry h1 span:first-child { color: #ffd166; text-shadow: 4px 4px 0 #b4472a, 8px 8px 0 #02050f; }
+    #entry h1 span:last-child { color: #7fd8e8; font-size: .42em; letter-spacing: 3px; text-shadow: 3px 3px 0 #02050f; }
     #entry .tag { margin: 0; max-width: 34em; font-size: 16px; color: #b8cdec; text-shadow: 1px 1px 0 #02050f; }
     #entry .enter { position: relative; overflow: hidden; min-width: 240px; min-height: 60px; justify-content: center; margin-top: 8px;
       font: 400 26px 'Silkscreen', ui-monospace, monospace; letter-spacing: 4px; color: #1a0f05; background: #ffd166; border: 3px solid #fff1c4; box-shadow: 4px 4px 0 #b4472a, 8px 8px 0 #02050f; }
@@ -75,6 +75,16 @@
     #entry.ready .status { display: none; }
     #entry .pondline { font-size: 13px; color: #9fb8d8; }
     #entry .pondline b { color: #e8f0ff; font-weight: 600; }
+    #entry .another { padding: 2px 0; border: 0; background: none; box-shadow: none; color: #7fd8e8; text-decoration: underline; font-size: 13px; }
+    #entry .choose { display: grid; gap: 10px; justify-items: inherit; padding: 12px 14px; background: rgba(6,14,36,.78); border: 2px solid #1e3c6a; box-shadow: 4px 4px 0 #02050f; max-width: 420px; }
+    #entry .choose[hidden] { display: none; }
+    #entry .waters { display: flex; }
+    #entry .waters button { min-width: 84px; justify-content: center; box-shadow: none; font: 400 12px 'Silkscreen', ui-monospace, monospace; }
+    #entry .waters button + button { margin-left: -2px; }
+    #entry .waters button[aria-pressed="true"] { color: #1a0f05; background: #7fd8e8; border-color: #bff4ff; position: relative; }
+    #entry .hard { display: grid; grid-template-columns: auto 1fr; gap: 0 8px; align-items: baseline; text-align: left; color: #e8f0ff; font-size: 13px; }
+    #entry .hard span { grid-column: 2; color: #7f9cc4; font-size: 12px; }
+    #entry .create { justify-self: inherit; color: #1a0f05; background: #7fd8e8; border-color: #bff4ff; font: 400 13px 'Silkscreen', ui-monospace, monospace; }
     #entry .skip { font-size: 12px; color: #7f9cc4; display: inline-flex; gap: 6px; align-items: center; }
     #entry .panel { grid-area: panel; align-self: center; display: grid; grid-template-rows: auto minmax(0, 1fr); max-height: min(560px, calc(100vh - 100px));
       background: rgba(6,14,36,.85); border: 2px solid #1e3c6a; box-shadow: 6px 6px 0 #02050f; }
@@ -112,7 +122,8 @@
   {
     "@context": "https://schema.org",
     "@type": "WebApplication",
-    "name": "Procedural Pond",
+    "name": "pond.nz",
+    "alternateName": "Procedural Pond",
     "url": "https://pond.nz/",
     "description": "A living pixel-art pond of procedurally animated animals. Koi, frogs, octopus, ducks and procedurally invented fish species grow, breed, hunt and migrate in a self-running ecosystem with a day/night cycle and weather.",
     "applicationCategory": "EntertainmentApplication",
@@ -132,8 +143,8 @@
   {
     "@context": "https://schema.org",
     "@type": "WebSite",
-    "name": "Procedural Pond",
-    "alternateName": "pond.nz",
+    "name": "pond.nz",
+    "alternateName": "Procedural Pond",
     "url": "https://pond.nz/",
     "inLanguage": "en"
   }
@@ -144,15 +155,25 @@
     <canvas id="entry-bg" aria-hidden="true"></canvas>
     <div class="veil" aria-hidden="true"></div>
     <header class="top">
-      <span class="brand">pond.nz</span>
+      <span class="brand">a living pixel pond</span>
       <div id="entry-account" class="account"></div>
     </header>
     <div class="hero">
-      <h1 id="entry-title"><span>Procedural</span><span>Pond</span></h1>
+      <h1 id="entry-title" aria-label="pond.nz"><span>pond</span><span>.nz</span></h1>
       <p id="entry-tag" class="tag">A living pixel-art pond. Its animals grow, hunt, breed and change on their own; you feed them, build their world and watch it deepen.</p>
       <button id="entry-enter" class="enter" type="button" disabled><i id="entry-bar"></i><span id="entry-label">Loading</span></button>
       <div id="entry-status" class="status" role="status" aria-live="polite">Drawing water…</div>
       <div id="entry-pond" class="pondline"></div>
+      <button id="entry-another" class="another" type="button" aria-expanded="false" aria-controls="entry-choose" hidden>or start a new pond</button>
+      <div id="entry-choose" class="choose" hidden>
+        <div class="waters" role="group" aria-label="Water">
+          <button type="button" data-water="fresh" aria-pressed="false" title="Fresh water: koi, frogs, ducks, lily pads">Fresh</button>
+          <button type="button" data-water="mixed" aria-pressed="false" title="Fresh and salt water together: everything">Both</button>
+          <button type="button" data-water="salt" aria-pressed="false" title="Salt water: reef fish, corals, starfish, octopus">Salt</button>
+        </div>
+        <label class="hard"><input id="entry-hard" type="checkbox"> Hard mode <span>nothing can be bought; the pond draws its own life in, and points count half again</span></label>
+        <button id="entry-create" class="create" type="button" hidden>Create new pond</button>
+      </div>
       <label class="skip"><input id="entry-skip" type="checkbox"> Skip this screen next time</label>
     </div>
     <section class="panel" aria-label="Ponds, high scores and questions">
@@ -174,16 +195,16 @@
       </div>
     </section>
   </div>
-  <script src="js/entry.js?v=2"></script>
+  <script src="js/entry.js?v=3"></script>
   <canvas id="pond" aria-label="A living pixel-art pond of procedurally animated animals"></canvas>
   <div class="vignette" aria-hidden="true"></div>
   <noscript>
-    <p class="noscript">Procedural Pond is a living pixel-art aquarium that runs in your browser. Please enable JavaScript to watch it.</p>
+    <p class="noscript">pond.nz is a living pixel-art aquarium that runs in your browser. Please enable JavaScript to watch it.</p>
   </noscript>
 
   <aside id="hud">
     <header>
-      <h1>Procedural Pond</h1>
+      <h1>pond.nz</h1>
       <button type="button" id="collapse" class="icon" aria-label="Close menu" title="Close menu (H)">×</button>
     </header>
     <p class="hint" id="hint">click to look · drag animals · scroll to zoom</p>
@@ -588,7 +609,7 @@
   <script src="js/forage.js?v=3"></script>
   <script src="js/hud.js?v=71"></script>
   <script src="js/fine.js?v=55"></script>
-  <script src="js/main.js?v=75"></script>
+  <script src="js/main.js?v=76"></script>
   <script src="js/guide.js?v=56"></script>
   <script src="js/music.js?v=55"></script>
   <script src="js/tips.js?v=55"></script>

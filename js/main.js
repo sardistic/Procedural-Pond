@@ -323,6 +323,7 @@ function buildPond() {
   WILD_SPECIES.length = 0;
   const resume = world.resume;
   world.resume = null;
+  world.wasResumed = !!resume; // (the entry screen asks: your pond, or a new one?)
   world.seedBase = hashString(world.seed); // animal seeds follow from the pond's
   world.spawnCount = 0;
   if (resume) {
@@ -2694,7 +2695,7 @@ $('clear').addEventListener('click', () => {
   world.creatures = []; world.eggs = []; world.targets = {};
   updateCounts();
 });
-$('reset').addEventListener('click', () => {
+function startNewPond() {
   saveNow(); // the pond you're leaving stays in "Your ponds"
   world.seed = newSeedName();
   world.autoSize = screenWorld(); // a new pond fits the window as it is now
@@ -2704,7 +2705,25 @@ $('reset').addEventListener('click', () => {
   saveNow();
   renderPondList();
   syncTimer = 6; // its own link in a few seconds
-});
+}
+$('reset').addEventListener('click', startNewPond);
+// The entry screen's choices: the water and hard mode for this new pond (regrown if they changed), or a new pond.
+function entryChoose({ habitat, hard, create }) {
+  const hab = HABITATS[habitat] ? habitat : world.opts.habitat, habChanged = hab !== world.opts.habitat, hardChanged = !!hard !== !!world.opts.hard;
+  if (habChanged) {
+    setOpt('habitat', hab);
+    const d = HABITAT_DEFAULTS[hab];
+    setOpt('water', d.water); setOpt('floor', d.floor);
+    $('opt-water').value = d.water; $('opt-floor').value = d.floor;
+  }
+  if (hardChanged) setOpt('hard', !!hard);
+  if (create) startNewPond();
+  else if (habChanged || hardChanged) regrow();
+  else return;
+  refreshSpeciesButtons();
+  syncHard();
+  updateCounts();
+}
 // Share the pond: the link in the address bar, after bringing the server's copy
 // up to date. Only without a server (opened from a file, or it's unreachable)
 // does it fall back to a long link that carries the pond itself.
@@ -2719,7 +2738,7 @@ async function sharePond() {
     : world.link ? `Link copied: ${url.replace(/^https?:\/\//, '')}, the same as your address bar. It opens your pond as it grows`
     : 'Link copied: the pond server is out of reach, so this long link carries the pond itself';
   try {
-    if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ title: 'Procedural Pond', text: `Come see my pond, ${world.seed}`, url });
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ title: 'pond.nz', text: `Come see my pond, ${world.seed}`, url });
     else { await navigator.clipboard.writeText(url); showTicker(note); }
   } catch {
     prompt('Copy this link to share your pond:', url);
@@ -2959,7 +2978,9 @@ function entryInfo(observe) {
   const minds = animals.filter((c) => c.life.mind).length;
   const facts = [`Day ${Math.floor(world.days || 0) + 1}`, world.erosion ? `${fmt(pondFathoms(world))} fathoms` : null,
     animals.length ? `${animals.length} animals of ${kinds} kinds` : null, minds ? `${minds} awakened` : null].filter(Boolean).join(' · ');
-  return { name: pondTitle(world), lead: world.resume ? 'Your pond: ' : 'A new pond: ', facts, skip: !!observe, button: 'Enter' };
+  // A new pond can still be made fresh, salt or both, and hard; a returning player can start another.
+  const choose = observe ? null : { habitat: world.opts.habitat, hard: !!world.opts.hard, fresh: !world.wasResumed, apply: entryChoose };
+  return { name: pondTitle(world), lead: world.wasResumed ? 'Your pond: ' : 'A new pond: ', facts, skip: !!observe, button: 'Enter', choose };
 }
 // Let the entry screen paint its next line before a long, blocking step. (A frame, or 60 ms at most: a
 // background tab gets no frames, and loading must not wait for it to be looked at.)
