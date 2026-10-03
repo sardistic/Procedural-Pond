@@ -164,8 +164,8 @@ const PIEBALD_WHITE = mat('#9aa0a6', '#d0d4d6', '#f0f0ec', '#ffffff');
 
 const isMat = (v) => Array.isArray(v) && v.length === 4 && typeof v[0] === 'number' && v[0] >= 0xff000000;
 
-function makeDye(g) {
-  const cache = new Map(), albino = g.albino === 2, axanthic = !albino && g.axanthic === 2;
+function makeDye(g, skin = null) {
+  const cache = new Map(), albino = g.albino === 2, axanthic = !albino && g.axanthic === 2, tone = skin && typeof SKIN_TONES !== 'undefined' ? SKIN_TONES[skin[1]] : null;
   const leuc = !albino && g.leu === 2, pale = !albino && !leuc && g.leu === 1;
   const xanthic = !albino && !axanthic && g.xanthic === 2, melanistic = !albino && !axanthic && !xanthic && g.melanistic === 2;
   return (m) => {
@@ -174,6 +174,7 @@ function makeDye(g) {
       d = m.map((c) => {
         let [h, s, l] = rgbToHsl(c);
         h += g.hue; s *= g.sat; l *= g.light;
+        if (tone) [h, s, l] = tone(h, s, l); // its variety (skins.js), under any colour morph
         if (g.shiny) { h += g.shinyHue; s = Math.min(1, s * 1.2 + 0.12); }
         if (albino) { s *= 0.12; l = 0.62 + l * 0.38; h = 350; }
         else if (leuc) { s *= 0.1; l = 0.72 + l * 0.28; }
@@ -196,7 +197,8 @@ function makeDye(g) {
 // Patterns painted into baked tables: piebald patches, marbled veins, and a
 // chimera's second half dyed as if it were another animal.
 function dyeCreature(c, g) {
-  const dye = makeDye(g), piebald = g.piebald === 2, marbled = g.mar > 0;
+  const skin = typeof skinFor === 'function' ? skinFor(c.species, g.skin) : null, paint = skin && skin[2] && g.albino !== 2 && g.leu !== 2 ? skin : null;
+  const dye = makeDye(g, skin), piebald = g.piebald === 2, marbled = g.mar > 0;
   const other = g.chi ? makeDye({ ...g, hue: g.hue + 150, chi: false, shiny: !g.shiny, shinyHue: 200 }) : null;
   for (const k of Object.keys(c)) {
     const v = c[k];
@@ -204,12 +206,13 @@ function dyeCreature(c, g) {
     else if (typeof v === 'function' && v.table) {
       const T = v.table, orig = T.slice();
       for (let i = 0; i < T.length; i++) if (isMat(T[i])) T[i] = dye(T[i]);
-      if ((piebald || marbled || other) && v.dims) {
+      if ((piebald || marbled || other || paint) && v.dims) {
         const [nu, nv, u0] = v.dims;
         for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
           const u = u0 + (i + 0.5) / nu * (1 - u0), vv = (j + 0.5) / nv * 2 - 1, q = i + j * nu;
           if (!isMat(T[q])) continue;
           if (other && vv < 0) T[q] = other(orig[q]);
+          if (paint && skinPaint(paint[2], u, vv, g.seed % 97)) T[q] = skinAccentFor(paint[3], T[q]);
           if (marbled && Math.abs(vnoise(u * 9 + g.seed, vv * 3, 93) - 0.5) < 0.05) T[q] = [T[q][0], T[q][0], T[q][1], T[q][2]];
           if (piebald && vnoise(u * 5 + g.seed, vv * 2.2, 91) > 0.56) T[q] = PIEBALD_WHITE;
         }
@@ -433,6 +436,7 @@ function lifespanFor(species, seed) {
 const genomeFor = (seed) => ({
   ...withSeed(`genome/${seed}`, makeGenome), ...withSeed(`genome2/${seed}`, makeGenome2), ...withSeed(`genome3/${seed}`, makeGenome3),
   ...withSeed(`genome4/${seed}`, makeGenome4), ...(typeof makeGenome5 === 'function' ? withSeed(`genome5/${seed}`, makeGenome5) : {}),
+  ...(typeof makeGenome7 === 'function' ? withSeed(`genome7/${seed}`, makeGenome7) : {}),
 });
 function childGenomeFor(seed, a, b) {
   const m = mutFactor(a, b);
@@ -441,6 +445,7 @@ function childGenomeFor(seed, a, b) {
     ...withSeed(`genome3/${seed}`, () => childGenome3(a, b, m)), ...withSeed(`genome4/${seed}`, () => childGenome4(a, b, m)),
     ...(typeof childGenome5 === 'function' ? withSeed(`genome5/${seed}`, () => childGenome5(a, b, m)) : {}),
     ...(typeof childXeno === 'function' ? withSeed(`genome6/${seed}`, () => childXeno(a, b)) : {}),
+    ...(typeof childGenome7 === 'function' ? withSeed(`genome7/${seed}`, () => childGenome7(a, b, m)) : {}),
   };
 }
 const GENOME_KEYS = [...Object.keys(GENE_LIMITS), 'shiny', 'shinyHue', 'seed', ...RECESSIVE, ...RECESSIVE2, 'glow', 'ghost', ...FGENES, 'leu', 'mar', 'mut', 'chi', 'eld'];
@@ -451,6 +456,8 @@ function fillGenome(g) {
   for (const k of FGENES) if (typeof g[k] !== 'number') g[k] = 0.5;
   g.glow = !!g.glow; g.ghost = !!g.ghost; g.chi = !!g.chi; g.eld = !!g.eld; g.xeno = g.xeno || 0;
   if (typeof G5_KEYS !== 'undefined') for (const k of G5_KEYS) g[k] = !!g[k];
+  // (Saved before skins: a variety from its genes' own seed, so it stays the same each time it loads.)
+  if (typeof g.skin !== 'number' && typeof makeGenome7 === 'function') g.skin = withSeed(`genome7/old/${g.seed || 0}`, makeGenome7).skin;
   return g;
 }
 

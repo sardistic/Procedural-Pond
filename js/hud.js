@@ -1522,7 +1522,8 @@ function renderCreature() {
   const gr = gradeOf(L.genome), gradeChip = chip(`${GRADES[gr]} quality`, GRADE_COLOR[gr]);
   gradeChip.title = 'Graded from its genes: its working genes against the average, gifts up, curses down. It sets what it is worth.';
   const subRow = el('div', 'cr-subrow');
-  subRow.append(colored('p', 'cr-sub', `${d.label} · ${d.stage} · gen ${d.gen} · ${ageLabel(L.age)} of ~${Math.round(L.lifespan / 60)}m`), gradeChip);
+  const skin = typeof skinName === 'function' ? skinName(c) : null;
+  subRow.append(colored('p', 'cr-sub', `${d.label}${skin ? ` (${skin})` : ''} · ${d.stage} · gen ${d.gen} · ${ageLabel(L.age)} of ~${Math.round(L.lifespan / 60)}m`), gradeChip);
   parts.push(subRow);
   if (!here) {
     parts.push(colored('p', 'cr-gone', rec && rec.d != null ? `No longer in the pond: left on day ${Math.floor(rec.d) + 1}${rec.why ? ` (${rec.why})` : ''}` : 'No longer in the pond'));
