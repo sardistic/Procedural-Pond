@@ -118,6 +118,13 @@
     #entry .list .sc { font-variant-numeric: tabular-nums; color: #ffe9a8; white-space: nowrap; }
     #entry .list .meta { grid-column: 2 / -1; font-size: 12px; color: #7f9cc4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #entry .empty { color: #7f9cc4; font-size: 13px; margin: 4px 0 12px; }
+    #entry .sorts { display: flex; gap: 4px; margin: 0 0 8px; }
+    #entry .sorts button { padding: 3px 8px; font: 400 10px 'Silkscreen', ui-monospace, monospace; color: #7f9cc4; box-shadow: none; }
+    #entry .sorts button[aria-pressed="true"] { color: #1a0f05; background: #7fd8e8; border-color: #bff4ff; }
+    #entry .list li { position: relative; overflow: hidden; }
+    #entry .list .row-bg { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; z-index: 0; pointer-events: none; }
+    #entry .list a { position: relative; z-index: 1; background: linear-gradient(90deg, rgba(4,10,24,.78) 0%, rgba(4,10,24,.3) 55%, rgba(4,10,24,.6) 100%); text-shadow: 1px 1px 0 #02050f; }
+    #entry .list a:hover { background: linear-gradient(90deg, rgba(27,79,125,.7) 0%, rgba(27,79,125,.25) 55%, rgba(27,79,125,.5) 100%); }
     #entry details { border-bottom: 1px solid #1e3c6a; padding: 8px 0; }
     #entry summary { cursor: pointer; color: #e8f0ff; list-style: none; }
     #entry summary::-webkit-details-marker { display: none; }
@@ -194,14 +201,12 @@
       </div>
       <label class="skip"><input id="entry-skip" type="checkbox"> Skip this screen next time</label>
     </div>
-    <section class="panel" aria-label="Ponds, high scores and questions">
+    <section class="panel" aria-label="Ponds and questions">
       <div class="tabs" role="tablist">
         <button type="button" role="tab" id="et-ponds" aria-selected="true" aria-controls="ep-ponds">Ponds</button>
-        <button type="button" role="tab" id="et-scores" aria-selected="false" aria-controls="ep-scores" tabindex="-1">High scores</button>
         <button type="button" role="tab" id="et-faq" aria-selected="false" aria-controls="ep-faq" tabindex="-1">FAQ</button>
       </div>
       <div id="ep-ponds" role="tabpanel" aria-labelledby="et-ponds"><p class="empty">Looking for ponds…</p></div>
-      <div id="ep-scores" role="tabpanel" aria-labelledby="et-scores" hidden><p class="empty">Fetching the leaderboard…</p></div>
       <div id="ep-faq" role="tabpanel" aria-labelledby="et-faq" hidden>
         <details><summary>What is this?</summary><p>A pixel-art pond that runs in your browser. Every animal has its own genes, life and temper: they grow, hunt, breed, fight and change on their own.</p></details>
         <details><summary>How do I play?</summary><p>Feed what arrives, plant and build, and spend the essence and pearls your pond earns on its animals and its world. Click any animal to see its life, genes and family. The pond deepens as it lives, and deeper water brings stranger things.</p></details>
@@ -243,7 +248,7 @@
       </div>
     </div>
   </div>
-  <script src="js/entry.js?v=6"></script>
+  <script src="js/entry.js?v=7"></script>
   <canvas id="pond" aria-label="A living pixel-art pond of procedurally animated animals"></canvas>
   <div class="vignette" aria-hidden="true"></div>
   <noscript>

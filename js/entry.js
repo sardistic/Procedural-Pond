@@ -321,7 +321,7 @@
   soundLabel();
 
   // ---- tabs ---------------------------------------------------------------------------------------------
-  const tabs = ['ponds', 'scores', 'faq'];
+  const tabs = ['ponds', 'faq'];
   function pick(k, focus) {
     for (const n of tabs) {
       const on = n === k, b = $(`et-${n}`);
@@ -348,16 +348,73 @@
   const WATERS = { fresh: 'fresh', salt: 'salt', mixed: 'brackish' };
   const ago = (ms) => { const m = Math.max(0, (Date.now() - ms) / 60000); return m < 60 ? `${Math.max(1, Math.round(m))}m ago` : m < 2880 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`; };
   function row(p, rank, score, meta) {
-    const li = node('li'), a = node('a');
+    const li = node('li'), a = node('a'), cv = document.createElement('canvas');
+    cv.className = 'row-bg'; cv.width = 96; cv.height = 16; cv.setAttribute('aria-hidden', 'true');
     a.href = `/${p.slug || p.id}`;
     a.append(node('span', 'rk', rank), node('span', 'nm', pondName(p)), node('span', 'sc', score), node('span', 'meta', meta));
-    li.append(a);
+    li.append(cv, a);
+    rowBgs.push(rowScene(cv, p));
     return li;
   }
+
+  // ---- each pond's row, a glimpse of it: its water, how deep it has gone, how grown, its life --------------------
+  // (From what the board knows: habitat, fathoms, days, animals, rares. Pixel water a few rows high, the deep side
+  // fading to black the deeper the pond, weed along the bottom as it ages, fish across it for its animals, glints
+  // for its rare ones, and deep glows in the dark of a deep one.)
+  const rowBgs = [];
+  const ROW_WATER = { fresh: ['#2a6a4a', '#134030', '#7ad08a'], salt: ['#2a6aa0', '#0c3058', '#8ad8ff'], mixed: ['#2a6a7a', '#103a48', '#8ae8e0'] };
+  const ROW_FISH = { fresh: ['#f08a3a', '#f4f0e8', '#e05a3a', '#ffd166'], salt: ['#ffd166', '#3ad6ff', '#ff6a8a', '#f08a3a'], mixed: ['#f08a3a', '#3ad6ff', '#ffd166', '#f4f0e8'] };
+  const ROW_WEED = { fresh: ['#2a8a3a', '#46a84a'], salt: ['#e07a8a', '#f0a050', '#c86ad8'], mixed: ['#2a8a3a', '#e07a8a'] };
+  function rowScene(cv, p) {
+    let h = 2166136261; for (const ch of String(p.id || p.slug || 'pond')) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+    const rnd = () => ((h = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0) / 4294967296);
+    const hab = ROW_WATER[p.habitat] ? p.habitat : 'mixed', depth = Math.max(1, p.depth || 1), days = p.days || 0, animals = p.animals || 0, rares = p.rares || 0;
+    const nFish = Math.max(animals ? 1 : 0, Math.min(14, Math.round(Math.log2(1 + animals) * 1.6))), nWeed = Math.min(18, Math.round(Math.log2(1 + days) * 1.8));
+    return {
+      cv, g: cv.getContext('2d'), hab, dark: Math.min(1, Math.log10(1 + depth) / 6), deepLife: depth > 500,
+      fish: Array.from({ length: nFish }, (_, i) => ({ x: rnd() * 96, y: 3 + rnd() * 10, v: (0.6 + rnd() * 1.4) * (i % 2 ? -1 : 1), ph: rnd() * 6.3, c: ROW_FISH[hab][(rnd() * 4) | 0], big: rnd() < 0.25 })),
+      weed: Array.from({ length: nWeed }, () => ({ x: (rnd() * 96) | 0, h: 2 + ((rnd() * 4) | 0), c: ROW_WEED[hab][(rnd() * ROW_WEED[hab].length) | 0], ph: rnd() * 6.3 })),
+      rares: Array.from({ length: Math.min(4, rares) }, () => ({ x: (rnd() * 96) | 0, y: 2 + ((rnd() * 11) | 0), ph: rnd() * 6.3 })),
+      glows: Array.from({ length: depth > 500 ? 3 + Math.min(4, Math.round(Math.log10(depth) - 2)) : 0 }, () => ({ x: 60 + ((rnd() * 34) | 0), y: 2 + ((rnd() * 12) | 0), ph: rnd() * 6.3 })),
+    };
+  }
+  function drawRow(S, t) {
+    const g = S.g, W = 96, H = 16, [top, bot, light] = ROW_WATER[S.hab];
+    // The water, top to bottom, its deep side darkening toward black.
+    const grad = g.createLinearGradient(0, 0, 0, H); grad.addColorStop(0, top); grad.addColorStop(1, bot);
+    g.fillStyle = grad; g.fillRect(0, 0, W, H);
+    if (S.dark > 0.05) { const dg = g.createLinearGradient(W * 0.35, 0, W, 0); dg.addColorStop(0, 'rgba(0,0,0,0)'); dg.addColorStop(1, `rgba(0,0,0,${(0.25 + 0.7 * S.dark).toFixed(2)})`); g.fillStyle = dg; g.fillRect(0, 0, W, H); }
+    // Light rippling across the top.
+    g.fillStyle = light; g.globalAlpha = 0.35;
+    for (let x = 0; x < W; x += 1) if (Math.sin(x * 0.35 + t * 2.2) + Math.sin(x * 0.13 - t * 1.3) > 1.3) g.fillRect(x, 1 + (((x * 7) % 3) | 0), 1, 1);
+    g.globalAlpha = 1;
+    // Weed along the bottom, swaying.
+    for (const w of S.weed) { g.fillStyle = w.c; for (let k = 0; k < w.h; k++) g.fillRect(w.x + Math.round(Math.sin(t * 1.4 + w.ph + k * 0.6) * (k / 3)), H - 1 - k, 1, 1); }
+    // Fish.
+    for (const f of S.fish) {
+      f.x = (f.x + f.v * 0.25 + 96) % 96;
+      const y = Math.round(f.y + Math.sin(t * 2 + f.ph) * 0.8), x = Math.round(f.x);
+      g.fillStyle = f.c; g.fillRect(x, y, f.big ? 3 : 2, f.big ? 2 : 1);
+      g.fillRect(f.v > 0 ? x - 1 : x + (f.big ? 3 : 2), y + (f.big ? 0 : 0), 1, 1); // (its tail)
+    }
+    // Rares glinting, and deep glows in the dark.
+    for (const r of S.rares) if (Math.sin(t * 3 + r.ph) > 0.3) { g.fillStyle = '#fff0a0'; g.fillRect(r.x, r.y, 1, 1); }
+    for (const q of S.glows) { const a = 0.5 + 0.5 * Math.sin(t * 1.5 + q.ph); g.fillStyle = `rgba(110,240,255,${a.toFixed(2)})`; g.fillRect(q.x, q.y, 1, 1); }
+  }
+  let rowT = 0;
+  setInterval(() => {
+    if (!root.isConnected || root.classList.contains('gone') || document.hidden || $('ep-ponds').hidden) return;
+    rowT += 0.066;
+    for (const S of rowBgs) if (S.cv.isConnected) drawRow(S, rowT);
+  }, 66);
   const facts = (p) => [p.by ? `by ${p.by}` : null, p.habitat && WATERS[p.habitat] ? `${WATERS[p.habitat]} water` : null, p.animals != null ? `${p.animals} animals` : null, p.days != null ? `day ${Math.floor(p.days) + 1}` : null].filter(Boolean).join(' · ');
   let me = null, board = null;
+  // Ponds and the leaderboard together, sorted by score, depth or what was lately alive.
+  let sortBy = 'score';
+  try { sortBy = localStorage.getItem('pond.entrySort') || 'score'; } catch { /* no storage */ }
   function renderPonds() {
     const box = $('ep-ponds'), out = [];
+    rowBgs.length = 0;
     if (me && me.user && me.ponds && me.ponds.length) {
       const ul = node('ul', 'list');
       for (const p of me.ponds.slice().sort((a, b) => b.updated - a.updated).slice(0, 6)) ul.append(row(p, '★', `${p.points} pts`, [p.habitat && WATERS[p.habitat] ? `${WATERS[p.habitat]} water` : null, `${p.animals} animals`, `day ${Math.floor(p.days || 0) + 1}`].filter(Boolean).join(' · ')));
@@ -367,18 +424,22 @@
     if (!board) out.push(node('p', 'empty', api ? 'The pond list is unavailable right now.' : 'Public ponds show here on pond.nz.'));
     else if (!board.top.length) out.push(node('p', 'empty', 'No public ponds yet. Yours could be the first.'));
     else {
-      const ul = node('ul', 'list');
-      for (const p of board.top.slice().sort((a, b) => b.updated - a.updated).slice(0, 12)) ul.append(row(p, '›', ago(p.updated), facts(p)));
-      out.push(ul);
+      const sorts = node('div', 'sorts');
+      sorts.setAttribute('role', 'group'); sorts.setAttribute('aria-label', 'Sort ponds');
+      for (const [k, label] of [['score', 'Score'], ['depth', 'Depth'], ['recent', 'Recent']]) {
+        const b = node('button', null, label);
+        b.type = 'button'; b.setAttribute('aria-pressed', String(sortBy === k));
+        b.addEventListener('click', () => { sortBy = k; try { localStorage.setItem('pond.entrySort', k); } catch { /* no storage */ } renderPonds(); });
+        sorts.append(b);
+      }
+      const order = { score: (a, b) => b.points - a.points, depth: (a, b) => b.depth - a.depth || b.points - a.points, recent: (a, b) => b.updated - a.updated }[sortBy] || ((a, b) => b.points - a.points);
+      const ranked = sortBy !== 'recent', ul = node(ranked ? 'ol' : 'ul', ranked ? 'list ranked' : 'list');
+      board.top.slice().sort(order).slice(0, 15).forEach((p, i) => ul.append(row(p, ranked ? String(i + 1) : '›',
+        sortBy === 'depth' ? `${Number(p.depth).toLocaleString()} fm` : sortBy === 'recent' ? ago(p.updated) : `${p.points.toLocaleString()} pts`,
+        [sortBy === 'score' ? `${Number(p.depth).toLocaleString()} fathoms` : `${p.points.toLocaleString()} pts`, facts(p)].filter(Boolean).join(' · '))));
+      out.push(sorts, ul);
     }
     box.replaceChildren(...out);
-  }
-  function renderScores() {
-    const box = $('ep-scores');
-    if (!board || !board.top.length) { box.replaceChildren(node('p', 'empty', !board ? (api ? 'The leaderboard is unavailable right now.' : 'High scores show here on pond.nz.') : 'No ponds on the leaderboard yet.')); return; }
-    const ul = node('ol', 'list ranked');
-    board.top.slice().sort((a, b) => b.points - a.points).slice(0, 15).forEach((p, i) => ul.append(row(p, String(i + 1), `${p.points.toLocaleString()} pts`, [`${p.depth} fathoms`, facts(p)].filter(Boolean).join(' · '))));
-    box.replaceChildren(ul);
   }
   function renderAccount() {
     const box = $('entry-account');
@@ -403,9 +464,9 @@
     box.replaceChildren(who, out);
   }
   if (api) {
-    getJson('/board').then((b) => { board = b && Array.isArray(b.top) ? b : null; }).catch(() => {}).then(() => { renderPonds(); renderScores(); });
+    getJson('/board').then((b) => { board = b && Array.isArray(b.top) ? b : null; }).catch(() => {}).then(() => { renderPonds(); });
     getJson('/me').then((m) => { me = m; renderAccount(); renderPonds(); }).catch(() => {});
-  } else { renderPonds(); renderScores(); }
+  } else { renderPonds(); }
 
   window.Entry = {
     status(text, p) { phase = 1; set(text, p); },
