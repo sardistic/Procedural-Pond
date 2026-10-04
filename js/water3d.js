@@ -54,8 +54,10 @@ function renderWater3D(out, w, rect, state) {
       const shade = Math.max(0.82, Math.min(1.14, 0.99 + (light - 0.75) * 0.55));
       cr *= shade; cg *= shade; cb *= shade;
       // In deep water the floor contributes little light, but the surface
-      // still scatters daylight. Keep the swell visible above a dark abyss.
-      const scatter = Math.max(0, Math.min(1, (waterDepth - 0.15) / 0.7)) * (0.08 + 0.42 * day) * visibility;
+      // still scatters daylight, keeping the swell visible over the middle depths.
+      // The very deepest water stays true black (OLED): only glints show there.
+      const abyss = 1 - Math.max(0, Math.min(1, (waterDepth - 0.82) / 0.15));
+      const scatter = Math.max(0, Math.min(1, (waterDepth - 0.15) / 0.7)) * (0.08 + 0.42 * day) * visibility * abyss;
       const faceLight = Math.max(0.6, Math.min(1.25, 1 + (light - 0.75) * 2.8));
       cr += ((wr * 0.8 * 0.8 + sr * 0.2) * faceLight - cr) * scatter;
       cg += ((wg * 1.2 * 0.8 + sg * 0.2) * faceLight - cg) * scatter;
@@ -63,7 +65,7 @@ function renderWater3D(out, w, rect, state) {
       const facing = Math.max(0, nx * vx + ny * vy + nz * vz);
       const fresnel = tint + 0.975 * Math.pow(1 - facing, 5);
       const spec = Math.max(0, Math.pow(Math.max(0, nx * hx + ny * hy + nz * hz), 512) - flatSpec) * (0.62 * day + 0.1);
-      const reflect = Math.min(0.24, fresnel * visibility);
+      const reflect = Math.min(0.24, fresnel * visibility) * abyss;
       cr += (sr - cr) * reflect; cg += (sg - cg) * reflect; cb += (sb - cb) * reflect;
       const sparkle = Math.min(0.2, spec * visibility * (1 - rain * 0.55));
       cr += ((day > 0.4 ? 236 : 164) - cr) * sparkle;
@@ -138,12 +140,13 @@ void main() {
   vec3 base = texture(u_scene, refractUV).rgb;
   float light = max(0.0, dot(n, normalize(vec3(-0.45, -0.48, 0.75))));
   base *= clamp(0.99 + (light - 0.75) * 0.55, 0.82, 1.14);
-  float scatter = smoothstep(0.15, 0.85, depth) * (0.08 + 0.42 * u_day) * u_visibility;
+  float abyss = 1.0 - smoothstep(0.82, 0.97, depth); // (the very deepest stays true black: only glints)
+  float scatter = smoothstep(0.15, 0.85, depth) * (0.08 + 0.42 * u_day) * u_visibility * abyss;
   vec3 surface = mix(u_water * vec3(0.8, 1.2, 1.3), u_sky, 0.2);
   base = mix(base, surface * clamp(1.0 + (light - 0.75) * 2.8, 0.6, 1.25), scatter);
   float facing = max(0.0, dot(n, normalize(vec3(-0.3, -0.42, 0.86))));
   float fresnel = 0.05 + u_rain * 0.015 + 0.95 * pow(1.0 - facing, 5.0);
-  base = mix(base, u_sky, min(0.24, fresnel * u_visibility));
+  base = mix(base, u_sky, min(0.24, fresnel * u_visibility) * abyss);
   float spec = max(0.0, pow(max(0.0, dot(n, normalize(vec3(0.08, -0.14, 0.987)))), 512.0) - pow(0.987, 512.0)) * (0.62 * u_day + 0.1);
   base = mix(base, mix(vec3(0.64, 0.73, 0.85), vec3(0.93, 0.95, 0.97), step(0.4, u_day)), min(0.2, spec * u_visibility * (1.0 - u_rain * 0.55)));
   // Breaking foam stays with the depth-limited wave face near the shore.

@@ -283,7 +283,7 @@ const Sound = {
     set(B.water.f.frequency, (380 + world.current.s * 700) * (1 - 0.5 * m.deep));
     // Surf by the beach: each wave swells in; lapping with the tide's flow when it's calm.
     const shore = world.shore ? m.beach : 0, wave = tide ? 0.2 + 0.8 * Math.exp(-(tide.wave % 1) * 4) : 0;
-    set(B.surf.g.gain, (tide ? tide.surf : 0) * 0.26 * wave * (0.15 + 0.85 * shore), 0.12);
+    set(B.surf.g.gain, (tide ? tide.surf : 0) * 0.15 * wave * (0.1 + 0.9 * shore), 0.2);
     set(B.surf.p.pan, m.dir);
     set(B.lap.g.gain, shore * (0.012 + 0.03 * Math.abs(tide ? tide.flow : 0)) * (1 - Math.min(1, tide ? tide.surf : 0) * 0.5), 0.3);
     set(B.rain.g.gain, W.rain * 0.22, 0.5);

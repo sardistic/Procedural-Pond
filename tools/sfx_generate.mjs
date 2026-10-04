@@ -48,6 +48,8 @@ const SFX = {
   // ---- ambience beds for the zoom: they loop ----
   amb_surface: ['calm ocean surface ambience from just above the water: gentle wind, soft lapping waves, distant seabirds, peaceful', 20, 0.4, true],
   amb_shallow: ['underwater ambience in a shallow reef: soft bubbles, gentle water movement, faint snapping shrimp crackle, peaceful', 20, 0.4, true],
+  amb_fresh: ['close field recording at the edge of a small still freshwater pond at dusk: tiny irregular water lapping against reeds and mud, a faint trickle, reeds brushing, very quiet and intimate, no ocean, no waves crashing', 22, 0.55, true],
+  amb_salt: ['close field recording of a sheltered rocky cove: small gentle waves washing over shingle and pebbles and draining back with a soft rattle, irregular and natural, quiet, no big surf', 22, 0.55, true],
   amb_deep: ['deep ocean underwater ambience: low dark drone, muffled pressure, very distant whale calls, slow and calm', 20, 0.4, true],
 };
 

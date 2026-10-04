@@ -491,7 +491,7 @@ class Raster {
         if (depthMap && !dry) {
           const dd = depthMap[p];
           if (dd && !(i && emissive[i] === 2)) {
-            let a = (dd * 230 * deepK) >> 8;
+            let a = Math.min(256, (dd * 290 * deepK) >> 8); // (all the way to black in the deepest water)
             const m = (dd * dd) >> 8, dr = dr0 + (((dr1 - dr0) * m) >> 8), dg = dg0 + (((dg1 - dg0) * m) >> 8), db = db0 + (((db1 - db0) * m) >> 8);
             if (i) a = (a * (256 - Math.min(200, (z[p] * 256 / SURFACE_Z * 0.78) | 0))) >> 8; // nearer the surface, less of the dark
             // Over the floor, the dark comes in dithered steps with a slow murk moving through it
@@ -500,6 +500,7 @@ class Raster {
               const murk = clouds ? clouds[(((x * 0.5 + mdx) | 0) & 127) | ((((y * 0.5 + 64) | 0) & 127) << 7)] - 0.5 : 0;
               a += murk * 34 * (dd / 255);
               a = Math.max(0, Math.min(240, ((a + 6 + BAYER4[(x & 3) | ((y & 3) << 2)] * 12) / 12 | 0) * 12));
+              if (a >= 240) a = 256; // (the darkest step is true black, for OLED screens)
             }
             const cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
             c = (0xff000000 | ((cb + (((db - cb) * a) >> 8)) << 16) | ((cg + (((dg - cg) * a) >> 8)) << 8) | (cr + (((dr - cr) * a) >> 8))) >>> 0;
@@ -508,7 +509,7 @@ class Raster {
           if (trench && !i && trench[p]) {
             const tv = trench[p], v = (tv & 127) / 127, lit = tv >= 128, bq = BAYER4[(x & 3) | ((y & 3) << 2)];
             let f = 256;
-            if (v > 0.62) c = v < 0.72 && ((x ^ y) & 1) ? 0xff06070c : 0xff010103; // the floor of it, far down
+            if (v > 0.62) c = 0xff000000; // the floor of it, far down: true black
             else if (v > 0.3) f = v + bq * 0.1 > 0.47 ? 60 : 120; // the walls, stepping down into the dark
             else if (lit) {
               // The lip on the side the light falls on catches it; now and then something glints there.

@@ -28,7 +28,8 @@ function maxDeepPx(world) {
   const [W0, H0] = baseSize(world), axisX = deepAxisX(world.shoreSide), cross = axisX ? H0 : W0, along = axisX ? W0 : H0;
   return Math.max(0, Math.min(MAX_DEEP_PX, Math.floor(PX_BUDGET / Math.max(1, cross)) - along));
 }
-const DEEP_COLOR = { salt: hexToInt('#02040e'), fresh: hexToInt('#050806'), mixed: hexToInt('#03050c') };
+// (True black at the bottom: on an OLED screen the deepest water switches its pixels off.)
+const DEEP_COLOR = { salt: 0xff000000, fresh: 0xff000000, mixed: 0xff000000 };
 
 // ---- depth is the score -------------------------------------------------------------------------
 // A pond's score is its deepest point, in fathoms, rising through the real zones:

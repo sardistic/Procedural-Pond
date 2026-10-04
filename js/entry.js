@@ -231,7 +231,7 @@
     // A splash as you dive in, if there's sound (the music on here, or the pond's sound switch).
     let pondSound = false;
     try { pondSound = !!JSON.parse(localStorage.getItem('procedural-pond.opts') || '{}').sound; } catch { /* no storage */ }
-    if (songWanted || pondSound) { try { const a = new Audio('audio/sfx/ui_enter.mp3'); a.volume = 0.35; a.play().catch(() => {}); } catch { /* no audio */ } }
+    if (songWanted || pondSound) { try { const a = new Audio('audio/sfx/ui_enter.mp3'); a.volume = 0.1; a.play().catch(() => {}); } catch { /* no audio */ } }
     setTimeout(() => root.remove(), 700);
     document.removeEventListener('keydown', key, true);
     if (window.Entry.onDone) window.Entry.onDone();
@@ -259,7 +259,8 @@
   // a click first, so a remembered "on" starts at the first click or key; entering fades it out.
   const SONG = { ctx: null, gain: null, on: false, files: null, next: 0, at: 0, timer: 0, sources: [] };
   const SONG_LEVEL = 0.16;
-  function soundLabel() { const b = $('entry-sound'); b.textContent = SONG.on ? '♪ Music on' : '♪ Music off'; b.setAttribute('aria-pressed', String(SONG.on)); }
+  // (Shown as wanted: on, it starts with your first click or key, as browsers require.)
+  function soundLabel() { const on = SONG.on || songWanted; const b = $('entry-sound'); b.textContent = on ? '♪ Music on' : '♪ Music off'; b.setAttribute('aria-pressed', String(on)); }
   async function songFiles() {
     if (SONG.files) return SONG.files;
     const m = await fetch('audio/music.json', { cache: 'force-cache' }).then((r) => r.json());
@@ -307,12 +308,11 @@
     const left = SONG.sources.slice(); SONG.sources = [];
     setTimeout(() => { for (const s of left) { try { s.stop(); } catch { /* already done */ } } SONG.at = 0; }, fade * 5000);
   }
-  let songWanted = false;
-  try { songWanted = localStorage.getItem('pond.entryMusic') === '1'; } catch { /* no storage */ }
+  let songWanted = true; // (on unless you've turned it off here)
+  try { songWanted = localStorage.getItem('pond.entryMusic') !== '0'; } catch { /* no storage */ }
   $('entry-sound').addEventListener('click', () => {
-    if (SONG.on) songStop(); else songStart();
-    songWanted = SONG.on;
-    try { localStorage.setItem('pond.entryMusic', SONG.on ? '1' : '0'); } catch { /* no storage */ }
+    if (SONG.on || songWanted) { songStop(); songWanted = false; } else { songStart(); songWanted = true; }
+    try { localStorage.setItem('pond.entryMusic', songWanted ? '1' : '0'); } catch { /* no storage */ }
     soundLabel();
   });
   // (Remembered on: it starts with the first click or key on the screen.)

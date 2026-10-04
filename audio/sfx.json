@@ -204,6 +204,18 @@
    "dur": 20.036,
    "loop": true,
    "g": 0.111
+  },
+  "amb_fresh": {
+   "f": "amb_fresh.mp3",
+   "dur": 22,
+   "loop": true,
+   "g": 2.11
+  },
+  "amb_salt": {
+   "f": "amb_salt.mp3",
+   "dur": 22,
+   "loop": true,
+   "g": 1.95
   }
  }
 }

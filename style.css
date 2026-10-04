@@ -17,7 +17,7 @@ html, body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: #0e3a46;
+  background: #000;
   color: var(--text);
   font-family: ui-rounded, 'Trebuchet MS', Verdana, sans-serif;
 }
@@ -69,7 +69,7 @@ html.font-pixel body { font-family: 'Silkscreen', ui-monospace, monospace; }
   inset: 0;
   z-index: 2;
   pointer-events: none;
-  background: radial-gradient(ellipse at 40% 35%, transparent 55%, rgba(4, 18, 26, 0.55));
+  background: radial-gradient(ellipse at 40% 35%, transparent 55%, rgba(0, 0, 0, 0.55));
 }
 
 #hud {

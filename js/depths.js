@@ -125,8 +125,10 @@ const TIER_DARK = {
   salt: ['#0a0420', '#12031e', '#021a12', '#1a0210'].map(hexToInt),
   fresh: ['#0e0a04', '#060c02', '#04160c', '#16060e'].map(hexToInt),
 };
+const DEEP_MID = { salt: hexToInt('#02040e'), fresh: hexToInt('#050806'), mixed: hexToInt('#03050c') };
 function deepTint(world) {
-  const tier = (world.erosion && world.erosion.tier) || 0, base = DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed;
+  // (The middle depths' colour; the deepest water past it is true black.)
+  const tier = (world.erosion && world.erosion.tier) || 0, base = DEEP_MID[world.opts.habitat] || DEEP_MID.mixed;
   if (tier < 5) return base;
   const t = mixColor(base, TIER_DARK[branchOf(world)][Math.min(3, tier - 5)] || base, 0.5);
   return tier > 8 ? mixColor(t, 0xff000000, Math.min(0.8, 0.25 * (tier - 8))) : t; // (the deep past: darker every tier)

@@ -23,20 +23,25 @@ const SFX = {
         try { this.buf[k] = await ctx.decodeAudioData(await fetch(`audio/sfx/${v.f}`, { cache: 'force-cache' }).then((r) => r.arrayBuffer())); } catch { /* skip that one */ }
       }));
       // Menus straight out; the pond's sounds and the soundscape through the water (a lowpass the zoom closes).
-      this.ui = ctx.createGain(); this.ui.gain.value = 0.5; this.ui.connect(ctx.destination);
+      this.ui = ctx.createGain(); this.ui.gain.value = 0.2; this.ui.connect(ctx.destination);
       this.under = ctx.createBiquadFilter(); this.under.type = 'lowpass'; this.under.frequency.value = 18000; this.under.Q.value = 0.5;
       this.under.connect(ctx.destination);
       Sound.master.disconnect(); Sound.master.connect(this.under);
-      this.fx = ctx.createGain(); this.fx.gain.value = 0.55; this.fx.connect(this.under);
+      this.fx = ctx.createGain(); this.fx.gain.value = 0.25; this.fx.connect(this.under);
       // The three beds, looping, silent until the zoom brings them up.
       this.beds = {};
-      for (const k of ['amb_surface', 'amb_shallow', 'amb_deep']) {
+      const G0 = (id) => (this.man.sounds[id] && this.man.sounds[id].g) || 1;
+      // (The shore by the pond's own water: a reedy pond edge, or small waves on shingle.)
+      const shore = world.opts.habitat === 'fresh' ? 'amb_fresh' : 'amb_salt';
+      this.shore = this.buf[shore] ? shore : 'amb_surface';
+      for (const k of [this.shore, 'amb_shallow', 'amb_deep']) {
         if (!this.buf[k]) continue;
         const s = ctx.createBufferSource(), g = ctx.createGain();
         s.buffer = this.buf[k]; s.loop = true; g.gain.value = 0;
-        s.connect(g).connect(k === 'amb_surface' ? ctx.destination : this.under); // (the surface is heard above the water)
+        s.connect(g).connect(k === this.shore ? ctx.destination : this.under); // (the shore is heard above the water)
         s.start(0, Math.random() * Math.max(0.1, this.buf[k].duration - 1));
-        this.beds[k] = g;
+        this.beds[k === this.shore ? 'amb_surface' : k] = g;
+        if (k === this.shore) this.shoreG = G0(k);
       }
       this.ready = true;
     })().catch(() => { this.loading = null; });
@@ -72,20 +77,23 @@ const SFX = {
     const ss = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
     const set = (param, v, tc = 0.6) => param.setTargetAtTime(v, now, tc);
     const B = this.beds, G = (id) => (this.man.sounds[id] && this.man.sounds[id].g) || 1;
-    if (B.amb_surface) set(B.amb_surface.gain, 0.5 * G('amb_surface') * (1 - ss(0.12, 0.5, z)) * (1 - 0.6 * deep));
-    if (B.amb_shallow) set(B.amb_shallow.gain, 0.6 * G('amb_shallow') * ss(0.08, 0.42, z) * (1 - ss(0.7, 1, z) * 0.5) * (1 - 0.7 * deep));
-    if (B.amb_deep) set(B.amb_deep.gain, 0.5 * G('amb_deep') * Math.max(deep * 0.9, ss(0.6, 1, z) * 0.6));
+    // (Everything but the entry screen's music sits far down while it's up.)
+    const entry = document.getElementById('entry'), damp = entry && !entry.classList.contains('gone') ? 0.15 : 1;
+    set(Sound.master.gain, 0.55 * damp, 0.8); set(this.ui.gain, 0.2 * damp, 0.3); set(this.fx.gain, 0.25 * damp, 0.3);
+    if (B.amb_surface) set(B.amb_surface.gain, damp * 0.32 * (this.shoreG || 1) * (1 - ss(0.12, 0.5, z)) * (1 - 0.6 * deep));
+    if (B.amb_shallow) set(B.amb_shallow.gain, damp * 0.35 * G('amb_shallow') * ss(0.08, 0.42, z) * (1 - ss(0.7, 1, z) * 0.5) * (1 - 0.7 * deep));
+    if (B.amb_deep) set(B.amb_deep.gain, damp * 0.3 * G('amb_deep') * Math.max(deep * 0.9, ss(0.6, 1, z) * 0.6));
     // Under the water as you close in: the pond's sounds muffle (the menus don't).
     set(this.under.frequency, 18000 * Math.pow(1500 / 18000, ss(0.35, 1, z) * 0.85 + deep * 0.15), 0.4);
     // A new depth opens.
     const tier = world.erosion ? world.erosion.tier : 0;
-    if (this.tier != null && tier > this.tier && !world.observe) this.play('ev_depth', { level: 0.9, gap: 10, vary: 0 });
+    if (this.tier != null && tier > this.tier && !world.observe) this.play('ev_depth', { level: 0.6, gap: 60, vary: 0 });
     this.tier = tier;
     // A storm coming in, and thunder in a heavy one.
     const rain = world.weather.rain || 0;
-    if (this.rainWas < 0.25 && rain >= 0.25) this.play('ev_storm', { level: 0.7, gap: 60, vary: 0.02 });
+    if (this.rainWas < 0.25 && rain >= 0.25) this.play('ev_storm', { level: 0.45, gap: 300, vary: 0.02 });
     this.rainWas = rain;
-    if (rain > 0.6 && Math.max(0, world.weather.gust || 0) > 0.3 && Math.random() < dt * 0.025) this.play('ev_thunder', { level: 0.6 + Math.random() * 0.4, pan: Math.random() * 1.6 - 0.8, gap: 8, vary: 0.1 });
+    if (rain > 0.7 && Math.max(0, world.weather.gust || 0) > 0.4 && Math.random() < dt * 0.01) this.play('ev_thunder', { level: 0.25 + Math.random() * 0.2, pan: Math.random() * 1.6 - 0.8, gap: 25, vary: 0.1 });
   },
 };
 
@@ -97,27 +105,22 @@ const SFX = {
     globalThis[name] = function (...a) { const r = f.apply(this, a); try { after(r, a); } catch { /* sound never breaks the pond */ } return r; };
   };
   const here = (w) => w === world && !world.observe;
-  wrap('award', (r, [w, n, why, subject, opts]) => { if (here(w) && n > 0 && !(opts && opts.quiet)) SFX.play('ev_award', { level: 0.6, gap: 1.2 }); });
-  wrap('gainEssence', (r, [w, n]) => { if (here(w) && r >= 5) SFX.play('ui_essence', { ui: true, level: 0.7, gap: 2 }); });
-  wrap('recycle', (r, [c, quiet]) => { if (!quiet) SFX.play('ui_recycle', { ui: true, level: 0.8 }); });
-  wrap('discover', (r, [w]) => { if (here(w)) SFX.play('ev_discover', { level: 0.8, gap: 3 }); });
-  wrap('findArtifact', (r, [w]) => { if (here(w) && r) SFX.play('ev_artifact', { level: 0.9, gap: 3, vary: 0 }); });
-  wrap('collectFossil', (r, [w]) => { if (here(w)) SFX.play('ev_fossil', { level: 0.9 }); });
-  wrap('awakenMind', (r, [w, c]) => { if (here(w)) SFX.play(c.life && c.life.mind ? 'ev_awaken' : 'ui_toggle_off', { ui: true, level: 0.8 }); });
-  wrap('hatchBrood', (r, [w]) => { if (here(w)) SFX.play('ev_hatch', { level: 0.8, gap: 1 }); });
-  wrap('hatchNest', (r, [w, N]) => { if (here(w) && N) SFX.at('ev_hatch', N.x, N.y, { gap: 1 }); });
-  wrap('spawn', (r, [kind, x, y, how]) => { if (how === 'bought' && Number.isFinite(x)) SFX.at('ui_spawn', x, y, { level: 0.9, gap: 0.3 }); });
+  wrap('recycle', (r, [c, quiet]) => { if (!quiet) SFX.play('ui_recycle', { ui: true, level: 0.4, gap: 1.5 }); });
+  wrap('discover', (r, [w]) => { if (here(w)) SFX.play('ev_discover', { level: 0.45, gap: 20 }); });
+  wrap('findArtifact', (r, [w]) => { if (here(w) && r) SFX.play('ev_artifact', { level: 0.55, gap: 10, vary: 0 }); });
+  wrap('collectFossil', (r, [w]) => { if (here(w)) SFX.play('ev_fossil', { level: 0.5, gap: 5 }); });
+  wrap('hatchBrood', (r, [w]) => { if (here(w)) SFX.play('ev_hatch', { level: 0.4, gap: 15 }); });
+  wrap('hatchNest', (r, [w, N]) => { if (here(w) && N) SFX.at('ev_hatch', N.x, N.y, { level: 0.4, gap: 15 }); });
   // Eating where it happens: a gulp, a bump and a splash for a kill.
+  // (A kill, now and then: not every meal.)
   wrap('eat', (r, [w, c, f]) => {
-    if (w !== world || !c) return;
-    const kill = typeof Creature !== 'undefined' && f instanceof Creature;
-    SFX.at(kill ? 'ev_hit' : 'ev_eat', c.x, c.y, { level: kill ? 0.9 : 0.45, gap: kill ? 0.3 : 0.5, vary: 0.12 });
+    if (w !== world || !c || !(typeof Creature !== 'undefined' && f instanceof Creature)) return;
+    SFX.at('ev_hit', c.x, c.y, { level: 0.35, gap: 12, vary: 0.12 });
   });
   // The rare and remarkable, as the journal tells them.
   wrap('logEvent', (r, [w, text, subject, opts]) => {
     if (!here(w) || !opts) return;
-    if (opts.cat === 'rare' && (opts.pri || 0) >= 2 && /born|hatched|baby|young/i.test(text)) SFX.play('ev_birth_rare', { level: 0.85, gap: 4, vary: 0 });
-    else if (opts.cat === 'life' && /died|gone|starved|killed|eaten/i.test(text) && subject && subject.life && tierOf(subject.life.traits || []) >= 2) SFX.play('ev_death', { level: 0.6, gap: 5 });
+    if (opts.cat === 'rare' && (opts.pri || 0) >= 3 && /born|hatched|baby|young/i.test(text)) SFX.play('ev_birth_rare', { level: 0.45, gap: 45, vary: 0 });
   });
   // What the tools did: build, plant, feed, release.
   const useTool0 = globalThis.useTool;
@@ -125,18 +128,13 @@ const SFX = {
     const n = [world.structures.length, world.plants.length + world.pads.length, world.food.length, world.creatures.length];
     const r = useTool0.call(this, x, y);
     try {
-      if (world.structures.length > n[0]) SFX.at('ui_build', x, y, { level: 1 });
-      else if (world.plants.length + world.pads.length > n[1]) SFX.at('ui_plant', x, y, { level: 0.9, gap: 0.15 });
-      else if (world.food.length > n[2]) SFX.at('ev_feed', x, y, { level: 0.8, gap: 0.25 });
-      else if (world.creatures.length > n[3]) SFX.at('ui_spawn', x, y, { level: 0.9, gap: 0.3 });
+      if (world.structures.length === n[0] && world.plants.length + world.pads.length === n[1] && world.food.length > n[2]) SFX.at('ev_feed', x, y, { level: 0.35, gap: 2.5 });
     } catch { /* nothing */ }
     return r;
   };
   // A splash when something big surfaces nearby (the soundscape's own plops stay for the small ones).
-  wrap('addRipple', (r, [w, x, y, size]) => { if (w === world && size >= 3) SFX.at('ev_splash_big', x, y, { level: 0.6, gap: 2 }); });
   // "Not enough", "too close", "it needs...": the dull blub.
-  wrap('showTicker', (r, [text]) => { if (/^(Not enough|Too |too close|It needs|it needs|Can.t|You already)/.test(String(text || ''))) SFX.play('ui_error', { ui: true, level: 0.8, gap: 0.4 }); });
-  wrap('spend', (r, [w, price]) => { if (r && price >= 10 && here(w)) SFX.play('ui_buy', { ui: true, level: 0.55, gap: 0.3 }); });
+  wrap('showTicker', (r, [text]) => { if (/^(Not enough|Too |too close|It needs|it needs|Can.t|You already)/.test(String(text || ''))) SFX.play('ui_error', { ui: true, level: 0.45, gap: 1.5 }); });
   // The soundscape's update drives ours.
   const upd = Sound.update;
   Sound.update = function (w, dt, rect, k) { upd.call(this, w, dt, rect, k); try { SFX.update(w, dt, k); } catch { /* nothing */ } };
@@ -148,15 +146,15 @@ const SFX = {
     if (!Sound.on || !SFX.ready) return;
     const t = e.target.closest && e.target.closest('button, summary, [role="tab"], input[type="checkbox"], select, a.btn');
     if (!t || t.closest('#entry') || t.disabled) return;
-    if (t.getAttribute('role') === 'tab') { SFX.play('ui_tab', { ui: true, level: 0.8 }); return; }
-    if (t.tagName === 'SUMMARY') { const open = !t.parentElement.open; SFX.play(open ? 'ui_open' : 'ui_close', { ui: true, level: 0.6 }); return; }
-    if (t.type === 'checkbox') { SFX.play(t.checked ? 'ui_toggle_on' : 'ui_toggle_off', { ui: true, level: 0.6 }); return; }
+    if (t.getAttribute('role') === 'tab') { SFX.play('ui_tab', { ui: true, level: 0.45, gap: 0.2 }); return; }
+    if (t.tagName === 'SUMMARY') { const open = !t.parentElement.open; SFX.play(open ? 'ui_open' : 'ui_close', { ui: true, level: 0.35, gap: 0.3 }); return; }
+    if (t.type === 'checkbox') { SFX.play(t.checked ? 'ui_toggle_on' : 'ui_toggle_off', { ui: true, level: 0.3, gap: 0.2 }); return; }
     // Switches (aria-pressed) read their new state after the click has run.
-    if (t.hasAttribute('aria-pressed')) { setTimeout(() => SFX.play(t.getAttribute('aria-pressed') === 'true' ? 'ui_toggle_on' : 'ui_toggle_off', { ui: true, level: 0.6 }), 0); return; }
+    if (t.hasAttribute('aria-pressed')) { setTimeout(() => SFX.play(t.getAttribute('aria-pressed') === 'true' ? 'ui_toggle_on' : 'ui_toggle_off', { ui: true, level: 0.3, gap: 0.2 }), 0); return; }
     // Panels and windows opening (aria-expanded) whoosh; everything else clicks.
-    if (t.hasAttribute('aria-expanded')) { setTimeout(() => SFX.play(t.getAttribute('aria-expanded') === 'true' ? 'ui_open' : 'ui_close', { ui: true, level: 0.6 }), 0); return; }
+    if (t.hasAttribute('aria-expanded')) { setTimeout(() => SFX.play(t.getAttribute('aria-expanded') === 'true' ? 'ui_open' : 'ui_close', { ui: true, level: 0.35, gap: 0.3 }), 0); return; }
     SFX.alt = !SFX.alt;
-    SFX.play(SFX.alt ? 'ui_click' : 'ui_click2', { ui: true, level: 0.7, gap: 0.04 });
+    SFX.play(SFX.alt ? 'ui_click' : 'ui_click2', { ui: true, level: 0.35, gap: 0.15 });
   }, true);
   if (Sound.on) SFX.ensure();
 })();
