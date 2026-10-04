@@ -428,3 +428,10 @@ add a new top-level asset, list it in the `Dockerfile`.
 `node tools/make-icons.js` regenerates the favicon and app icons by rendering a koi with the pond's
 own renderer. SEO lives in `index.html` (description, canonical, Open Graph and Twitter cards,
 JSON-LD) plus `robots.txt`, `sitemap.xml` and `manifest.webmanifest`.
+
+## Third-party work
+
+The Seascape water look (Settings → Waves → Seascape) uses sea functions adapted from
+["Seascape"](https://www.shadertoy.com/view/Ms2SD1) by Alexander Alekseev (TDM), 2014, licensed under
+[CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/). The adaptation in `js/water-sdf.js` is
+offered under the same licence; its header lists the changes.

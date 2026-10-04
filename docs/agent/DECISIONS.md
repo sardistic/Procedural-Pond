@@ -1072,3 +1072,23 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
   - struct_sheet.py with `PLANTS` or a list of plant kinds draws a contact sheet (plant-sheet.png, plant-z1..5.png).
   - `struct_inpond.py plants` places all 30 in a live pond (plants-inpond.png); no errors.
   - The beacon probe still passes, including harbor plants.
+
+## Waves: Classic by default, 3D, or Seascape (raymarched and pixelated) (2026-10-04)
+- One Waves button (`#opt-waves`) steps through Classic, 3D and Seascape (`opts.waves`). `opts.hdWaves` stays the switch the 3D code reads (true only for 3D). Options v5 resets everyone to Classic once, because the user asked for the original non-3D water as the default; 3D and Seascape remain one click away.
+- Seascape is js/water-sdf.js. It is a WebGL2 full-screen pass over the visible tile, positioned like the 3D mesh, that raymarches the sea height field from Alexander Alekseev's "Seascape" (Shadertoy Ms2SD1).
+  - Licence: CC BY-NC-SA 3.0. The file carries the licence header and a list of changes, and the README has a "Third-party work" section. NonCommercial matters if pond.nz is ever monetised: this look would have to be removed or relicensed.
+  - Camera: looks down with a slight tilt (−0.22, −1, −0.3), so crests occlude the troughs behind them.
+  - Waves: rotated to run toward the shore (`shoreN`), at 0.2 sea units per pond pixel. Height is 0.12 + 0.75 × swell, and chop is 1 + 2.5 × gust + 0.8 × surf.
+  - Cost: 12 trace steps, and 3 octaves each for geometry and normals.
+  - Normal: broad (eps 0.6), flattened to 0.8 for the top-down view.
+- The pixelation: the sea is evaluated per 2×2 block of pond pixels, aligned to the world so it doesn't swim when panning. Its terms are stepped with a 4×4 Bayer dither:
+  - Shading (diffuse) rounds to 10 levels.
+  - Highlights (fresnel sky reflection, crest colour, sun glint, shore foam) round down, so faint ones vanish instead of speckling.
+  - The pond beneath stays at full resolution and is shifted block by block by the slope (refraction).
+  - Dry ground (shore value above tide + 1.5, which includes islands) is discarded, so beaches and islands show through. The abyss stays black, and the surface fades with zoom like the others.
+- Tuning history: at 0.55 units per pixel the field was too fine to read. Dithering the highlights with round-to-nearest scattered white blocks everywhere.
+- Probe: .agent/runtime/seascape_probe.py (production CSP):
+  - Fresh and old-3D saves both load Classic; the button steps Classic → 3D → Seascape; no errors.
+  - Screenshots: seascape-1280.png (4×), seascape-far.png (2×), classic-1280.png.
+  - Headless SwiftShader frame time at 2× is about 58 ms, against about 8 ms for classic. This is CPU emulation; a real GPU should be far faster, but this has not been measured on hardware.
+- Islands, growth and sand erosion with raymarching: discussed, not built.

@@ -5,10 +5,13 @@ const ctx = canvas.getContext('2d');
 
 const OPTS_KEY = 'procedural-pond.opts';
 const DEFAULT_OPTS = {
-  v: 4, world: 'auto', habitat: 'mixed', floor: 'sand', water: 'teal', light: 'cycle', dayLength: 180,
+  v: 5, world: 'auto', habitat: 'mixed', floor: 'sand', water: 'teal', light: 'cycle', dayLength: 180,
   current: 25, speed: 1, caustics: true, shadows: true, outlines: true, life: true, weather: true, sound: false,
-  music: false, musicLevel: 40, hard: false, neighbours: true, fine: true, hdWaves: true, bars: true, // (the Classic water look remains selectable)
+  music: false, musicLevel: 40, hard: false, neighbours: true, fine: true, waves: 'classic', hdWaves: false, bars: true,
 };
+// The water's look (the Waves button): the original pixel water, the 3D wave mesh (water3d.js), or Seascape, the
+// surface raymarched and pixelated (water-sdf.js). (hdWaves stays the switch the rest of the code reads for 3D.)
+const WAVE_LOOKS = { classic: 'Classic', mesh: '3D', sdf: 'Seascape' };
 // The pond is a fixed-size world, larger than the screen at the default zoom.
 // "Fit screen" makes it the window at 2x pixels, so zoom 2 fills the screen exactly.
 const WORLD_SIZES = {
@@ -39,8 +42,11 @@ function loadOpts() {
     if (!stored.v || stored.v < 2) delete stored.light; // older saves predate the cycle
     if (!stored.v || stored.v < 3) delete stored.pixel; // pixel size became zoom
     if (!stored.v || stored.v < 4) delete stored.world; // world size now follows the screen by default
+    if (!stored.v || stored.v < 5) { stored.waves = 'classic'; stored.hdWaves = false; } // the original water is the default again
+    if (!WAVE_LOOKS[stored.waves]) stored.waves = stored.hdWaves ? 'mesh' : 'classic';
+    stored.hdWaves = stored.waves === 'mesh';
     if (FLOOR_ALIASES[stored.floor]) stored.floor = FLOOR_ALIASES[stored.floor];
-    return { ...DEFAULT_OPTS, ...stored, v: 4 };
+    return { ...DEFAULT_OPTS, ...stored, v: 5 };
   } catch { return { ...DEFAULT_OPTS }; }
 }
 function saveOpts() {
@@ -675,6 +681,8 @@ function render(full = false) {
       ctx.putImageData(image, 0, 0, waterRect[0], waterRect[1], waterRect[2] - waterRect[0] + 1, waterRect[3] - waterRect[1] + 1);
     }
   } else if (typeof hideWaterMesh === 'function') hideWaterMesh();
+  // Seascape: the raymarched surface over the classic water (water-sdf.js).
+  if (!(o.waves === 'sdf' && surfaceVis > 0.025 && typeof drawSeascape === 'function' && drawSeascape(world, waterState, full ? visibleRect() : rect, image)) && typeof hideSeascape === 'function') hideSeascape();
   if (!full) {
     const now = performance.now(), Q = QUALITY;
     Q.ema += (now - t0 - Q.ema) * 0.05;
@@ -1278,6 +1286,7 @@ function applyView() {
   if (typeof placeHinter === 'function') placeHinter();
   if (typeof placeFine === 'function') placeFine();
   if (typeof placeWaterMesh === 'function') placeWaterMesh();
+  if (typeof placeSeascape === 'function') placeSeascape();
   scheduleViewUrl();
 }
 
@@ -2731,6 +2740,16 @@ bindRange('opt-current', 'current', (v) => `${v}%`);
 bindRange('opt-speed', 'speed', (v) => `${v}×`);
 bindRange('opt-day', 'dayLength', (v) => `${v / 60}m`);
 
+// The Waves button steps through the looks.
+{
+  const b = $('opt-waves'), show = () => { b.textContent = `Waves: ${WAVE_LOOKS[world.opts.waves]}`; b.setAttribute('aria-label', `Waves: ${WAVE_LOOKS[world.opts.waves]}`); };
+  show();
+  b.addEventListener('click', () => {
+    const order = Object.keys(WAVE_LOOKS), next = order[(order.indexOf(world.opts.waves) + 1) % order.length];
+    setOpt('waves', next); setOpt('hdWaves', next === 'mesh'); show();
+    if (next === 'sdf' && typeof seascapeAvailable === 'function' && !seascapeAvailable()) showTicker('Seascape needs WebGL2; showing the classic water');
+  });
+}
 for (const b of document.querySelectorAll('[data-toggle]')) {
   const key = b.dataset.toggle;
   if (key === 'neighbours') {

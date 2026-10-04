@@ -44,7 +44,7 @@ html.font-pixel body { font-family: 'Silkscreen', ui-monospace, monospace; }
   image-rendering: pixelated;
   pointer-events: none;
 }
-#water3d { position: fixed; inset: 0; z-index: 1; pointer-events: none; transform-origin: 0 0; image-rendering: pixelated; }
+#water3d, #water-sdf { position: fixed; inset: 0; z-index: 1; pointer-events: none; transform-origin: 0 0; image-rendering: pixelated; }
 .observe-visit { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 6px; }
 .observe-visit select { max-width: 150px; }
 .observe-visit .visit-plant[aria-pressed="true"] { color: var(--hot); border-color: var(--hot); }
