@@ -1092,3 +1092,21 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
   - Screenshots: seascape-1280.png (4×), seascape-far.png (2×), classic-1280.png.
   - Headless SwiftShader frame time at 2× is about 58 ms, against about 8 ms for classic. This is CPU emulation; a real GPU should be far faster, but this has not been measured on hardware.
 - Islands, growth and sand erosion with raymarching: discussed, not built.
+
+## Seascape's sea state: depth, weather, tide, moon, animals, islands (2026-10-04)
+- Pondwide, worked out each frame in drawSeascape:
+  - Height = (0.12 + 0.75 × swell) × (0.85 + 0.3 × moon.spring). The swell already includes surf, gust and rain.
+  - Chop = 1 + 2.5 × gust + 0.8 × surf + 0.6 × |tide.flow| + 0.4 × rain.
+  - Pace = 0.55 + 0.7 × gust + 0.25 × rain + 0.5 × |tide.flow| + 0.25 × surf + 0.2 × spring. It drives a sea clock (`SDF_GPU.clock += dt × pace`, dt from waveTime), so a change of pace never jumps the waves.
+  - Measured on the test pond: calm, neap tide: 0.41 / 1.25 / 0.92; storm, spring tide, strong flow: 1.05 / 4.48 / 1.91.
+- Place by place, the shader takes a sea-state texture (RG, 4-px cells) plus depth and shore:
+  - Deep water rolls higher (amplitude × 0.6 to 1.3 by depth).
+  - Shallows near the beach steepen it (+35% height and +60% chop over the last 40 shore units), and choppier where shallow.
+  - Crests lag over the shallows and near islands (`g_lag` of up to about 15 sea units), so they bend in toward the shore the way real waves slow and refract. Speed proper stays pondwide, because a per-place speed shears the pattern without limit as time runs.
+  - In an island's lee the swell is up to 60% calmer, and the water round it is up to 70% choppier.
+  - Animals stir the water: each makes a disc by body length (the sum of `links`), speed and nearness to the surface (z). The stir fades with time constant 1.4 s, so swimmers leave wakes. It adds height, chop and crest foam.
+- Field cost: island distances are a two-pass chamfer over the whole pond, run only when `islandGround` changes; for example, 624k cells on Thomas-Pond. The stir is updated and uploaded only for the drawn tile: 0.1 ms a frame on Thomas-Pond.
+- Probes:
+  - .agent/runtime/seastate_probe.py (Thomas-Pond; pondwide numbers, the island field, a wake test)
+  - .agent/runtime/seastate_shots.py (seastate-calm.png, seastate-storm.png, seastate-pod.png)
+  - seascape_probe passes.

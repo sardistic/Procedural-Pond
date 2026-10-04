@@ -10,19 +10,30 @@
 // (https://creativecommons.org/licenses/by-nc-sa/3.0/). This file, as an adaptation of it, is offered under that
 // same licence. Changes: a camera looking down on the pond instead of along the sea; the pond's sky, water colour,
 // light, swell, wind and shore drive it; it refracts the pond's own picture instead of a sea colour; foam at the
-// waterline, the abyss kept black; fewer steps; and the pixelation pass.
+// waterline, the abyss kept black; fewer steps; the sea's height, chop and run worked out from the pond (below);
+// and the pixelation pass.
+//
+// The sea state. Pondwide: wind, rain, the tide's surf and flow, and the moon (spring tides at new and full) set the
+// swell's height and chop, and the speed of a sea clock that runs on at that pace (so a change of pace never jumps
+// the waves). Place by place, from a field kept at 4-pixel cells: deep water rolls higher and longer, shallows
+// shorten and steepen it toward the beach, and the crests lag over them (they bend in toward the shore, as real
+// waves slow in the shallows); the lee of an island lies calmer while the water round it chops where the waves meet
+// it; and animals near the surface stir it, leaving wakes that settle behind them.
 
-const SDF_GPU = { failed: false, cv: null, gl: null, W: 0, H: 0, B: 2 }; // (B: the sea's block, in pond pixels)
+const SDF_GPU = { failed: false, cv: null, gl: null, W: 0, H: 0, B: 2, clock: 0, lastT: null }; // (B: the sea's block, in pond pixels)
+const SEA_CELL = 4; // (the sea-state field's cell, in pond pixels)
 const SDF_VERTEX = `#version 300 es
 in vec2 a_pos;
 void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }`;
 const SDF_FRAGMENT = `#version 300 es
 precision highp float;
-uniform sampler2D u_scene, u_shore, u_depth;
-uniform vec2 u_size, u_origin, u_res, u_dir;
+uniform sampler2D u_scene, u_shore, u_depth, u_state;
+uniform vec2 u_size, u_origin, u_res, u_dir, u_world;
 uniform vec3 u_sky, u_water;
 uniform float u_block, u_t, u_height, u_choppy, u_tide, u_vis, u_day, u_rain, u_surf, u_scale;
 out vec4 color;
+// (This block's own sea: its swell height, chop and how far its crests lag; set in main before tracing.)
+float g_amp, g_chop, g_lag;
 
 const int NUM_STEPS = 12;
 const int ITER_GEOMETRY = 3;
@@ -46,7 +57,7 @@ float sea_octave(vec2 uv, float choppy) {
   return pow(1.0 - pow(wv.x * wv.y, 0.65), choppy);
 }
 float seaHeight(vec2 xz, int iters) {
-  float freq = SEA_FREQ, amp = u_height, choppy = u_choppy, d, h = 0.0, T = 1.0 + u_t * 0.8;
+  float freq = SEA_FREQ, amp = g_amp, choppy = g_chop, d, h = 0.0, T = 1.0 + u_t - g_lag;
   vec2 uv = xz; uv.x *= 0.75;
   for (int i = 0; i < 5; i++) {
     if (i >= iters) break;
@@ -93,6 +104,15 @@ void main() {
   // (Dry ground shows through: the beach and the islands are the pond's own.)
   if (se > u_tide + 1.5) discard;
   float sse = texture(u_shore, suv).r * 255.0;
+  // This block's sea: deeper rolls higher, the shallows by the beach steepen and slow it, an island's lee is calmer
+  // and the water round it chops, and animals near the surface stir it.
+  float depth = texture(u_depth, suv).r;
+  vec2 st = texture(u_state, sp / u_world).rg;
+  float wake = st.r, isle = st.g, deepK = smoothstep(0.02, 0.6, depth);
+  float shoal = sse > 0.5 ? clamp(1.0 - (u_tide - sse) / 40.0, 0.0, 1.0) : 0.0;
+  g_amp = u_height * mix(0.6, 1.3, deepK) * (1.0 - 0.6 * isle) * (1.0 + 0.35 * shoal) + wake * 0.6;
+  g_chop = u_choppy * (1.0 + 0.7 * isle + 0.6 * shoal + 0.3 * (1.0 - deepK)) + wake * 3.0;
+  g_lag = (1.0 - deepK) * 5.0 + shoal * 6.0 + isle * 4.0;
   // The sea's frame: its waves turned to run in toward the shore, a pond pixel some fraction of a sea unit.
   vec2 w = (u_origin + sp) * u_scale, d = normalize(u_dir);
   vec2 xz = vec2(dot(w, vec2(d.y, -d.x)), dot(w, d));
@@ -107,7 +127,6 @@ void main() {
   n = normalize(vec3(n.x * 0.8, n.y, n.z * 0.8)); // (seen from above, the faces read a little gentler than along the sea)
   // Light from the upper left, like the rest of the pond.
   vec3 light = normalize(vec3(-0.45, 0.75, -0.48));
-  float depth = texture(u_depth, suv).r;
   float abyss = 1.0 - smoothstep(0.82, 0.97, depth);
   // The pixelation: the sea's light in a few steps, with an ordered dither across its blocks. (Shading rounds to the
   // nearest step; highlights round down, so a faint one shows as nothing rather than as scattered bright blocks.)
@@ -124,13 +143,13 @@ void main() {
   fresnel = STEPA(min(fresnel * fresnel * fresnel, 0.5) * (0.28 + u_rain * 0.15) * abyss, 8.0);
   vec3 c = mix(refracted * lit, u_sky, max(0.0, fresnel));
   // The crests catch the water's own colour, and the sun glints off the steepest of them.
-  c += u_water * STEPA(max(0.0, p.y - u_height * 1.15) * 0.22 * abyss, 6.0);
+  c += u_water * STEPA(max(0.0, p.y - g_amp * 1.15) * 0.22 * abyss, 6.0);
   float glint = specular(n, light, dir, 40.0) * (0.03 + 0.16 * u_day) * (1.0 - u_rain * 0.5) * abyss;
   c += vec3(1.0, 0.98, 0.92) * STEPA(min(0.3, glint), 5.0);
   // Foam where the waves meet the shore, on their crests.
   float wet = u_tide - sse;
   float edge = sse > 0.5 ? max(0.0, 1.0 - wet / (6.0 + u_surf * 18.0)) : 0.0;
-  float foam = STEPA(smoothstep(0.35, 0.9, edge * (0.6 + p.y / max(0.2, u_height) * 0.35 + u_surf * 0.4)), 3.0);
+  float foam = STEPA(smoothstep(0.35, 0.9, edge * (0.6 + p.y / max(0.2, g_amp) * 0.35 + u_surf * 0.4)) + wake * 0.8 * smoothstep(0.35, 0.9, p.y / max(0.2, g_amp * 2.0)), 3.0);
   c = mix(c, vec3(0.9, 0.96, 0.98), clamp(foam, 0.0, 1.0) * 0.85);
   // Zoomed far in, the surface fades and the pond shows plain.
   color = vec4(mix(under, c, u_vis), 1.0);
@@ -151,8 +170,8 @@ function seascapeAvailable() {
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
     gl.useProgram(program);
     const tex = (filter) => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; };
-    G.textures = [tex(gl.NEAREST), tex(gl.NEAREST), tex(gl.LINEAR)];
-    ['u_scene', 'u_shore', 'u_depth'].forEach((name, i) => gl.uniform1i(gl.getUniformLocation(program, name), i));
+    G.textures = [tex(gl.NEAREST), tex(gl.NEAREST), tex(gl.LINEAR), tex(gl.LINEAR)];
+    ['u_scene', 'u_shore', 'u_depth', 'u_state'].forEach((name, i) => gl.uniform1i(gl.getUniformLocation(program, name), i));
     const quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, quad); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
     G.cv = cv; G.gl = gl; G.program = program; G.quad = quad; G.position = gl.getAttribLocation(program, 'a_pos');
     return true;
@@ -161,6 +180,53 @@ function seascapeAvailable() {
     G.failed = true; if (G.cv) G.cv.remove();
     return false;
   }
+}
+// The sea state, place by place, at SEA_CELL cells: R the stir of animals near the surface (it fades each frame, so a
+// swimmer leaves a wake that settles), G how close an island is (1 at its edge, gone by 48 px). The island part is
+// worked out over the whole pond when the islands change; the stir only over the tile being drawn, which is all
+// that goes up to the GPU each frame.
+function seaState(w, G, x0, y0, W, H) {
+  const cw = Math.ceil(w.W / SEA_CELL), ch = Math.ceil(w.H / SEA_CELL), n = cw * ch;
+  let S = G.state;
+  if (!S || S.cw !== cw || S.ch !== ch) S = G.state = { cw, ch, data: new Uint8Array(n * 2), wake: new Float32Array(n), isles: null };
+  // Islands: a distance from every cell to the nearest island cell (two-pass chamfer), when the islands change.
+  const ground = w.islandGround || null;
+  if (S.isles !== ground) {
+    S.isles = ground;
+    const D = new Float32Array(n).fill(99), CAP = 12;
+    if (ground) for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+      const px = Math.min(w.W - 1, x * SEA_CELL + 2), py = Math.min(w.H - 1, y * SEA_CELL + 2);
+      if (ground[px + py * w.W]) D[x + y * cw] = 0;
+    }
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { const i = x + y * cw; let v = D[i]; if (x) v = Math.min(v, D[i - 1] + 1); if (y) v = Math.min(v, D[i - cw] + 1); if (x && y) v = Math.min(v, D[i - cw - 1] + 1.41); if (y && x < cw - 1) v = Math.min(v, D[i - cw + 1] + 1.41); D[i] = v; }
+    for (let y = ch - 1; y >= 0; y--) for (let x = cw - 1; x >= 0; x--) { const i = x + y * cw; let v = D[i]; if (x < cw - 1) v = Math.min(v, D[i + 1] + 1); if (y < ch - 1) v = Math.min(v, D[i + cw] + 1); if (x < cw - 1 && y < ch - 1) v = Math.min(v, D[i + cw + 1] + 1.41); if (x && y < ch - 1) v = Math.min(v, D[i + cw - 1] + 1.41); D[i] = v; }
+    for (let i = 0; i < n; i++) S.data[i * 2 + 1] = D[i] >= CAP ? 0 : Math.round(255 * Math.pow(1 - D[i] / CAP, 1.5));
+  }
+  // Animals: each stirs a disc by its size and speed, more the nearer the surface it swims; the old stir fades.
+  const K = S.wake, cx0 = Math.floor(x0 / SEA_CELL), cy0 = Math.floor(y0 / SEA_CELL), tw = Math.ceil(W / SEA_CELL), th = Math.ceil(H / SEA_CELL);
+  const now = performance.now(), fade = Math.exp(-clamp((now - (S.at || now)) / 1000, 0, 0.5) / 1.4); // (a wake settles over a second or two)
+  S.at = now;
+  for (let y = cy0; y < Math.min(ch, cy0 + th); y++) for (let i = y * cw + cx0, e = y * cw + Math.min(cw, cx0 + tw); i < e; i++) K[i] *= fade;
+  for (const c of w.creatures) {
+    if (c.dead || c.x == null || c.x < x0 - 16 || c.y < y0 - 16 || c.x > x0 + W + 16 || c.y > y0 + H + 16) continue;
+    const len = Array.isArray(c.links) ? c.links.reduce((a, b) => a + b, 0) : 6, sp = c.maxSpeed ? clamp((c.speed || 0) / c.maxSpeed, 0, 1.5) : 0.3;
+    const near = clamp(((c.z ?? 20) + 4) / 48, 0.15, 1), k = (0.15 + 0.85 * sp) * near * clamp(len / 14, 0.3, 3);
+    if (k < 0.03) continue;
+    const R = 0.8 + len / 10, cx = c.x / SEA_CELL, cy = c.y / SEA_CELL;
+    for (let y = Math.max(0, Math.floor(cy - R)); y <= Math.min(ch - 1, Math.ceil(cy + R)); y++) for (let x = Math.max(0, Math.floor(cx - R)); x <= Math.min(cw - 1, Math.ceil(cx + R)); x++) {
+      const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / R;
+      if (d < 1) { const i = x + y * cw; K[i] = Math.min(1, K[i] + k * (1 - d) * 0.12); }
+    }
+  }
+  // The tile's part, for the GPU.
+  if (!S.tile || S.tw !== tw || S.th !== th) { S.tile = new Uint8Array(tw * th * 2); S.tw = tw; S.th = th; }
+  for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
+    const gx = cx0 + x, gy = cy0 + y, o = (x + y * tw) * 2;
+    if (gx >= cw || gy >= ch) { S.tile[o] = S.tile[o + 1] = 0; continue; }
+    const i = gx + gy * cw;
+    S.tile[o] = Math.round(K[i] * 255); S.tile[o + 1] = S.data[i * 2 + 1];
+  }
+  return S;
 }
 function hideSeascape() { if (SDF_GPU.cv) SDF_GPU.cv.hidden = true; }
 function placeSeascape() {
@@ -205,12 +271,24 @@ function drawSeascape(w, state, rect, img) {
     }
     G.terrain = w.shore; G.depth = w.depth; G.terrainAt = performance.now();
   }
-  const sea = seaOf(w), dir = w.shore ? w.shoreN : [0.8, 0.6];
+  // The sea state field (wakes and islands) over this tile, at 4-pixel cells.
+  const S = seaState(w, G, x0, y0, W, H);
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, G.textures[3]);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG8, S.tw, S.th, 0, gl.RG, gl.UNSIGNED_BYTE, S.tile);
+  // The pondwide sea: its pace from the wind, rain, the tide's flow and surf and the moon; the clock runs on at it.
+  const sea = seaOf(w), dir = w.shore ? w.shoreN : [0.8, 0.6], tide = w.tide || {}, spring = w.moon ? w.moon.spring : 0.5;
+  const now = state.time ?? waveTime(w), dt = G.lastT == null ? 0 : clamp(now - G.lastT, 0, 0.5);
+  G.lastT = now;
+  const pace = 0.55 + 0.7 * sea.gust + 0.25 * (sea.rain || 0) + 0.5 * Math.abs(tide.flow || 0) + 0.25 * (sea.surf || 0) + 0.2 * spring;
+  G.clock += dt * pace; G.pace = pace;
   const U = G.uniforms || (G.uniforms = {}), loc = (name) => U[name] ?? (U[name] = gl.getUniformLocation(G.program, name));
   gl.uniform2f(loc('u_size'), W, H); gl.uniform2f(loc('u_origin'), x0, y0); gl.uniform2f(loc('u_res'), cw, ch); gl.uniform2f(loc('u_dir'), dir[0], dir[1]);
-  // Swell lifts the waves, wind chops them; calm water lies nearly flat.
-  for (const [name, value] of Object.entries({ u_block: B, u_t: state.time ?? waveTime(w), u_height: 0.12 + 0.75 * clamp(state.swell, 0, 1.1),
-    u_choppy: 1 + sea.gust * 2.5 + sea.surf * 0.8, u_tide: w.tide.level * 255, u_vis: state.visibility, u_day: 1 - (state.darkness || 0),
+  gl.uniform2f(loc('u_world'), S.tw * SEA_CELL, S.th * SEA_CELL);
+  // Swell lifts the waves (higher on spring tides), wind and the tide's run chop them; calm water lies nearly flat.
+  G.height = (0.12 + 0.75 * clamp(state.swell, 0, 1.1)) * (0.85 + 0.3 * spring);
+  G.chop = 1 + sea.gust * 2.5 + (sea.surf || 0) * 0.8 + Math.abs(tide.flow || 0) * 0.6 + (sea.rain || 0) * 0.4;
+  for (const [name, value] of Object.entries({ u_block: B, u_t: G.clock, u_height: G.height,
+    u_choppy: G.chop, u_tide: w.tide.level * 255, u_vis: state.visibility, u_day: 1 - (state.darkness || 0),
     u_rain: sea.rain || 0, u_surf: sea.surf || 0, u_scale: 0.2 })) gl.uniform1f(loc(name), value);
   const sky = state.sky; gl.uniform3f(loc('u_sky'), (sky & 255) / 255, (sky >> 8 & 255) / 255, (sky >>> 16 & 255) / 255);
   const water = w.waterColor || 0xff7c6a1b;
