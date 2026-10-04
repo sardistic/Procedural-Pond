@@ -4,42 +4,82 @@
 // mouth), octopus arms that shoot out, wrap and haul prey in, jellies that sting whatever brushes
 // their tentacles, and crabs that pinch what comes too close.
 //
-// Animations run in pond time. Each creature has at most one (c.anim); the renderer asks animScale
-// for a squash/stretch about a point (the tail for a lunge, the head for a chomp), the same scaling
-// the flare of a display uses. Effects draw the jaws, streaks, zaps, crumbs and the swallow.
+// Animations run in pond time. Each creature has at most one (c.anim); the renderer asks animPose for a
+// pose (Raster.setPose): squashed or stretched along the line of the action, and moved along it. So an
+// attack winds back, lunges out stretched at its target and recoils; the one hit is knocked back from
+// the blow, squashed against it, and wobbles; a meal bobs forward bite by bite; a flight crouches and
+// shoots off stretched; a jelly's bell clenches. Effects draw the jaws, impact, streaks, zaps, crumbs and
+// the swallow.
 
-const ANIM_DUR = { attack: 0.34, eat: 0.5, hit: 0.32, flee: 0.6, sting: 0.4 };
+const ANIM_DUR = { attack: 0.42, eat: 0.55, hit: 0.45, flee: 0.6, sting: 0.45 };
 const ANIM_FX_CAP = 214;
 const animFx = (world, e) => { if (world.effects && world.effects.length < ANIM_FX_CAP) world.effects.push(e); };
 
-function playAnim(world, c, kind) {
+// dir: the line of the action (toward the target for an attack, away from the blow for a hit).
+function playAnim(world, c, kind, dir = null, delay = 0) {
   if (!c || c.gone) return;
   // (A meal or an attack is never cut short by a flinch; a fresh flight doesn't restart a dash.)
   const A = c.anim;
   if (A && world.t - A.at < A.dur && (A.kind === 'attack' || A.kind === 'eat') && (kind === 'hit' || kind === 'flee')) return;
   if (A && A.kind === kind && world.t - A.at < A.dur * 0.5) return;
-  c.anim = { kind, at: world.t, dur: ANIM_DUR[kind] || 0.4 };
+  c.anim = { kind, at: world.t + delay, dur: ANIM_DUR[kind] || 0.4, dir: Number.isFinite(dir) ? dir : null };
 }
+const animToward = (a, b) => Math.atan2(b.y - a.y, b.x - a.x);
 const animHead = (c) => (c.body && c.body.x && !c.tents ? [c.body.x[0], c.body.y[0]] : [c.x, c.y]);
 const animTail = (c) => (c.body && c.body.x && !c.tents ? [c.body.x[c.body.n - 1], c.body.y[c.body.n - 1]] : [c.x, c.y]);
 // (A jelly's body chain is one thin tentacle; its bell radius is its size.)
 const animWidth = (c) => (c.tents && c.R ? c.R : c.body && c.body.w ? Math.max(...c.body.w) : c.R || 2);
 
-// The squash/stretch to draw it with right now: [x, y, k] about a point, or null.
-function animScale(c, now) {
+// Easing.
+const easeOut = (t) => 1 - (1 - t) * (1 - t), easeIn = (t) => t * t, seg = (p, a, b) => clamp((p - a) / (b - a), 0, 1);
+// The pose to draw it in right now: { x, y, ang, sa, sb, dx, dy, dz } (about its middle, along ang), or null.
+function animPose(c, now) {
   const A = c.anim;
   if (!A) return null;
   const p = (now - A.at) / A.dur;
-  if (p >= 1 || p < 0) { c.anim = null; return null; }
+  if (p >= 1) { c.anim = null; return null; }
+  if (p < 0) return null; // (waiting for its moment: a blow lands when the lunge does)
+  const ang = A.dir ?? c.heading ?? 0, w = animWidth(c), cx = c.x, cy = c.y;
+  let sa = 1, sb = 1, d = 0, dz = 0;
   switch (A.kind) {
-    case 'attack': { const [x, y] = animTail(c); return [x, y, 1 + 0.3 * Math.sin(PI * Math.min(1, p * 1.5))]; } // the lunge, out from the tail
-    case 'eat': { const [x, y] = animHead(c); return [x, y, 1 + 0.13 * Math.abs(Math.sin(3 * PI * p))]; } // three chomps
-    case 'hit': return [c.x, c.y, 1 - 0.2 * Math.sin(PI * p)]; // the flinch
-    case 'flee': { const [x, y] = animHead(c); return [x, y, 1 - 0.1 * Math.sin(PI * Math.min(1, p * 3))]; } // tuck, then the dash
-    case 'sting': return [c.x, c.y, 1 + 0.12 * Math.sin(PI * p)];
+    case 'attack': {
+      // Wind back (squashed, pulled away), then the lunge (stretched, thrown out at it), then the recoil.
+      const reach = clamp(w * 1.3, 2, 7), back = seg(p, 0, 0.3), out = seg(p, 0.3, 0.45), home = seg(p, 0.45, 1);
+      const wind = easeOut(back) * (1 - out), strike = easeOut(out) * (1 - easeIn(home));
+      d = -0.35 * reach * wind + reach * strike;
+      sa = 1 - 0.14 * wind + 0.28 * strike; sb = 1 + 0.1 * wind - 0.14 * strike;
+      break;
+    }
+    case 'hit': {
+      // Knocked back along the blow, squashed against it, then a wobble that dies away.
+      const k = easeOut(seg(p, 0, 0.18)), wob = Math.exp(-5 * p) * Math.sin(p * 22);
+      d = clamp(w * 0.9, 1.5, 4) * (k - easeIn(seg(p, 0.18, 1)) * 0.9);
+      sa = 1 - 0.22 * k * (1 - seg(p, 0.18, 0.5)) + 0.08 * wob; sb = 1 + 0.16 * k * (1 - seg(p, 0.18, 0.5)) - 0.06 * wob;
+      break;
+    }
+    case 'eat': {
+      // Two bites: the head bobs forward, a little stretched, and back.
+      const bite = Math.pow(Math.abs(Math.sin(2 * PI * p)), 0.7);
+      d = clamp(w * 0.5, 0.8, 2.5) * bite; sa = 1 + 0.1 * bite; sb = 1 - 0.05 * bite;
+      break;
+    }
+    case 'flee': {
+      // Crouch, then shoot off stretched (the speed burst carries it; this is the shape of it).
+      const crouch = easeOut(seg(p, 0, 0.2)) * (1 - seg(p, 0.2, 0.3)), dash = easeOut(seg(p, 0.2, 0.35)) * (1 - easeIn(seg(p, 0.35, 1)));
+      d = -0.3 * w * crouch; sa = 1 - 0.16 * crouch + 0.25 * dash; sb = 1 + 0.12 * crouch - 0.12 * dash;
+      break;
+    }
+    case 'sting': {
+      // The bell clenches and springs back, lifting.
+      const clench = Math.exp(-4 * p) * Math.sin(p * 16);
+      sa = 1 - 0.15 * clench; sb = 1 + 0.12 * clench; dz = 1.5 * Math.sin(PI * p);
+      break;
+    }
   }
-  return null;
+  return { x: cx, y: cy, ang, sa, sb, dx: Math.cos(ang) * d, dy: Math.sin(ang) * d, dz };
 }
+// (The older name, for anything still asking for a plain scale: none now.)
+const animScale = () => null;
 
 // ---- the effects ------------------------------------------------------------------------------------
 let ANIM_ID = 0;
@@ -53,17 +93,32 @@ function animLine(r, x0, y0, x1, y1, z, hex) {
 
 // Jaws snapping shut in front of the head (or a claw's pinch).
 class Jaws {
-  constructor(c, pinch = false) { this.c = c; this.t = 0; this.life = 0.3; this.pinch = pinch; }
+  constructor(c, pinch = false) { this.c = c; this.t = 0; this.life = ANIM_DUR.attack * 0.6; this.pinch = pinch; }
   update(dt) { this.t += dt; return this.t < this.life && !this.c.gone; }
   draw(r) {
-    const c = this.c, [hx, hy] = animHead(c), h = c.heading || 0, w = animWidth(c), L = Math.max(2.5, w * 1.4);
-    const open = Math.sin(PI * Math.min(1, this.t / this.life)) * (this.pinch ? 0.5 : 0.7), z = (c.z || 0) + 4;
-    const fx = hx + Math.cos(h) * (w * 0.6), fy = hy + Math.sin(h) * (w * 0.6);
+    const c = this.c, A = c.anim, h = A && A.dir != null ? A.dir : c.heading || 0, w = animWidth(c), L = Math.max(2.5, w * 1.3);
+    // Open wide through the wind-up, shut hard at full reach (a third of the way in), a glint as they meet.
+    const p = this.t / this.life, open = (p < 0.55 ? Math.sin(PI / 2 * Math.min(1, p / 0.45)) : Math.max(0, 1 - (p - 0.55) / 0.1)) * (this.pinch ? 0.55 : 0.75);
+    const pose = animPose(c, world.t), [hx, hy] = animHead(c), z = (c.z || 0) + 4;
+    const ox = pose ? pose.dx : 0, oy = pose ? pose.dy : 0;
+    const fx = hx + ox + Math.cos(h) * (w * 0.6), fy = hy + oy + Math.sin(h) * (w * 0.6);
     for (const s of [1, -1]) {
       const a = h + s * open, ex = fx + Math.cos(a) * L, ey = fy + Math.sin(a) * L;
       animLine(r, fx, fy, ex, ey, z, this.pinch ? '#ff8a5a' : '#f4f0e0');
-      if (!this.pinch) r.dot(ex - Math.sin(a) * s, ey + Math.cos(a) * s, z, animMat('#ffffff'), animId()); // a tooth
+      if (!this.pinch && open > 0.1) r.dot(ex - Math.sin(a) * s, ey + Math.cos(a) * s, z, animMat('#ffffff'), animId()); // a tooth
     }
+    if (p > 0.55 && p < 0.72) r.dot(fx + Math.cos(h) * L, fy + Math.sin(h) * L, z + 1, animMat('#ffffff'), animId()); // (the snap)
+  }
+}
+// Where a blow lands: a burst of short sparks and a ring spreading in the water.
+class Impact {
+  constructor(x, y, z, ang, delay = 0) { this.x = x; this.y = y; this.z = z; this.ang = ang; this.t = -delay; this.life = 0.32; this.rays = Array.from({ length: 6 }, (_, i) => ang + PI + (i - 2.5) * 0.45 + rand(-0.15, 0.15)); }
+  update(dt) { this.t += dt; return this.t < this.life; }
+  draw(r) {
+    if (this.t < 0) return;
+    const p = this.t / this.life, z = this.z + 2;
+    for (const a of this.rays) { const r0 = 1 + 4 * easeOut(p), r1 = r0 + 2.2 * (1 - p); animLine(r, this.x + Math.cos(a) * r0, this.y + Math.sin(a) * r0, this.x + Math.cos(a) * r1, this.y + Math.sin(a) * r1, z, p < 0.4 ? '#ffffff' : '#ffe08a'); }
+    if (p > 0.15) { const R = 2 + 7 * easeOut(p), n = Math.ceil(R * 2.2); for (let i = 0; i < n; i++) if ((i + ((p * 10) | 0)) % 3) r.dot(this.x + Math.cos(i / n * TAU) * R, this.y + Math.sin(i / n * TAU) * R, this.z, animMat('#bfe6ee'), animId()); }
   }
 }
 // Prey drawn shrinking down into the eater's mouth.
@@ -128,20 +183,24 @@ class Dazed {
 // A meal: chomps and crumbs for food; for prey, the lunge and snap, and the prey drawn into the mouth.
 function animMeal(world, c, f) {
   if (typeof Creature !== 'undefined' && f instanceof Creature) {
-    playAnim(world, c, 'attack');
+    playAnim(world, c, 'attack', animToward(c, f));
     animFx(world, new Jaws(c));
     if (f.draw) animFx(world, new Swallow(world, f, c));
   } else {
-    playAnim(world, c, 'eat');
+    playAnim(world, c, 'eat', Number.isFinite(f.x) ? animToward(c, f) : null);
     const [hx, hy] = animHead(c);
     animFx(world, new Crumbs(hx, hy, (f.z ?? c.z ?? 0) + 1, f.kind === 'brine' || f.kind === 'krill' ? '#ff9a7a' : f.kind === 'spirulina' ? '#5aff7a' : '#c89a5a'));
   }
 }
 // A blow landed in a fight: the attacker lunges and snaps, the one hit flinches.
 function animStrike(world, attacker, target) {
-  playAnim(world, attacker, 'attack');
+  const a = animToward(attacker, target);
+  playAnim(world, attacker, 'attack', a);
   animFx(world, new Jaws(attacker));
-  playAnim(world, target, 'hit');
+  // (The blow lands when the lunge reaches it.)
+  const contact = ANIM_DUR.attack * 0.4;
+  playAnim(world, target, 'hit', a, contact);
+  animFx(world, new Impact((attacker.x + target.x * 2) / 3, (attacker.y + target.y * 2) / 3, Math.max(attacker.z || 0, target.z || 0), a, contact));
 }
 // A flight: the tuck and dash, speed lines, and a burst of speed.
 function animFlee(world, c) {
@@ -162,7 +221,7 @@ function tentacleGrab(world, c, prey) {
   for (const { arm } of arms) arm.grip = true;
   c.grip = { prey, at: world.t };
   prey.heldBy = c;
-  playAnim(world, prey, 'hit');
+  playAnim(world, prey, 'hit', animToward(c, prey));
   if (typeof glyph === 'function') glyph(world, prey, 'bang');
   return true;
 }
@@ -234,12 +293,13 @@ function updateStings(world, dt) {
       if (typeof hurt === 'function') hurt(world, victim, 0.08, { why: `stung by a ${describe(c).label.toLowerCase()}`, canKill: false });
       if (typeof forageLearn === 'function') forageLearn(victim, c.species, 0, 0.08); // (a mind remembers what stung it)
     } else {
-      playAnim(world, c, 'attack');
+      playAnim(world, c, 'attack', animToward(c, victim));
       animFx(world, new Jaws(c, true)); // (a pinch, not jaws)
       if (typeof hurt === 'function') hurt(world, victim, 0.05, { why: 'pinched by a crab', canKill: false });
       if (typeof forageLearn === 'function') forageLearn(victim, c.species, 0, 0.05);
     }
-    playAnim(world, victim, 'hit');
+    playAnim(world, victim, 'hit', animToward(c, victim));
+    animFx(world, new Impact(victim.x, victim.y, victim.z || 0, animToward(c, victim)));
     if (typeof startle === 'function') startle(world, victim, c.x, c.y, 1.5);
   }
 }

@@ -613,12 +613,14 @@ function render(full = false) {
     FADE[c.id] = a < 1 ? 1 : 0;
     if (THICK[c.id]) anyThick = true;
     // (Flaring up at a rival, or a warning; and the lunge, flinch, chomp or dash of an action: anims.js.)
-    const act = typeof animScale === 'function' ? animScale(c, world.t) : null, flare = c.flare ? 1 + 0.16 * c.flare : 1;
-    if (act) r.setScale(act[0], act[1], act[2] * flare); else if (c.flare) r.setScale(c.x, c.y, flare);
+    const pose = typeof animPose === 'function' ? animPose(c, world.t) : null, flare = c.flare ? 1 + 0.16 * c.flare : 1;
+    if (c.flare) r.setScale(c.x, c.y, flare);
+    if (pose) r.setPose(pose.x, pose.y, pose.ang, pose.sa, pose.sb, pose.dx, pose.dy, pose.dz);
     c.draw(r, t, world);
-    if (act || c.flare) r.setScale();
+    if (c.flare) r.setScale();
     if (c.life && c.life.genome.eld) drawEldritch(r, c, t, world);
     if (c.life) drawQuirks(r, c, t);
+    if (pose) r.setPose(); // (its marks and quirks move with it)
   }
   r.alpha = 1;
   r.lod = 0;

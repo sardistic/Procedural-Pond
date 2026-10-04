@@ -29,10 +29,24 @@ class Raster {
     this.castShadows = true;
     this.clip = [0, 0, W - 1, H - 1]; // only this rectangle is rasterized (the visible part)
     this.k = 1; this.kz = 1; this.kzo = 0; this.kx = 0; this.ky = 0; this.scaled = false; // draw scaled by k about (kx, ky): see setScale
+    this.posed = false; this.qx = 0; this.qy = 0; // (and posed: see setPose)
   }
 
   // Everything drawn until the next setScale() is scaled about (x, y); heights by kz, then lifted by zoff.
   setScale(x = 0, y = 0, k = 1, kz = k, zoff = 0) { this.kx = x; this.ky = y; this.k = k; this.kz = kz; this.kzo = zoff; this.scaled = k !== 1 || kz !== 1 || zoff !== 0; }
+  // A pose (after any scale): stretched by sa along the direction ang and by sb across it, about (x, y), then moved
+  // by (dx, dy) and lifted by dz. How an animal lunges, recoils, flinches and squashes (anims.js). No arguments: none.
+  setPose(x = 0, y = 0, ang = 0, sa = 1, sb = 1, dx = 0, dy = 0, dz = 0) {
+    this.posed = sa !== 1 || sb !== 1 || dx !== 0 || dy !== 0 || dz !== 0;
+    this.px = x; this.py = y; this.ux = Math.cos(ang); this.uy = Math.sin(ang); this.sa = sa; this.sb = sb; this.pdx = dx; this.pdy = dy; this.pdz = dz;
+  }
+  // (A point under the pose: written into this.qx, this.qy.)
+  poseAt(x, y) {
+    const rx = x - this.px, ry = y - this.py, a = (rx * this.ux + ry * this.uy) * this.sa, b = (ry * this.ux - rx * this.uy) * this.sb;
+    this.qx = this.px + this.ux * a - this.uy * b + this.pdx; this.qy = this.py + this.uy * a + this.ux * b + this.pdy;
+  }
+  // (How a length at angle ang is stretched by the pose.)
+  poseLen(ang) { const c = Math.cos(ang) * this.ux + Math.sin(ang) * this.uy, s = Math.sqrt(Math.max(0, 1 - c * c)); return Math.hypot(c * this.sa, s * this.sb); }
 
   setClip(x0, y0, x1, y1) {
     this.clip = [Math.max(0, x0 | 0), Math.max(0, y0 | 0), Math.min(this.W - 1, x1 | 0), Math.min(this.H - 1, y1 | 0)];
@@ -78,6 +92,12 @@ class Raster {
       ax = sx + (ax - sx) * k; ay = sy + (ay - sy) * k; bx = sx + (bx - sx) * k; by = sy + (by - sy) * k;
       ar *= k; br *= k; az = az * this.kz + this.kzo; bz = bz * this.kz + this.kzo;
     }
+    if (this.posed) {
+      // (Thickness goes with the stretch across the tube's own line.)
+      const w = this.poseLen(Math.atan2(by - ay, bx - ax) + PI / 2);
+      this.poseAt(ax, ay); ax = this.qx; ay = this.qy; this.poseAt(bx, by); bx = this.qx; by = this.qy;
+      ar *= w; br *= w; az += this.pdz; bz += this.pdz;
+    }
     const [cx0, cy0, cx1, cy1] = this.clip;
     if (ar < 0.72) ar = 0.72;
     if (br < 0.72) br = 0.72;
@@ -119,7 +139,7 @@ class Raster {
   // the one standing highest there (the most inside it) wins, just as the z-test would.
   // Rows only look at the links whose extent reaches them.
   strip(xs, ys, ws, from, to, z, hs, shader, id) {
-    if (this.scaled || to - from < 2) { for (let i = from; i < to; i++) this.tube(xs[i], ys[i], ws[i], z, xs[i + 1], ys[i + 1], ws[i + 1], z, hs, shader, id, (i - from) / (to - from), (i + 1 - from) / (to - from)); return; }
+    if (this.scaled || this.posed || to - from < 2) { for (let i = from; i < to; i++) this.tube(xs[i], ys[i], ws[i], z, xs[i + 1], ys[i + 1], ws[i + 1], z, hs, shader, id, (i - from) / (to - from), (i + 1 - from) / (to - from)); return; }
     const n = to - from, S = STRIP;
     if (S.ax.length < n) { for (const k of Object.keys(S)) S[k] = new Float64Array(n * 2); STRIP_ACT = new Int32Array(n * 2); }
     const [cx0, cy0, cx1, cy1] = this.clip;
@@ -173,6 +193,7 @@ class Raster {
       const k = this.k;
       cx = this.kx + (cx - this.kx) * k; cy = this.ky + (cy - this.ky) * k; a *= k; b *= k; z0 = z0 * this.kz + this.kzo; hs *= k;
     }
+    if (this.posed) { this.poseAt(cx, cy); cx = this.qx; cy = this.qy; const la = this.poseLen(ang), lb = this.poseLen(ang + PI / 2); a *= la; b *= lb; z0 += this.pdz; }
     const [cx0, cy0, cx1, cy1] = this.clip;
     if (a < 0.6) a = 0.6;
     if (b < 0.6) b = 0.6;
@@ -206,6 +227,7 @@ class Raster {
 
   dot(x, y, h, m, id) {
     if (this.scaled) { x = this.kx + (x - this.kx) * this.k; y = this.ky + (y - this.ky) * this.k; h = h * this.kz + this.kzo; }
+    if (this.posed) { this.poseAt(x, y); x = this.qx; y = this.qy; h += this.pdz; }
     const xi = Math.floor(x), yi = Math.floor(y), [cx0, cy0, cx1, cy1] = this.clip;
     if (xi < cx0 || yi < cy0 || xi > cx1 || yi > cy1) return;
     this.put(xi, yi, h, m, 0, 0, 1, id);
