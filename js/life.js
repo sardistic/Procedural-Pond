@@ -612,7 +612,7 @@ function eat(world, c, f) {
     L.fed = Math.max(L.fed || 0, FOOD_FED[f.kind] || (f instanceof Creature ? 60 : 0));
     if (CONDITIONING.has(f.kind)) L.cooldown = Math.min(L.cooldown, 5);
   }
-  if ((f.z ?? 0) > 32) addRipple(world, f.x, f.y, 0.6);
+  if ((f.z ?? 0) > 32) addRipple(world, f.x, f.y, 0.6, Math.random() > 0.2);
   // Poison and spines cost the eater; a mind learns what this kind was worth and what it cost (forage.js).
   if (f instanceof Creature && c.life && typeof preyDefence === 'function') {
     const harm = preyDefence(world, c, f);

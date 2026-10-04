@@ -85,16 +85,39 @@ const Sound = {
   },
 
   // A splash or drop (food, rain, something surfacing).
+  // As water really sounds: the plink of the small bubble a drop traps, ringing upward as it closes, and a soft
+  // splash of white noise, more of it (and lower) the bigger the thing that went in. Quiet, and rationed.
   plop(x, y, size = 1) {
     if (!this.on || this.budget < 1) return;
     const at = this.place(x, y);
     if (!at) return;
     this.budget--;
-    const [g, t] = this.voice(at.pan, (0.04 + 0.08 * Math.min(1, size)) * at.g, 0.16);
-    const o = this.ctx.createOscillator(), f = rand(500, 900) / Math.max(0.5, size);
-    o.frequency.setValueAtTime(f, t);
-    o.frequency.exponentialRampToValueAtTime(f * 0.35, t + 0.12);
-    o.connect(g); o.start(t); o.stop(t + 0.18);
+    const ctx = this.ctx, t = ctx.currentTime, s = clamp(size, 0.3, 2.5), p = ctx.createStereoPanner();
+    p.pan.value = at.pan; p.connect(this.master);
+    const peak = (0.018 + 0.022 * Math.min(1, s)) * at.g;
+    // The plink.
+    const o = ctx.createOscillator(), g = ctx.createGain(), f0 = rand(650, 1050) / Math.sqrt(s);
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * rand(1.8, 2.4), t + 0.045 + 0.025 * s);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak * (s > 1.4 ? 0.5 : 1), t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.08 + 0.04 * s);
+    o.connect(g).connect(p); o.start(t); o.stop(t + 0.22);
+    // The splash.
+    if (!this.white) {
+      const len = ctx.sampleRate, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      this.white = buf;
+    }
+    const n = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), ng = ctx.createGain();
+    n.buffer = this.white;
+    bp.type = 'bandpass'; bp.frequency.value = 3200 / Math.sqrt(s); bp.Q.value = 0.7;
+    const np = peak * (0.25 + 0.55 * Math.max(0, s - 0.5));
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.exponentialRampToValueAtTime(Math.max(0.0002, np), t + 0.008);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.05 + 0.13 * s);
+    n.connect(bp).connect(ng).connect(p); n.start(t, Math.random() * 0.6, 0.35);
   },
 
   // A bubble breaking the surface: small, soft and rationed (aerators make lots).
@@ -282,10 +305,10 @@ const Sound = {
     set(B.water.g.gain, 0.13 * (1 - 0.4 * m.deep) * (1 - 0.25 * night));
     set(B.water.f.frequency, (380 + world.current.s * 700) * (1 - 0.5 * m.deep));
     // Surf by the beach: each wave swells in; lapping with the tide's flow when it's calm.
-    const shore = world.shore ? m.beach : 0, wave = tide ? 0.2 + 0.8 * Math.exp(-(tide.wave % 1) * 4) : 0;
-    set(B.surf.g.gain, (tide ? tide.surf : 0) * 0.15 * wave * (0.1 + 0.9 * shore), 0.2);
+    const shore = world.shore ? m.beach : 0, wave = tide ? 0.2 + 0.8 * Math.exp(-(tide.wave % 1) * 4) : 0, near = typeof SFX !== 'undefined' && SFX.near != null ? SFX.near : 1;
+    set(B.surf.g.gain, (tide ? tide.surf : 0) * 0.15 * wave * (0.1 + 0.9 * shore) * (0.3 + 0.7 * near), 0.2);
     set(B.surf.p.pan, m.dir);
-    set(B.lap.g.gain, shore * (0.012 + 0.03 * Math.abs(tide ? tide.flow : 0)) * (1 - Math.min(1, tide ? tide.surf : 0) * 0.5), 0.3);
+    set(B.lap.g.gain, shore * (0.012 + 0.03 * Math.abs(tide ? tide.flow : 0)) * (1 - Math.min(1, tide ? tide.surf : 0) * 0.5) * near, 0.3);
     set(B.rain.g.gain, W.rain * 0.22, 0.5);
     set(B.wind.g.gain, 0.01 + Math.max(0, W.gust) * 0.09 + W.rain * 0.02, 0.6);
     set(B.wind.f.frequency, 320 + Math.max(0, W.gust) * 500, 0.8);

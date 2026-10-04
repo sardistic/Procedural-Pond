@@ -50,6 +50,8 @@ const SFX = {
   amb_shallow: ['underwater ambience in a shallow reef: soft bubbles, gentle water movement, faint snapping shrimp crackle, peaceful', 20, 0.4, true],
   amb_fresh: ['close field recording at the edge of a small still freshwater pond at dusk: tiny irregular water lapping against reeds and mud, a faint trickle, reeds brushing, very quiet and intimate, no ocean, no waves crashing', 22, 0.55, true],
   amb_salt: ['close field recording of a sheltered rocky cove: small gentle waves washing over shingle and pebbles and draining back with a soft rattle, irregular and natural, quiet, no big surf', 22, 0.55, true],
+  amb_far_salt: ['wide open coastal soundscape heard from high up on a cliff: steady wind, large ocean waves crashing far away in the distance as a soft roar, seagulls calling now and then far off, airy and spacious, nothing close', 24, 0.5, true],
+  amb_far_fresh: ['wide open lakeside soundscape heard from a distance: wind moving through tall grass and trees, distant birdsong, faint far-off water, airy and spacious, nothing close', 24, 0.5, true],
   amb_deep: ['deep ocean underwater ambience: low dark drone, muffled pressure, very distant whale calls, slow and calm', 20, 0.4, true],
 };
 

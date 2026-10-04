@@ -32,16 +32,20 @@ const SFX = {
       this.beds = {};
       const G0 = (id) => (this.man.sounds[id] && this.man.sounds[id].g) || 1;
       // (The shore by the pond's own water: a reedy pond edge, or small waves on shingle.)
-      const shore = world.opts.habitat === 'fresh' ? 'amb_fresh' : 'amb_salt';
+      const fresh = world.opts.habitat === 'fresh', shore = fresh ? 'amb_fresh' : 'amb_salt', far = fresh ? 'amb_far_fresh' : 'amb_far_salt';
       this.shore = this.buf[shore] ? shore : 'amb_surface';
-      for (const k of [this.shore, 'amb_shallow', 'amb_deep']) {
+      this.far = this.buf[far] ? far : null;
+      for (const k of [this.far, this.shore, 'amb_shallow', 'amb_deep']) {
+        if (!k) continue;
         if (!this.buf[k]) continue;
         const s = ctx.createBufferSource(), g = ctx.createGain();
         s.buffer = this.buf[k]; s.loop = true; g.gain.value = 0;
-        s.connect(g).connect(k === this.shore ? ctx.destination : this.under); // (the shore is heard above the water)
+        const above = k === this.shore || k === this.far;
+        s.connect(g).connect(above ? ctx.destination : this.under); // (the shore and the far view are heard above the water)
         s.start(0, Math.random() * Math.max(0.1, this.buf[k].duration - 1));
-        this.beds[k === this.shore ? 'amb_surface' : k] = g;
+        this.beds[k === this.shore ? 'amb_surface' : k === this.far ? 'amb_far' : k] = g;
         if (k === this.shore) this.shoreG = G0(k);
+        if (k === this.far) this.farG = G0(k);
       }
       this.ready = true;
     })().catch(() => { this.loading = null; });
@@ -62,6 +66,25 @@ const SFX = {
     s.connect(g).connect(p).connect(ui ? this.ui : this.fx);
     s.start();
   },
+  // A tuned pluck (or a few, one after another): notes are steps of D major pentatonic from D5, or 'lo'/'lo2' for
+  // the muted pair that says no. Sine with a quiet octave, a soft lowpass, a quick bloom and a short ring.
+  tone(steps, { level = 1, gap = 0.1, dur = 0.16, type = 'sine' } = {}) {
+    if (!Sound.on || !this.ready) return;
+    const ctx = Sound.ctx, now = ctx.currentTime, key = steps.join(',');
+    if (now - (this.last['tone:' + key] || -9) < gap) return;
+    this.last['tone:' + key] = now;
+    const PENTA = [587.33, 659.25, 739.99, 880, 987.77, 1174.66], f = (s) => (s === 'lo' ? 293.66 : s === 'lo2' ? 277.18 : PENTA[s % PENTA.length]);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600; lp.Q.value = 0.3; lp.connect(this.ui);
+    steps.forEach((s, i) => {
+      const t = now + i * 0.06, fr = f(s), g = ctx.createGain(), o = ctx.createOscillator(), o2 = ctx.createOscillator(), g2 = ctx.createGain();
+      o.type = type; o.frequency.value = fr; o2.type = 'sine'; o2.frequency.value = fr * 2.003; g2.gain.value = 0.18;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.32 * level, t + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); o2.connect(g2).connect(g); g.connect(lp);
+      o.start(t); o2.start(t); o.stop(t + dur + 0.02); o2.stop(t + dur + 0.02);
+    });
+  },
   // A pond sound where it happens: panned across the view, fading off screen (Sound.place), or not at all.
   at(k, x, y, opts = {}) {
     const a = Sound.place(x, y);
@@ -80,8 +103,13 @@ const SFX = {
     // (Everything but the entry screen's music sits far down while it's up.)
     const entry = document.getElementById('entry'), damp = entry && !entry.classList.contains('gone') ? 0.15 : 1;
     set(Sound.master.gain, 0.55 * damp, 0.8); set(this.ui.gain, 0.2 * damp, 0.3); set(this.fx.gain, 0.25 * damp, 0.3);
-    if (B.amb_surface) set(B.amb_surface.gain, damp * 0.32 * (this.shoreG || 1) * (1 - ss(0.12, 0.5, z)) * (1 - 0.6 * deep));
-    if (B.amb_shallow) set(B.amb_shallow.gain, damp * 0.35 * G('amb_shallow') * ss(0.08, 0.42, z) * (1 - ss(0.7, 1, z) * 0.5) * (1 - 0.7 * deep));
+    // Far out: wind, gulls, the sea breaking a long way off. In closer: the shore's own water lapping. Closer still:
+    // under the surface. (The soundscape's close lapping follows `near` too.)
+    const farW = 1 - ss(0.12, 0.38, z), nearW = ss(0.1, 0.32, z) * (1 - ss(0.6, 0.85, z));
+    this.near = ss(0.12, 0.35, z);
+    if (B.amb_far) set(B.amb_far.gain, damp * 0.4 * (this.farG || 1) * farW, 1.2);
+    if (B.amb_surface) set(B.amb_surface.gain, damp * 0.32 * (this.shoreG || 1) * (B.amb_far ? nearW : 1 - ss(0.12, 0.5, z)) * (1 - 0.6 * deep), 1.2);
+    if (B.amb_shallow) set(B.amb_shallow.gain, damp * 0.35 * G('amb_shallow') * ss(0.5, 0.8, z) * (1 - 0.7 * deep));
     if (B.amb_deep) set(B.amb_deep.gain, damp * 0.3 * G('amb_deep') * Math.max(deep * 0.9, ss(0.6, 1, z) * 0.6));
     // Under the water as you close in: the pond's sounds muffle (the menus don't).
     set(this.under.frequency, 18000 * Math.pow(1500 / 18000, ss(0.35, 1, z) * 0.85 + deep * 0.15), 0.4);
@@ -105,7 +133,7 @@ const SFX = {
     globalThis[name] = function (...a) { const r = f.apply(this, a); try { after(r, a); } catch { /* sound never breaks the pond */ } return r; };
   };
   const here = (w) => w === world && !world.observe;
-  wrap('recycle', (r, [c, quiet]) => { if (!quiet) SFX.play('ui_recycle', { ui: true, level: 0.4, gap: 1.5 }); });
+  wrap('recycle', (r, [c, quiet]) => { if (!quiet) SFX.tone([4, 2, 0], { gap: 1, level: 0.8 }); });
   wrap('discover', (r, [w]) => { if (here(w)) SFX.play('ev_discover', { level: 0.45, gap: 20 }); });
   wrap('findArtifact', (r, [w]) => { if (here(w) && r) SFX.play('ev_artifact', { level: 0.55, gap: 10, vary: 0 }); });
   wrap('collectFossil', (r, [w]) => { if (here(w)) SFX.play('ev_fossil', { level: 0.5, gap: 5 }); });
@@ -122,19 +150,9 @@ const SFX = {
     if (!here(w) || !opts) return;
     if (opts.cat === 'rare' && (opts.pri || 0) >= 3 && /born|hatched|baby|young/i.test(text)) SFX.play('ev_birth_rare', { level: 0.45, gap: 45, vary: 0 });
   });
-  // What the tools did: build, plant, feed, release.
-  const useTool0 = globalThis.useTool;
-  globalThis.useTool = function (x, y) {
-    const n = [world.structures.length, world.plants.length + world.pads.length, world.food.length, world.creatures.length];
-    const r = useTool0.call(this, x, y);
-    try {
-      if (world.structures.length === n[0] && world.plants.length + world.pads.length === n[1] && world.food.length > n[2]) SFX.at('ev_feed', x, y, { level: 0.35, gap: 2.5 });
-    } catch { /* nothing */ }
-    return r;
-  };
   // A splash when something big surfaces nearby (the soundscape's own plops stay for the small ones).
   // "Not enough", "too close", "it needs...": the dull blub.
-  wrap('showTicker', (r, [text]) => { if (/^(Not enough|Too |too close|It needs|it needs|Can.t|You already)/.test(String(text || ''))) SFX.play('ui_error', { ui: true, level: 0.45, gap: 1.5 }); });
+  wrap('showTicker', (r, [text]) => { if (/^(Not enough|Too |too close|It needs|it needs|Can.t|You already)/.test(String(text || ''))) SFX.tone(['lo', 'lo2'], { gap: 1.5, type: 'triangle', level: 0.9, dur: 0.22 }); });
   // The soundscape's update drives ours.
   const upd = Sound.update;
   Sound.update = function (w, dt, rect, k) { upd.call(this, w, dt, rect, k); try { SFX.update(w, dt, k); } catch { /* nothing */ } };
@@ -142,19 +160,20 @@ const SFX = {
   Sound.setEnabled = function (on) { en.call(this, on); if (on) SFX.ensure(); };
 
   // ---- menus and buttons -------------------------------------------------------------------------------------------
+  // Menus: soft tuned tones (a kalimba-ish pluck on the soundtrack's D pentatonic), not recordings. A plain button
+  // plucks one note, picked by where it sits so the same button always sounds the same and neighbours differ;
+  // opening rises two notes and closing falls; switches go up for on and down for off; tabs are a higher note.
   document.addEventListener('click', (e) => {
     if (!Sound.on || !SFX.ready) return;
     const t = e.target.closest && e.target.closest('button, summary, [role="tab"], input[type="checkbox"], select, a.btn');
     if (!t || t.closest('#entry') || t.disabled) return;
-    if (t.getAttribute('role') === 'tab') { SFX.play('ui_tab', { ui: true, level: 0.45, gap: 0.2 }); return; }
-    if (t.tagName === 'SUMMARY') { const open = !t.parentElement.open; SFX.play(open ? 'ui_open' : 'ui_close', { ui: true, level: 0.35, gap: 0.3 }); return; }
-    if (t.type === 'checkbox') { SFX.play(t.checked ? 'ui_toggle_on' : 'ui_toggle_off', { ui: true, level: 0.3, gap: 0.2 }); return; }
-    // Switches (aria-pressed) read their new state after the click has run.
-    if (t.hasAttribute('aria-pressed')) { setTimeout(() => SFX.play(t.getAttribute('aria-pressed') === 'true' ? 'ui_toggle_on' : 'ui_toggle_off', { ui: true, level: 0.3, gap: 0.2 }), 0); return; }
-    // Panels and windows opening (aria-expanded) whoosh; everything else clicks.
-    if (t.hasAttribute('aria-expanded')) { setTimeout(() => SFX.play(t.getAttribute('aria-expanded') === 'true' ? 'ui_open' : 'ui_close', { ui: true, level: 0.35, gap: 0.3 }), 0); return; }
-    SFX.alt = !SFX.alt;
-    SFX.play(SFX.alt ? 'ui_click' : 'ui_click2', { ui: true, level: 0.35, gap: 0.15 });
+    if (t.getAttribute('role') === 'tab') { SFX.tone([5], { gap: 0.12 }); return; }
+    if (t.tagName === 'SUMMARY') { const open = !t.parentElement.open; SFX.tone(open ? [0, 3] : [3, 0], { gap: 0.25 }); return; }
+    if (t.type === 'checkbox') { SFX.tone(t.checked ? [2, 4] : [4, 2], { gap: 0.15 }); return; }
+    if (t.hasAttribute('aria-pressed')) { setTimeout(() => SFX.tone(t.getAttribute('aria-pressed') === 'true' ? [2, 4] : [4, 2], { gap: 0.15 }), 0); return; }
+    if (t.hasAttribute('aria-expanded')) { setTimeout(() => SFX.tone(t.getAttribute('aria-expanded') === 'true' ? [0, 3] : [3, 0], { gap: 0.25 }), 0); return; }
+    const r = t.getBoundingClientRect(), i = Math.abs(Math.round(r.left / 40) + Math.round(r.top / 40) * 3) % 5;
+    SFX.tone([i], { gap: 0.08, level: 0.75 });
   }, true);
   if (Sound.on) SFX.ensure();
 })();

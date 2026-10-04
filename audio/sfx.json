@@ -216,6 +216,18 @@
    "dur": 22,
    "loop": true,
    "g": 1.95
+  },
+  "amb_far_salt": {
+   "f": "amb_far_salt.mp3",
+   "dur": 24,
+   "loop": true,
+   "g": 1.55
+  },
+  "amb_far_fresh": {
+   "f": "amb_far_fresh.mp3",
+   "dur": 24,
+   "loop": true,
+   "g": 5.07
   }
  }
 }
