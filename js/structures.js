@@ -135,6 +135,13 @@ const structureAt = (world, x, y) => (world.structures || []).find((s) => Math.h
 
 // Where a structure can go: in water, away from the edges and from other structures.
 function canPlace(world, kind, x, y) {
+  if (STRUCTURES[kind].onIsland) {
+    // (A lighthouse stands on an island: beacons.js.)
+    const isle = (world.structures || []).find((s) => s.kind === 'island' && !s.anim && Math.hypot(s.x - x, s.y - y) < islandRadius(world, s) * 0.8);
+    if (!isle) return 'it has to stand on an island';
+    if ((world.structures || []).some((s) => s.kind === kind && Math.hypot(s.x - x, s.y - y) < 40)) return 'there is a lighthouse close by already';
+    return null;
+  }
   const def = STRUCTURES[kind], big = kind === 'ship' && typeof wreckScale === 'function' ? wreckScale(depthAt(world, x, y)) : 1, m = def.dry ? def.size + 1 : def.size * big + 6; // (up on the beach it can stand near the top)
   if (x < m || y < m || x > world.W - m || y > world.H - m) return 'too close to the edge';
   if (def.habitat && !fitsHabitat(world, def.habitat)) return `it needs ${def.habitat} water`;

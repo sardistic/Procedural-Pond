@@ -279,7 +279,7 @@ function updateEldritch(world, dt) {
     // At night the transcendent dream, and the mark can pass to a neighbour.
     if (now === 2 && world.darkness > 0.5 && Math.random() < 0.004 * lightMadness(world) * (eldPath(world, 'dream') ? 2.5 : 1) * Math.max(0, 1 - share / 0.08)) {
       const near = [];
-      forNear(world, c.x, c.y, 60, (o) => { if (o !== c && o.life && !o.life.genome.eld) near.push(o); });
+      forNear(world, c.x, c.y, 60, (o) => { if (o !== c && o.life && !o.life.genome.eld && !(typeof beaconCovers === 'function' && beaconCovers(world, o.x, o.y))) near.push(o); }); // (not in a beacon's light)
       if (near.length) {
         const o = pick(near);
         o.life.genome.eld = true;
@@ -358,6 +358,7 @@ function drawEldritch(r, c, t, world) {
 
 // Young born near the drowned idol, a dark island, a corrupted plant, or in the abyss, sometimes come out marked.
 function eldBirthChance(world, x, y) {
+  if (typeof beaconCovers === 'function' && beaconCovers(world, x, y)) return 0; // (nothing marked is born in a beacon's light)
   let p = depthAt(world, x, y) > 0.8 ? 0.03 : 0;
   for (const s of world.structures || []) {
     if (s.kind === 'idol' && Math.hypot(s.x - x, s.y - y) < STRUCTURES.idol.r) p += 0.08;

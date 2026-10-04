@@ -2273,6 +2273,7 @@ function renderObject() {
       } else parts.push(el('p', 'note', 'Raise it to level 3 and it can go one of two ways: lanterns of life, or the whispering stone.'));
       if (typeof isleCardButtons === 'function') isleCardButtons(world, o, tree); // (sand, a grove, reefs, reeds, mangroves, birds, pools, a spring, fire, a giant: isles.js)
     }
+    if (typeof beaconCardButtons === 'function') beaconCardButtons(world, o, tree); // (the beacon's lens array: beacons.js)
     if (o.kind === 'hatchery') tree.append(traitButton('Open the hatchery', null, null, '', false, () => { hideObject(); setHatchery(true); return false; }, null, '#f8c050', renderObject));
     if (def.habitatFor) {
       const inf = habitatInfluences(world, o);

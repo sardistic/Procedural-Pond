@@ -93,12 +93,14 @@ const xenoState = (world) => { world.xeno = world.xeno || []; world.parasites = 
 const xenoAt = (world, x, y) => (world.xeno || []).find((a) => Math.hypot(a.x - x, a.y - y) < 10 * xenoScale(a));
 const xenoScale = (a) => Math.min(1.6, 1 + 0.08 * a.gen);
 // In a quarantine lamp's light: nothing latches on, spreads or breeds.
-const quarantined = (world, x, y) => (world.structures || []).some((s) => s.kind === 'quarantine' && !s.anim && Math.hypot(s.x - x, s.y - y) < STRUCTURES.quarantine.r * (1 + 0.15 * ((s.lv && s.lv.reach) || 0)));
+const quarantined = (world, x, y) => (world.structures || []).some((s) => s.kind === 'quarantine' && !s.anim && Math.hypot(s.x - x, s.y - y) < STRUCTURES.quarantine.r * (1 + 0.15 * ((s.lv && s.lv.reach) || 0)))
+  || (typeof beaconCovers === 'function' && beaconCovers(world, x, y)); // (a beacon's or lighthouse's light too: beacons.js)
 
 function xenoSpot(world) {
   let best = null, bd = -1;
   for (let i = 0; i < 60; i++) {
     const x = rand(20, world.W - 20), y = rand(20, world.H - 20), d = depthAt(world, x, y);
+    if (typeof beaconCovers === 'function' && beaconCovers(world, x, y)) continue; // (nothing alien comes down in the light)
     if (world.shore && isDry(world, x, y)) continue;
     if ((world.structures || []).some((s) => Math.hypot(s.x - x, s.y - y) < 30)) continue;
     if (d >= 0.55) return [x, y];

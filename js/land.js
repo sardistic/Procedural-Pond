@@ -363,10 +363,16 @@ function isleOf(s) {
   if (typeof world === 'undefined' || !world.structures || !world.structures.includes(s)) return 'palm'; // (the build icon)
   const h = hash2(s.seed % 997, 17, 3), deep = (s.deep || 0) > 0.15;
   if (deep && h < 0.6) return (s.isle = 'basalt');
+  // Once a pond has lived a thousand minutes, the further an island stands from the beach the likelier it is black
+  // sand and rock (fully so by fifteen hundred minutes, at the far side).
+  const side = world.shoreSide, fromBeach = side === 0 ? s.x : side === 1 ? world.W - s.x : side === 2 ? s.y : world.H - s.y;
+  const far = clamp(fromBeach / Math.max(200, side < 2 ? world.W : world.H), 0, 1);
+  const age = clamp(((world.days || 0) * ((world.opts && world.opts.dayLength) || 180) / 60 - 1000) / 500, 0, 1), dark = far * age;
   const salt = world.opts.habitat === 'salt' || (world.opts.habitat === 'mixed' && saltAt(world, s.x, s.y) > 0);
-  const opts = Object.entries(ISLE_KINDS).filter(([, K]) => K.w && (K.water === 'any' || K.water === (salt ? 'salt' : 'fresh')));
-  let r = hash2(s.seed % 991, 29, 11) * opts.reduce((a, [, K]) => a + K.w, 0);
-  for (const [k, K] of opts) if ((r -= K.w) <= 0) return (s.isle = k);
+  const opts = Object.entries(ISLE_KINDS).filter(([k, K]) => (K.w || (k === 'basalt' && dark > 0.25)) && (K.water === 'any' || K.water === (salt ? 'salt' : 'fresh') || (k === 'basalt' && dark > 0.25)));
+  const wt = (k, K) => (k === 'basalt' ? 6 * dark : k === 'rock' ? K.w * (1 + 3 * dark) : K.w * (1 - 0.7 * dark));
+  let r = hash2(s.seed % 991, 29, 11) * opts.reduce((a, [k, K]) => a + wt(k, K), 0);
+  for (const [k, K] of opts) if ((r -= wt(k, K)) <= 0) return (s.isle = k);
   return (s.isle = 'palm');
 }
 // For the island's bake (structures.js): its sand and grass, and whether it has the palm.

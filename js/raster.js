@@ -288,6 +288,9 @@ class Raster {
     // Trenches (black chasms with faint lights along their rims) and the light cast by glowing things.
     const trench = s.trench || null, tg = s.trenchGlow || 0xffffb02a, tgr = tg & 255, tgg = (tg >> 8) & 255, tgb = (tg >>> 16) & 255;
     const LM = s.lights || null, LD = LM ? LM.data : null, lw = LM ? LM.lw : 0, lh = LM ? LM.lh : 0, lvis = s.lightVis || 0;
+    // The abyss drinking islands' light (beacons.js: by island), and the harbors round lighthouses.
+    const isleDrain = s.isleDrain || null, islandGround = isleDrain ? s.islandGround || null : null;
+    const harbors = s.harbors && s.harbors.length ? s.harbors.filter((h) => h.x + h.r >= rect[0] && h.x - h.r <= rect[2] && h.y + h.r >= rect[1] && h.y - h.r <= rect[3]) : null, hT = (t * 4) | 0;
     // Chop: short, quick waves in the shallows when it blows; spindrift: streaks of foam blown along the deep in a storm.
     const chop = s.chop || 0, spin = s.spindrift || 0, L3 = 10, w3x = (sw0x(s) * 1024) / L3, w3y = (sw0y(s) * 1024) / L3, w3t = t * 4 * 1024 / L3;
     // The eldritch: veins of void in marked skin, crawling slowly, with stars in them.
@@ -543,6 +546,21 @@ class Raster {
         }
         // The surface over it all (after the deep has darkened the floor below): the sky in calm
         // water, the lit and shadowed faces of waves, foam on the biggest.
+        // A harbor: warm, clear tropical water, its edge marked by blinking channel lights.
+        if (harbors && harbors.length && !dry && !i) {
+          let hw = 0, ring = false;
+          for (const h of harbors) {
+            const dx = x - h.x, dy = y - h.y, d2 = dx * dx + dy * dy, r2 = h.r * h.r;
+            if (d2 >= r2 * 1.06) continue;
+            if (d2 < r2) { const w = 1 - d2 / r2; if (w > hw) hw = w; }
+            if (Math.abs(Math.sqrt(d2) - h.r) < 0.7 && ((x * 3 + y * 5 + hT) & 15) === 0) ring = true;
+          }
+          if (ring) c = 0xfffff08a;
+          else if (hw > 0) {
+            const a = Math.min(1, hw * 1.6) * 0.62, cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
+            c = (0xff000000 | ((cb + (((215 - cb) * a) | 0)) << 16) | ((cg + (((220 - cg) * a) | 0)) << 8) | (cr + (((70 - cr) * a) | 0))) >>> 0;
+          }
+        }
         stroke *= surfaceVis; waveS *= surfaceVis; refl *= surfaceVis;
         if (surfaceVis < 1 && waveC >= 8 && BAYER4[(x & 3) | ((y & 3) << 2)] > surfaceVis) waveC = 0;
         if (stroke && waveC < 8) {
@@ -564,6 +582,17 @@ class Raster {
             cr = (cr * f) >> 8; cg = (cg * f) >> 8; cb = (cb * f) >> 8;
           }
           c = (0xff000000 | (cb << 16) | (cg << 8) | cr) >>> 0;
+        }
+        // An island out over the abyss, its light drunk by the dark (in dithered steps, breathing slowly).
+        if (islandGround) {
+          const k = islandGround[p];
+          if (k) {
+            const dr = isleDrain[k - 1];
+            if (dr > 0.02) {
+              const q = Math.min(3, (dr * (0.62 + 0.08 * Math.sin(t * 0.5 + k)) * 4 + BAYER4[(x & 3) | ((y & 3) << 2)] + 0.5) | 0), f = 256 - q * 52;
+              if (q > 0) c = (0xff000000 | (((((c >>> 16) & 255) * f) >> 8) << 16) | (((((c >> 8) & 255) * f) >> 8) << 8) | (((c & 255) * f) >> 8)) >>> 0;
+            }
+          }
         }
         if (tint) {
           const e = i ? emissive[i] : 0;
