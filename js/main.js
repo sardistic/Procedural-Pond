@@ -1440,7 +1440,7 @@ function pointerEnd(e) {
     const st = world.tool !== 'net' && structureAt(world, press.x, press.y);
     const rm = world.tool !== 'net' && remainsAt(world, press.x, press.y), fo = world.tool !== 'net' && fossilAt(world, press.x, press.y);
     const li = litterAt(world, press.x, press.y), sl = !li && slickAt(world, press.x, press.y);
-    if (world.observe) { /* someone else's pond: look only */ }
+    if (world.observe) { if (typeof visitorTap === 'function') visitorTap(press.x, press.y); } // (someone else's pond: look only, unless it lets visitors plant)
     else if (typeof nestAt === 'function' && nestAt(world, press.x, press.y)) showTicker(nestNote(world, nestAt(world, press.x, press.y)));
     else if (li) haulLitter(world, li);
     else if (sl && world.tool !== 'net' && !creatureAt(press.x, press.y)) skimSlick(world, sl);
@@ -2018,7 +2018,7 @@ async function ensureBeyond(side) {
   try {
     const got = B.home ? null : await fetchPond(B.id, true), save = B.home ? loadSave(homeInfo.seed) : got && got.save;
     if (!save || !isSave(save)) return;
-    if (got) B.updated = got.updated;
+    if (got) { B.updated = got.updated; B.meta = got.meta || null; }
     await new Promise((res) => setTimeout(res, 0)); // (let the frame finish before the heavy drawing)
     const snap = snapshotPond(save);
     // Turned so its beach is on the same side of the screen as this one's.
@@ -2117,7 +2117,7 @@ function crossTo(side) {
   const d = B.home ? loadSave(homeInfo.seed) : B.save;
   if (!d) return false;
   hideCreature(); hideObject(); closeSpawnCard(); setHatchery(false); setEvo(false);
-  world.observe = B.home ? null : { id: B.id, slug: (B.info && B.info.slug) || null, title: (B.info && B.info.title) || null, updated: B.updated || Date.now(), home: homeInfo, homeId: homeInfo.id, dir: side, save: d };
+  world.observe = B.home ? null : { visit: (B.meta && B.meta.visit) || null, id: B.id, slug: (B.info && B.info.slug) || null, title: (B.info && B.info.title) || null, updated: B.updated || Date.now(), home: homeInfo, homeId: homeInfo.id, dir: side, save: d };
   world.noSave = !B.home;
   document.body.classList.toggle('observing', !B.home);
   Object.assign(world.opts, d.opts);
@@ -2284,6 +2284,7 @@ async function observeSync(dt) {
   if (!world.observe || (observeTimer -= dt) > 0) return;
   observeTimer = 60;
   const got = await fetchPond(world.observe.id);
+  if (got && got.meta && world.observe) world.observe.visit = got.meta.visit || null; // (what it lets visitors do, as its owner set it)
   if (!got || !(got.updated > world.observe.updated + 120000) || pastEnd() || view.glide) return;
   world.observe.updated = got.updated;
   world.observe.save = got.save;
@@ -3084,7 +3085,7 @@ async function boot() {
     try { home = JSON.parse(sessionStorage.getItem('pond.home') || 'null'); } catch { /* none */ }
     if (got && !(home && home.id === got.id)) {
       resume = got.save; found = true;
-      observe = { id: got.id, slug: got.slug || null, updated: got.updated, home: home || { path: '/', id: null }, homeId: home && home.id, seed: got.save.seed, by: (got.meta && got.meta.by) || null, title: (got.meta && got.meta.title) || null };
+      observe = { id: got.id, slug: got.slug || null, updated: got.updated, home: home || { path: '/', id: null }, homeId: home && home.id, seed: got.save.seed, visit: (got.meta && got.meta.visit) || null, by: (got.meta && got.meta.by) || null, title: (got.meta && got.meta.title) || null };
     }
   }
   if (observe) { /* nothing more to decide */ } else if (!linked && pathKey) {
@@ -3102,7 +3103,7 @@ async function boot() {
       } else if (got && got.meta && got.meta.lock) {
         // Its owner lets visitors look only: watch it, don't take a copy.
         resume = got.save;
-        observe = { id: got.id, slug: got.slug || null, updated: got.updated, home: { path: '/', id: null }, homeId: null, seed: got.save.seed, locked: true, by: got.meta.by || null, title: got.meta.title || null };
+        observe = { id: got.id, slug: got.slug || null, updated: got.updated, home: { path: '/', id: null }, homeId: null, seed: got.save.seed, locked: true, visit: (got.meta && got.meta.visit) || null, by: got.meta.by || null, title: got.meta.title || null };
         history.replaceState(null, '', `/${linkName(observe)}?observe=1`);
       } else if (got) { linked = got.save; shortId = got.id; }
     }

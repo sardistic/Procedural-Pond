@@ -53,6 +53,14 @@ const WANDER_KEEP_DAYS = 14;         // a wanderer nobody calls up is gone after
 const WANDER_MAX = 400;              // the most kept in the pool
 const WANDER_SENDS_PER_HOUR = 8;     // per pond
 const WANDER_TAKES_PER_HOUR = 20;    // per address
+// Visitors acting on a pond its owner opened to them (planting, giving an animal a mind): queued here until the
+// owner's page takes them and applies them.
+const VISIT_KEEP_DAYS = 7;           // acts the owner's page never takes are gone after this
+const VISIT_QUEUE = 120;             // the most waiting for one pond
+const VISIT_PLANTS_PER_HOUR = 12;    // per address per pond
+const VISIT_MINDS_PER_HOUR = 6;      // per address per pond
+const VISIT_POND_PER_HOUR = 80;      // per pond, all visitors together
+const VISIT_CONTROLLERS = new Set(['typesafe', 'fly-brain', 'fish-brain', 'hybrid-brain']);
 
 // ---- accounts ----------------------------------------------------------------------
 // Signing in is optional, and off until DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET are set: then
@@ -124,6 +132,14 @@ db.exec(`
     kind TEXT NOT NULL,
     data TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS visits (
+    n INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    pond TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    data TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS visits_pond ON visits (pond, n);
   CREATE TABLE IF NOT EXISTS finds (
     n INTEGER PRIMARY KEY AUTOINCREMENT,
     at INTEGER NOT NULL,
@@ -196,6 +212,11 @@ const q = {
   dropSession: db.prepare('DELETE FROM sessions WHERE hash = ?'),
   pruneSessions: db.prepare('DELETE FROM sessions WHERE expires < ?'),
   addWanderer: db.prepare('INSERT INTO wanderers (at, pond, kind, data) VALUES (?, ?, ?, ?)'),
+  addVisit: db.prepare('INSERT INTO visits (at, pond, kind, data) VALUES (?, ?, ?, ?)'),
+  visitCount: db.prepare('SELECT COUNT(*) AS n FROM visits WHERE pond = ?'),
+  visitsOf: db.prepare('SELECT n, at, kind, data FROM visits WHERE pond = ? ORDER BY n LIMIT 50'),
+  dropVisitsTo: db.prepare('DELETE FROM visits WHERE pond = ? AND n <= ?'),
+  pruneVisits: db.prepare('DELETE FROM visits WHERE at < ?'),
   trimWanderers: db.prepare('DELETE FROM wanderers WHERE n <= (SELECT MAX(n) FROM wanderers) - ?'),
   wandererPool: db.prepare('SELECT n, pond, kind FROM wanderers WHERE at > ? AND pond != ?'),
   wanderer: db.prepare('SELECT * FROM wanderers WHERE n = ?'),
@@ -230,6 +251,7 @@ function cleanMeta(m) {
     gen: int(m.gen, 0, 100000), days: Math.max(0, Math.min(1e7, Math.round((Number(m.days) || 0) * 100) / 100)),
     habitat: HABITATS.has(m.habitat) ? m.habitat : 'mixed', board: m.board !== false, best: cleanFind(m.best),
     lock: m.lock === true, // the owner lets visitors look only (no copies of their own)
+    visit: m.visit && typeof m.visit === 'object' && (m.visit.plant === true || m.visit.minds === true) ? { plant: m.visit.plant === true, minds: m.visit.minds === true } : null, // what visitors may do to it
     showName: m.showName === true, // a signed-in owner shows their name on it (the name itself comes from the account, never from here)
     title: cleanTitle(m.title), // a name the owner gave it (null if none, or not allowed: see namefilter.js)
     finds: Array.isArray(m.finds) ? m.finds.slice(0, 5).map(cleanFind).filter((f) => f && f.tier >= 2) : [],
@@ -608,6 +630,44 @@ async function takeWanderer(req) {
   return [200, { w: { ...JSON.parse(row.data), from: row.pond, by: m.by || null } }];
 }
 
+// ---- visitors acting on a pond -----------------------------------------------------------------------------
+const visitLimits = new Map();
+// A visitor plants something or gives an animal a mind, if the pond's owner allows it. Only queued here: the
+// owner's own page applies it (by its rules: where it can grow, how many minds there can be) when it next looks.
+async function postVisit(req, id) {
+  if (!sameOrigin(req)) throw new HttpError(403, 'not from here');
+  const row = q.get.get(id);
+  if (!row) throw new HttpError(404, 'no such pond');
+  const meta = JSON.parse(row.meta), allow = meta.visit || {}, b = await readJson(req);
+  let kind, data;
+  if (b && b.kind === 'plant') {
+    if (!allow.plant) throw new HttpError(403, 'this pond does not take planting');
+    if (typeof b.plant !== 'string' || !/^[a-z]{2,24}$/.test(b.plant)) throw new HttpError(400, 'bad plant');
+    const x = Number(b.x), y = Number(b.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > 20000 || y > 20000) throw new HttpError(400, 'bad place');
+    kind = 'plant'; data = { plant: b.plant, x: Math.round(x), y: Math.round(y) };
+  } else if (b && b.kind === 'mind') {
+    if (!allow.minds) throw new HttpError(403, 'this pond does not take minds');
+    if (!Number.isSafeInteger(b.seed) || b.seed < 0 || !VISIT_CONTROLLERS.has(b.controller)) throw new HttpError(400, 'bad mind');
+    kind = 'mind'; data = { seed: b.seed, controller: b.controller };
+  } else throw new HttpError(400, 'nothing to do');
+  if (!underLimit(visitLimits, `${req.ip}|${id}|${kind}`, kind === 'plant' ? VISIT_PLANTS_PER_HOUR : VISIT_MINDS_PER_HOUR)) throw new HttpError(429, 'enough from you for now');
+  if (!underLimit(visitLimits, `pond|${id}`, VISIT_POND_PER_HOUR) || q.visitCount.get(id).n >= VISIT_QUEUE) throw new HttpError(429, 'this pond has plenty waiting');
+  const u = userOf(req);
+  if (u) data.by = u.name.slice(0, 32); // (a signed-in visitor's name, from their account, never from the request)
+  q.addVisit.run(Date.now(), id, kind, JSON.stringify(data));
+  return [201, { ok: true }];
+}
+// The owner's page takes what's waiting (and it's cleared once taken).
+async function takeVisits(req, id) {
+  const row = q.get.get(id);
+  if (!row) throw new HttpError(404, 'no such pond');
+  if (!keyMatches(row, req.headers['x-pond-key']) && !ownsRow(req, row)) throw new HttpError(403, 'not your pond');
+  const rows = q.visitsOf.all(id);
+  if (rows.length) q.dropVisitsTo.run(id, rows[rows.length - 1].n);
+  return [200, { acts: rows.map((r) => ({ at: r.at, kind: r.kind, ...JSON.parse(r.data) })) }];
+}
+
 async function route(req) {
   const url = new URL(req.url, 'http://pond'), path = url.pathname;
   if (path === '/api/health' && req.method === 'GET') return [200, { ok: true }];
@@ -652,6 +712,8 @@ async function route(req) {
   }
   if (path === '/api/board' && req.method === 'GET') return [200, board()];
   if (path === '/api/ponds' && req.method === 'POST') return createPond(req);
+  const mv = /^\/api\/ponds\/([a-z]{2,8}(?:-[a-z]{2,8}){3})\/(visit|visits)$/.exec(path);
+  if (mv && req.method === 'POST') return mv[2] === 'visit' ? postVisit(req, mv[1]) : takeVisits(req, mv[1]);
   const m = /^\/api\/ponds\/([a-z0-9-]{3,40})$/.exec(path);
   if (m && req.method === 'GET') return getPond(req, m[1], url.searchParams.get('peek') === '1'); // (by its id or its address)
   if (m && ID_RE.test(m[1])) {
@@ -684,7 +746,8 @@ function prune() {
   if (n) { q.pruneSlugs.run(); console.log(new Date().toISOString(), `removed ${n} unused ponds`); }
   q.pruneSessions.run(Date.now());
   q.pruneWanderers.run(Date.now() - WANDER_KEEP_DAYS * 864e5);
-  creates.clear(); wanderSends.clear(); wanderTakes.clear();
+  q.pruneVisits.run(Date.now() - VISIT_KEEP_DAYS * 864e5);
+  creates.clear(); wanderSends.clear(); wanderTakes.clear(); visitLimits.clear();
 }
 prune();
 setInterval(prune, 864e5).unref();

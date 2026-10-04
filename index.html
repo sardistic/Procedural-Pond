@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=50">
+  <link rel="stylesheet" href="style.css?v=51">
   <style id="entry-css">
     /* The entry screen: painted before any script loads (inline, so nothing waits on style.css). It is opaque:
        the pond stays hidden until you enter. js/entry.js draws the moving water on #entry-bg. */
@@ -270,6 +270,8 @@
       <p class="note ponds-help">Saved here, and at its own link <button type="button" class="help-q" title="Your pond saves itself&#10;It saves itself in this browser and is here when you come back. The address bar holds its address, its name: bookmark it or share it, and it opens this pond as it grows. Friends who open it get their own copy. Sign in with Discord to keep your ponds in your account and carry on from any browser." aria-label="How saving works">?</button></p>
       <ol class="pond-list" id="pond-list"></ol>
       <label class="check" title="Look only\nWhoever opens this pond's link can watch it, but can't take a copy to grow as their own. Your pond stays the only one."><input type="checkbox" id="pond-lock"> Visitors can only look (no copies)</label>
+      <label class="check" title="Visitors may plant&#10;Visitors to your pond can plant in it (its own plants, for its water). What they plant grows in your pond the next time it's open, and the journal says who planted it."><input type="checkbox" id="pond-visit-plant"> Visitors may plant here</label>
+      <label class="check" title="Visitors may give minds&#10;Visitors can choose a brain for one of your animals (Jev, Fly Brain, Fish Brain or both) from its card. It wakes with that mind the next time your pond is open, up to five minds as always."><input type="checkbox" id="pond-visit-minds"> Visitors may give animals minds</label>
       <div class="grid2">
         <button type="button" id="reset" title="Start a brand new pond; this one stays saved">New pond</button>
         <button type="button" id="copy-link" title="Copy a link that opens this pond just as it is now">Copy link</button>
@@ -650,7 +652,7 @@
   <script src="js/cycle.js?v=55"></script>
   <script src="js/arrivals.js?v=55"></script>
   <script src="js/interact.js?v=55"></script>
-  <script src="js/net.js?v=55"></script>
+  <script src="js/net.js?v=56"></script>
   <script src="js/account.js?v=55"></script>
   <script src="js/wander.js?v=55"></script>
   <script src="js/hinterland.js?v=55"></script>
@@ -659,10 +661,11 @@
   <script src="js/minds.js?v=13"></script>
   <script src="js/mindplay.js?v=8"></script>
   <script src="js/forage.js?v=3"></script>
-  <script src="js/hud.js?v=72"></script>
+  <script src="js/hud.js?v=74"></script>
   <script src="js/fine.js?v=55"></script>
-  <script src="js/main.js?v=81"></script>
+  <script src="js/main.js?v=82"></script>
   <script src="js/sfx.js?v=3"></script>
+  <script src="js/visits.js?v=2"></script>
   <script src="js/guide.js?v=57"></script>
   <script src="js/music.js?v=56"></script>
   <script src="js/tips.js?v=55"></script>

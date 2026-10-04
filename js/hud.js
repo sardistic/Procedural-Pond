@@ -1404,7 +1404,7 @@ function crMind(c, here) {
   }
   if (availability !== 'ready' && !L.mind) out.push(el('p', 'note', mindAvailabilityText(controller, availability)));
   else if (mode.higher && availability === 'ready' && mindAvailability('typesafe') !== 'ready') out.push(el('p', 'note', 'Jev is unavailable; Fish Brain steers on its own.'));
-  if (!L.mind && !(L.mindLog || []).length) out.push(el('p', 'note', 'Awaken it to let a brain steer it, learn from what happens and choose its own fights. Up to five per pond.'));
+  if (!L.mind && !(L.mindLog || []).length && !world.observe) out.push(el('p', 'note', 'Awaken it to let a brain steer it, learn from what happens and choose its own fights. Up to five per pond.'));
   if (L.mind && here && typeof mindPlayCard === 'function') out.push(mindPlayCard(world, c));
   if (L.mind && typeof mindLearnedParts === 'function') out.push(crFold('learned', 'What it has learned', mindLearnedParts(world, c)));
   const entries = L.mindLog || [];
@@ -1440,6 +1440,8 @@ function crMind(c, here) {
     neural.push(el('p', 'note', `Fish Brain motor: left ${m.left.toFixed(2)} · right ${m.right.toFixed(2)} · thrust ${m.thrust.toFixed(2)}${m.startle ? ' · startle' : ''}${m.feeding ? ' · feeding' : ''}`));
   }
   if (neural.length) out.push(crFold('neural', 'Neural activity', neural));
+  // (On someone else's pond that lets visitors give minds: the choice of brain, sent to its owner: visits.js.)
+  if (world.observe && typeof visitorMindParts === 'function') out.push(...visitorMindParts(c));
   if (here && mindEligible(c) && mode.lanes.includes('choice')) {
     const labels = { wait: 'watch', forage: 'forage', hunt: 'hunt', shelter: 'shelter', flee: 'flee', explore: 'explore', rest: 'rest', shoal: 'join its kind',
       investigate: 'investigate', avoid: 'keep distance', ambush: 'wait in ambush', camouflage: 'camouflage', ink: 'ink escape', fight: 'fight', stalk: 'stalk', gang: 'hunt as a pack' };
