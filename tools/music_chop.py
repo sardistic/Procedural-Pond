@@ -83,10 +83,17 @@ def mood(db, cent, busy):
 
 def main(paths):
     os.makedirs(os.path.join(OUT, 'music'), exist_ok=True)
-    manifest = {'tracks': [], 'files': []}
+    # Tracks not given here keep their entries and files (so a new track can be added on its own).
+    # --after=<seconds> marks the tracks given as held back until that much play time.
+    after = next((int(a.split('=')[1]) for a in paths if a.startswith('--after=')), 0)
+    paths = [a for a in paths if not a.startswith('--')]
+    mpath = os.path.join(OUT, 'music.json')
+    manifest = json.load(open(mpath, encoding='utf-8')) if os.path.exists(mpath) else {'tracks': [], 'files': []}
     for path in paths:
         name = re.sub(r'_\d{4}-\d\d-\d\dT\d+$', '', os.path.splitext(os.path.basename(path))[0])
         slug = name.lower().replace('_', '-')
+        manifest['tracks'] = [t for t in manifest['tracks'] if t['id'] != slug]
+        manifest['files'] = [f for f in manifest['files'] if f['track'] != slug]
         x = load(path)
         flux, rms, cent = features(x)
         bpm0, _, _, o = tempo(flux)
@@ -120,7 +127,7 @@ def main(paths):
             m['mood'] = 'gap' if m['gap'] else mood(m['db'], m['cent'], m['busy'])
             atoms.append(m)
             k += 1
-        manifest['tracks'].append({'id': slug, 'name': name.replace('_', ' '), 'bpm': round(bpm, 3), 'key': key, 'atom': round(atom, 3)})
+        manifest['tracks'].append({'id': slug, 'name': name.replace('_', ' '), 'bpm': round(bpm, 3), 'key': key, 'atom': round(atom, 3), **({'after': after} if after else {})})
         # Files: two atoms each (8 bars), plus a tail; files that are all gap are left out.
         for j in range(0, len(atoms), 2):
             pair = atoms[j:j + 2]

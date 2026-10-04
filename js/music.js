@@ -11,11 +11,15 @@
 // And in the lulls, now and then, the beat alone: a groove from the pieces with everything but its low
 // pulse filtered away, quieter still, faded in and out slowly; anything that happens takes over from it.
 
-const MUSIC_V = 1; // bump when the cut changes (audio/music.json and its files)
+const MUSIC_V = 2; // bump when the cut changes (audio/music.json and its files)
 const MUSIC_FALLBACK = {
-  deep: ['deep', 'drift', 'glow'], glow: ['glow', 'drift', 'rise', 'deep'], drift: ['drift', 'glow', 'deep', 'rise'],
-  rise: ['rise', 'surge', 'glow'], surge: ['surge', 'rise', 'drift'],
+  deep: ['deep', 'calm', 'drift', 'glow'], glow: ['glow', 'calm', 'drift', 'rise', 'deep'], drift: ['drift', 'calm', 'glow', 'deep', 'rise'],
+  rise: ['rise', 'surge', 'glow'], surge: ['surge', 'rise', 'drift'], calm: ['calm', 'drift', 'glow', 'deep'],
 };
+// Play time in this browser, in seconds (the pond open, not paused, the tab in view). A track can be held back
+// until there's been this much (its "after" in music.json), and then mixes in slowly over the hour after.
+const MUSIC_PLAY = { s: 0, saveT: 0 };
+try { MUSIC_PLAY.s = +localStorage.getItem('pond.playSec') || 0; } catch { /* no storage */ }
 const MUSIC_KEEP = 4; // decoded files kept (each about 8 MB)
 
 const Music = {
@@ -66,6 +70,17 @@ const Music = {
     } catch (e) { console.warn('music', e); this.manifest = null; }
   },
 
+  // How much a track is in the mix: nothing until its play time comes (if it has one), then from a little, rising
+  // to full over the next hour.
+  trackWeight(id) {
+    const T = this.manifest && this.manifest.tracks.find((t) => t.id === id), after = (T && T.after) || 0;
+    if (!after) return 1;
+    return MUSIC_PLAY.s < after ? 0 : Math.min(1, 0.2 + 0.8 * (MUSIC_PLAY.s - after) / 3600);
+  },
+  allowed(a) { const w = this.trackWeight(a.file.track); return w >= 1 || (w > 0 && Math.random() < w); },
+  // The first piece of a track (for playing it through).
+  trackStart(id) { return this.atoms.find((a) => a.file.track === id && a.mood !== 'gap') || null; },
+
   // A decoded file, fetched once (and kept, a few at a time).
   load(file) {
     if (this.cache.has(file.f)) { const b = this.cache.get(file.f); this.cache.delete(file.f); this.cache.set(file.f, b); return Promise.resolve(b); }
@@ -86,7 +101,7 @@ const Music = {
     const now = this.ctx.currentTime;
     if (this.voice && now < this.voice.end) {
       // Only something bigger breaks into a phrase already playing; the rest wait a little.
-      if (strength >= 0.8 && this.voice.strength < 0.6 && now - this.voice.t0 > 4) { this.play(mood, strength, why); return; } // (play fades the other out first)
+      if (strength >= 0.8 && this.voice.strength < 0.6 && !this.voice.whole && now - this.voice.t0 > 4) { this.play(mood, strength, why); return; } // (play fades the other out first)
       if (!this.pending || strength > this.pending.strength) this.pending = { mood, strength, why, until: now + 15 };
       return;
     }
@@ -105,9 +120,9 @@ const Music = {
   choose(mood, long = false) {
     const ok = MUSIC_FALLBACK[mood] || [mood], fit = (a) => a.mood !== 'gap' && ok.includes(a.mood) && (!long || a.i === 0);
     const now = this.ctx.currentTime;
-    if (this.last && now - this.lastAt < 240 && this.last.next && fit(this.last.next) && !this.recent.includes(this.last.next.key) && Math.random() < 0.7) return this.last.next;
+    if (this.last && now - this.lastAt < 240 && this.last.next && fit(this.last.next) && !this.recent.includes(this.last.next.key) && this.allowed(this.last.next) && Math.random() < 0.7) return this.last.next;
     for (const m of ok) {
-      let pool = this.atoms.filter((a) => a.mood === m && !this.recent.includes(a.key));
+      let pool = this.atoms.filter((a) => a.mood === m && !this.recent.includes(a.key) && this.allowed(a));
       if (long && pool.some((a) => a.i === 0)) pool = pool.filter((a) => a.i === 0);
       if (!pool.length) continue;
       // Already decoded ones first (no wait), then any.
@@ -115,13 +130,25 @@ const Music = {
       const from = ready.length && Math.random() < 0.6 ? ready : pool;
       return from[Math.floor(Math.random() * from.length)];
     }
-    return this.atoms.find((a) => a.mood !== 'gap') || null;
+    return this.atoms.find((a) => a.mood !== 'gap' && this.trackWeight(a.file.track) > 0) || null;
+  },
+
+  // How much plays: four bars for small things, eight for most, sixteen for the big ones; now and then a long listen
+  // (thirty-two bars), and in a quiet stretch, often, the whole song from its start. (An atom is four bars.)
+  runLength(strength, why) {
+    if (why === 'a quiet stretch' && Math.random() < 0.4) return Infinity;
+    if (why === 'music on' && Math.random() < 0.3) return Infinity;
+    if (strength >= 0.45 && Math.random() < 0.22) return 8;
+    return strength < 0.3 ? 1 : strength < 0.75 ? 2 : 4;
   },
 
   async play(mood, strength, why) {
     if (this.busy) return;
-    const atom = this.choose(mood, strength >= 0.75);
+    const n = this.runLength(strength, why), whole = n === Infinity;
+    let atom = this.choose(mood, strength >= 0.75 || n > 2);
     if (!atom) return;
+    if (whole) atom = this.trackStart(atom.file.track) || atom;
+    if (n > 1) return this.playRun(atom, n, strength, mood, why);
     const now0 = this.ctx.currentTime;
     this.busy = true;
     this.restUntil = now0 + 6; // (claimed while it loads)
@@ -133,8 +160,8 @@ const Music = {
     // (two phrases at once, often of the same bars, is what sounded like an echo).
     const still = this.fadeAll(1.2);
     // How long: two bars for small things, four for most, eight for the big ones (on into the next piece).
-    const bar = atom.dur / 4, bars = strength < 0.3 ? 2 : strength < 0.75 ? 4 : 8;
-    let off = atom.at + (bars === 2 && Math.random() < 0.5 ? 2 * bar : 0);
+    const bar = atom.dur / 4, bars = 4;
+    let off = atom.at;
     let len = Math.min(bars * bar, buf.duration - off - 0.5);
     if (bars === 8 && atom.i === 1) { off = atom.at; len = Math.min(atom.dur, buf.duration - off - 0.5); } // (the file's last piece: four bars and its tail)
     const ctx = this.ctx, t = ctx.currentTime + 0.05 + still, src = ctx.createBufferSource(), g = ctx.createGain();
@@ -160,11 +187,79 @@ const Music = {
     src.onended = () => { for (const v of this.live) if (v.src === src) this.live.delete(v); if (this.voice && this.voice.src === src) this.voice = null; };
   },
 
+  // A run: this piece and those after it in the song (as many as asked, or to its end), back to back across files
+  // with no gap, under one long fade in and out. Files are fetched and started a little ahead as it goes (feed).
+  async playRun(atom, n, strength, mood, why) {
+    const run = [atom];
+    while (run.length < n && run[run.length - 1].next) run.push(run[run.length - 1].next);
+    while (run.length > 1 && run[run.length - 1].mood === 'gap') run.pop(); // (no trailing near-silence)
+    const now0 = this.ctx.currentTime;
+    this.busy = true;
+    this.restUntil = now0 + 6;
+    try { await this.load(atom.file); } catch (e) { console.warn('music', e); this.busy = false; return; }
+    this.busy = false;
+    if (!this.on || this.ctx.currentTime - now0 > 8) return;
+    const still = this.fadeAll(1.2), ctx = this.ctx, t0 = ctx.currentTime + 0.05 + still, g = ctx.createGain();
+    // The pieces, grouped by file, each with its start time.
+    const segs = [];
+    let at = t0;
+    for (const a of run) {
+      const s = segs[segs.length - 1];
+      if (s && s.file === a.file && Math.abs(s.off + s.len - a.at) < 0.05) s.len += a.dur;
+      else segs.push({ file: a.file, off: a.at, len: a.dur, at });
+      at += a.dur;
+    }
+    const total = at - t0, dbs = run.filter((a) => a.mood !== 'gap').map((a) => a.db), db = dbs.reduce((p, q) => p + q, 0) / Math.max(1, dbs.length);
+    const peak = clamp(Math.pow(10, ((-15 - db) / 20) * 0.6), 0.55, 2) * (0.75 + 0.25 * Math.min(1, strength));
+    const fadeIn = strength >= 0.8 ? 2.5 : 4.5, fadeOut = Math.min(9, total * 0.25), end = t0 + total;
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(peak, t0 + Math.min(fadeIn, total * 0.3));
+    g.gain.setValueAtTime(peak, end - fadeOut);
+    g.gain.linearRampToValueAtTime(0.0001, end);
+    g.connect(this.filter);
+    this.voice = { g, t0, end, strength, mood, atom, why, run: segs, next: 0, whole: n === Infinity };
+    this.last = run[run.length - 1];
+    this.lastAt = end;
+    this.recent = [...run.map((a) => a.key), ...this.recent].slice(0, Math.max(8, run.length + 4));
+    // Then a rest: longer after a whole song.
+    this.restUntil = end + (n === Infinity ? 90 + Math.random() * 90 : (strength >= 0.8 ? 30 : 50) + Math.random() * 60);
+    await this.feed();
+  },
+  // Start the run's next files that are due within about fifteen seconds. If one can't be had in time, the run
+  // fades out early rather than leave a hole.
+  async feed() {
+    const v = this.voice;
+    if (!v || !v.run || v.feeding || !this.ctx) return;
+    v.feeding = true;
+    try {
+      while (v === this.voice && v.next < v.run.length && v.run[v.next].at - this.ctx.currentTime < 15) {
+        const s = v.run[v.next];
+        let buf;
+        try { buf = await this.load(s.file); } catch { buf = null; }
+        if (v !== this.voice) return;
+        const now = this.ctx.currentTime;
+        if (!buf || now > s.at - 0.02) { // (too late: end it here, gently)
+          v.g.gain.cancelScheduledValues(now); v.g.gain.setValueAtTime(Math.max(0.0001, v.g.gain.value), now); v.g.gain.linearRampToValueAtTime(0.0001, now + 2.5);
+          v.end = this.lastAt = now + 2.5; v.next = v.run.length;
+          return;
+        }
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(v.g);
+        src.start(s.at, s.off, Math.min(s.len + 0.03, buf.duration - s.off));
+        const live = { src, g: v.g };
+        this.live.add(live);
+        src.onended = () => { this.live.delete(live); };
+        v.next++;
+      }
+    } finally { v.feeding = false; }
+  },
+
   // The beat, low and quiet, in a lull: a piece of the groove through a steep lowpass (the kick and the bass
   // are what's left), about a third as loud as a phrase, eight bars faded in and out slowly.
   async playBeat() {
     if (this.busy || this.voice || this.beat || !this.atoms) return;
-    const pool = this.atoms.filter((a) => (a.mood === 'surge' || a.mood === 'rise') && a.i === 0);
+    const pool = this.atoms.filter((a) => (a.mood === 'surge' || a.mood === 'rise') && a.i === 0 && this.allowed(a));
     const atom = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
     if (!atom) return;
     const now0 = this.ctx.currentTime;
@@ -213,7 +308,12 @@ const Music = {
 
   // Once a second: the deep muffles it; waiting cues get their turn; and in a long quiet, a phrase of its own.
   update(dt) {
+    if (!world.paused && !document.hidden && !world.observe) {
+      MUSIC_PLAY.s += dt; MUSIC_PLAY.saveT += dt;
+      if (MUSIC_PLAY.saveT > 30) { MUSIC_PLAY.saveT = 0; try { localStorage.setItem('pond.playSec', String(Math.round(MUSIC_PLAY.s))); } catch { /* no storage */ } }
+    }
     if (!this.on || !this.ctx || !this.atoms) return;
+    if (this.voice && this.voice.run) this.feed();
     this.tick -= dt;
     if (this.tick > 0) return;
     this.tick = 1;
@@ -236,7 +336,7 @@ const Music = {
       const p = this.pending;
       this.pending = null;
       this.play(p.mood, p.strength, p.why);
-    } else if (!this.voice && !world.paused && now > this.lastAt + 300 + Math.random() * 120) {
+    } else if (!this.voice && !world.paused && now > this.lastAt + 200 + Math.random() * 120) {
       this.lastAt = now; // (so this fires once per quiet stretch)
       this.cue(world.darkness > 0.5 ? 'deep' : 'drift', 0.4, 'a quiet stretch');
     }
