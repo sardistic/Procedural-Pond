@@ -407,7 +407,7 @@ function succession() {
     const min = SUCCESSION[kind] ?? 0.3, have = world.targets[kind] || 0;
     if (have >= want) continue;
     left++;
-    if (m < min || Math.random() > (hardMode(world) ? 0.025 : 0.05)) continue; // (hard mode: slower to come)
+    if (m < min || Math.random() > (hardMode(world) ? 0.025 : 0.05) * ((typeof hasArtifact === 'function' && hasArtifact(world, 'shoalpipe')) ? 2 : 1)) continue; // (hard mode: slower to come; the shoal pipe, faster)
     // (A kind that's never been here waits its turn: arrivals.js.)
     const fresh = typeof knows === 'function' && !knows(world, kind);
     if (fresh && !canDiscover(world, kind)) continue;
@@ -448,7 +448,8 @@ function populate() {
 function update(dt) {
   world.t += dt;
   const cur = world.current;
-  cur.s = world.opts.current / 100 * (1 + Math.max(0, world.weather.gust) * 0.8 + world.weather.rain * 0.4) * (typeof deadCalm === 'function' && deadCalm(world) ? 0.05 : 1); // (a dead pond lies still)
+  const curMeta = typeof metaNow === 'function' ? metaNow(world, 'current') : null; // (the current stone)
+  cur.s = world.opts.current / 100 * (1 + Math.max(0, world.weather.gust) * 0.8 + world.weather.rain * 0.4) * (typeof deadCalm === 'function' && deadCalm(world) ? 0.05 : 1) * (curMeta === 'strong' ? 2.2 : curMeta === 'still' ? 0.1 : 1); // (a dead pond lies still)
   cur.angle = cur.base + Math.sin(world.t * 0.05) * 0.8;
   cur.x = Math.cos(cur.angle) * cur.s;
   cur.y = Math.sin(cur.angle) * cur.s;
@@ -647,7 +648,7 @@ function render(full = false) {
     bg: world.bg, bgLight: world.bgLight, lightTint: world.lightTint, caustic: world.caustic, t,
     outline: OUTLINE, emissive: EMISSIVE, fade: FADE, thick: THICK, anyThick, tint: light.tint,
     caustics: o.caustics && light.caustics && q < 2, causticT: water.caustic, shadows: o.shadows, outlines: o.outlines,
-    fog: { color: fogColor, amount: (water.fog + (bloom ? 0.12 : 0)) * (glass ? 0.3 : 1) * (1 - close * 0.9) }, wob, deepK: (glass ? 0.5 : 1) * (1 - close * 0.65), surfaceVis,
+    fog: { color: fogColor, amount: (water.fog + (bloom ? 0.12 : 0)) * (glass ? 0.3 : 1) * (1 - close * 0.9) * (metaNow(world, 'fog') === 'thick' ? 1.8 : metaNow(world, 'fog') === 'clear' ? 0.35 : 1) }, wob, deepK: (glass ? 0.5 : 1) * (1 - close * 0.65), surfaceVis,
     shore: world.shore, bgDry: world.bgDry, riverMask: world.riverMask || null, riverDeep: typeof riverDeepK === 'function' ? riverDeepK(world) : 0.5, riverColor: world.waterColor, tide: world.tide.level, surf: world.tide.surf, wave: world.tide.wave,
     depth: world.depth, deepColor: DEEP_COLOR[world.opts.habitat] || DEEP_COLOR.mixed,
     voidSkin: world.eldMarks && world.eldMarks.length || world.plants.some((p) => p.tr && p.tr.eld) ? VOID_SKIN : null,

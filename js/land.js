@@ -295,7 +295,7 @@ function landFossils(world) {
   if ((world.fossils || []).length >= 3 || typeof Fossil !== 'function') return;
   let best = -1, bv = 0.4;
   for (let q = 0; q < L.cols * L.rows; q++) if (L.ch.ancient[q] > bv) { bv = L.ch.ancient[q]; best = q; }
-  if (best < 0 || Math.random() > 0.15 + 0.3 * bv) return;
+  if (best < 0 || Math.random() > (0.15 + 0.3 * bv) * ((typeof hasArtifact === 'function' && hasArtifact(world, 'bonechime')) ? 2 : 1)) return;
   const x = ((best % L.cols) + Math.random()) * LAND_CELL, y = (((best / L.cols) | 0) + Math.random()) * LAND_CELL;
   const kind = typeof pickFossil === 'function' ? pickFossil(world) : 'ammonite';
   world.fossils.push(new Fossil(x, y, kind, typeof fossilGene === 'function' ? fossilGene(kind) : pickAncientGene(), world.days));

@@ -136,7 +136,7 @@ function payDividend(world) {
 
 function gainEssence(world, n, why, subject = null, opts = {}) {
   const G = world.game;
-  n = Math.round(n);
+  n = Math.round(n * ((typeof hasArtifact === 'function' && hasArtifact(world, 'kelpharp')) ? 1.25 : 1)); // (the kelp harp)
   if (!G || n <= 0) return 0;
   G.essence = (G.essence || 0) + n;
   G.recent.unshift({ n, why, ess: true, t: world.t, day: Math.floor(world.days) + 1, clock: world.clock });

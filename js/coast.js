@@ -357,14 +357,22 @@ const LITTER = {
   net: { w: 1.2, harm: 0.1, r: 34, hp: 2, label: 'a ghost net', floats: true },
   tire: { w: 1, harm: 0.09, r: 30, hp: 2, label: 'a tyre' },
   drum: { w: 0.5, harm: 0.22, r: 56, hp: 3, label: 'a leaking oil drum' },
+  crate: { w: 1, harm: 0.03, r: 22, hp: 2, label: 'a broken crate', floats: true },
+  shoe: { w: 2, harm: 0.03, r: 20, hp: 1, label: 'a lost shoe' },
+  rings: { w: 2, harm: 0.08, r: 26, hp: 1, label: 'six-pack rings', floats: true },
+  cup: { w: 2.5, harm: 0.04, r: 22, hp: 1, label: 'a foam cup', floats: true },
+  buoy: { w: 0.8, harm: 0.05, r: 28, hp: 2, label: 'a lost fishing buoy', floats: true },
+  trolley: { w: 0.4, harm: 0.12, r: 40, hp: 3, label: 'a sunken shopping trolley' },
 };
-const LITTER_CODES = ['bottle', 'can', 'bag', 'net', 'tire', 'drum']; // append-only (links)
+const LITTER_CODES = ['bottle', 'can', 'bag', 'net', 'tire', 'drum', 'crate', 'shoe', 'rings', 'cup', 'buoy', 'trolley']; // append-only (links)
 const LM = {
   glass: mat('#0e3a1a', '#1a6a2e', '#3aa050', '#9ae0a8'), brown: mat('#2a1406', '#4a2a0e', '#6e4418', '#a07038'),
   tin: mat('#5a1010', '#a02020', '#d84040', '#f4a0a0'), steel: mat('#3a3e44', '#6a707a', '#a0a8b2', '#e0e6ee'),
   bag: mat('#8a9098', '#b8c0c8', '#dee4ea', '#ffffff'), net: mat('#0e2a2a', '#1a4a44', '#2e6e62', '#4e9a86'),
   rubber: mat('#060606', '#101012', '#1c1c20', '#2e2e34'), drum: mat('#1a2a5a', '#2a44a0', '#3a64d0', '#7aa0f0'),
   rust: mat('#3a1a06', '#6a320e', '#9a5018', '#c07a38'), oil: mat('#2a0a3a', '#1a4a6a', '#6a3a8a', '#d0a0ff'),
+  wood: mat('#3a2410', '#5e3c1c', '#86582c', '#b07e44'), canvas: mat('#2a2a3a', '#4a4a6a', '#7070a0', '#a8a8d0'), sole: mat('#6a6a6a', '#a0a0a0', '#d8d8d8', '#ffffff'),
+  ring: mat('#6a7078', '#a0a8b0', '#d0d6dc', '#f4f8fa'), foam: mat('#a8a8a0', '#d0d0c8', '#eeeee8', '#ffffff'), buoy: mat('#7a1a0a', '#c02a14', '#f04a24', '#ff8a5a'),
 };
 
 class Litter {
@@ -398,6 +406,30 @@ class Litter {
         const a0 = i / 10 * TAU, a1 = (i + 1) / 10 * TAU;
         r.tube(x + Math.cos(a0) * 4, y + Math.sin(a0) * 3.4, 1.6, z, x + Math.cos(a1) * 4, y + Math.sin(a1) * 3.4, 1.6, z, 1, LM.rubber, id);
       }
+    } else if (k === 'crate') {
+      // Slats, a couple of them broken off.
+      for (let i = -2; i <= 2; i++) if (hash2(i + 3, this.seed % 61, 4) > 0.2) r.tube(x - ca * 3.5 - sa * i * 1.4, y - sa * 3.5 + ca * i * 1.4, 0.6, z, x + ca * 3.5 - sa * i * 1.4, y + sa * 3.5 + ca * i * 1.4, 0.6, z + 0.2, 0.7, LM.wood, id);
+      for (const e of [-1, 1]) r.tube(x + ca * 3 * e - sa * 3, y + sa * 3 * e + ca * 3, 0.7, z + 0.6, x + ca * 3 * e + sa * 3, y + sa * 3 * e - ca * 3, 0.7, z + 0.6, 0.8, LM.wood, id);
+    } else if (k === 'shoe') {
+      r.ellipsoid(x, y, 3.2, 1.4, ang, z, 0.9, LM.sole, id);
+      r.ellipsoid(x - ca * 0.6, y - sa * 0.6, 2.6, 1.2, ang, z + 0.8, 1.1, LM.canvas, id);
+    } else if (k === 'rings') {
+      for (let i = 0; i < 6; i++) {
+        const cx = x + ca * ((i % 3) - 1) * 2.2 - sa * ((i / 3 | 0) - 0.5) * 2.2, cy = y + sa * ((i % 3) - 1) * 2.2 + ca * ((i / 3 | 0) - 0.5) * 2.2;
+        for (let q = 0; q < 6; q++) { const a0 = q / 6 * TAU, a1 = (q + 1) / 6 * TAU; r.tube(cx + Math.cos(a0) * 0.9, cy + Math.sin(a0) * 0.9, 0.2, z, cx + Math.cos(a1) * 0.9, cy + Math.sin(a1) * 0.9, 0.2, z, 0.5, LM.ring, id); }
+      }
+    } else if (k === 'cup') {
+      r.tube(x - ca * 1.6, y - sa * 1.6, 0.9, z, x + ca * 1.6, y + sa * 1.6, 1.4, z, 0.9, LM.foam, id);
+    } else if (k === 'buoy') {
+      r.ellipsoid(x, y, 2.2, 2.2, 0, z, 2, (lx, ly, px, py, pz) => (Math.abs(ly) < 0.18 ? LM.foam : LM.buoy), id);
+      r.tube(x + 2, y, 0.25, z + 0.5, x + 5 + Math.sin(t + this.seed) * 0.6, y + 2, 0.25, z - 0.5, 0.5, LM.net, id);
+    } else if (k === 'trolley') {
+      // A wire basket on its side, wheels up.
+      for (let i = -2; i <= 2; i++) {
+        r.tube(x - ca * 4 - sa * i * 1.3, y - sa * 4 + ca * i * 1.3, 0.25, z + 0.3, x + ca * 4 - sa * i * 1.3, y + sa * 4 + ca * i * 1.3, 0.25, z + 0.3, 0.6, LM.steel, id);
+        r.tube(x + ca * i * 1.8 - sa * 2.6, y + sa * i * 1.8 + ca * 2.6, 0.25, z + 0.3, x + ca * i * 1.8 + sa * 2.6, y + sa * i * 1.8 - ca * 2.6, 0.25, z + 0.3, 0.6, LM.steel, id);
+      }
+      for (const e of [-1, 1]) r.ellipsoid(x + ca * 4 * e + sa * 3, y + sa * 4 * e - ca * 3, 0.8, 0.8, 0, z + 1.6, 0.8, LM.rubber, id);
     } else if (k === 'drum') {
       r.tube(x - ca * 4, y - sa * 4, 3, z + 1, x + ca * 4, y + sa * 4, 3, z + 1, 1, (u, v) => (hash2((u * 9) | 0, (v * 5) | 0, this.seed % 31) < 0.3 ? LM.rust : LM.drum), id);
       // The sheen of oil spreading on the water around it.
@@ -412,13 +444,13 @@ class Litter {
     }
   }
 
-  hit(px, py) { return (px - this.x) ** 2 + (py - this.y) ** 2 < (this.k === 'net' || this.k === 'drum' ? 64 : 30); }
+  hit(px, py) { return (px - this.x) ** 2 + (py - this.y) ** 2 < (this.k === 'net' || this.k === 'drum' || this.k === 'trolley' ? 64 : 30); }
 }
 
 // How much a pond draws litter: its score (on a log curve), how many people come to see it, and its depth.
 function litterPressure(world) {
   const G = world.game || {};
-  return 0.2 * Math.log10(1 + (G.points || 0) / 1000) + 0.6 * Math.log10(1 + (G.views || 0)) + 0.08 * ((world.erosion && world.erosion.tier) || 0);
+  return (0.2 * Math.log10(1 + (G.points || 0) / 1000) + 0.6 * Math.log10(1 + (G.views || 0)) + 0.08 * ((world.erosion && world.erosion.tier) || 0)) * ((typeof hasArtifact === 'function' && hasArtifact(world, 'foamshell')) ? 0.5 : 1);
 }
 
 // How spoiled the water is here (0 clean .. 1 fouled).

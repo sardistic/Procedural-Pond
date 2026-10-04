@@ -187,7 +187,7 @@ const fossilAt = (world, x, y) => (world.fossils || []).find((f) => f.hit(x, y))
 function dawnFinds(world) {
   if (!world.shore || world.fossils.length >= 3) return;
   const tier = world.erosion ? world.erosion.tier : 0;
-  if (Math.random() > 0.08 + 0.05 * tier) return;
+  if (Math.random() > (0.08 + 0.05 * tier) * ((typeof hasArtifact === 'function' && hasArtifact(world, 'bonechime')) ? 2 : 1)) return; // (the bone chime)
   for (let i = 0; i < 40; i++) {
     const x = rand(12, world.W - 12), y = rand(12, world.H - 12), e = shoreAt(world, x, y);
     if (e < 0.42 || e > 0.9) continue;

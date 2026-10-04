@@ -16,6 +16,9 @@
 const FOSSIL_GRADES = {
   ammonite: { grade: 0, w: 50, label: 'an ammonite' }, trilobite: { grade: 1, w: 28, label: 'a trilobite' }, tooth: { grade: 2, w: 14, label: 'a great tooth' },
   amber: { grade: 3, w: 5.5, label: 'a bead of amber with something inside' }, skull: { grade: 4, w: 2, label: 'an ancient skull' }, relic: { grade: 5, w: 0.5, label: 'a relic' },
+  // The second six.
+  crinoid: { grade: 0, w: 30, label: 'a crinoid stem' }, coprolite: { grade: 1, w: 16, label: 'a coprolite (fossil dung)' }, nautilus: { grade: 1, w: 12, label: 'a fossil nautilus' },
+  starstone: { grade: 2, w: 8, label: 'a stone starfish' }, egg: { grade: 3, w: 3, label: 'a fossil egg' }, mask: { grade: 4, w: 1.2, label: 'an ancient carved mask' },
 };
 Object.assign(FOSSIL_KINDS, Object.fromEntries(Object.entries(FOSSIL_GRADES).map(([k, f]) => [k, f.label])));
 
@@ -43,6 +46,14 @@ const ARTIFACTS = {
   pearlheart: { label: 'Heart of pearl', note: 'every pearl you earn brings a quarter more', passive: true },
   lodestone: { label: 'Lodestone of the deep', note: 'the pond wears deeper half as fast again', passive: true },
   deepeye: { label: 'Eye of the deep', note: 'deep life rises twice as often', passive: true },
+  // The second seven (append only: links carry each one's place).
+  currentstone: { label: 'Current stone', note: 'run the current strong, or still it, for a day', controls: { strong: 'Strong current', still: 'Still water' }, key: 'current', days: 1 },
+  kelpharp: { label: 'Kelp harp', note: 'every gain of essence brings a quarter more', passive: true },
+  bonechime: { label: 'Bone chime', note: 'fossils turn up twice as often', passive: true },
+  coralcrown: { label: 'Coral crown', note: 'plants grow a quarter faster', passive: true },
+  foamshell: { label: 'Foam shell', note: 'half as much litter washes in', passive: true },
+  shoalpipe: { label: 'Shoal pipe', note: 'new animals find their way in twice as fast', passive: true },
+  mistveil: { label: 'Mist veil', note: 'thicken the haze over the water, or clear it, for a day', controls: { thick: 'Thick haze', clear: 'Clear water' }, key: 'fog', days: 1 },
 };
 const ARTIFACT_CODES = Object.keys(ARTIFACTS);
 const hasArtifact = (world, k) => !!(world.game && world.game.artifacts && world.game.artifacts[k]);
@@ -89,6 +100,7 @@ function metaTide(world, tide) {
 }
 
 // ---- how the new fossils look -------------------------------------------------------------------------
+const AMBER_DULL = mat('#3a2a14', '#5a4220', '#7a5e34', '#9a7c4e'), RELIC_GOLD = mat('#5a3a0a', '#8a6014', '#c09028', '#f0c85a');
 const AMBER = mat('#8a4a0a', '#c0741a', '#e8a032', '#ffd87a'), RELIC = mat('#0a1a14', '#16302a', '#244a40', '#3a6a5e'), RELIC_RUNE = mat('#1a8a5a', '#3ad08a', '#8af0c0', '#e0fff0');
 const drawFossilPlain = Fossil.prototype.draw;
 Fossil.prototype.draw = function (r, t) {
@@ -101,5 +113,20 @@ Fossil.prototype.draw = function (r, t) {
     if (this.runeId == null) { this.runeId = newId(hexToInt('#021008')); EMISSIVE[this.runeId] = 2; }
     r.ellipsoid(x, y, 4, 4, ang, 0, 1.5, RELIC, id);
     for (let k = 0; k < 6; k++) if (Math.sin(t * 2 + k) > -0.2) { const a = ang + k / 6 * TAU; r.dot(x + Math.cos(a) * 2.6, y + Math.sin(a) * 2.6, 1.6, RELIC_RUNE, this.runeId); }
+  } else if (kind === 'crinoid') {
+    // A stem of stacked discs.
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    for (let k = -3; k <= 3; k++) r.ellipsoid(x + ca * k * 1.1, y + sa * k * 1.1, 0.9, 1.3, ang, 0, 1.2, k % 2 ? FOSSIL_DARK : FOSSIL_STONE, id);
+  } else if (kind === 'coprolite') {
+    r.ellipsoid(x, y, 2.8, 1.6, ang, 0, 1.6, (lx, ly) => (hash2((lx * 5) | 0, (ly * 5) | 0, 7) < 0.25 ? FOSSIL_DARK : AMBER_DULL), id);
+  } else if (kind === 'nautilus') {
+    r.ellipsoid(x, y, 3.8, 3.4, ang, 0, 2.2, (lx, ly) => { const a = Math.atan2(ly, lx), d = Math.hypot(lx, ly); return ((a / TAU + 0.5) * 7 + d * 2) % 1 < 0.18 ? FOSSIL_DARK : FOSSIL_STONE; }, id);
+  } else if (kind === 'starstone') {
+    for (let k = 0; k < 5; k++) { const a = ang + k / 5 * TAU; r.tube(x, y, 1.1, 0.4, x + Math.cos(a) * 3.6, y + Math.sin(a) * 3.6, 0.4, 0.4, 0.9, FOSSIL_STONE, id); }
+    r.ellipsoid(x, y, 1.2, 1.2, 0, 0.4, 0.8, FOSSIL_DARK, id);
+  } else if (kind === 'egg') {
+    r.ellipsoid(x, y, 2.4, 3.2, ang, 0, 2.6, (lx, ly) => (hash2((lx * 3) | 0, (ly * 3) | 0, 11) < 0.15 ? FOSSIL_DARK : REMAINS_BONE), id);
+  } else if (kind === 'mask') {
+    r.ellipsoid(x, y, 3.6, 4.2, ang, 0, 1.4, (lx, ly) => ((Math.abs(lx) - 0.35) ** 2 + (ly + 0.25) ** 2 < 0.03 || (Math.abs(lx) < 0.25 && Math.abs(ly - 0.45) < 0.08) ? FOSSIL_DARK : RELIC_GOLD), id);
   } else drawFossilPlain.call(this, r, t);
 };

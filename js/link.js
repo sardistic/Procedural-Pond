@@ -37,6 +37,8 @@ const LINK_ISLE_FLORA = ['palm', 'bush', 'shrub', 'grass', 'flower', 'reed', 'wi
   'glowbloom', 'deadtree', 'blackmoss', 'glassshoot', 'cycad', 'horsetail', 'thorn', 'bones', 'coralstone',
   'cactus', 'agave', 'bamboo', 'hibiscus', 'banana', 'birch'];
 const LINK_ISLE_MARK = 0x49, LINK_ISLE_TRAILER = 1;
+// (A second optional trailer, after the island one: artifacts past the eighth.)
+const LINK_ART_MARK = 0x41, LINK_ART_TRAILER = 1;
 
 const q8 = (v, lo, hi) => Math.round((clamp(v, lo, hi) - lo) / (hi - lo) * 255);
 const dq8 = (b, lo, hi) => lo + b / 255 * (hi - lo);
@@ -258,7 +260,8 @@ function packPond(world) {
   for (const s of st) { w.u8((s.lv && s.lv.reach) || 0); w.u8((s.lv && s.lv.strength) || 0); }
   // And the artifacts found in relics.
   const arts = (world.game && world.game.artifacts) || {};
-  w.u8(ARTIFACT_CODES.reduce((a, k, i) => a | (arts[k] ? 1 << i : 0), 0));
+  const artBits = ARTIFACT_CODES.reduce((a, k, i) => a | (arts[k] ? 1 << i : 0), 0);
+  w.u8(artBits & 255);
   // And each structure's full stack (islands go to ten; the old field holds eight).
   w.u8(st.length);
   for (const s of st) w.u8(s.stack || 1);
@@ -283,6 +286,8 @@ function packPond(world) {
     w.vu(i); w.u8(bits & 255); w.u8(bits >> 8); w.u8(Math.round(clamp(c.life.genome.size || 1, 0, 2.5) * 100));
   }
   packIslandTrailer(w, st, rocks);
+  // (Artifacts past the eighth, only when there are any: links without them read as before.)
+  if (artBits >> 8) { w.u8(LINK_ART_MARK); w.u8(LINK_ART_TRAILER); w.u8(artBits >> 8); }
   return w.bytes();
 }
 
@@ -350,6 +355,12 @@ function linkTrailerCount(r, max, minBytes) {
   if (n * minBytes > r.b.length - r.i) throw new Error('short island link trailer');
   return n;
 }
+function unpackArtTrailer(r, s) {
+  if (r.u8() !== LINK_ART_MARK || r.u8() !== LINK_ART_TRAILER) throw new Error('unknown pond link trailer');
+  const hi = r.u8(), arts = { ...((s.game && s.game.artifacts) || {}) };
+  for (let i = 0; i < 8; i++) if (hi & (1 << i) && ARTIFACT_CODES[8 + i]) arts[ARTIFACT_CODES[8 + i]] = true;
+  if (s.game) s.game.artifacts = arts;
+}
 function unpackIslandTrailer(r, s) {
   if (r.u8() !== LINK_ISLE_MARK || r.u8() !== LINK_ISLE_TRAILER) throw new Error('unknown pond link trailer');
   const aged = linkTrailerCount(r, Math.min(4096, s.addedRocks.length), 2);
@@ -405,6 +416,7 @@ function unpackIslandTrailer(r, s) {
       t.fl.push([type, x, y, b, span, g, seed, code & 128 ? 1 : 0]);
     }
   }
+  if (r.i < r.b.length) unpackArtTrailer(r, s);
   if (r.i !== r.b.length) throw new Error('extra pond link data');
 }
 
@@ -567,7 +579,9 @@ function unpackV2(r, v = 2) {
                 if (r.i < r.b.length) {
                   s.warps = new Map();
                   for (let n = r.vu(); n > 0; n--) { const i = r.vu(), lo = r.u8(), hi = r.u8(), size = r.u8() / 100, bits = lo | (hi << 8); s.warps.set(i, { warps: WARP_KEYS.filter((k, j) => bits & (1 << j)), size }); }
-                  if (r.i < r.b.length) unpackIslandTrailer(r, s);
+                  // (Either trailer may be missing: the island one first, then the artifacts'.)
+                  if (r.i < r.b.length && r.b[r.i] === LINK_ISLE_MARK) unpackIslandTrailer(r, s);
+                  else if (r.i < r.b.length) { unpackArtTrailer(r, s); if (r.i !== r.b.length) throw new Error('extra pond link data'); }
                 }
               }
             }

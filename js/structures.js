@@ -658,7 +658,7 @@ function updatePlantLife(world, dt) {
       p.age += step;
       // Litter nearby stunts it (hardy plants mind less).
       const foul = (world.litter && world.litter.length) || (world.slicks && world.slicks.length) ? Math.min(0.8, pollutionAt(world, p.x, p.y) * 1.5 * (1 - 0.3 * ((p.tr && p.tr.hardy) || 0))) : 0;
-      if (p.age < p.span) p.growth = Math.min(1, p.growth + rate * step * (1 - foul) * (typeof landGrow === 'function' ? landGrow(world, p.x, p.y) : 1));
+      if (p.age < p.span) p.growth = Math.min(1, p.growth + rate * step * (1 - foul) * (typeof landGrow === 'function' ? landGrow(world, p.x, p.y) : 1) * ((typeof hasArtifact === 'function' && hasArtifact(world, 'coralcrown')) ? 1.25 : 1));
       else p.growth -= 0.4 * step; // dying back
       if (p.growth < 0.12) {
         if (p.oi != null) (list === world.pads ? world.removed.pads : world.removed.plants).push(p.oi);
