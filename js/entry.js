@@ -227,17 +227,94 @@
     }
     try { localStorage.setItem('pond.skipEntry', $('entry-skip').checked ? '1' : '0'); } catch { /* no storage */ }
     root.classList.add('gone');
+    songStop(1.2); // (the music fades as you go in)
     setTimeout(() => root.remove(), 700);
     document.removeEventListener('keydown', key, true);
     if (window.Entry.onDone) window.Entry.onDone();
   }
-  // Enter or Escape goes in, unless Enter is meant for a link, tab or question that has the focus.
+  // Enter or Escape goes in, unless Enter is meant for a link, tab or question that has the focus. (Escape first
+  // closes the brains diagram, if it's open.)
   function key(e) {
+    if (e.key === 'Escape' && !$('entry-brains').hidden) { e.preventDefault(); e.stopPropagation(); closeBrains(); return; }
     if (!root.classList.contains('ready')) return;
     const el = document.activeElement, own = el && el !== document.body && el !== root && el !== $('entry-enter') && root.contains(el);
     if (e.key === 'Escape' || (e.key === 'Enter' && !own)) { e.preventDefault(); e.stopPropagation(); done(false); }
   }
   $('entry-enter').addEventListener('click', () => done(false));
+
+  // ---- the brains diagram (from the FAQ) ----------------------------------------------------------------
+  let brainsFrom = null;
+  function closeBrains() { $('entry-brains').hidden = true; if (brainsFrom) brainsFrom.focus(); }
+  $('entry-brains-open').addEventListener('click', (e) => { brainsFrom = e.currentTarget; $('entry-brains').hidden = false; $('entry-brains-close').focus(); });
+  $('entry-brains-close').addEventListener('click', closeBrains);
+  $('entry-brains').addEventListener('click', (e) => { if (e.target === $('entry-brains')) closeBrains(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && root.isConnected && !$('entry-brains').hidden && !root.classList.contains('ready')) { e.preventDefault(); closeBrains(); } }, true);
+
+  // ---- music: the whole of Subdued Progression, quietly, while you're here --------------------------------
+  // Its seventeen pieces (audio/music/) played back to back with no gap, looping, through a low gain. Sound needs
+  // a click first, so a remembered "on" starts at the first click or key; entering fades it out.
+  const SONG = { ctx: null, gain: null, on: false, files: null, next: 0, at: 0, timer: 0, sources: [] };
+  const SONG_LEVEL = 0.16;
+  function soundLabel() { const b = $('entry-sound'); b.textContent = SONG.on ? '♪ Music on' : '♪ Music off'; b.setAttribute('aria-pressed', String(SONG.on)); }
+  async function songFiles() {
+    if (SONG.files) return SONG.files;
+    const m = await fetch('audio/music.json', { cache: 'force-cache' }).then((r) => r.json());
+    SONG.files = m.files.filter((f) => f.track === 'subdued-progression').sort((a, b) => a.n - b.n).map((f) => ({ url: `audio/music/${f.f}`, dur: f.atoms.reduce((a, x) => a + x.dur, 0) }));
+    return SONG.files;
+  }
+  // Keep about twenty seconds queued: fetch and decode the next piece, start it exactly where the last one ends.
+  async function songQueue() {
+    if (!SONG.on || !SONG.ctx) return;
+    const files = await songFiles();
+    while (SONG.on && SONG.at - SONG.ctx.currentTime < 20) {
+      const f = files[SONG.next % files.length];
+      let buf;
+      try { buf = await SONG.ctx.decodeAudioData(await fetch(f.url, { cache: 'force-cache' }).then((r) => r.arrayBuffer())); } catch { return; }
+      if (!SONG.on) return;
+      const src = SONG.ctx.createBufferSource();
+      src.buffer = buf; src.connect(SONG.gain);
+      const at = Math.max(SONG.at, SONG.ctx.currentTime + 0.05);
+      src.start(at, 0, f.dur); // (each piece to its measured length, so the beat stays on the grid)
+      SONG.sources.push(src); src.onended = () => { SONG.sources = SONG.sources.filter((s) => s !== src); };
+      SONG.at = at + f.dur; SONG.next++;
+    }
+  }
+  function songStart() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return false;
+    if (!SONG.ctx) {
+      SONG.ctx = new AC(); SONG.gain = SONG.ctx.createGain(); SONG.gain.gain.value = 0;
+      const lp = SONG.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5200; // (low and soft: it sits under the screen)
+      SONG.gain.connect(lp).connect(SONG.ctx.destination);
+    }
+    if (SONG.ctx.state === 'suspended') SONG.ctx.resume();
+    SONG.on = true;
+    SONG.gain.gain.cancelScheduledValues(SONG.ctx.currentTime);
+    SONG.gain.gain.setTargetAtTime(SONG_LEVEL, SONG.ctx.currentTime, 1.2);
+    songQueue();
+    clearInterval(SONG.timer); SONG.timer = setInterval(songQueue, 5000);
+    return true;
+  }
+  function songStop(fade = 0.6) {
+    SONG.on = false; clearInterval(SONG.timer);
+    if (!SONG.ctx) return;
+    const t = SONG.ctx.currentTime;
+    SONG.gain.gain.cancelScheduledValues(t); SONG.gain.gain.setTargetAtTime(0, t, fade);
+    const left = SONG.sources.slice(); SONG.sources = [];
+    setTimeout(() => { for (const s of left) { try { s.stop(); } catch { /* already done */ } } SONG.at = 0; }, fade * 5000);
+  }
+  let songWanted = false;
+  try { songWanted = localStorage.getItem('pond.entryMusic') === '1'; } catch { /* no storage */ }
+  $('entry-sound').addEventListener('click', () => {
+    if (SONG.on) songStop(); else songStart();
+    songWanted = SONG.on;
+    try { localStorage.setItem('pond.entryMusic', SONG.on ? '1' : '0'); } catch { /* no storage */ }
+    soundLabel();
+  });
+  // (Remembered on: it starts with the first click or key on the screen.)
+  const wake = (e) => { if (!songWanted || SONG.on || !root.isConnected || e.target === $('entry-sound')) return; if (songStart()) soundLabel(); };
+  root.addEventListener('pointerdown', wake); document.addEventListener('keydown', wake);
+  soundLabel();
 
   // ---- tabs ---------------------------------------------------------------------------------------------
   const tabs = ['ponds', 'scores', 'faq'];

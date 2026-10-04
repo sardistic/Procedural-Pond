@@ -85,6 +85,21 @@
     #entry .hard { display: grid; grid-template-columns: auto 1fr; gap: 0 8px; align-items: baseline; text-align: left; color: #e8f0ff; font-size: 13px; }
     #entry .hard span { grid-column: 2; color: #7f9cc4; font-size: 12px; }
     #entry .create { justify-self: inherit; color: #1a0f05; background: #7fd8e8; border-color: #bff4ff; font: 400 13px 'Silkscreen', ui-monospace, monospace; }
+    #entry .topright { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    #entry .sound { font-size: 13px; }
+    #entry .sound[aria-pressed="true"] { color: #1a0f05; background: #ffd166; border-color: #fff1c4; }
+    #entry .brains-open { margin-top: 6px; color: #1a0f05; background: #c0a8ff; border-color: #e0d4ff; font-size: 13px; }
+    #entry details b { color: #e8f0ff; }
+    #entry .brains { position: fixed; inset: 0; z-index: 3; display: grid; place-items: center; padding: 16px; background: rgba(2,4,12,.78); }
+    #entry .brains[hidden] { display: none; }
+    #entry .brains-card { width: min(900px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 16px 18px 18px; background: #060e24; border: 2px solid #2a4f86; box-shadow: 6px 6px 0 #02050f; }
+    #entry .brains-card header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    #entry .brains-card h2 { margin: 0; font-size: 14px; color: #ffd166; }
+    #entry .brains-loop { display: block; width: 100%; height: auto; margin: 12px 0; }
+    #entry .brains-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+    #entry .brains-grid section { padding: 10px 12px; background: rgba(13,35,71,.55); border: 1px solid #1e3c6a; }
+    #entry .brains-grid h3 { margin: 0 0 4px; font: 400 12px 'Silkscreen', ui-monospace, monospace; color: #7fd8e8; }
+    #entry .brains-grid p { margin: 0; font-size: 13px; line-height: 1.5; color: #b8cdec; }
     #entry .skip { font-size: 12px; color: #7f9cc4; display: inline-flex; gap: 6px; align-items: center; }
     #entry .panel { grid-area: panel; align-self: center; display: grid; grid-template-rows: auto minmax(0, 1fr); max-height: min(560px, calc(100vh - 100px));
       background: rgba(6,14,36,.85); border: 2px solid #1e3c6a; box-shadow: 6px 6px 0 #02050f; }
@@ -156,11 +171,14 @@
     <div class="veil" aria-hidden="true"></div>
     <header class="top">
       <span class="brand">a living pixel pond</span>
-      <div id="entry-account" class="account"></div>
+      <div class="topright">
+        <button type="button" id="entry-sound" class="sound" aria-pressed="false" title="Play the pond's music quietly while you're here">♪ Music off</button>
+        <div id="entry-account" class="account"></div>
+      </div>
     </header>
     <div class="hero">
       <h1 id="entry-title" aria-label="pond.nz"><span>pond</span><span>.nz</span></h1>
-      <p id="entry-tag" class="tag">A living pixel-art pond. Its animals grow, hunt, breed and change on their own; you feed them, build their world and watch it deepen.</p>
+      <p id="entry-tag" class="tag">A living pixel-art pond that runs on its own. Its animals grow, breed, hunt and evolve, and some are steered by live brains (a language model, a fruit-fly connectome, a zebrafish circuit) that learn as they go. Feed it and build it, and it wears deeper, past the twilight and the abyss to stranger depths, with more than two hundred kinds of creature and fifty plants to find.</p>
       <button id="entry-enter" class="enter" type="button" disabled><i id="entry-bar"></i><span id="entry-label">Loading</span></button>
       <div id="entry-status" class="status" role="status" aria-live="polite">Drawing water…</div>
       <div id="entry-pond" class="pondline"></div>
@@ -190,12 +208,42 @@
         <details><summary>Do I need an account?</summary><p>No. Your pond saves in this browser and gets its own link. Signing in with Discord keeps your ponds in an account, so you can carry on from any browser.</p></details>
         <details><summary>Can other people see my pond?</summary><p>Anyone with its link can look around, but only you can change it. Once it has 50 points it is listed on the leaderboard, unless you untick "Show my pond on the leaderboard" in its score panel.</p></details>
         <details><summary>How do high scores work?</summary><p>Ponds earn points as things happen in them: rare animals, new generations, animals growing well. High scores ranks listed ponds by points; the in-game leaderboard ranks them by depth first.</p></details>
-        <details><summary>What are awakened minds?</summary><p>Up to five animals per pond can be steered by a brain: Jev (a language model that chooses goals), Fly Brain (a simulation built on the FlyWire fruit-fly connectome) or Fish Brain (a model of a measured zebrafish hindbrain circuit, not a whole fish brain). They learn from what happens to them.</p></details>
+        <details><summary>What are awakened minds?</summary>
+          <p>Any animal can be awakened, up to five per pond. A brain then steers it instead of its instincts. Several times a second the game turns what the animal senses into numbers: food and prey around it, danger, its own kind, its hunger, its rival, and what it has learned about each species. It sends those to the brain it was given, and the game carries out the answer. The animal swims, hunts, flees or fights by the pond's own rules, so a brain can only choose among real options.</p>
+          <p><b>Jev</b> is a language model. Every half minute or so it reads a short description of the encounter, with each option and its learned worth and risk, and picks a goal. <b>Fly Brain</b> runs the whole FlyWire fruit-fly connectome (about 139,000 neurons and 54 million synapses) as a spiking network. The senses become signals into its taste, smell and touch neurons, and the firing of its descending neurons (walk, turn, feed, escape) becomes the movement. <b>Fish Brain</b> runs a measured circuit from a larval zebrafish hindbrain with modelled dynamics. Prey and danger in sixteen directions drive its turning and forward populations about five times a second; it is not a whole fish brain. <b>Jev + Fish</b> lets Jev choose the goal and Fish Brain do the steering.</p>
+          <p>On top of each brain sits a learning layer. Food, kills, won and lost fights, and close calls reward or punish whatever it was paying attention to, and that slowly changes how strongly it senses each thing. It also remembers which species were worth chasing and which hurt. Traits and the eldritch mark give it a drive to pick fights. The networks themselves aren't retrained: what changes is how the animal weighs the world.</p>
+          <button type="button" id="entry-brains-open" class="brains-open">How the brains work, in a diagram</button>
+        </details>
         <details><summary>Does it keep going while I'm away?</summary><p>The pond rests while it is closed and carries on when you come back. A hatchery's auto-feeder keeps working for up to 8 hours.</p></details>
       </div>
     </section>
+    <div id="entry-brains" class="brains" role="dialog" aria-modal="true" aria-labelledby="entry-brains-title" hidden>
+      <div class="brains-card">
+        <header><h2 id="entry-brains-title">How an awakened mind works</h2><button type="button" id="entry-brains-close" aria-label="Close">×</button></header>
+        <svg class="brains-loop" viewBox="0 0 640 230" role="img" aria-label="The loop: the pond's senses go to a brain, its answer becomes a choice or a movement, the game carries it out, and what happens feeds the learning layer, which reweighs the senses.">
+          <defs><marker id="bh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#7fd8e8"/></marker></defs>
+          <g font-family="system-ui, sans-serif" font-size="12" fill="#e8f0ff" text-anchor="middle">
+            <rect x="8" y="20" width="132" height="76" fill="#0d2347" stroke="#2a4f86" stroke-width="2"/><text x="74" y="44" fill="#7fd8e8" font-weight="700">Senses</text><text x="74" y="62">food, prey, danger</text><text x="74" y="78">kin, rival, hunger</text>
+            <rect x="196" y="8" width="160" height="100" fill="#1a1040" stroke="#8a6aff" stroke-width="2"/><text x="276" y="30" fill="#c0a8ff" font-weight="700">The brain</text><text x="276" y="50">Jev: picks a goal</text><text x="276" y="68">Fly: spiking connectome</text><text x="276" y="86">Fish: hindbrain circuit</text>
+            <rect x="412" y="20" width="132" height="76" fill="#0d2347" stroke="#2a4f86" stroke-width="2"/><text x="478" y="44" fill="#7fd8e8" font-weight="700">The answer</text><text x="478" y="62">a goal, or turn</text><text x="478" y="78">and thrust</text>
+            <rect x="412" y="140" width="132" height="76" fill="#0d2347" stroke="#2a4f86" stroke-width="2"/><text x="478" y="164" fill="#7fd8e8" font-weight="700">The pond acts</text><text x="478" y="182">swim, hunt, flee,</text><text x="478" y="198">fight, eat, by its rules</text>
+            <rect x="196" y="140" width="160" height="76" fill="#2a1a08" stroke="#ffd166" stroke-width="2"/><text x="276" y="164" fill="#ffd166" font-weight="700">Learning layer</text><text x="276" y="182">rewards and lessons</text><text x="276" y="198">reweigh the senses</text>
+            <rect x="8" y="140" width="132" height="76" fill="#0d2347" stroke="#2a4f86" stroke-width="2"/><text x="74" y="164" fill="#7fd8e8" font-weight="700">What happened</text><text x="74" y="182">fed, kill, won, lost,</text><text x="74" y="198">a close call</text>
+          </g>
+          <g stroke="#7fd8e8" stroke-width="2" fill="none" marker-end="url(#bh)">
+            <path d="M140 58 H192"/><path d="M356 58 H408"/><path d="M478 96 V136"/><path d="M412 178 H360"/><path d="M196 178 H144"/><path d="M74 140 V100" stroke="#ffd166"/>
+          </g>
+        </svg>
+        <div class="brains-grid">
+          <section><h3>Jev</h3><p>A language model. About every 30 seconds per animal it reads the encounter: the animal, its hunger, what's near and how big, and for each species what it has learned it's worth, what it costs and how often it has tried. It picks one of the options the pond allows: forage, hunt, stalk, hunt as a pack, fight, shelter, flee, explore, rest. The server checks the choice against that list before the animal acts on it.</p></section>
+          <section><h3>Fly Brain</h3><p>The FlyWire adult fruit-fly connectome, every mapped neuron (about 139,000) and their 54 million synapses, run as a leaky integrate-and-fire network on a compiled spike engine. The animal's senses set the firing of its sensory neurons: sugar for food, bitter, odour, touch and danger. After 50 ms of simulated time, the firing rates of its descending neurons (forward, turning left and right, feeding, escape, reverse, grooming) become the move. About every two seconds per animal.</p></section>
+          <section><h3>Fish Brain</h3><p>Fish1: a circuit measured from a larval zebrafish hindbrain, with modelled neuron dynamics. Prey, danger and kin in sixteen directions around the animal feed its input layer; populations called Class I and II pass that on to turning and forward-swimming outputs, with startle and feeding reflexes. Left turn, right turn and thrust come back about five times a second. It is one circuit, not a whole fish brain.</p></section>
+          <section><h3>The learning layer</h3><p>Every brain gets six sensed channels through gains that start at 1. For four seconds after each sense, a trace remembers what the animal was approaching. A meal (+0.25), a kill (+0.6), a won fight (+0.4), a lost one (−0.5) or a close call with danger (−0.2) strengthens or weakens those gains, within ×0.5 to ×2. Alongside, it keeps a worth and risk for each kind of prey (bigger prey feeds more but may fight back) and a feeling about each species, and climbs from forager to pack hunter as it gains experience. All of this is saved with the pond.</p></section>
+        </div>
+      </div>
+    </div>
   </div>
-  <script src="js/entry.js?v=3"></script>
+  <script src="js/entry.js?v=4"></script>
   <canvas id="pond" aria-label="A living pixel-art pond of procedurally animated animals"></canvas>
   <div class="vignette" aria-hidden="true"></div>
   <noscript>
