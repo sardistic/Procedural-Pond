@@ -50,8 +50,45 @@ function lightMap(world) {
   if (!M || M.lw !== lw || M.lh !== lh) M = world.lightMap = { lw, lh, shift: 2, data: new Float32Array(lw * lh * 3), any: false };
   return M;
 }
-function splat(M, x, y, R, col, k, ang, beam, rect) {
+// What stands in the light's way: the tallest thing in each cell of the light map (the floor's own baked rocks and
+// builds, and whatever is drawn this frame), and from it how hemmed in each cell is (ambient occlusion). Built each
+// frame over the lit area, from the raster's height buffers. A light given a height (lh) then casts shadows: from
+// each cell it reaches, a ray back to the lamp, and anything taller than the ray on the way blocks it (softly).
+function occluders(world, M, rect) {
+  const r = world.raster;
+  if (!r || !r.zBase || !r.z || !r.id) { M.occ = null; return; }
+  if (!M.occ || M.occ.length !== M.lw * M.lh) { M.occ = new Float32Array(M.lw * M.lh); M.ao = new Float32Array(M.lw * M.lh); }
+  const cs = LIGHT_CELL, W = world.W, zB = r.zBase, z = r.z, id = r.id, O = M.occ, A = M.ao;
+  const gx0 = Math.max(0, Math.floor(rect[0] / cs)), gx1 = Math.min(M.lw - 1, Math.floor(rect[2] / cs));
+  const gy0 = Math.max(0, Math.floor(rect[1] / cs)), gy1 = Math.min(M.lh - 1, Math.floor(rect[3] / cs));
+  M.ob = [gx0, gy0, gx1, gy1];
+  for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
+    let h = 0;
+    for (const [sx, sy] of [[1, 1], [3, 3]]) { // (two samples a cell)
+      const px = gx * cs + sx, py = gy * cs + sy;
+      if (px >= W || py >= world.H) continue;
+      const p = px + py * W, v = id[p] ? Math.max(zB[p], z[p]) : zB[p];
+      if (v > h) h = v;
+    }
+    O[gx + gy * M.lw] = h;
+  }
+  for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
+    const i = gx + gy * M.lw, h = O[i];
+    let a = 0;
+    for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+      const nx = gx + ox, ny = gy + oy;
+      if (nx < gx0 || ny < gy0 || nx > gx1 || ny > gy1) continue;
+      const d = O[nx + ny * M.lw] - h;
+      if (d > 0) a += Math.min(1, d / 12);
+    }
+    A[i] = Math.min(0.55, a / 8 * 0.9);
+  }
+}
+function splat(M, x, y, R, col, k, ang, beam, rect, lh) {
   if (R < 10) { k *= R / 10; R = 10; } // (small lights spread a little, or the grid shows as squares)
+  // (The occluders are built the first time a light that casts shadows needs them this frame.)
+  if (lh != null && !M.occReady && M.occWorld) { occluders(M.occWorld, M, M.occRect); M.occReady = true; }
+  const shade = lh != null && M.occ && M.ob, O = M.occ, AO = M.ao, lgx = x / LIGHT_CELL, lgy = y / LIGHT_CELL;
   const cs = LIGHT_CELL, ahead = beam ? R * beam : R;
   const ext = Math.max(R, ahead) + 2;
   if (x + ext < rect[0] || x - ext > rect[2] || y + ext < rect[1] || y - ext > rect[3]) return;
@@ -66,7 +103,22 @@ function splat(M, x, y, R, col, k, ang, beam, rect) {
       if (beam) u = u > 0 ? u / beam : u * 1.4; // a beam: long ahead, short behind
       const d2 = (u * u + v * v) / (R * R);
       if (d2 >= 1) continue;
-      const f = (1 - d2) * (1 - d2) * k, i = (gx + gy * M.lw) * 3;
+      let f = (1 - d2) * (1 - d2) * k;
+      const ci = gx + gy * M.lw, i = ci * 3;
+      if (shade) {
+        // The shadow: march from this cell to the lamp; anything standing higher than the ray blocks some light.
+        const ddx = lgx - (gx + 0.5), ddy = lgy - (gy + 0.5), dist = Math.hypot(ddx, ddy), n = Math.min(28, Math.ceil(dist));
+        let block = 0;
+        for (let s = 1; s < n; s++) {
+          const fr = s / n;
+          if (dist * (1 - fr) < 1.6) break; // (not the lamp's own body)
+          const sx = Math.floor(gx + 0.5 + ddx * fr), sy = Math.floor(gy + 0.5 + ddy * fr);
+          if (sx < M.ob[0] || sy < M.ob[1] || sx > M.ob[2] || sy > M.ob[3]) continue;
+          const ray = 0.5 + (lh - 0.5) * fr, over = O[sx + sy * M.lw] - ray;
+          if (over > 0.4) { block += Math.min(1, over / 3) * 0.7; if (block >= 1) break; }
+        }
+        f *= Math.max(0.08, 1 - block) * (1 - AO[ci]);
+      }
       D[i] += cr * f; D[i + 1] += cg * f; D[i + 2] += cb * f;
     }
   }
@@ -81,6 +133,7 @@ function buildLights(world, rect) {
   for (let gy = gy0; gy <= gy1; gy++) D.fill(0, (gx0 + gy * M.lw) * 3, (gx1 + 1 + gy * M.lw) * 3);
   M.any = false;
   const big = [rect[0] - 90, rect[1] - 90, rect[2] + 90, rect[3] + 90];
+  M.occReady = false; M.occWorld = world; M.occRect = big;
   // A crowd glows as a few lamps, not hundreds: one creature light per 12 px patch.
   const taken = new Set();
   for (const c of world.creatures) {
@@ -90,7 +143,7 @@ function buildLights(world, rect) {
     const L = c.life, def = LIGHT_SPECIES[c.species], hx = c.body ? c.body.x[0] : c.x, hy = c.body ? c.body.y[0] : c.y;
     // Higher up, a light spreads wider over the floor and fainter.
     const lift = 1 + clamp((c.z || 0) / SURFACE_Z, 0, 1) * 0.6;
-    if (def && !(def.night && night < 0.4)) { splat(M, hx, hy, def.r * lift, colOf(world, def, c.seed & 3), 1 / lift, c.heading, def.beam, big); taken.add(cell); }
+    if (def && !(def.night && night < 0.4)) { splat(M, hx, hy, def.r * lift, colOf(world, def, c.seed & 3), 1 / lift, c.heading, def.beam, big, (c.z || 0) + 1); taken.add(cell); }
     if (!L) continue;
     const g = L.genome;
     if (g.glow || L.paragon || (g.eld && eldStage(L) === 2)) taken.add(cell);
@@ -110,7 +163,11 @@ function buildLights(world, rect) {
   for (const s of world.structures) {
     const def = LIGHT_STRUCTS[s.kind];
     if (s.anim) continue;
-    if (def) splat(M, s.x, s.y, def.r * (1 + 0.15 * ((s.lv && s.lv.reach) || 0)), colOf(world, def, s.seed & 3), (def.k || 1) * (0.85 + 0.15 * Math.sin(t * 0.9 + s.x)), 0, 0, big);
+    if (def) {
+      const R = def.r * (1 + 0.15 * ((s.lv && s.lv.reach) || 0)), col = colOf(world, def, s.seed & 3), k = (def.k || 1) * (0.85 + 0.15 * Math.sin(t * 0.9 + s.x));
+      splat(M, s.x, s.y, R, col, k, 0, 0, big, Math.min(10, (s.h || 8) * 0.5 + 2));
+      splat(M, s.x, s.y, R * 2, col, k * 0.09, 0, 0, big); // (and a faint ambience far round it, in the dark)
+    }
     if (s.kind === 'island' && s.branch === 'life') splat(M, s.x, s.y, islandRadius(world, s) * 0.9, 0xff70d8ff, 0.2 + 0.05 * (s.blv || 1), 0, 0, big);
     if (s.kind === 'island' && s.branch === 'dark') splat(M, s.x, s.y, islandRadius(world, s) * 1.1, 0xff8aff3a, 0.2 + 0.06 * (s.blv || 1), 0, 0, big);
   }

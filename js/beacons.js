@@ -146,9 +146,35 @@ function ejectCorrupt(w) {
 }
 
 // ---- the abyss drinks the islands' light ------------------------------------------------------------------------
+// How far each island pixel is from its water (a two-pass chamfer, capped), rebuilt when the island ground changes.
+function islandEdgeMap(w) {
+  const G = w.islandGround;
+  if (!G) return null;
+  if (w.islandEdge && w.islandEdgeOf === G) return w.islandEdge;
+  const W = w.W, H = w.H, E = new Uint8Array(W * H), CAP = 40;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const p = x + y * W;
+    if (!G[p]) { E[p] = 0; continue; }
+    let v = CAP;
+    if (x > 0) v = Math.min(v, E[p - 1] + 1);
+    if (y > 0) v = Math.min(v, E[p - W] + 1);
+    E[p] = v;
+  }
+  for (let y = H - 1; y >= 0; y--) for (let x = W - 1; x >= 0; x--) {
+    const p = x + y * W;
+    if (!E[p]) continue;
+    let v = E[p];
+    if (x < W - 1) v = Math.min(v, E[p + 1] + 1);
+    if (y < H - 1) v = Math.min(v, E[p + W] + 1);
+    E[p] = v;
+  }
+  w.islandEdge = E; w.islandEdgeOf = G;
+  return E;
+}
 function updateIsleDrain(w) {
   const isles = w.islandGroundIsles;
   if (!isles || !isles.length || !w.depth) { w.isleDrain = null; return; }
+  islandEdgeMap(w);
   const out = new Float32Array(isles.length);
   for (let i = 0; i < isles.length; i++) {
     const s = isles[i];
@@ -190,8 +216,10 @@ function beaconLights(M, w, big) {
   for (const s of w.structures || []) {
     if ((s.kind !== 'beacon' && s.kind !== 'lighthouse') || s.anim) continue;
     const lens = (s.lv && s.lv.lens) || 0, reach = 1 + 0.2 * ((s.lv && s.lv.reach) || 0), R = (s.kind === 'beacon' ? 46 : 30) * reach * (1 + 0.12 * lens), a = w.t * 0.55 + (s.seed % 7);
-    splat(M, s.x, s.y, R * 0.45, 0xffe8f8ff, 1.1, 0, 0, big);
-    for (const k of [0, PI]) splat(M, s.x, s.y, R, 0xfff0ffff, 0.8, a + k, s.kind === 'beacon' ? 3.2 + 0.4 * lens : 2.4, big);
+    const lh = (s.h || 20) + 2;
+    splat(M, s.x, s.y, R * 0.45, 0xffe8f8ff, 1.1, 0, 0, big, lh);
+    splat(M, s.x, s.y, R * 1.6, 0xffc8f0ff, 0.11, 0, 0, big); // (its ambience, out into the dark)
+    for (const k of [0, PI]) splat(M, s.x, s.y, R, 0xfff0ffff, 0.8, a + k, s.kind === 'beacon' ? 3.2 + 0.4 * lens : 2.4, big, lh);
   }
 }
 

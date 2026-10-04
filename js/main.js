@@ -657,7 +657,7 @@ function render(full = false) {
     swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6], clouds: q < 1 ? world.clouds : null, sky: skyColor, skyK: glass ? 1.4 : typeof heavenNow === 'function' && heavenNow(world, 'aurora') ? 1.6 : 1 - world.weather.rain * 0.7,
     lights: q < 2 ? buildLights(world, rect) : null, lightVis: light.darkness || 0, deepColor2: 0xff000000, trench: world.trench, trenchGlow: TRENCH_GLOW[branchOf(world)],
     chop: q < 1 && !glass ? clamp(0.12 + seaOf(world).gust * 0.6 + seaOf(world).surf * 0.25, 0, 0.9) * surfaceVis : 0, spindrift: q < 1 ? clamp((swell - 0.75) * 2.5, 0, 1) * surfaceVis : 0,
-    isleDrain: world.isleDrain || null, islandGround: world.islandGround || null, harbors: typeof beaconZones === 'function' ? (beaconZones(world), BEACON.harbors) : null,
+    isleDrain: world.isleDrain || null, islandGround: world.islandGround || null, islandEdge: world.islandEdgeOf === world.islandGround ? world.islandEdge : null, harbors: typeof beaconZones === 'function' ? (beaconZones(world), BEACON.harbors) : null,
     waveMode: o.hdWaves ? 'mesh' : 'classic', waveT: waveTime(world), wavePh: world.wavePh, gust: glass ? 0 : seaOf(world).gust, rain: seaOf(world).rain,
   }, rect);
   const waterState = { swell, sky: skyColor, darkness: light.darkness, visibility: surfaceVis, time: waveTime(world) };

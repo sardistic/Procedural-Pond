@@ -289,7 +289,7 @@ class Raster {
     const trench = s.trench || null, tg = s.trenchGlow || 0xffffb02a, tgr = tg & 255, tgg = (tg >> 8) & 255, tgb = (tg >>> 16) & 255;
     const LM = s.lights || null, LD = LM ? LM.data : null, lw = LM ? LM.lw : 0, lh = LM ? LM.lh : 0, lvis = s.lightVis || 0;
     // The abyss drinking islands' light (beacons.js: by island), and the harbors round lighthouses.
-    const isleDrain = s.isleDrain || null, islandGround = isleDrain ? s.islandGround || null : null;
+    const isleDrain = s.isleDrain || null, islandGround = isleDrain ? s.islandGround || null : null, islandEdge = islandGround ? s.islandEdge || null : null;
     const harbors = s.harbors && s.harbors.length ? s.harbors.filter((h) => h.x + h.r >= rect[0] && h.x - h.r <= rect[2] && h.y + h.r >= rect[1] && h.y - h.r <= rect[3]) : null, hT = (t * 4) | 0;
     // Chop: short, quick waves in the shallows when it blows; spindrift: streaks of foam blown along the deep in a storm.
     const chop = s.chop || 0, spin = s.spindrift || 0, L3 = 10, w3x = (sw0x(s) * 1024) / L3, w3y = (sw0y(s) * 1024) / L3, w3t = t * 4 * 1024 / L3;
@@ -587,9 +587,11 @@ class Raster {
         if (islandGround) {
           const k = islandGround[p];
           if (k) {
-            const dr = isleDrain[k - 1];
+            // (Strongest at its shore, where the black water meets it, fading inland.)
+            const e = islandEdge ? islandEdge[p] : 0, inland = islandEdge ? Math.pow(Math.max(0, 1 - e / 26), 1.4) : 1;
+            const dr = isleDrain[k - 1] * (0.12 + 0.88 * inland);
             if (dr > 0.02) {
-              const q = Math.min(3, (dr * (0.62 + 0.08 * Math.sin(t * 0.5 + k)) * 4 + BAYER4[(x & 3) | ((y & 3) << 2)] + 0.5) | 0), f = 256 - q * 52;
+              const q = Math.min(3, (dr * (0.66 + 0.08 * Math.sin(t * 0.5 + k)) * 4 + BAYER4[(x & 3) | ((y & 3) << 2)] + 0.5) | 0), f = 256 - q * 52;
               if (q > 0) c = (0xff000000 | (((((c >>> 16) & 255) * f) >> 8) << 16) | (((((c >> 8) & 255) * f) >> 8) << 8) | (((c & 255) * f) >> 8)) >>> 0;
             }
           }
