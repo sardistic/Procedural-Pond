@@ -1132,3 +1132,16 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
     - Jungle and meadow become night after dark.
   - Land weight = clamp((dry fraction − 0.15)/0.5) × the zoom-in curve. The beds play above the water, while shallow and deep fade and the underwater lowpass opens.
   - Probe .agent/runtime/land_sound_probe.py: sea none; beach = beach + meadow; inland = meadow; night = night; zoomed out = none.
+
+## Seascape: raymarched sand and land (2026-10-04)
+- In the Seascape look, dry ground (shore value above tide + 1.5) is no longer discarded; it is lit by marching a height field.
+  - Height field: `landH` = (shore − tide) × 0.07 px. At 0.14 the beach face rose at about 19° away from the sun and read as a dark band.
+  - Sand ripples: crests along the beach (a sine along `shoreN`, warped by noise), amplitude 0.16 + 0.25 × sand + 0.3 near the swash, wavelength about 4.3 px.
+  - Shadow: a soft shadow traced toward the sun (−0.5, −0.55, 0.67): 18 adaptive steps, sharpness 8, starting 0.3 above the ground so ripples don't shade themselves.
+  - Hollows: darkened by how far a 4 px and 9 px ring averages above the point. An earlier one-sided "rise round it" test darkened every plain slope.
+  - Wet sand within 5 shore units of the tide is ×0.9, with a sky sheen.
+  - The pond's own picture stays the colour. The light is stepped (10 levels) and dithered in the sea's 2×2 blocks, at 45% strength by night.
+- Water near land (shore > 0 or island proximity) takes the same traced shadow (up to 22% darker), so dunes and islands shade the water beside them.
+- Textures: shore is now LINEAR (exact at texel centres, so the dry test is unchanged), and `world.sand` uploads as `u_sand`.
+- Probe: .agent/runtime/sand_sdf_probe.py (`--beach` for beach only). Screenshots: sand-beach-*.png, sand-isle-*.png. No errors. SwiftShader: beach 9.6 ms against 5.9 ms for Classic.
+- Seascape only. Classic and 3D are unchanged.

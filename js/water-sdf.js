@@ -13,6 +13,13 @@
 // waterline, the abyss kept black; fewer steps; the sea's height, chop and run worked out from the pond (below);
 // and the pixelation pass.
 //
+// The land too: the beach, the dunes and the islands as a height field in pond pixels (the shore's height above the
+// tide, with sand ripples running along the beach, stronger in the swash and over new deposits), lit by marching it:
+// a soft shadow traced toward the sun (dunes and islands shade what lies behind them, the water included), the
+// ground's hollows darkened by how much rises round them, wet sand darker with a sheen at the waterline. The pond's
+// own picture stays the colour (plants, rocks and animals stay as they are); the light is stepped and dithered in
+// the same blocks as the sea's.
+//
 // The sea state. Pondwide: wind, rain, the tide's surf and flow, and the moon (spring tides at new and full) set the
 // swell's height and chop, and the speed of a sea clock that runs on at that pace (so a change of pace never jumps
 // the waves). Place by place, from a field kept at 4-pixel cells: deep water rolls higher and longer, shallows
@@ -27,7 +34,7 @@ in vec2 a_pos;
 void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }`;
 const SDF_FRAGMENT = `#version 300 es
 precision highp float;
-uniform sampler2D u_scene, u_shore, u_depth, u_state;
+uniform sampler2D u_scene, u_shore, u_depth, u_state, u_sand;
 uniform vec2 u_size, u_origin, u_res, u_dir, u_world;
 uniform vec3 u_sky, u_water;
 uniform float u_block, u_t, u_height, u_choppy, u_tide, u_vis, u_day, u_rain, u_surf, u_scale;
@@ -94,6 +101,33 @@ float heightMapTracing(vec3 ori, vec3 dir, out vec3 p) {
 }
 // ---- the pond's own ----
 const float BAYER[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+// The land's height at a point of the tile (pond pixels up): its shore height above the tide, and sand ripples whose
+// crests run along the beach.
+float landH(vec2 px) {
+  vec2 uv = clamp(px / u_size, vec2(0.0), vec2(1.0));
+  float above = texture(u_shore, uv).r * 255.0 - u_tide;
+  if (above <= 0.0) return 0.0;
+  float sd = texture(u_sand, uv).r;
+  vec2 q = u_origin + px;
+  float along = dot(q, normalize(u_dir)) + noise(q * 0.07) * 3.0;
+  float ripple = sin(along * 1.45) * (0.16 + 0.25 * sd + 0.3 * smoothstep(14.0, 2.0, above)) * smoothstep(0.0, 3.0, above);
+  return above * 0.07 + ripple;
+}
+// A soft shadow: march toward the light over the height field; the nearest miss, relative to the distance, is how
+// much of the sun's disc is hidden.
+float landShadow(vec3 p, vec3 L) {
+  float res = 1.0, t = 1.0;
+  for (int i = 0; i < 18; i++) {
+    vec3 q = p + L * t;
+    float dd = q.z - landH(q.xy);
+    if (dd < 0.02) return 0.0;
+    res = min(res, 8.0 * dd / t);
+    t += clamp(dd * 0.8, 0.7, 4.0);
+    if (t > 48.0 || q.z > 40.0) break;
+  }
+  return clamp(res, 0.0, 1.0);
+}
+const vec3 SUN = vec3(-0.5, -0.55, 0.67); // (toward the light: up and to the upper left, as the pond is lit)
 void main() {
   // This pixel as a point in the pond (rows run top to bottom, as the pond's do), and the block of the sea it's in.
   vec2 px = vec2(gl_FragCoord.x, u_res.y - gl_FragCoord.y);
@@ -101,8 +135,28 @@ void main() {
   vec2 uv = clamp(px / u_size, vec2(0.0), vec2(1.0)), suv = clamp(sp / u_size, vec2(0.0), vec2(1.0));
   float se = texture(u_shore, uv).r * 255.0;
   vec3 under = texture(u_scene, uv).rgb;
-  // (Dry ground shows through: the beach and the islands are the pond's own.)
-  if (se > u_tide + 1.5) discard;
+  float b = BAYER[int(mod(cell.x, 4.0)) + int(mod(cell.y, 4.0)) * 4] / 16.0 - 0.5;
+  #define STEP(v, n) (floor((v) * (n) + 0.5 + b * 0.85) / (n))
+  #define STEPA(v, n) (floor((v) * (n) + 0.2 + b * 0.4) / (n))
+  vec3 L = normalize(SUN);
+  // Dry ground: the land's light, worked out per block.
+  if (se > u_tide + 1.5) {
+    float h0 = landH(sp);
+    vec3 nn = normalize(vec3(landH(sp - vec2(1.0, 0.0)) - landH(sp + vec2(1.0, 0.0)), landH(sp - vec2(0.0, 1.0)) - landH(sp + vec2(0.0, 1.0)), 2.0));
+    float sh = landShadow(vec3(sp, h0 + 0.3), L);
+    // (A hollow: the ground round it, on average, higher than it. A plain slope averages out.)
+    float ring = 0.0;
+    for (int k = 0; k < 6; k++) { float a = float(k) * 1.047; ring += landH(sp + vec2(cos(a), sin(a)) * 4.0) + landH(sp + vec2(cos(a + 0.5), sin(a + 0.5)) * 9.0) * 0.5; }
+    float ao = clamp(1.0 - max(0.0, ring / 9.0 - h0) * 0.35, 0.65, 1.0);
+    float shade = (0.5 + 0.5 * max(0.0, dot(nn, L)) / L.z) * mix(0.6, 1.0, sh) * ao;
+    shade = 1.0 + STEP(clamp(shade - 1.0, -0.45, 0.25), 10.0);
+    // Wet sand by the waterline: darker, with a sheen of the sky.
+    float wetK = smoothstep(5.0, 1.5, se - u_tide);
+    vec3 c = under * mix(1.0, 0.9, wetK) * mix(1.0, shade, 0.45 + 0.55 * u_day);
+    c += u_sky * STEPA(wetK * (0.04 + 0.1 * u_day) * pow(max(0.0, dot(reflect(vec3(0.0, 0.0, -1.0), nn), L)), 8.0), 6.0);
+    color = vec4(c, 1.0);
+    return;
+  }
   float sse = texture(u_shore, suv).r * 255.0;
   // This block's sea: deeper rolls higher, the shallows by the beach steepen and slow it, an island's lee is calmer
   // and the water round it chops, and animals near the surface stir it.
@@ -128,11 +182,8 @@ void main() {
   // Light from the upper left, like the rest of the pond.
   vec3 light = normalize(vec3(-0.45, 0.75, -0.48));
   float abyss = 1.0 - smoothstep(0.82, 0.97, depth);
-  // The pixelation: the sea's light in a few steps, with an ordered dither across its blocks. (Shading rounds to the
-  // nearest step; highlights round down, so a faint one shows as nothing rather than as scattered bright blocks.)
-  float b = BAYER[int(mod(cell.x, 4.0)) + int(mod(cell.y, 4.0)) * 4] / 16.0 - 0.5;
-  #define STEP(v, n) (floor((v) * (n) + 0.5 + b * 0.85) / (n))
-  #define STEPA(v, n) (floor((v) * (n) + 0.2 + b * 0.4) / (n))
+  // (The pixelation, set above: the sea's light in a few steps, with an ordered dither across its blocks. Shading
+  // rounds to the nearest step; highlights round down, so a faint one shows as nothing, not as scattered bright blocks.)
   // Refracted: the pond beneath at its own resolution, shifted block by block by the surface's slope, lit by its
   // facing (shade on the faces turned away, light on those turned toward it).
   vec2 bend = floor(vec2(dot(n.xz, vec2(d.y, d.x)), dot(n.xz, vec2(-d.x, d.y))) * (2.0 + depth * 1.5) * u_vis + 0.5);
@@ -151,8 +202,9 @@ void main() {
   float edge = sse > 0.5 ? max(0.0, 1.0 - wet / (6.0 + u_surf * 18.0)) : 0.0;
   float foam = STEPA(smoothstep(0.35, 0.9, edge * (0.6 + p.y / max(0.2, g_amp) * 0.35 + u_surf * 0.4)) + wake * 0.8 * smoothstep(0.35, 0.9, p.y / max(0.2, g_amp * 2.0)), 3.0);
   c = mix(c, vec3(0.9, 0.96, 0.98), clamp(foam, 0.0, 1.0) * 0.85);
-  // Zoomed far in, the surface fades and the pond shows plain.
-  color = vec4(mix(under, c, u_vis), 1.0);
+  // Zoomed far in, the surface fades and the pond shows plain. Near land, the dunes' and islands' shadows lie on it.
+  float wsh = (sse > 0.5 || isle > 0.02) ? landShadow(vec3(sp, 0.05), L) : 1.0;
+  color = vec4(mix(under, c, u_vis) * (1.0 - STEP((1.0 - wsh) * 0.22, 8.0)), 1.0);
 }`;
 
 function seascapeAvailable() {
@@ -170,8 +222,8 @@ function seascapeAvailable() {
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
     gl.useProgram(program);
     const tex = (filter) => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return t; };
-    G.textures = [tex(gl.NEAREST), tex(gl.NEAREST), tex(gl.LINEAR), tex(gl.LINEAR)];
-    ['u_scene', 'u_shore', 'u_depth', 'u_state'].forEach((name, i) => gl.uniform1i(gl.getUniformLocation(program, name), i));
+    G.textures = [tex(gl.NEAREST), tex(gl.LINEAR), tex(gl.LINEAR), tex(gl.LINEAR), tex(gl.LINEAR)];
+    ['u_scene', 'u_shore', 'u_depth', 'u_state', 'u_sand'].forEach((name, i) => gl.uniform1i(gl.getUniformLocation(program, name), i));
     const quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, quad); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
     G.cv = cv; G.gl = gl; G.program = program; G.quad = quad; G.position = gl.getAttribLocation(program, 'a_pos');
     return true;
@@ -262,8 +314,8 @@ function drawSeascape(w, state, rect, img) {
   // Shore and depth, when they change (or every couple of seconds, as the beach erodes).
   if (G.terrain !== w.shore || G.depth !== w.depth || performance.now() - (G.terrainAt || 0) > 2000) {
     const flat = new Uint8Array(W * H);
-    for (let i = 1; i <= 2; i++) {
-      const data = (i === 1 ? w.shore : w.depth) || null;
+    for (const i of [1, 2, 4]) {
+      const data = (i === 1 ? w.shore : i === 2 ? w.depth : w.sand && w.sand.length === w.W * w.H ? w.sand : null) || null;
       if (data) for (let y = 0; y < H; y++) flat.set(data.subarray(x0 + (y0 + y) * w.W, x0 + (y0 + y) * w.W + W), y * W);
       else flat.fill(0);
       gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, G.textures[i]);
