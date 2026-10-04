@@ -161,8 +161,8 @@ function packPond(world) {
     const explicit = !hasParents && !sameGenome(g, genomeFor(c.seed));
     const hasName = L.name !== nameFor(c.seed), hasLife = Math.abs(L.lifespan - lifespanFor(c.species, c.seed)) > 1;
     // (Kinds past the first 32 set bit 16 of the extra byte: the code is then 32 more.)
-    // (The kind's code: its low five bits here, bit 5 as extra's 16 and bit 6 as extra's 32, so up to 128 kinds.)
-    const code = KIND_CODES.indexOf(c.make), extra = (c.state === 'sit' ? 1 : 0) | (hasName ? 2 : 0) | (hasLife ? 4 : 0) | (numbered ? 0 : 8) | (code & 32 ? 16 : 0) | (code & 64 ? 32 : 0);
+    // (The kind's code: its low five bits here, bits 5, 6 and 7 as extra's 16, 32 and 64, so up to 256 kinds.)
+    const code = KIND_CODES.indexOf(c.make), extra = (c.state === 'sit' ? 1 : 0) | (hasName ? 2 : 0) | (hasLife ? 4 : 0) | (numbered ? 0 : 8) | (code & 32 ? 16 : 0) | (code & 64 ? 32 : 0) | (code & 128 ? 64 : 0);
     w.u8((code & 31) | (hasParents ? 32 : 0) | (explicit ? 64 : 0) | (extra ? 128 : 0));
     if (extra) w.u8(extra);
     if (numbered) { w.vu(zig(c.sn - prevSn)); prevSn = c.sn; }
@@ -448,7 +448,7 @@ function unpackV2(r, v = 2) {
   s.creatures = [];
   let prevSn = 0;
   for (let i = 0, n = r.vu(); i < n; i++) {
-    const b = r.u8(), extra = b & 128 ? r.u8() : 0, k = KIND_CODES[(b & 31) + (extra & 16 ? 32 : 0) + (extra & 32 ? 64 : 0)];
+    const b = r.u8(), extra = b & 128 ? r.u8() : 0, k = KIND_CODES[(b & 31) + (extra & 16 ? 32 : 0) + (extra & 32 ? 64 : 0) + (extra & 64 ? 128 : 0)];
     const numbered = !(extra & 8);
     let sn = null;
     if (numbered) { sn = prevSn + unzig(r.vu()); prevSn = sn; }

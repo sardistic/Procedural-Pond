@@ -290,7 +290,8 @@ const DESIGN_LIST = [
 
 // ---- registering them -------------------------------------------------------------------------------------
 const DESIGNS = {};
-for (const d of DESIGN_LIST) {
+// (Also used by bestiary2.js, for the second catalogue.)
+function registerDesign(d) {
   DESIGNS[d.kind] = d;
   if (d.shape === 'fish') d.sp = designSp(d);
   const k = d.kind, shallow = d.tier <= 1;
@@ -319,5 +320,6 @@ for (const d of DESIGN_LIST) {
   if (d.school) SCHOOL_KINDS.add(k);
   KIND_CODES.push(k);
 }
+for (const d of DESIGN_LIST) registerDesign(d);
 // The brood chamber's breeders get their breeding (this runs after every species file, prehistoric's too).
 for (const k of STRUCTURES.broodchamber.habitatFor) if (!BREED[k]) BREED[k] = { clutch: [1, 3], hatch: 40, cap: 6, eggs: 'floor', needs: true };

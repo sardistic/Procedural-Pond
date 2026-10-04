@@ -128,6 +128,8 @@ const SPECIES_NOTES = {
   hollowwalker: 'Something dark that walks on long legs, with a violet light where it should be empty.',
   mirrorfish: 'A fish like polished silver: what it reflects is not quite this pond.',
 };
+// (The second catalogue carries its own lines.)
+if (typeof DESIGN_LIST2 !== 'undefined') for (const d of DESIGN_LIST2) if (d.note && !SPECIES_NOTES[d.kind]) SPECIES_NOTES[d.kind] = d.note;
 // The young and the visitors (no dock button, but in the pond).
 const GUIDE_OTHERS = [
   ['Tadpole', 'A frog’s young: it swims, grows legs, and climbs out a frog. Prey for most fish.'],
