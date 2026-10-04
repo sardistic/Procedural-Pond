@@ -127,6 +127,7 @@ function makeStructure(kind, world, x, y, seed = newSeed(), born = world.days) {
   s.id = newId(outlineOf(SM.basalt));
   if (kind === 'vent' || kind === 'shrine') EMISSIVE[s.id] = 2;
   if (kind === 'hatchery') EMISSIVE[s.id] = 1;
+  if (STRUCTURES[kind].glow) EMISSIVE[s.id] = 2; // (structures2.js: those that light the dark)
   return s;
 }
 

@@ -37,10 +37,28 @@ const PARASITES = {
     buffs: { fertility: 0.25, vitality: -0.2 }, note: 'sporelings bud on it: it breeds more, and sickens',
     m: mat('#2a4a0a', '#5a8a1a', '#9aff3a', '#e4ffb0'),
   },
+  // The second three (append only), each drawn in one of the first three's shapes, spreading one of their contagions.
+  lamprite: {
+    label: 'lamprite', thing: 'toothed crown', trait: 'gnawed', ill: 'glassing', xeno: ['ironclad', 'ravenous'], color: '#ffb03a', shape: 'latcher',
+    buffs: { vitality: 0.2, speed: -0.1 }, note: 'a lamprite has its teeth in it: it feeds harder to keep up, and slows',
+    m: mat('#6a3a0a', '#b06a14', '#ffb03a', '#ffe0a0'),
+  },
+  wisp: {
+    label: 'wisp', thing: 'singing shell', trait: 'haunted', ill: 'xenofever', xeno: ['farseeing', 'serene'], color: '#b07aff', shape: 'coilworm',
+    buffs: { intellect: 0.3, aggression: -0.15 }, note: 'a wisp coils through it: it sees further and fights less, and dreams of leaving',
+    m: mat('#3a1a6a', '#6a3ab0', '#b07aff', '#e8d8ff'),
+  },
+  mirrormold: {
+    label: 'mirror mold', thing: 'mirror egg', trait: 'mirrored', ill: 'spore', xeno: ['unseen', 'twinning'], color: '#e8f0ff', shape: 'sporeling',
+    buffs: { stealth: 0.35, fertility: -0.15 }, note: 'mirror mold silvers its skin: hard to see, and slower to breed',
+    m: mat('#5a6a7a', '#9aaabb', '#e8f0ff', '#ffffff'),
+  },
 };
+// The shape a kind is drawn in.
+const paraShape = (k) => (PARASITES[k] && PARASITES[k].shape) || k;
 const PARA_KEYS = Object.keys(PARASITES);
 // What the evolved carry in their blood: genome.xeno is this list's index + 1 (append-only).
-const XENO_TRAITS = ['chitinous', 'frenzied', 'luminous', 'longcoiled', 'bloomborn', 'sporebearing'];
+const XENO_TRAITS = ['chitinous', 'frenzied', 'luminous', 'longcoiled', 'bloomborn', 'sporebearing', 'ironclad', 'ravenous', 'farseeing', 'serene', 'unseen', 'twinning'];
 const XENO = {
   chitinous: { color: '#ff6ae0', buffs: { vitality: 0.4, resilience: 0.3 }, note: 'evolved: plates of alien chitin; hard to hurt, hard to kill' },
   frenzied: { color: '#ff3a6a', buffs: { aggression: 0.5, speed: 0.12 }, note: 'evolved: an alien fury in its blood' },
@@ -48,6 +66,12 @@ const XENO = {
   longcoiled: { color: '#3ac8ff', buffs: { longevity: 0.6 }, note: 'evolved: the coil in its blood keeps it going and going' },
   bloomborn: { color: '#b0ff5a', buffs: { fertility: 0.5 }, note: 'evolved: it breeds like the spores it came from' },
   sporebearing: { color: '#7aff3a', buffs: { tolerance: 0.4 }, note: 'evolved: it carries the spore, and takes no harm from it' },
+  ironclad: { color: '#ffb03a', buffs: { resilience: 0.5, vitality: 0.2 }, note: 'evolved: a crown of alien teeth grown into armour' },
+  ravenous: { color: '#ff8a2a', buffs: { aggression: 0.3, vitality: 0.3 }, note: 'evolved: a hunger from somewhere else' },
+  farseeing: { color: '#c09aff', buffs: { intellect: 0.5 }, note: 'evolved: it sees what is not there yet' },
+  serene: { color: '#9a8aff', buffs: { aggression: -0.3, longevity: 0.3 }, note: 'evolved: an alien calm, and a long life' },
+  unseen: { color: '#e8f0ff', buffs: { stealth: 0.6 }, note: 'evolved: a mirrored skin that shows only the water' },
+  twinning: { color: '#f0f8ff', buffs: { fertility: 0.4, luck: 0.2 }, note: 'evolved: its young come in mirrored pairs' },
 };
 const XENO_OF = Object.fromEntries(PARA_KEYS.flatMap((k) => PARASITES[k].xeno.map((x) => [x, k]))); // trait -> the parasite it came from
 for (const [k, d] of Object.entries(PARASITES)) { TRAIT_RARITY[d.trait] = 0; RARE_OUTLINE[d.trait] = hexToInt(d.color); TRAIT_BUFFS[d.trait] = d.buffs; TRAIT_NOTES[d.trait] = d.note; }
@@ -270,10 +294,10 @@ function drawXeno(r, world, t, rect) {
   for (const a of A || []) {
     if (!inView(a.x, a.y, 30)) continue;
     const D = PARASITES[a.kind], m = D.m, id = xenoId(a.kind), k = xenoScale(a), pulse = 0.5 + 0.5 * Math.sin(t * 1.3 + a.seed);
-    if (a.kind === 'latcher') { // a tilted ring with hooks turned inward
+    if (paraShape(a.kind) === 'latcher') { // a tilted ring with hooks turned inward
       for (let i = 0; i < 14; i++) { const u = i / 14 * TAU, x = a.x + Math.cos(u) * 8 * k, y = a.y + Math.sin(u) * 4.5 * k; r.ellipsoid(x, y, 1.6 * k, 1.6 * k, u, 2 + Math.sin(u) * 3 * k, 1.4 * k, m, id); }
       for (let i = 0; i < 4; i++) { const u = i / 4 * TAU + t * 0.1, x = a.x + Math.cos(u) * 8 * k, y = a.y + Math.sin(u) * 4.5 * k; r.tube(x, y, 0.6 * k, 3, a.x + Math.cos(u) * 4 * k, a.y + Math.sin(u) * 2.2 * k, 0.3, 4 + pulse, 0.8, m, id); }
-    } else if (a.kind === 'coilworm') { // a spiral horn: a coil lying on the floor, winding in to a point that stands up
+    } else if (paraShape(a.kind) === 'coilworm') { // a spiral horn: a coil lying on the floor, winding in to a point that stands up
       let px = a.x + 9 * k, py = a.y, pz = 1;
       for (let i = 1; i <= 22; i++) { const f = i / 22, u = f * TAU * 2.4 + a.seed, R = (1 - 0.92 * f) * 9 * k, nx = a.x + Math.cos(u) * R, ny = a.y + Math.sin(u) * R, nz = 1 + f * f * 9 * k; r.tube(px, py, (2.3 - 1.7 * f) * k, pz, nx, ny, (2.2 - 1.7 * f) * k, nz, 0.7, m, id); px = nx; py = ny; pz = nz; }
     } else { // a bloom of glass shards
@@ -285,8 +309,8 @@ function drawXeno(r, world, t, rect) {
   for (const p of P || []) {
     if (!inView(p.x, p.y, 6)) continue;
     const m = PARASITES[p.kind].m, id = xenoId(p.kind);
-    if (p.kind === 'latcher') { r.dot(p.x, p.y, p.z, m, id); for (let i = 0; i < 4; i++) { const u = i / 4 * TAU + p.t * 2; r.dot(p.x + Math.cos(u) * 1.4, p.y + Math.sin(u) * 1.4, p.z, m, id); } }
-    else if (p.kind === 'coilworm') r.tube(p.x, p.y, 0.6, p.z, p.x - Math.cos(p.h + Math.sin(p.t * 6) * 0.6) * 3, p.y - Math.sin(p.h + Math.sin(p.t * 6) * 0.6) * 3, 0.4, p.z, 0.8, m, id);
+    if (paraShape(p.kind) === 'latcher') { r.dot(p.x, p.y, p.z, m, id); for (let i = 0; i < 4; i++) { const u = i / 4 * TAU + p.t * 2; r.dot(p.x + Math.cos(u) * 1.4, p.y + Math.sin(u) * 1.4, p.z, m, id); } }
+    else if (paraShape(p.kind) === 'coilworm') r.tube(p.x, p.y, 0.6, p.z, p.x - Math.cos(p.h + Math.sin(p.t * 6) * 0.6) * 3, p.y - Math.sin(p.h + Math.sin(p.t * 6) * 0.6) * 3, 0.4, p.z, 0.8, m, id);
     else for (let i = 0; i < 3; i++) { const u = i / 3 * TAU + p.ph; r.ellipsoid(p.x + Math.cos(u) * 0.9, p.y + Math.sin(u) * 0.9, 0.8, 0.8, 0, p.z, 0.8, m, id); }
   }
 }
@@ -295,8 +319,8 @@ function drawPara(r, c, t) {
   const L = c.life, b = c.body, z = (c.zBody ?? c.z ?? 1) + 1;
   if (L.para) {
     const m = PARASITES[L.para.k].m, id = xenoId(L.para.k), i = Math.min(2, b.n - 1), w = b.w[i], x = b.x[i], y = b.y[i], zz = z + w * 0.9;
-    if (L.para.k === 'latcher') { r.ellipsoid(x, y, 1.3, 1.3, 0, zz, 1, m, id); for (const s of [-1, 1]) r.tube(x, y, 0.4, zz, b.px(i, s * 1.3, 0), b.py(i, s * 1.3, 0), 0.3, zz - 0.5, 0.8, m, id); }
-    else if (L.para.k === 'coilworm') for (let j = 1; j < Math.min(b.n - 1, 6); j++) { const s = j % 2 ? 1 : -1; r.dot(b.px(j, s * 1.2, 0), b.py(j, s * 1.2, 0), z + b.w[j] * 0.8, m, id); }
+    if (paraShape(L.para.k) === 'latcher') { r.ellipsoid(x, y, 1.3, 1.3, 0, zz, 1, m, id); for (const s of [-1, 1]) r.tube(x, y, 0.4, zz, b.px(i, s * 1.3, 0), b.py(i, s * 1.3, 0), 0.3, zz - 0.5, 0.8, m, id); }
+    else if (paraShape(L.para.k) === 'coilworm') for (let j = 1; j < Math.min(b.n - 1, 6); j++) { const s = j % 2 ? 1 : -1; r.dot(b.px(j, s * 1.2, 0), b.py(j, s * 1.2, 0), z + b.w[j] * 0.8, m, id); }
     else for (let j = 0; j < 3; j++) r.ellipsoid(b.px(i, (j - 1) * 0.9, -0.3), b.py(i, (j - 1) * 0.9, -0.3), 0.9, 0.9, 0, zz, 0.8, m, id);
   }
   const x = L.genome.xeno ? XENO_TRAITS[L.genome.xeno - 1] : null;
