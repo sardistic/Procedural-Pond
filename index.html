@@ -37,7 +37,7 @@
   <link rel="stylesheet" href="style.css?v=51">
   <style id="entry-css">
     /* The entry screen: painted before any script loads (inline, so nothing waits on style.css). It is opaque:
-       the pond stays hidden until you enter. js/entry.js draws the moving water on #entry-bg. */
+       the pond stays hidden until you enter. js/entry-water.js draws the moving water on #entry-bg (in a worker). */
     #entry { position: fixed; inset: 0; z-index: 100; overflow: auto; color: #cfe2ff; background: #000;
       font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif; transition: opacity .6s ease;
       display: grid; grid-template: "top top" auto "hero panel" 1fr / minmax(0, 1fr) minmax(300px, 400px); gap: 0 32px; padding: 16px clamp(16px, 4vw, 56px) 24px; }
@@ -123,7 +123,7 @@
     #entry .sorts button[aria-pressed="true"] { color: #1a0f05; background: #7fd8e8; border-color: #bff4ff; }
     #entry .list li { position: relative; overflow: hidden; }
     #entry .list .row-bg { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; z-index: 0; pointer-events: none; }
-    #entry .list a { position: relative; z-index: 1; background: linear-gradient(90deg, rgba(4,10,24,.78) 0%, rgba(4,10,24,.3) 55%, rgba(4,10,24,.6) 100%); text-shadow: 1px 1px 0 #02050f; }
+    #entry .list a { position: relative; z-index: 1; background: linear-gradient(90deg, rgba(4,10,24,.62) 0%, rgba(4,10,24,.12) 60%, rgba(4,10,24,.42) 100%); text-shadow: 1px 1px 0 #02050f, 0 0 4px #02050f; }
     #entry .list a:hover { background: linear-gradient(90deg, rgba(27,79,125,.7) 0%, rgba(27,79,125,.25) 55%, rgba(27,79,125,.5) 100%); }
     #entry details { border-bottom: 1px solid #1e3c6a; padding: 8px 0; }
     #entry summary { cursor: pointer; color: #e8f0ff; list-style: none; }
@@ -248,7 +248,8 @@
       </div>
     </div>
   </div>
-  <script src="js/entry.js?v=7"></script>
+  <script src="js/entry-water.js?v=1"></script>
+  <script src="js/entry.js?v=8"></script>
   <canvas id="pond" aria-label="A living pixel-art pond of procedurally animated animals"></canvas>
   <div class="vignette" aria-hidden="true"></div>
   <noscript>

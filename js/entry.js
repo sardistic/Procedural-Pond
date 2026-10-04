@@ -12,184 +12,34 @@
   let skip = false;
   try { skip = localStorage.getItem('pond.skipEntry') === '1'; } catch { /* no storage */ }
 
-  // ---- the night pond: a rippling surface over a pixel floor ---------------------------------------------
-  // A height field carries every disturbance outward as real ripples (rain, koi, your pointer); looking down
-  // through it, the floor is bent by the surface's slope, light gathers where it curves, and the moon catches
-  // the faces of the waves. Koi swim on the floor layer, so they wobble under the ripples; pads float on top.
-  const cv = $('entry-bg'), g = cv.getContext('2d', { alpha: false });
-  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => v / 16 - 0.5);
-  // (Colours as ABGR words, the way the canvas's bytes read.)
-  const abgr = (hex) => { const n = parseInt(hex.slice(1), 16); return (0xff000000 | ((n & 255) << 16) | (n & 0xff00) | (n >> 16)) >>> 0; };
-  const KOI = [['#f26b2a', '#fff4e0', '#b8401a'], ['#fff4e0', '#e8402a', '#c9b8a0'], ['#ffc53a', '#fff4e0', '#c88a1a'], ['#f04a5a', '#2a2030', '#a82a3a'], ['#fff4e0', '#2a2030', '#c9b8a0'], ['#e8e0ff', '#7a8aff', '#b0a8d8']];
-  let W = 0, H = 0, S = 4, img = null, px = null, base = null, under = null, cur = null, prev = null, t = 0, last = 0, raf = 0, nextDrop = 0, acc = 0;
-  const fish = [], pads = [];
-  const rnd = (a, b) => a + Math.random() * (b - a);
-  // Value noise for the floor.
-  const hash = (x, y) => { let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
-  const smooth = (x, y) => { const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
-    return (hash(xi, yi) * (1 - u) + hash(xi + 1, yi) * u) * (1 - v) + (hash(xi, yi + 1) * (1 - u) + hash(xi + 1, yi + 1) * u) * v; };
-  // The floor, seen through dark water: sand in dithered bands, pebbles with a lit side, weed at the edges.
-  function floor() {
-    const SAND = ['#071226', '#0a1a33', '#0d2240', '#112a4d', '#16345a'].map(abgr), PEB = ['#0c1c30', '#14283f', '#1e3550', '#2b4663'].map(abgr), WEED = ['#06231f', '#0b3a2c', '#12503a'].map(abgr);
-    base = new Uint32Array(W * H);
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const n = smooth(x / 22, y / 22) * 0.6 + smooth(x / 7, y / 7) * 0.3 + smooth(x / 2.5, y / 2.5) * 0.1;
-      const edge = Math.min(1, Math.min(x, W - x, y * 1.4, (H - y) * 1.4) / (Math.min(W, H) * 0.35));
-      const k = Math.floor((n * 0.75 + edge * 0.45) * SAND.length - 0.2 + BAYER[(x & 3) + ((y & 3) << 2)] * 0.9);
-      base[x + y * W] = SAND[k < 0 ? 0 : k >= SAND.length ? SAND.length - 1 : k];
-    }
-    const pebbles = Math.round(W * H / 260);
-    for (let i = 0; i < pebbles; i++) {
-      const cx = rnd(0, W), cy = rnd(0, H), rx = rnd(1, 3.6), ry = rx * rnd(0.6, 0.9), tone = Math.floor(rnd(0, 2.99));
-      for (let y = Math.floor(cy - ry - 1); y <= cy + ry + 1; y++) for (let x = Math.floor(cx - rx - 1); x <= cx + rx + 1; x++) {
-        if (x < 0 || y < 0 || x >= W || y >= H) continue;
-        const d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
-        if (d <= 1) base[x + y * W] = PEB[(x - cx) + (y - cy) < -rx * 0.4 ? tone + 1 : tone];
-        else if (d <= 1.6 && x - cx > 0 && y - cy > 0) base[x + y * W] = SAND[0]; // (its shadow)
-      }
-    }
-    // Weed along the edges, in tufts of blades.
-    for (let i = 0; i < Math.round((W + H) / 6); i++) {
-      const side = Math.random(), x0 = side < 0.5 ? rnd(0, W) : (side < 0.75 ? rnd(0, W * 0.08) : rnd(W * 0.92, W)), y0 = side < 0.5 ? (Math.random() < 0.5 ? rnd(0, H * 0.1) : rnd(H * 0.9, H)) : rnd(0, H);
-      for (let b = 0; b < 5; b++) {
-        const len = rnd(4, 11), ang = rnd(-2.6, -0.5), bend = rnd(-0.08, 0.08), col = WEED[Math.floor(rnd(0, 2.99))];
-        let x = x0 + rnd(-2, 2), y = y0 + rnd(-2, 2), a = ang;
-        for (let s = 0; s < len; s++) { a += bend; x += Math.cos(a); y += Math.sin(a); const xi = Math.round(x), yi = Math.round(y); if (xi >= 0 && yi >= 0 && xi < W && yi < H) base[xi + yi * W] = col; }
-      }
-    }
+  // ---- the night pond, and the glimpses of ponds in the list (js/entry-water.js) --------------------------------
+  // Drawn in a worker, on canvases handed to it, so they keep moving while main.js builds the pond on this thread.
+  // Without OffscreenCanvas they're drawn here instead (the same code, loaded as a plain script before this one).
+  const cv = $('entry-bg');
+  let worker = null, send = null;
+  if (cv.transferControlToOffscreen && window.Worker) {
+    try {
+      worker = new Worker('js/entry-water.js?v=1');
+      const off = cv.transferControlToOffscreen();
+      worker.postMessage({ type: 'init', canvas: off, w: innerWidth, h: innerHeight, still }, [off]);
+      send = (m, tr) => worker.postMessage(m, tr || []);
+    } catch (e) { if (worker) worker.terminate(); worker = null; }
   }
-  function size() {
-    S = innerWidth < 700 ? 3 : 4;
-    W = Math.ceil(innerWidth / S); H = Math.ceil(innerHeight / S);
-    cv.width = W; cv.height = H;
-    img = g.createImageData(W, H); px = new Uint32Array(img.data.buffer);
-    under = new Uint32Array(W * H); cur = new Float32Array(W * H); prev = new Float32Array(W * H);
-    floor();
-    fish.length = pads.length = 0;
-    const n = Math.max(4, Math.min(9, Math.round(W * H / 5000)));
-    for (let i = 0; i < n; i++) {
-      fish.push({ c: KOI[i % KOI.length].map(abgr), len: rnd(10, 16) * (S === 3 ? 0.9 : 1), ax: rnd(0.25, 0.45) * W, ay: rnd(0.2, 0.38) * H, cx: rnd(0.3, 0.7) * W, cy: rnd(0.3, 0.7) * H,
-        fx: rnd(0.012, 0.03) * (Math.random() < 0.5 ? -1 : 1), fy: rnd(0.015, 0.035), p: rnd(0, 6.3), q: rnd(0, 6.3) });
-    }
-    for (let i = 0; i < Math.round(W * H / 3500); i++) {
-      // Pads keep to the edges, clear of the title and the panel's middle.
-      const edge = Math.random() < 0.5, x = edge ? rnd(0, W) : (Math.random() < 0.5 ? rnd(0, W * 0.12) : rnd(W * 0.88, W)), y = edge ? (Math.random() < 0.5 ? rnd(0, H * 0.14) : rnd(H * 0.86, H)) : rnd(0, H);
-      pads.push({ x, y, r: rnd(5, 11), a: rnd(0, 6.3), s: rnd(-0.04, 0.04), bloom: Math.random() < 0.3 });
-    }
+  if (!send && window.EntryWater) {
+    const handle = EntryWater.host();
+    handle({ type: 'init', canvas: cv, w: innerWidth, h: innerHeight, still });
+    send = (m) => handle(m);
   }
-  // A disturbance: pushes the surface down in a small disc; the waves do the rest.
-  function poke(x, y, r, depth) {
-    const x0 = Math.max(1, Math.floor(x - r)), x1 = Math.min(W - 2, Math.ceil(x + r)), y0 = Math.max(1, Math.floor(y - r)), y1 = Math.min(H - 2, Math.ceil(y + r));
-    for (let yy = y0; yy <= y1; yy++) for (let xx = x0; xx <= x1; xx++) {
-      const d = Math.hypot(xx - x, yy - y) / r;
-      if (d < 1) cur[xx + yy * W] -= depth * (0.5 + 0.5 * Math.cos(d * Math.PI));
-    }
-  }
-  // One step of the wave equation (each cell pulled toward its neighbours' average), damped so ripples fade.
-  function step() {
-    for (let y = 1; y < H - 1; y++) {
-      const row = y * W;
-      for (let i = row + 1, e = row + W - 1; i < e; i++) prev[i] = ((cur[i - 1] + cur[i + 1] + cur[i - W] + cur[i + W]) * 0.5 - prev[i]) * 0.986;
-    }
-    const tmp = cur; cur = prev; prev = tmp;
-  }
-  const dot = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < W && y < H) under[x + y * W] = c; };
-  const disc = (x, y, r, c) => { const R = Math.max(0.5, r); for (let yy = Math.floor(y - R); yy <= y + R; yy++) for (let xx = Math.floor(x - R); xx <= x + R; xx++) if ((xx - x) ** 2 + (yy - y) ** 2 <= R * R + 0.3) dot(xx, yy, c); };
-  const darken = (c, f) => (0xff000000 | ((((c >>> 16) & 255) * f) << 16) | ((((c >>> 8) & 255) * f) << 8) | ((c & 255) * f)) >>> 0;
-  function koi(f) {
-    // Its head swims a slow loop; the body trails back along its heading, rippling as it swims.
-    const wx = f.fx * 6.28, wy = f.fy * 6.28, hx = f.cx + Math.sin(t * wx + f.p) * f.ax, hy = f.cy + Math.sin(t * wy + f.q) * f.ay;
-    const vx = Math.cos(t * wx + f.p) * f.ax * wx, vy = Math.cos(t * wy + f.q) * f.ay * wy, vl = Math.hypot(vx, vy) || 1;
-    const dx = vx / vl, dy = vy / vl, n = Math.max(8, Math.round(f.len)), w = f.len / 5, pts = [];
-    for (let i = 0; i < n; i++) {
-      const k = i / n, sway = Math.sin(t * 5 + f.p - k * 4) * k * w * 0.9;
-      pts.push([hx - dx * i - dy * sway, hy - dy * i + dx * sway, Math.max(0.5, w * (k < 0.15 ? 0.75 + k * 1.6 : 1 - (k - 0.15) * 1.05))]);
-    }
-    // Its shadow on the floor, then fins, tail, body, spots and eyes, all under the water.
-    for (const [x, y, r] of pts) { const R = r; for (let yy = Math.floor(y + 3 - R); yy <= y + 3 + R; yy++) for (let xx = Math.floor(x + 3 - R); xx <= x + 3 + R; xx++) if (xx >= 0 && yy >= 0 && xx < W && yy < H) under[xx + yy * W] = darken(under[xx + yy * W], 0.55); }
-    const [body, spot, fin] = f.c, [fx0, fy0] = pts[Math.round(n * 0.3)], fl = w * 1.6;
-    disc(fx0 - dy * fl, fy0 + dx * fl, w * 0.45, fin); disc(fx0 + dy * fl, fy0 - dx * fl, w * 0.45, fin);
-    const [tx, ty] = pts[n - 1], wag = Math.sin(t * 5 + f.p - 4) * w;
-    disc(tx - dx * 1.5 - dy * wag, ty - dy * 1.5 + dx * wag, w * 0.6, fin);
-    for (let i = n - 1; i >= 0; i--) disc(pts[i][0], pts[i][1], pts[i][2], body);
-    for (const k of [0.35, 0.6]) { const [x, y, r] = pts[Math.round(n * k)]; disc(x, y, r * 0.55, spot); }
-    dot(hx - dy * w * 0.5, hy + dx * w * 0.5, 0xff20141a); dot(hx + dy * w * 0.5, hy - dx * w * 0.5, 0xff20141a);
-    // A koi stirs the surface a little as it goes, and now and then noses up to it.
-    if (!still) { poke(hx, hy, 1.5, 0.5); if (Math.random() < 0.003) poke(hx, hy, 2.5, 7); }
-  }
-  // The surface: the floor seen through it, bent by its slope, lit where it curves, glinting toward the moon.
-  function water() {
-    const R = 0.9, mx = W * 0.72, my = H * 0.28, top = H - 1, right = W - 1;
-    for (let y = 1; y < H - 1; y++) {
-      const row = y * W, sy0 = y;
-      for (let x = 1; x < W - 1; x++) {
-        const i = row + x, h = cur[i];
-        // Slope, with a slow breeze on top so the water is never glassy.
-        const sx = cur[i - 1] - cur[i + 1] + Math.sin(y * 0.09 + t * 0.7) * 0.4 + Math.sin((x + y) * 0.21 - t * 1.3) * 0.18, sy = cur[i - W] - cur[i + W] + Math.sin(x * 0.07 - t * 0.55) * 0.4 + Math.sin((x - y) * 0.17 + t * 1.1) * 0.18;
-        let fx = Math.round(x + sx * R), fy = Math.round(sy0 + sy * R);
-        fx = fx < 0 ? 0 : fx > right ? right : fx; fy = fy < 0 ? 0 : fy > top ? top : fy;
-        let c = under[fx + fy * W];
-        const curve = cur[i - 1] + cur[i + 1] + cur[i - W] + cur[i + W] - 4 * h, b = BAYER[(x & 3) + ((y & 3) << 2)];
-        // Light gathered where the surface curves like a lens; shade on faces turned away.
-        const lit = -curve * 0.9 + (sx * 0.35 + sy * 0.5) * 0.6;
-        const step = Math.max(-2, Math.min(3, Math.floor(lit * 2.8 + b)));
-        if (step > 0) {
-          const a = step * 34, cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
-          c = (0xff000000 | ((cb + (((0xd8 - cb) * a) >> 8)) << 16) | ((cg + (((0xd0 - cg) * a) >> 8)) << 8) | (cr + (((0x90 - cr) * a) >> 8))) >>> 0;
-        } else if (step < 0) c = darken(c, step === -1 ? 0.8 : 0.62);
-        // The moon on the water: a wide, broken path of glints near it.
-        const md = ((x - mx) / (W * 0.16)) ** 2 + ((y - my) / (H * 0.5)) ** 2;
-        if (md < 1 && sy * 0.8 - sx * 0.3 > 0.72 + md * 1.1 + b * 0.7) c = md < 0.25 ? 0xffe8f4ff : 0xffb8d4e8;
-        px[i] = c;
-      }
-    }
-    // (The border rows and columns copy their neighbours.)
-    for (let x = 0; x < W; x++) { px[x] = px[x + W]; px[x + (H - 1) * W] = px[x + (H - 2) * W]; }
-    for (let y = 0; y < H; y++) { px[y * W] = px[y * W + 1]; px[y * W + W - 1] = px[y * W + W - 2]; }
-    g.putImageData(img, 0, 0);
-  }
-  function pad(p) {
-    // Floating on the surface: it rides the ripples and turns slowly.
-    const i = Math.max(0, Math.min(W * H - 1, Math.round(p.x) + Math.round(p.y) * W)), lift = cur[i] * 0.4;
-    const a = p.a + t * p.s, r = p.r, notch = 0.45, x = p.x, y = p.y + lift;
-    g.fillStyle = 'rgba(2,4,12,0.45)';
-    g.beginPath(); g.arc(x + 2, y + 3, r, 0, 6.29); g.fill();
-    g.fillStyle = '#1f6b4a';
-    g.beginPath(); g.moveTo(x, y); g.arc(x, y, r, a + notch, a + 6.283 - notch); g.closePath(); g.fill();
-    g.fillStyle = '#2f8f5f';
-    g.beginPath(); g.moveTo(x, y); g.arc(x, y, r * 0.65, a + notch + 0.4, a + 3.3); g.closePath(); g.fill();
-    g.fillStyle = '#3aa86e'; g.fillRect(Math.round(x - r * 0.4), Math.round(y - r * 0.5), 2, 1);
-    if (p.bloom) {
-      const bx = Math.round(x - r * 0.3), by = Math.round(y - r * 0.2);
-      g.fillStyle = '#ff8ac8'; g.fillRect(bx - 2, by, 5, 1); g.fillRect(bx, by - 2, 1, 5); g.fillRect(bx - 1, by - 1, 3, 3);
-      g.fillStyle = '#ffe0f0'; g.fillRect(bx, by, 1, 1);
-    }
-  }
-  function frame(now) {
-    raf = 0;
-    if (!root.isConnected || root.classList.contains('gone')) return;
-    if (now - last < 33 && last) { raf = requestAnimationFrame(frame); return; } // (30 frames a second is plenty)
-    const dt = last ? Math.min(0.1, (now - last) / 1000) : 1 / 30;
-    last = now; t += dt;
-    if (t > nextDrop && !still) { poke(rnd(2, W - 2), rnd(2, H - 2), rnd(1.2, 2.2), rnd(5, 9)); nextDrop = t + rnd(0.25, 1.1); }
-    // The waves run at a fixed pace (two steps a frame at 30 fps), whatever the frame rate.
-    acc = Math.min(acc + dt * 60, 4);
-    while (acc >= 1) { step(); acc -= 1; }
-    under.set(base);
-    for (const f of fish) koi(f);
-    water();
-    for (const p of pads) pad(p);
-    if (!still && !document.hidden) raf = requestAnimationFrame(frame);
-  }
-  const start = () => { if (!raf) raf = requestAnimationFrame(frame); };
-  size();
-  if (still) { t = 4; for (let i = 0; i < 6; i++) poke(rnd(0, W), rnd(0, H), 2, 8); for (let i = 0; i < 40; i++) step(); frame(performance.now()); } else start();
-  addEventListener('resize', () => { if (!root.isConnected) return; size(); if (still) { last = 0; frame(performance.now()); } });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && !still) start(); });
+  if (!send) send = () => {};
+  // (A row's canvas goes to the worker too, or stays here and is drawn here.)
+  const handOver = (c) => (worker ? c.transferControlToOffscreen() : c);
+  const stopWater = () => { send({ type: 'stop' }); send = () => {}; worker = null; };
+  addEventListener('resize', () => { if (root.isConnected) send({ type: 'size', w: innerWidth, h: innerHeight }); });
+  document.addEventListener('visibilitychange', () => send({ type: 'hidden', on: document.hidden }));
   // Your pointer trails ripples across the water; a click drops a big one.
   let lastPoke = 0;
-  root.addEventListener('pointermove', (e) => { if (still || (e.target !== root && e.target !== cv) || e.timeStamp - lastPoke < 30) return; lastPoke = e.timeStamp; poke(e.clientX / S, e.clientY / S, 1.6, 2.2); });
-  root.addEventListener('pointerdown', (e) => { if (e.target === root || e.target === cv) { poke(e.clientX / S, e.clientY / S, 3, 16); if (still) { last = 0; frame(performance.now()); } } });
+  root.addEventListener('pointermove', (e) => { if (still || (e.target !== root && e.target !== cv) || e.timeStamp - lastPoke < 30) return; lastPoke = e.timeStamp; send({ type: 'poke', x: e.clientX, y: e.clientY, r: 1.6, d: 2.2 }); });
+  root.addEventListener('pointerdown', (e) => { if (e.target === root || e.target === cv) send({ type: 'poke', x: e.clientX, y: e.clientY, r: 3, d: 16 }); });
 
   // ---- loading, shown on the Enter button --------------------------------------------------------------
   let loaded = 0, phase = 0;
@@ -227,6 +77,7 @@
     }
     try { localStorage.setItem('pond.skipEntry', $('entry-skip').checked ? '1' : '0'); } catch { /* no storage */ }
     root.classList.add('gone');
+    setTimeout(stopWater, 700); // (the water keeps moving while the screen fades)
     songStop(1.2); // (the music fades as you go in)
     // A splash as you dive in, if there's sound (the music on here, or the pond's sound switch).
     let pondSound = false;
@@ -326,6 +177,7 @@
     for (const n of tabs) {
       const on = n === k, b = $(`et-${n}`);
       b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; $(`ep-${n}`).hidden = !on;
+      if (n === 'ponds') send({ type: 'rowsOn', on });
       if (on && focus) b.focus();
     }
     try { localStorage.setItem('pond.entryTab', k); } catch { /* no storage */ }
@@ -349,64 +201,20 @@
   const ago = (ms) => { const m = Math.max(0, (Date.now() - ms) / 60000); return m < 60 ? `${Math.max(1, Math.round(m))}m ago` : m < 2880 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`; };
   function row(p, rank, score, meta) {
     const li = node('li'), a = node('a'), cv = document.createElement('canvas');
-    cv.className = 'row-bg'; cv.width = 96; cv.height = 16; cv.setAttribute('aria-hidden', 'true');
+    cv.className = 'row-bg'; cv.width = 128; cv.height = 16; cv.setAttribute('aria-hidden', 'true');
     a.href = `/${p.slug || p.id}`;
     a.append(node('span', 'rk', rank), node('span', 'nm', pondName(p)), node('span', 'sc', score), node('span', 'meta', meta));
     li.append(cv, a);
-    rowBgs.push(rowScene(cv, p));
+    rowBgs.push({ cv, p });
     return li;
   }
 
-  // ---- each pond's row, a glimpse of it: its water, how deep it has gone, how grown, its life --------------------
-  // (From what the board knows: habitat, fathoms, days, animals, rares. Pixel water a few rows high, the deep side
-  // fading to black the deeper the pond, weed along the bottom as it ages, fish across it for its animals, glints
-  // for its rare ones, and deep glows in the dark of a deep one.)
-  const rowBgs = [];
-  const ROW_WATER = { fresh: ['#2a6a4a', '#134030', '#7ad08a'], salt: ['#2a6aa0', '#0c3058', '#8ad8ff'], mixed: ['#2a6a7a', '#103a48', '#8ae8e0'] };
-  const ROW_FISH = { fresh: ['#f08a3a', '#f4f0e8', '#e05a3a', '#ffd166'], salt: ['#ffd166', '#3ad6ff', '#ff6a8a', '#f08a3a'], mixed: ['#f08a3a', '#3ad6ff', '#ffd166', '#f4f0e8'] };
-  const ROW_WEED = { fresh: ['#2a8a3a', '#46a84a'], salt: ['#e07a8a', '#f0a050', '#c86ad8'], mixed: ['#2a8a3a', '#e07a8a'] };
-  function rowScene(cv, p) {
-    let h = 2166136261; for (const ch of String(p.id || p.slug || 'pond')) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
-    const rnd = () => ((h = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0) / 4294967296);
-    const hab = ROW_WATER[p.habitat] ? p.habitat : 'mixed', depth = Math.max(1, p.depth || 1), days = p.days || 0, animals = p.animals || 0, rares = p.rares || 0;
-    const nFish = Math.max(animals ? 1 : 0, Math.min(14, Math.round(Math.log2(1 + animals) * 1.6))), nWeed = Math.min(18, Math.round(Math.log2(1 + days) * 1.8));
-    return {
-      cv, g: cv.getContext('2d'), hab, dark: Math.min(1, Math.log10(1 + depth) / 6), deepLife: depth > 500,
-      fish: Array.from({ length: nFish }, (_, i) => ({ x: rnd() * 96, y: 3 + rnd() * 10, v: (0.6 + rnd() * 1.4) * (i % 2 ? -1 : 1), ph: rnd() * 6.3, c: ROW_FISH[hab][(rnd() * 4) | 0], big: rnd() < 0.25 })),
-      weed: Array.from({ length: nWeed }, () => ({ x: (rnd() * 96) | 0, h: 2 + ((rnd() * 4) | 0), c: ROW_WEED[hab][(rnd() * ROW_WEED[hab].length) | 0], ph: rnd() * 6.3 })),
-      rares: Array.from({ length: Math.min(4, rares) }, () => ({ x: (rnd() * 96) | 0, y: 2 + ((rnd() * 11) | 0), ph: rnd() * 6.3 })),
-      glows: Array.from({ length: depth > 500 ? 3 + Math.min(4, Math.round(Math.log10(depth) - 2)) : 0 }, () => ({ x: 60 + ((rnd() * 34) | 0), y: 2 + ((rnd() * 12) | 0), ph: rnd() * 6.3 })),
-    };
-  }
-  function drawRow(S, t) {
-    const g = S.g, W = 96, H = 16, [top, bot, light] = ROW_WATER[S.hab];
-    // The water, top to bottom, its deep side darkening toward black.
-    const grad = g.createLinearGradient(0, 0, 0, H); grad.addColorStop(0, top); grad.addColorStop(1, bot);
-    g.fillStyle = grad; g.fillRect(0, 0, W, H);
-    if (S.dark > 0.05) { const dg = g.createLinearGradient(W * 0.35, 0, W, 0); dg.addColorStop(0, 'rgba(0,0,0,0)'); dg.addColorStop(1, `rgba(0,0,0,${(0.25 + 0.7 * S.dark).toFixed(2)})`); g.fillStyle = dg; g.fillRect(0, 0, W, H); }
-    // Light rippling across the top.
-    g.fillStyle = light; g.globalAlpha = 0.35;
-    for (let x = 0; x < W; x += 1) if (Math.sin(x * 0.35 + t * 2.2) + Math.sin(x * 0.13 - t * 1.3) > 1.3) g.fillRect(x, 1 + (((x * 7) % 3) | 0), 1, 1);
-    g.globalAlpha = 1;
-    // Weed along the bottom, swaying.
-    for (const w of S.weed) { g.fillStyle = w.c; for (let k = 0; k < w.h; k++) g.fillRect(w.x + Math.round(Math.sin(t * 1.4 + w.ph + k * 0.6) * (k / 3)), H - 1 - k, 1, 1); }
-    // Fish.
-    for (const f of S.fish) {
-      f.x = (f.x + f.v * 0.25 + 96) % 96;
-      const y = Math.round(f.y + Math.sin(t * 2 + f.ph) * 0.8), x = Math.round(f.x);
-      g.fillStyle = f.c; g.fillRect(x, y, f.big ? 3 : 2, f.big ? 2 : 1);
-      g.fillRect(f.v > 0 ? x - 1 : x + (f.big ? 3 : 2), y + (f.big ? 0 : 0), 1, 1); // (its tail)
-    }
-    // Rares glinting, and deep glows in the dark.
-    for (const r of S.rares) if (Math.sin(t * 3 + r.ph) > 0.3) { g.fillStyle = '#fff0a0'; g.fillRect(r.x, r.y, 1, 1); }
-    for (const q of S.glows) { const a = 0.5 + 0.5 * Math.sin(t * 1.5 + q.ph); g.fillStyle = `rgba(110,240,255,${a.toFixed(2)})`; g.fillRect(q.x, q.y, 1, 1); }
-  }
-  let rowT = 0;
-  setInterval(() => {
-    if (!root.isConnected || root.classList.contains('gone') || document.hidden || $('ep-ponds').hidden) return;
-    rowT += 0.066;
-    for (const S of rowBgs) if (S.cv.isConnected) drawRow(S, rowT);
-  }, 66);
+  // ---- each pond's row, a glimpse of it: its water, how deep, how grown, its life (drawn by entry-water.js) ----------
+  let rowBgs = [];
+  const sendRows = () => {
+    const list = rowBgs.map(({ cv: c, p }) => ({ canvas: handOver(c), p: { id: p.id, slug: p.slug, habitat: p.habitat, depth: p.depth, days: p.days, animals: p.animals, species: p.species, rares: p.rares, updated: p.updated, best: p.best ? { tier: p.best.tier } : null } }));
+    send({ type: 'rows', rows: list }, worker ? list.map((q) => q.canvas) : []);
+  };
   const facts = (p) => [p.by ? `by ${p.by}` : null, p.habitat && WATERS[p.habitat] ? `${WATERS[p.habitat]} water` : null, p.animals != null ? `${p.animals} animals` : null, p.days != null ? `day ${Math.floor(p.days) + 1}` : null].filter(Boolean).join(' · ');
   let me = null, board = null;
   // Ponds and the leaderboard together, sorted by score, depth or what was lately alive.
@@ -414,7 +222,7 @@
   try { sortBy = localStorage.getItem('pond.entrySort') || 'score'; } catch { /* no storage */ }
   function renderPonds() {
     const box = $('ep-ponds'), out = [];
-    rowBgs.length = 0;
+    rowBgs = [];
     if (me && me.user && me.ponds && me.ponds.length) {
       const ul = node('ul', 'list');
       for (const p of me.ponds.slice().sort((a, b) => b.updated - a.updated).slice(0, 6)) ul.append(row(p, '★', `${p.points} pts`, [p.habitat && WATERS[p.habitat] ? `${WATERS[p.habitat]} water` : null, `${p.animals} animals`, `day ${Math.floor(p.days || 0) + 1}`].filter(Boolean).join(' · ')));
@@ -440,6 +248,7 @@
       out.push(sorts, ul);
     }
     box.replaceChildren(...out);
+    sendRows();
   }
   function renderAccount() {
     const box = $('entry-account');
@@ -469,7 +278,12 @@
   } else { renderPonds(); }
 
   window.Entry = {
-    status(text, p) { phase = 1; set(text, p); },
+    // (The bar then keeps creeping on toward the next step on its own, on the compositor, so it still moves while
+    // the pond is built on this thread and nothing here can run.)
+    status(text, p) {
+      phase = 1; set(text, p);
+      if (p != null && p < 1) { const bar = $('entry-bar'); bar.style.transition = 'transform 4s cubic-bezier(.15,.7,.3,1)'; bar.style.transform = `scaleX(${Math.min(0.97, p + 0.16)})`; }
+    },
     // The pond is ready: the Enter button lights up (or straight in, if skipped or only visiting).
     ready(info) {
       set('Ready', 1);
