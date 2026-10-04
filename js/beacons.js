@@ -255,7 +255,7 @@ for (const d of HARBOR_KINDS) {
   HARBOR_SPECIES.push(d.kind);
 }
 STRUCT_LIKES.lighthouse = HARBOR_SPECIES.slice();
-// Harbor plants: grown on flora forms in their own colours, hidden from the tools until seen.
+// Harbor plants: living as flora forms do, in their own shapes and colours, hidden from the tools until seen.
 const HARBOR_PLANTS = {
   sunkelp: { form: 'kelp', label: 'Sun kelp', hab: 'mixed', price: 10, tier: 99, life: [0.2, 50, 100], seed: 0.06, cover: 0.05, water: 0, likes: ['manta', 'mahi', 'sunjelly'], warm: 0.8,
     tip: 'golden kelp that holds the harbor light long after dusk', mats: { stipe: mat('#5a4a0a', '#8a7414', '#c0a028', '#f0d050'), blade: mat('#6a5a0e', '#9a8018', '#d0b030', '#ffe070'), bladder: mat('#8a6a14', '#c09a28', '#f0c84a', '#fff09a') } },
@@ -265,6 +265,59 @@ const HARBOR_PLANTS = {
     tip: 'a pad and a flower of something like crystal, ringing faintly in the wind', mats: { lotusPad: mat('#2a5a6a', '#4a8a9a', '#7ab8c8', '#c0eef8'), lotus: mat('#8a8ac0', '#b0b0e8', '#e0e0ff', '#ffffff') } },
   tidecoral: { form: 'sponge', label: 'Harbor coral', hab: 'mixed', price: 10, tier: 99, life: [0.1, 80, 160], seed: 0.05, cover: 0.02, water: 0, likes: ['anthias', 'cardinal', 'haloeel'], warm: 0.9,
     tip: 'pink and orange coral that only grows in the calm of a harbor', fans: [mat('#7a2a3a', '#b04a5a', '#e07a8a', '#ffb0c0'), mat('#7a3a0a', '#b06a1a', '#e09a3a', '#ffc87a')] },
+};
+// Their own shapes (flora2.js PLANT_SHAPES2), seen from above; the two that glow light themselves.
+const HP = {
+  sunStipe: mat('#5a4a0a', '#8a7414', '#c0a028', '#f0d050'), sunBlade: mat('#6a5a0e', '#9a8018', '#d0b030', '#ffe070'),
+  fern: mat('#0a4a5a', '#1a8aa0', '#3ad0e8', '#a0f8ff'), fernTip: mat('#4ac0d8', '#8af0ff', '#d0ffff', '#ffffff'),
+  glass: mat('#2a5a6a', '#4a8a9a', '#7ab8c8', '#c0eef8'), glassEdge: mat('#6a9ab0', '#a0d0e0', '#d8f4ff', '#ffffff'), glassFlower: mat('#8a8ac0', '#b0b0e8', '#e0e0ff', '#ffffff'),
+  coralP: mat('#7a2a3a', '#b04a5a', '#e07a8a', '#ffb0c0'), coralO: mat('#7a3a0a', '#b06a1a', '#e09a3a', '#ffc87a'), polyp: mat('#c0a0a0', '#f0d0d0', '#fff0f0', '#ffffff'),
+};
+const HARBOR_SHAPES = {
+  // Golden kelp: stipes in a ring, each crowned with a sunburst of broad blades lying at the surface.
+  sunkelp: { main: HP.sunStipe, accent: HP.sunBlade,
+    make(F) { EMISSIVE[F.id2] = 2; const n = randi(3, 4); F.stipes = Array.from({ length: n }, (_, k) => { const a = k / n * TAU + rand(-0.3, 0.3); return { ox: Math.cos(a) * 3, oy: Math.sin(a) * 3, a, ph: rand(0, TAU), blades: randi(6, 8) }; }); },
+    draw(F, r, t, world, g, cur) {
+      for (const s of F.stipes) {
+        let px = F.x + s.ox, py = F.y + s.oy, pz = 0;
+        const top = 44 * (0.3 + 0.7 * g);
+        for (let k = 1; k <= 8; k++) { const f = k / 8, nx = F.x + s.ox + (Math.cos(s.a) * 5 + Math.sin(t * 0.5 + s.ph + k * 0.3) * 1.2 + cur.x * 5 + F.px * 0.4) * f * f, ny = F.y + s.oy + (Math.sin(s.a) * 5 + cur.y * 5 + F.py * 0.4) * f * f, nz = top * f; r.tube(px, py, 0.5, pz, nx, ny, 0.45, nz, 1, HP.sunStipe, F.id); px = nx; py = ny; pz = nz; }
+        if (g > 0.6) for (let b = 0; b < s.blades; b++) { const a = b / s.blades * TAU + s.ph + Math.sin(t * 0.3 + b) * 0.1; r.ellipsoid(px + Math.cos(a) * 2.8, py + Math.sin(a) * 2.8, 3, 1.1, a, pz - 0.5, 0.4, HP.sunBlade, F.id2); }
+      }
+    } },
+  // Glowing fern fronds unrolling from a crown: long pinnate fronds, and fiddleheads still curled.
+  lumifern: { main: HP.fern, accent: HP.fernTip,
+    make(F) { EMISSIVE[F.id] = 2; EMISSIVE[F.id2] = 2; const n = randi(5, 7); F.fronds = Array.from({ length: n }, (_, k) => ({ a: k / n * TAU + rand(-0.2, 0.2), L: rand(7, 10), curl: Math.random() < 0.3 })); },
+    draw(F, r, t, world, g) {
+      for (const fr of F.fronds) {
+        const sw = Math.sin(t * 0.6 + fr.a * 3) * 0.12, a = fr.a + sw, L = fr.L * (0.4 + 0.6 * g);
+        if (fr.curl) { for (let q = 0; q < 8; q++) { const u = q / 8, d = 3 * (1 - u * 0.7), b = a + u * 5; r.dot(F.x + Math.cos(a) * 2 + Math.cos(b) * d * 0.6, F.y + Math.sin(a) * 2 + Math.sin(b) * d * 0.6, 3 + u, HP.fernTip, F.id2); } continue; } // (a fiddlehead)
+        const ex = F.x + Math.cos(a) * L, ey = F.y + Math.sin(a) * L;
+        r.tube(F.x, F.y, 0.4, 1, ex, ey, 0.25, 6, 1, HP.fern, F.id);
+        for (let q = 1; q <= 6; q++) { const u = q / 7, mx = lerp(F.x, ex, u), my = lerp(F.y, ey, u), mz = lerp(1, 6, u), pl = 2.2 * (1 - u * 0.6); for (const s of [-1, 1]) r.tube(mx, my, 0.2, mz, mx + Math.cos(a + s * 1.1) * pl, my + Math.sin(a + s * 1.1) * pl, 0.15, mz + 0.3, 1, HP.fern, F.id); }
+        r.dot(ex, ey, 6.3, HP.fernTip, F.id2);
+      }
+    } },
+  // Pads of something like crystal, cut in facets with bright edges, and a glass flower with pointed petals.
+  glasslily: { main: HP.glass, accent: HP.glassFlower,
+    make(F) { const a0 = rand(0, TAU); F.pads = Array.from({ length: randi(2, 3) }, (_, k) => ({ ox: k ? Math.cos(a0 + k * 2.4) * 8 : 0, oy: k ? Math.sin(a0 + k * 2.4) * 8 : 0, r: k ? rand(3.5, 4.5) : rand(5, 6.5), a: rand(0, TAU) })); },
+    draw(F, r, t, world, g) {
+      const bob = Math.sin(t * 0.5 + F.ph) * 0.2;
+      for (const p of F.pads) r.ellipsoid(F.x + p.ox, F.y + p.oy, p.r * (0.5 + 0.5 * g), p.r * (0.5 + 0.5 * g), p.a, 44 + bob, 0.7, (lx, ly) => { const th = Math.atan2(ly, lx), d = Math.hypot(lx, ly), seg = ((th * 3 / PI) % 1 + 1) % 1; return d > 0.88 || seg < 0.06 ? HP.glassEdge : HP.glass; }, F.id); // (six facets)
+      if (g > 0.7) { for (let k = 0; k < 6; k++) { const a = k / 6 * TAU + F.ph; r.tube(F.x, F.y, 0.8, 45.5, F.x + Math.cos(a) * 2.6, F.y + Math.sin(a) * 2.6, 0.2, 47.5, 0.9, HP.glassFlower, F.id2); } if (Math.sin(t * 2 + F.ph) > 0.6) r.dot(F.x, F.y, 48, HP.glassEdge, F.id2); }
+    } },
+  // Harbor coral: branching staghorn in pink and orange, with a plate or two and polyps open at the tips.
+  tidecoral: { main: HP.coralP, accent: HP.coralO,
+    make(F) { F.m2 = Math.random() < 0.5 ? HP.coralP : HP.coralO; F.br = Array.from({ length: randi(6, 9) }, (_, k) => ({ a: k / 8 * TAU + rand(-0.3, 0.3), L: rand(4, 7), fork: rand(0.3, 0.7) })); F.plates = Array.from({ length: randi(1, 2) }, () => ({ a: rand(0, TAU), d: rand(4, 7), r: rand(2.4, 3.4) })); },
+    draw(F, r, t, world, g) {
+      const k = 0.4 + 0.6 * g;
+      for (const p of F.plates) r.ellipsoid(F.x + Math.cos(p.a) * p.d * k, F.y + Math.sin(p.a) * p.d * k, p.r * k, p.r * k * 0.8, p.a, 2, 0.6, (lx, ly) => ((lx * lx + ly * ly) * 5 % 1 < 0.2 ? HP.polyp : F.m2 === HP.coralP ? HP.coralO : HP.coralP), F.id2);
+      for (const b of F.br) {
+        const mx = F.x + Math.cos(b.a) * b.L * 0.5 * k, my = F.y + Math.sin(b.a) * b.L * 0.5 * k;
+        r.tube(F.x, F.y, 0.9, 0, mx, my, 0.6, 3 * k, 0.9, F.m2, F.id);
+        for (const s of [-1, 1]) { const a = b.a + s * b.fork, ex = mx + Math.cos(a) * b.L * 0.5 * k, ey = my + Math.sin(a) * b.L * 0.5 * k; r.tube(mx, my, 0.5, 3 * k, ex, ey, 0.35, 5 * k, 0.9, F.m2, F.id); if (Math.sin(t * 1.2 + b.a * 4 + s) > -0.2) r.dot(ex, ey, 5 * k + 0.4, HP.polyp, F.id); }
+      }
+    } },
 };
 if (typeof FLORA_PLANTS2 !== 'undefined' && typeof FloraVariant === 'function') {
   for (const [k, F] of Object.entries(HARBOR_PLANTS)) {
@@ -278,6 +331,7 @@ if (typeof FLORA_PLANTS2 !== 'undefined' && typeof FloraVariant === 'function') 
     if (!PLANT_CODES.includes(k)) PLANT_CODES.push(k);
   }
   if (typeof LIGHT_PLANTS !== 'undefined') { LIGHT_PLANTS.sunkelp = { r: 8, col: '#ffe08a', k: 0.5 }; LIGHT_PLANTS.lumifern = { r: 9, col: '#6af0ff', k: 0.6 }; }
+  if (typeof PLANT_SHAPES2 !== 'undefined') Object.assign(PLANT_SHAPES2, HARBOR_SHAPES);
 }
 const harborSeen = (w) => (w.game && (w.game.harborSeen || (w.game.harborSeen = []))) || [];
 // (A plant tool shows once its plant has been seen; species follow the known list, arrivals.js.)

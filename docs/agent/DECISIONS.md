@@ -1056,3 +1056,19 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
   - fully out: synth surf 0, lap 0, shore recording 0, far bed 0.62
   - one step in (k 3): unchanged
   - close (k 8): shore recording 0.50, far bed 0.02
+
+## Flora2 and harbor plants get their own shapes (2026-10-04)
+- The 26 flora2 plants and the 4 harbor plants (beacons.js) used to be drawn as an older plant in their own colours. They still live as their form does: the same instance fields, floating or rooted, bending away from swimmers, `hit`, the side-view slice and saving. They now draw in their own shape from `PLANT_SHAPES2[kind]`, which gives `make(F)` (laid out at construction), `draw(F, r, t, world, g, cur)`, and `main`/`accent` (the materials for the two outline ids). The harbor shapes live in beacons.js (`HARBOR_SHAPES`, merged in), and sun kelp and lumifern self-light their parts (EMISSIVE 2).
+- Examples:
+  - Arrowhead: arrow blades held out on leaning stalks.
+  - Papyrus: separate starburst heads.
+  - Giant water lily: a ribbed tray with a red upturned rim.
+  - Wild celery: ribbons laid along the surface.
+  - Bull kelp: a float with a streaming mane.
+  - Purple gorgonian: a branching fan dotted with polyps.
+  - Tube sponge: leaning organ pipes with dark wells.
+  - Glass lily: faceted crystal pads.
+- Probes:
+  - struct_sheet.py with `PLANTS` or a list of plant kinds draws a contact sheet (plant-sheet.png, plant-z1..5.png).
+  - `struct_inpond.py plants` places all 30 in a live pond (plants-inpond.png); no errors.
+  - The beacon probe still passes, including harbor plants.
