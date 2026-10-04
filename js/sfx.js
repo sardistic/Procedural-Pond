@@ -104,9 +104,8 @@ const SFX = {
     const entry = document.getElementById('entry'), damp = entry && !entry.classList.contains('gone') ? 0.15 : 1;
     set(Sound.master.gain, 0.55 * damp, 0.8); set(this.ui.gain, 0.2 * damp, 0.3); set(this.fx.gain, 0.25 * damp, 0.3);
     // Far out: wind, gulls, the sea breaking a long way off. In closer: the shore's own water lapping. Closer still:
-    // under the surface. (The soundscape's close lapping follows `near` too.)
-    const farW = 1 - ss(0.12, 0.38, z), nearW = ss(0.1, 0.32, z) * (1 - ss(0.6, 0.85, z));
-    this.near = ss(0.12, 0.35, z);
+    // under the surface. (sound.js fades its synthesized surf and lapping by the same zoom.)
+    const farW = 1 - ss(0.18, 0.45, z), nearW = ss(0.2, 0.42, z) * (1 - ss(0.6, 0.85, z));
     if (B.amb_far) set(B.amb_far.gain, damp * 0.4 * (this.farG || 1) * farW, 1.2);
     if (B.amb_surface) set(B.amb_surface.gain, damp * 0.32 * (this.shoreG || 1) * (B.amb_far ? nearW : 1 - ss(0.12, 0.5, z)) * (1 - 0.6 * deep), 1.2);
     if (B.amb_shallow) set(B.amb_shallow.gain, damp * 0.35 * G('amb_shallow') * ss(0.5, 0.8, z) * (1 - 0.7 * deep));

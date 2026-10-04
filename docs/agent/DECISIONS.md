@@ -1040,3 +1040,19 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
   - Light and depth: sun shafts in shallow ponds, dimming along the whole row for very deep ones, and a sweeping beam plus cyan and violet glows in the deepest.
   - Activity: bubbles if the pond was updated within the hour; ponds idle for more than 7 days move at half pace.
 - The text gradient over each row is lighter (0.62 → 0.12 → 0.42), with a soft shadow on the text added for legibility. Probe: .agent/runtime/entry_worker_browser.py (worker frames during a page block, eight varied mock ponds, sorting, tab switching, Enter, and the fallback without OffscreenCanvas). entry_browser now compares screenshots, because it can't read a transferred canvas.
+
+## Structures2 get their own models; close shore sounds only up close (2026-10-04)
+- The 29 builds in structures2.js used to borrow an older build's model in their own colours, so the drowned pews were the root cathedral's roots. Each now has its own model, seen from above like everything else in the pond. `SHAPES2[kind]` gives `build` (layout from the seed, so saved ponds rebuild the same shape), `bake` (solid parts) and an optional `draw` (moving or glowing parts). The structure kind and its data are unchanged, and `form` is kept only as kinship. A kind without a shape would still fall back to the old form.
+- What some look like:
+  - Drowned pews: two banks of five pews either side of an aisle, facing an altar step. Each pew has a pale seat plank, a dark taller back and end-boards. Some are knocked askew or missing, and roots creep over the back row.
+  - Sunken bell: on its side, with its dark mouth and clapper, beside its broken yoke.
+  - Beaver lodge: a mud dome thatched with sticks, some peeled pale, with a door.
+  - Kelp cathedral: a two-row nave of kelp arching over an aisle.
+  - The rest are listed in the code comments; the contact sheet is .agent/runtime/struct-sheet-new.png.
+- Probes:
+  - .agent/runtime/struct_sheet.py `[out.png] [kinds]`: draws builds with the real bake and draw.
+  - .agent/runtime/struct_inpond.py: places all 29 in a live pond and screenshots them; no errors.
+- Sound: when zoomed out, sound.js's synthesized surf (it swells with each wave) stayed at 30%, and it read the zoom from sfx.js, which falls back to full volume before the recorded sounds load. sound.js now works out the zoom itself, and fades the surf and lapping to silence and the open-water wash to 25% when far out. The close shore recording and the synthesized surf come in from about 20–42% of the zoom range, which is later than before, and the distant bed (wind, gulls, far surf) fades out over 18–45%. Measured (zoom_sound_probe):
+  - fully out: synth surf 0, lap 0, shore recording 0, far bed 0.62
+  - one step in (k 3): unchanged
+  - close (k 8): shore recording 0.50, far bed 0.02

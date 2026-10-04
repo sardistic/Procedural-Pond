@@ -301,12 +301,17 @@ const Sound = {
     if (this.mixT <= 0) { this.mixT = 0.25; this.measure(world, rect); }
     const m = this.mix, now = this.ctx.currentTime, B = this.beds, W = world.weather, tide = world.tide, night = world.darkness || 0;
     const set = (param, v, tc = 0.4) => param.setTargetAtTime(v, now, tc);
-    // Open water: brighter with the current, duller and quieter over the deep.
-    set(B.water.g.gain, 0.13 * (1 - 0.4 * m.deep) * (1 - 0.25 * night));
+    // How close in the view is: 0 all the way out, 1 from about two fifths of the way in. The close sounds of the water
+    // (surf swelling at the beach, lapping, the open water's wash) belong to the close view; far out there is only
+    // the distant soundscape (sfx.js). Worked out here, so it holds before (or without) the recorded sounds.
+    const lo = Math.log(Math.max(0.2, typeof minK === 'function' ? minK() : 1)), zz = clamp((Math.log(Math.max(0.2, k)) - lo) / Math.max(0.5, Math.log(16) - lo), 0, 1);
+    const nt = clamp((zz - 0.2) / 0.22, 0, 1), near = nt * nt * (3 - 2 * nt);
+    // Open water: brighter with the current, duller and quieter over the deep (and faint from far off).
+    set(B.water.g.gain, 0.13 * (1 - 0.4 * m.deep) * (1 - 0.25 * night) * (0.25 + 0.75 * near));
     set(B.water.f.frequency, (380 + world.current.s * 700) * (1 - 0.5 * m.deep));
     // Surf by the beach: each wave swells in; lapping with the tide's flow when it's calm.
-    const shore = world.shore ? m.beach : 0, wave = tide ? 0.2 + 0.8 * Math.exp(-(tide.wave % 1) * 4) : 0, near = typeof SFX !== 'undefined' && SFX.near != null ? SFX.near : 1;
-    set(B.surf.g.gain, (tide ? tide.surf : 0) * 0.15 * wave * (0.1 + 0.9 * shore) * (0.3 + 0.7 * near), 0.2);
+    const shore = world.shore ? m.beach : 0, wave = tide ? 0.2 + 0.8 * Math.exp(-(tide.wave % 1) * 4) : 0;
+    set(B.surf.g.gain, (tide ? tide.surf : 0) * 0.15 * wave * (0.1 + 0.9 * shore) * near, 0.4);
     set(B.surf.p.pan, m.dir);
     set(B.lap.g.gain, shore * (0.012 + 0.03 * Math.abs(tide ? tide.flow : 0)) * (1 - Math.min(1, tide ? tide.surf : 0) * 0.5) * near, 0.3);
     set(B.rain.g.gain, W.rain * 0.22, 0.5);
