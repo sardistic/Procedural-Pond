@@ -1842,8 +1842,8 @@ function normalRange(len, scr) { const c = Math.round((scr - len) / 2); return l
 function beyondLen(side) {
   const B = BEACH[side];
   if (!B || !B.snap) return 0;
-  const [bw, bh] = screenSize(B.snap.W, B.snap.H, B.snap.r);
-  return beachAxisX() ? bw : bh;
+  const [bw, bh] = screenSize(B.snap.W, B.snap.H, B.snap.r), s = beyondScale(side);
+  return (beachAxisX() ? bw : bh) * s;
 }
 // Whether the ponds along the beach are shown past each end (Scene → Neighbours). Hidden, the view keeps to this
 // pond; a walk over (the arrows by its name) still shows the one it's walking into.
@@ -1915,6 +1915,52 @@ async function refreshNeighbours() {
   edgeHints();
 }
 
+// How wide a pond's beach is near each end of it: from its edge to the mean-tide waterline, the median of nine
+// lines across it in the first and last stretch of the beach. [at the start, at the end] (world px, along x or y).
+function beachEnds(shore, W, H, side) {
+  if (!shore || side == null) return null;
+  const along = side < 2 ? H : W, across = side < 2 ? W : H, T = 128, out = [];
+  for (const [a0, a1] of [[0.02, 0.2], [0.8, 0.98]]) {
+    const ws = [];
+    for (let i = 0; i < 9; i++) {
+      const a = Math.min(along - 1, Math.floor(along * (a0 + (a1 - a0) * i / 8)));
+      let n = 0;
+      for (; n < across; n++) {
+        const c = side === 1 ? W - 1 - n : side === 3 ? H - 1 - n : n; // (n: how far in from the beach's edge)
+        if (shore[side < 2 ? c + a * W : a + c * W] <= T) break;
+      }
+      ws.push(n);
+    }
+    ws.sort((x, y) => x - y);
+    out.push(ws[4]);
+  }
+  return out;
+}
+// Which end of a pond (0: the start of its beach, 1: the end) is on screen's right or bottom, turned by r.
+function beachEndAfter(W, H, side, r) {
+  const at = (x, y) => (r === 1 ? [H - y, x] : r === 2 ? [W - x, H - y] : r === 3 ? [y, W - x] : [x, y]);
+  const s0 = side < 2 ? at(side === 1 ? W : 0, 0) : at(0, side === 3 ? H : 0), s1 = side < 2 ? at(side === 1 ? W : 0, H) : at(W, side === 3 ? H : 0);
+  const ax = beachAxisX();
+  return (ax ? s1[0] > s0[0] : s1[1] > s0[1]) ? 1 : 0;
+}
+// This pond's beach where a neighbour meets it (cached for the pond as it stands).
+let ownBeach = null;
+function ownBeachAt(side) {
+  const key = `${world.seed}|${world.W}|${world.H}|${world.shoreSide}`;
+  if (!ownBeach || ownBeach.key !== key) ownBeach = { key, ends: beachEnds(world.shore, world.W, world.H, world.shoreSide) };
+  if (!ownBeach.ends) return 0;
+  const after = beachEndAfter(world.W, world.H, world.shoreSide, view.r); // (the end on screen's right or bottom)
+  return ownBeach.ends[side === 'west' ? 1 - after : after];
+}
+// How much bigger a neighbour is drawn so that its beach, where it meets this one, is as wide as this one's:
+// beaches line up across the seam, and so do the waterlines.
+function beyondScale(side) {
+  const B = BEACH[side], S = B && B.snap;
+  if (!S || !S.beach) return 1;
+  const after = beachEndAfter(S.W, S.H, S.shoreSide, S.r), theirs = S.beach[side === 'west' ? after : 1 - after], ours = ownBeachAt(side);
+  return theirs > 2 && ours > 2 ? clamp(ours / theirs, 0.35, 3) : 1;
+}
+
 // Render another pond from its save, whole, in its own orientation (for the view beyond the end).
 function snapshotPond(save) {
   const keepWild = WILD_SPECIES.slice(), keepEco = { ...ECO }, [W, H] = save.size;
@@ -1947,7 +1993,7 @@ function snapshotPond(save) {
       voidSkin: null, swell: 0.3, swellDir: pw.shoreN || [0, 1],
     });
     g.putImageData(img, 0, 0);
-    return { canvas: cv, W, H, shoreSide: save.shoreSide };
+    return { canvas: cv, W, H, shoreSide: save.shoreSide, beach: beachEnds(pw.shore, W, H, save.shoreSide) };
   } finally {
     WILD_SPECIES.length = 0; WILD_SPECIES.push(...keepWild); Object.assign(ECO, keepEco);
   }
@@ -1959,7 +2005,7 @@ function captureSnap() {
   const cv = document.createElement('canvas');
   cv.width = world.W; cv.height = world.H;
   cv.getContext('2d').drawImage(canvas, 0, 0);
-  return { canvas: cv, W: world.W, H: world.H, shoreSide: world.shoreSide, r: view.r };
+  return { canvas: cv, W: world.W, H: world.H, shoreSide: world.shoreSide, r: view.r, beach: beachEnds(world.shore, world.W, world.H, world.shoreSide) };
 }
 
 // Fetch and draw what lies past one end (once, when you come near it).
@@ -1984,8 +2030,14 @@ async function ensureBeyond(side) {
 }
 
 // Where the ponds beyond each end sit on screen: beside this one along the beach, their beaches lined up with its.
-const beyondEl = {};
+const beyondEl = {}, beyondLand = {};
 for (const side of ['west', 'east']) {
+  // (Up the beach past a neighbour: its upper sand, fading out as far as this pond's own land shows.)
+  const land = document.createElement('div');
+  land.className = 'beyond-land';
+  land.hidden = true;
+  canvas.before(land);
+  beyondLand[side] = land;
   const cv = document.createElement('canvas');
   cv.className = 'beyond';
   cv.hidden = true;
@@ -2012,24 +2064,49 @@ function placeBeyond() {
   const ax = beachAxisX(), [w, h] = screenSize(), ds = displaySide(world.shoreSide ?? 3);
   for (const side of ['west', 'east']) {
     const B = BEACH[side], el = beyondEl[side];
-    if (!B || !B.snap || !showNeighbours()) { el.hidden = true; continue; }
-    const S = B.snap, [bw, bh] = screenSize(S.W, S.H, S.r);
+    if (!B || !B.snap || !showNeighbours()) { el.hidden = true; beyondLand[side].hidden = true; continue; }
+    const S = B.snap, s = B.scale = beyondScale(side), [bw0, bh0] = screenSize(S.W, S.H, S.r), bw = bw0 * s, bh = bh0 * s;
     let x, y;
     if (ax) { x = side === 'west' ? view.tx - bw : view.tx + w; y = ds === 3 ? view.ty + h - bh : view.ty; }
     else { y = side === 'west' ? view.ty - bh : view.ty + h; x = ds === 1 ? view.tx + w - bw : view.tx; }
     B.rect = [x, y];
     if (el.snapOf !== S) { el.width = S.W; el.height = S.H; el.getContext('2d').drawImage(S.canvas, 0, 0); el.snapOf = S; }
-    el.style.transform = canvasTransform(x, y, view.k, S.r, S.W, S.H);
+    el.style.transform = canvasTransform(x, y, view.k * s, S.r, S.W, S.H);
     el.hidden = x > innerWidth || y > innerHeight || x + bw < 0 || y + bh < 0;
+    // Its upper beach, carried on up past its edge like this pond's land.
+    const land = beyondLand[side], reach = (typeof hinterReach === 'function' ? hinterReach(world) : 60) * view.k;
+    if (S.sand == null) S.sand = beachSand(S);
+    if (!S.sand || el.hidden) { land.hidden = true; }
+    else {
+      const dir = ds === 3 ? 'to bottom' : ds === 2 ? 'to top' : ds === 1 ? 'to right' : 'to left';
+      const [lx, ly, lw, lh] = ds === 3 ? [x, y + bh, bw, reach] : ds === 2 ? [x, y - reach, bw, reach] : ds === 1 ? [x + bw, y, reach, bh] : [x - reach, y, reach, bh];
+      Object.assign(land.style, { left: `${lx}px`, top: `${ly}px`, width: `${lw}px`, height: `${lh}px`,
+        background: `linear-gradient(${dir}, ${S.sand} 0%, ${S.sand} 35%, rgba(0,0,0,0) 100%)` });
+      land.hidden = false;
+    }
   }
+}
+
+// A neighbour's sand at its landward edge (sampled along it from its picture), as a CSS colour.
+function beachSand(S) {
+  try {
+    const g = S.canvas.getContext('2d'), side = S.shoreSide, W = S.W, H = S.H, cols = [];
+    for (let i = 1; i < 8; i++) {
+      const a = i / 8, x = side === 0 ? 1 : side === 1 ? W - 2 : Math.floor(W * a), y = side === 2 ? 1 : side === 3 ? H - 2 : Math.floor(H * a);
+      cols.push(g.getImageData(x, y, 1, 1).data);
+    }
+    const m = (k) => Math.round(cols.map((c) => c[k]).sort((p, q) => p - q)[3]);
+    return `rgb(${m(0)}, ${m(1)}, ${m(2)})`;
+  } catch { return ''; }
 }
 
 // Walk into the pond past one end: it comes alive exactly where its picture was.
 function crossTo(side) {
   const B = BEACH[side];
   if (!B || !B.snap || (!B.save && !B.home)) return false;
-  const other = side === 'west' ? 'east' : 'west', k = view.k;
+  const other = side === 'west' ? 'east' : 'west';
   placeBeyond();
+  const k = view.k * (B.scale || 1); // (drawn at its own scale beside this one: it comes alive at that zoom)
   const [bx, by] = B.rect;
   if (!world.observe) { saveNow(); homeInfo = { seed: world.seed, id: world.link && world.link.id, path: world.link ? `/${linkName(world.link)}` : `/?pond=${encodeURIComponent(world.seed)}` }; }
   const leaving = { id: world.observe ? world.observe.id : homeInfo.id, home: !world.observe, back: true, snap: captureSnap(),

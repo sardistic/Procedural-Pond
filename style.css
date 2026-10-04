@@ -45,6 +45,7 @@ html.font-pixel body { font-family: 'Silkscreen', ui-monospace, monospace; }
   pointer-events: none;
 }
 #water3d { position: fixed; inset: 0; z-index: 1; pointer-events: none; transform-origin: 0 0; image-rendering: pixelated; }
+.beyond-land { position: fixed; pointer-events: none; image-rendering: pixelated; }
 .beyond {
   position: fixed;
   left: 0;
