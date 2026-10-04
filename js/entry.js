@@ -228,6 +228,10 @@
     try { localStorage.setItem('pond.skipEntry', $('entry-skip').checked ? '1' : '0'); } catch { /* no storage */ }
     root.classList.add('gone');
     songStop(1.2); // (the music fades as you go in)
+    // A splash as you dive in, if there's sound (the music on here, or the pond's sound switch).
+    let pondSound = false;
+    try { pondSound = !!JSON.parse(localStorage.getItem('procedural-pond.opts') || '{}').sound; } catch { /* no storage */ }
+    if (songWanted || pondSound) { try { const a = new Audio('audio/sfx/ui_enter.mp3'); a.volume = 0.35; a.play().catch(() => {}); } catch { /* no audio */ } }
     setTimeout(() => root.remove(), 700);
     document.removeEventListener('keydown', key, true);
     if (window.Entry.onDone) window.Entry.onDone();

@@ -1,0 +1,209 @@
+{
+ "v": 1,
+ "sounds": {
+  "ui_click": {
+   "f": "ui_click.mp3",
+   "dur": 0.522,
+   "loop": false,
+   "g": 18.621
+  },
+  "ui_click2": {
+   "f": "ui_click2.mp3",
+   "dur": 0.522,
+   "loop": false,
+   "g": 4.169
+  },
+  "ui_open": {
+   "f": "ui_open.mp3",
+   "dur": 0.836,
+   "loop": false,
+   "g": 0.412
+  },
+  "ui_close": {
+   "f": "ui_close.mp3",
+   "dur": 0.731,
+   "loop": false,
+   "g": 1.95
+  },
+  "ui_tab": {
+   "f": "ui_tab.mp3",
+   "dur": 0.522,
+   "loop": false,
+   "g": 2.455
+  },
+  "ui_toggle_on": {
+   "f": "ui_toggle_on.mp3",
+   "dur": 0.627,
+   "loop": false,
+   "g": 0.136
+  },
+  "ui_toggle_off": {
+   "f": "ui_toggle_off.mp3",
+   "dur": 0.627,
+   "loop": false,
+   "g": 1.096
+  },
+  "ui_error": {
+   "f": "ui_error.mp3",
+   "dur": 0.627,
+   "loop": false,
+   "g": 2.818
+  },
+  "ui_buy": {
+   "f": "ui_buy.mp3",
+   "dur": 1.045,
+   "loop": false,
+   "g": 0.646
+  },
+  "ui_essence": {
+   "f": "ui_essence.mp3",
+   "dur": 1.228,
+   "loop": false,
+   "g": 0.724
+  },
+  "ui_build": {
+   "f": "ui_build.mp3",
+   "dur": 1.411,
+   "loop": false,
+   "g": 0.363
+  },
+  "ui_plant": {
+   "f": "ui_plant.mp3",
+   "dur": 0.731,
+   "loop": false,
+   "g": 6.839
+  },
+  "ui_recycle": {
+   "f": "ui_recycle.mp3",
+   "dur": 1.045,
+   "loop": false,
+   "g": 0.316
+  },
+  "ui_spawn": {
+   "f": "ui_spawn.mp3",
+   "dur": 1.045,
+   "loop": false,
+   "g": 4.677
+  },
+  "ui_enter": {
+   "f": "ui_enter.mp3",
+   "dur": 2.038,
+   "loop": false,
+   "g": 0.804
+  },
+  "ev_feed": {
+   "f": "ev_feed.mp3",
+   "dur": 1.228,
+   "loop": false,
+   "g": 10.233
+  },
+  "ev_eat": {
+   "f": "ev_eat.mp3",
+   "dur": 0.522,
+   "loop": false,
+   "g": 1.995
+  },
+  "ev_hit": {
+   "f": "ev_hit.mp3",
+   "dur": 0.627,
+   "loop": false,
+   "g": 2.291
+  },
+  "ev_hatch": {
+   "f": "ev_hatch.mp3",
+   "dur": 1.045,
+   "loop": false,
+   "g": 8.222
+  },
+  "ev_birth_rare": {
+   "f": "ev_birth_rare.mp3",
+   "dur": 2.247,
+   "loop": false,
+   "g": 2.512
+  },
+  "ev_award": {
+   "f": "ev_award.mp3",
+   "dur": 0.731,
+   "loop": false,
+   "g": 3.631
+  },
+  "ev_discover": {
+   "f": "ev_discover.mp3",
+   "dur": 1.646,
+   "loop": false,
+   "g": 0.61
+  },
+  "ev_fossil": {
+   "f": "ev_fossil.mp3",
+   "dur": 1.411,
+   "loop": false,
+   "g": 1.059
+  },
+  "ev_artifact": {
+   "f": "ev_artifact.mp3",
+   "dur": 2.586,
+   "loop": false,
+   "g": 0.232
+  },
+  "ev_depth": {
+   "f": "ev_depth.mp3",
+   "dur": 4.049,
+   "loop": false,
+   "g": 0.989
+  },
+  "ev_thunder": {
+   "f": "ev_thunder.mp3",
+   "dur": 3.03,
+   "loop": false,
+   "g": 0.211
+  },
+  "ev_awaken": {
+   "f": "ev_awaken.mp3",
+   "dur": 1.646,
+   "loop": false,
+   "g": 1.622
+  },
+  "ev_death": {
+   "f": "ev_death.mp3",
+   "dur": 1.515,
+   "loop": false,
+   "g": 2.6
+  },
+  "ev_splash_small": {
+   "f": "ev_splash_small.mp3",
+   "dur": 0.731,
+   "loop": false,
+   "g": 12.445
+  },
+  "ev_splash_big": {
+   "f": "ev_splash_big.mp3",
+   "dur": 1.646,
+   "loop": false,
+   "g": 0.479
+  },
+  "ev_storm": {
+   "f": "ev_storm.mp3",
+   "dur": 4.049,
+   "loop": false,
+   "g": 0.589
+  },
+  "amb_surface": {
+   "f": "amb_surface.mp3",
+   "dur": 20.036,
+   "loop": true,
+   "g": 0.556
+  },
+  "amb_shallow": {
+   "f": "amb_shallow.mp3",
+   "dur": 20.036,
+   "loop": true,
+   "g": 1.603
+  },
+  "amb_deep": {
+   "f": "amb_deep.mp3",
+   "dur": 20.036,
+   "loop": true,
+   "g": 0.111
+  }
+ }
+}
