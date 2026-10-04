@@ -175,6 +175,7 @@ function buildLights(world, rect) {
   if (typeof xenoLights === 'function') xenoLights(M, world, big);
   if (typeof landLights === 'function') landLights(M, world, big);
   if (typeof beaconLights === 'function') beaconLights(M, world, big); // (beacons and lighthouses: beacons.js)
+  if (typeof seaLights === 'function') seaLights(M, world, big); // (the other sea's glows: seas.js)
   return M.any ? M : null;
 }
 

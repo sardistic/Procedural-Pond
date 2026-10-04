@@ -8,10 +8,15 @@
 //  - The zoom: far out you hear the surface (wind, lapping, birds), closer the shallows (bubbles, the crackle of
 //    shrimp), and right in close the water closes over you: everything but the menus is muffled, and the
 //    deep's drone comes up (more over deep water).
+//  - Land: zoomed in over the beach, the hinterland or an island, its own sound above the water: jungle (birds,
+//    insects, frogs) on palm islands and warm wet land, a meadow's songbirds and crickets on willow and reed islands
+//    and cooler land, waves on sand and gulls on the beach and coral cays, wind and a seabird colony on bare rock
+//    and black basalt, crickets, frogs and an owl at night. The water's own sounds give way to it.
 // All of it follows the sound switch (M); the menus stay crisp, the rest sits under the soundscape.
 
 const SFX = {
   ready: false, loading: null, buf: {}, man: null, last: {}, ui: null, fx: null, under: null, beds: null, tier: null, rainWas: 0, alt: false,
+  land: null, landMix: null, landL: 0, landW: 0, landNext: 0,
 
   // Load and decode everything once, the first time sound is on (about 2 MB).
   async ensure() {
@@ -47,8 +52,46 @@ const SFX = {
         if (k === this.shore) this.shoreG = G0(k);
         if (k === this.far) this.farG = G0(k);
       }
+      // The land's beds, above the water too.
+      this.land = {};
+      for (const k of ['jungle', 'beach', 'meadow', 'rock', 'night']) {
+        const id = `amb_land_${k}`;
+        if (!this.buf[id]) continue;
+        const s = ctx.createBufferSource(), g = ctx.createGain();
+        s.buffer = this.buf[id]; s.loop = true; g.gain.value = 0;
+        s.connect(g).connect(ctx.destination);
+        s.start(0, Math.random() * Math.max(0.1, this.buf[id].duration - 1));
+        this.land[k] = { g, k: G0(id) };
+      }
       this.ready = true;
     })().catch(() => { this.loading = null; });
+  },
+
+  // What land is in view, and of what kind: a grid of points over it, each dry one weighed by where it stands.
+  landSample(world) {
+    const mix = { jungle: 0, beach: 0, meadow: 0, rock: 0, night: 0 };
+    if (!world.shore || typeof visibleRect !== 'function') return [0, mix];
+    const [x0, y0, x1, y1] = visibleRect(), night = (world.darkness || 0) > 0.55, tide = world.tide.level;
+    const C = typeof pondChar === 'function' ? pondChar(world) : null, lush = C ? (C.temp || 0) > 0.1 && (C.wet || 1) > 0.9 : false;
+    const ISLE = { palm: 'jungle', coral: 'beach', rock: 'rock', basalt: 'rock', reed: 'meadow', willow: 'meadow' };
+    let n = 0, dry = 0;
+    for (let j = 0; j < 5; j++) for (let i = 0; i < 7; i++) {
+      const x = x0 + (i + 0.5) / 7 * (x1 - x0), y = y0 + (j + 0.5) / 5 * (y1 - y0);
+      n++;
+      if (x < 0 || y < 0 || x >= world.W || y >= world.H || shoreAt(world, x, y) <= tide) continue;
+      dry++;
+      const isle = typeof islandAt === 'function' ? islandAt(world, x, y) : null;
+      let k;
+      if (isle) {
+        const edge = world.islandEdge ? world.islandEdge[(x | 0) + (y | 0) * world.W] : 99;
+        const realm = typeof realmShown === 'function' ? realmShown(isle) : null;
+        k = edge < 6 ? 'beach' : realm ? (realm.land === 'ancient' ? 'jungle' : 'rock') : ISLE[typeof isleOf === 'function' ? isleOf(isle) : 'palm'] || 'meadow';
+      } else k = shoreAt(world, x, y) < tide + 0.18 ? 'beach' : lush ? 'jungle' : 'meadow';
+      if (night && (k === 'jungle' || k === 'meadow')) k = 'night';
+      mix[k]++;
+    }
+    if (dry) for (const k in mix) mix[k] /= dry;
+    return [dry / n, mix];
   },
 
   // Play one: on the menus' bus or the pond's, at a level (× its own normalising gain), panned, a little varied,
@@ -108,10 +151,14 @@ const SFX = {
     const farW = 1 - ss(0.18, 0.45, z), nearW = ss(0.2, 0.42, z) * (1 - ss(0.6, 0.85, z));
     if (B.amb_far) set(B.amb_far.gain, damp * 0.4 * (this.farG || 1) * farW, 1.2);
     if (B.amb_surface) set(B.amb_surface.gain, damp * 0.32 * (this.shoreG || 1) * (B.amb_far ? nearW : 1 - ss(0.12, 0.5, z)) * (1 - 0.6 * deep), 1.2);
-    if (B.amb_shallow) set(B.amb_shallow.gain, damp * 0.35 * G('amb_shallow') * ss(0.5, 0.8, z) * (1 - 0.7 * deep));
-    if (B.amb_deep) set(B.amb_deep.gain, damp * 0.3 * G('amb_deep') * Math.max(deep * 0.9, ss(0.6, 1, z) * 0.6));
-    // Under the water as you close in: the pond's sounds muffle (the menus don't).
-    set(this.under.frequency, 18000 * Math.pow(1500 / 18000, ss(0.35, 1, z) * 0.85 + deep * 0.15), 0.4);
+    if (B.amb_shallow) set(B.amb_shallow.gain, damp * 0.35 * G('amb_shallow') * ss(0.5, 0.8, z) * (1 - 0.7 * deep) * (1 - this.landW));
+    if (B.amb_deep) set(B.amb_deep.gain, damp * 0.3 * G('amb_deep') * Math.max(deep * 0.9, ss(0.6, 1, z) * 0.6) * (1 - this.landW));
+    // Land in view, zoomed in: its own sound, and the water's gives way to it (every half second, what's there).
+    if (now > this.landNext) { this.landNext = now + 0.5; [this.landL, this.landMix] = this.landSample(world); }
+    this.landW = clamp((this.landL - 0.15) / 0.5, 0, 1) * ss(0.25, 0.55, z);
+    if (this.land) for (const [k, L] of Object.entries(this.land)) set(L.g.gain, damp * 0.42 * L.k * this.landW * ((this.landMix && this.landMix[k]) || 0), 1.2);
+    // Under the water as you close in: the pond's sounds muffle (the menus don't); not over land.
+    set(this.under.frequency, 18000 * Math.pow(1500 / 18000, (ss(0.35, 1, z) * 0.85 + deep * 0.15) * (1 - 0.85 * this.landW)), 0.4);
     // A new depth opens.
     const tier = world.erosion ? world.erosion.tier : 0;
     if (this.tier != null && tier > this.tier && !world.observe) this.play('ev_depth', { level: 0.6, gap: 60, vary: 0 });

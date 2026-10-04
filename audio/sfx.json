@@ -228,6 +228,31 @@
    "dur": 24,
    "loop": true,
    "g": 5.07
+  },
+  "amb_land_jungle": {
+   "f": "amb_land_jungle.mp3",
+   "dur": 24,
+   "loop": true
+  },
+  "amb_land_beach": {
+   "f": "amb_land_beach.mp3",
+   "dur": 22,
+   "loop": true
+  },
+  "amb_land_meadow": {
+   "f": "amb_land_meadow.mp3",
+   "dur": 24,
+   "loop": true
+  },
+  "amb_land_rock": {
+   "f": "amb_land_rock.mp3",
+   "dur": 22,
+   "loop": true
+  },
+  "amb_land_night": {
+   "f": "amb_land_night.mp3",
+   "dur": 24,
+   "loop": true
   }
  }
 }

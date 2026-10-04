@@ -603,6 +603,7 @@ function dawnStructures(world) {
   if (typeof dawnStances === 'function') dawnStances(world);
   // The pond reaches a little further out (between frames: it rebuilds the pond).
   if (typeof dawnExpand === 'function' && typeof window !== 'undefined') setTimeout(() => dawnExpand(world), 0);
+  if (typeof seaDawn === 'function' && typeof window !== 'undefined') setTimeout(() => seaDawn(world), 0); // (the bright coast's islands: seas.js)
 }
 
 // Plants take root around structures, rocks and plants that have been there a while.

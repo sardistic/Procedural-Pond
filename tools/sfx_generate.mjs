@@ -53,6 +53,12 @@ const SFX = {
   amb_far_salt: ['wide open coastal soundscape heard from high up on a cliff: steady wind, large ocean waves crashing far away in the distance as a soft roar, seagulls calling now and then far off, airy and spacious, nothing close', 24, 0.5, true],
   amb_far_fresh: ['wide open lakeside soundscape heard from a distance: wind moving through tall grass and trees, distant birdsong, faint far-off water, airy and spacious, nothing close', 24, 0.5, true],
   amb_deep: ['deep ocean underwater ambience: low dark drone, muffled pressure, very distant whale calls, slow and calm', 20, 0.4, true],
+  // ---- on land, zoomed in over it: they loop ----
+  amb_land_jungle: ['dense tropical island jungle by day: insects buzzing and trilling, tropical birds calling and whistling, the odd parrot, frogs, humid and alive, no water sounds, no music', 24, 0.5, true],
+  amb_land_beach: ['standing on a warm sandy beach: small waves washing up the sand close by and running back, seagulls calling, a light breeze, sunny and relaxed, no music', 22, 0.5, true],
+  amb_land_meadow: ['a grassy temperate island meadow by day: songbirds singing in nearby trees, crickets and grasshoppers in the grass, wind moving through leaves, peaceful, no water, no music', 24, 0.5, true],
+  amb_land_rock: ['a bare rocky islet out at sea: steady wind over stone, a colony of seabirds calling, terns and gannets, waves breaking on the rocks below, wild and exposed, no music', 22, 0.5, true],
+  amb_land_night: ['an island at night: crickets and cicadas chirping steadily, tree frogs calling, a distant owl now and then, a soft breeze, calm and dark, no music', 24, 0.5, true],
 };
 
 const only = process.argv.slice(2);

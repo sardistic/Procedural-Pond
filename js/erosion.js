@@ -19,10 +19,13 @@ const DEPTH_TIERS = [
   { erosion: 22, salt: 'The abyss', fresh: 'The drowned cathedral', depth: 1, expand: 0.22 },
 ];
 // How far out the pond may grow along the deep, all told: past this the tiers go on in the dark, with no more room.
-const MAX_DEEP_PX = 15000; // (the pond grows every dawn (cycle.js) and at each new depth, up to this)
-// ...and within a budget of pixels (about 35 bytes each across the buffers), less on a phone: a pond
-// that's wide across can't reach as far.
-const PX_BUDGET = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent || '') ? 5e6 : 1e7;
+const MAX_DEEP_PX = 40000; // (the pond grows every dawn (cycle.js) and at each new depth, up to this)
+// ...and within a budget of pixels (about 36 bytes each across the buffers, and twice that for a moment while it
+// grows), less on a phone or a machine with little memory: a pond that's wide across can't reach as far.
+const PX_BUDGET = typeof navigator === 'undefined' ? 1e7 : /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent || '') ? 5e6 : (navigator.deviceMemory || 4) >= 8 ? 1.5e7 : 1.1e7;
+// The further out it has grown, the slower it grows on (each dawn's creep and each new depth's room): full pace
+// for the first 3,000 px, half by 6,000, a third by 9,000.
+const growthDR = (world) => 1 / (1 + Math.max(0, (world.expandPx || 0) - 3000) / 3000);
 function maxDeepPx(world) {
   if (typeof baseSize !== 'function' || typeof deepAxisX !== 'function') return MAX_DEEP_PX;
   const [W0, H0] = baseSize(world), axisX = deepAxisX(world.shoreSide), cross = axisX ? H0 : W0, along = axisX ? W0 : H0;
@@ -176,6 +179,7 @@ function depthIn(world, depth, rect, src) {
   }
   if (typeof carveTrenches === 'function') carveTrenches(world, depth, rect);
   if (typeof applyScour === 'function') applyScour(world, depth, src, rect);
+  if (typeof applySeas === 'function') applySeas(world, depth, rect); // (the seas beyond: seas.js)
 }
 
 // Rectangles round the scour sources that appeared, went, or changed (at their larger reach).
@@ -242,7 +246,7 @@ function updateErosion(world, dt) {
     if (typeof refreshSpeciesButtons === 'function') setTimeout(refreshSpeciesButtons, 0); // new builds, foods and plants
     // The new depth shows at once; the room it opens beyond the drop-off comes a pixel at a time (growTick in main.js).
     if (next.expand && typeof expandWorldPx === 'function' && (world.expandPx || 0) < maxDeepPx(world) - 8) {
-      const [W0, H0] = baseSize(world), room = Math.round((deepAxisX(world.shoreSide) ? W0 : H0) * next.expand);
+      const [W0, H0] = baseSize(world), room = Math.round((deepAxisX(world.shoreSide) ? W0 : H0) * next.expand * growthDR(world));
       const now = typeof window !== 'undefined' && window.__TEST_GROW_NOW ? room : 1; // (the test harness: all at once)
       queueGrowth(world, room - now);
       expandWorldPx(now, `${tierName(world, E.tier)} opens beyond the drop-off`);

@@ -1110,3 +1110,25 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
   - .agent/runtime/seastate_probe.py (Thomas-Pond; pondwide numbers, the island field, a wake test)
   - .agent/runtime/seastate_shots.py (seastate-calm.png, seastate-storm.png, seastate-pod.png)
   - seascape_probe passes.
+
+## More room, the seas beyond, and land sounds (2026-10-04)
+- Room. Thomas-Pond had hit the pixel budget: 1280 × 7804 = 10.0M px, 7,084 of 7,092 px of room, 36 bytes/px (341 MB of buffers, a 445 MB heap).
+  - Budget: 15M px on desktops reporting deviceMemory ≥ 8, 11M on other desktops, 5M on phones (unchanged). It stays moderate because each growth step briefly holds old and new buffers together: on Thomas-Pond the heap went to about 650 MB right after a step, and a step takes about 2 s at that size (spaced 2.5–15 s apart).
+  - MAX_DEEP_PX: 15k → 40k.
+  - Diminishing returns (`growthDR`): growth is full pace for the first 3,000 px, then 1 / (1 + (ex − 3000)/3000). It applies to dawn growth and to each tier's room. Thomas-Pond now has 10,998 px of room, growing at 0.42 pace.
+  - Going truly further needs a streaming world: only the area round the camera in per-pixel buffers, with the rest regenerated from seed and saved edits. Not built.
+- The seas beyond (js/seas.js). `world.game.seas` holds `{from, k}` bands, measured in px past the original edge. `noteSea` runs just before every growth (growInPlace and expandWorldPx) and starts a band when the wanted sea changes: deep below tier 12, alien from 12, coast from 15. Water opened earlier keeps its sea.
+  - Other sea: glowing fissures to the bottom (on the trench layer) where a two-scale noise crosses its middle, plus violet, cyan and pink light motes on a 36 px grid via `seaLights` in buildLights. `xenoSpot` sends 65% of alien arrivals to it.
+  - Bright coast: the depth climbs back down by 84% over the band's first 400 px, with trenches cleared. Raster tints its water warm turquoise over the first 300 px (`seaCoast` spans). `seaDawn` raises an island with a lighthouse every 360 px along it, and their harbors fill with life via beacons.js.
+  - Probe .agent/runtime/seas_probe.py on Thomas-Pond, with bands injected:
+    - Average depth: deep 0.63; alien 0.75 with fissures on 8% of samples; coast 0.14.
+    - Dawn raised 3 islands, 3 lighthouses and 3 harbors.
+    - Screenshots: seas-alien.png, seas-coast.png, seas-coast-isle.png.
+- Land sounds (sfx.js). Five new ElevenLabs loops: amb_land_jungle, beach, meadow, rock and night.
+  - Every 0.5 s, a 7×5 grid over the view classifies dry points:
+    - Islands by isle kind: palm → jungle; coral → beach; rock and basalt → rock; reed and willow → meadow.
+    - Island points within 6 px of the island's edge → beach; realm islands → rock (or jungle if ancient).
+    - Mainland within 0.18 above the tide → beach; inland → jungle if the pond is warm and wet, else meadow.
+    - Jungle and meadow become night after dark.
+  - Land weight = clamp((dry fraction − 0.15)/0.5) × the zoom-in curve. The beds play above the water, while shallow and deep fade and the underwater lowpass opens.
+  - Probe .agent/runtime/land_sound_probe.py: sea none; beach = beach + meadow; inland = meadow; night = night; zoomed out = none.

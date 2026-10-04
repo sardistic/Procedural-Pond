@@ -291,6 +291,7 @@ class Raster {
     // The abyss drinking islands' light (beacons.js: by island), and the harbors round lighthouses.
     const isleDrain = s.isleDrain || null, islandGround = isleDrain ? s.islandGround || null : null, islandEdge = islandGround ? s.islandEdge || null : null;
     const harbors = s.harbors && s.harbors.length ? s.harbors.filter((h) => h.x + h.r >= rect[0] && h.x - h.r <= rect[2] && h.y + h.r >= rect[1] && h.y - h.r <= rect[3]) : null, hT = (t * 4) | 0;
+    const seaCoast = s.seaCoast || null; // (the bright coast's stretches past the other sea: seas.js)
     // Chop: short, quick waves in the shallows when it blows; spindrift: streaks of foam blown along the deep in a storm.
     const chop = s.chop || 0, spin = s.spindrift || 0, L3 = 10, w3x = (sw0x(s) * 1024) / L3, w3y = (sw0y(s) * 1024) / L3, w3t = t * 4 * 1024 / L3;
     // The eldritch: veins of void in marked skin, crawling slowly, with stars in them.
@@ -559,6 +560,16 @@ class Raster {
           else if (hw > 0) {
             const a = Math.min(1, hw * 1.6) * 0.62, cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
             c = (0xff000000 | ((cb + (((215 - cb) * a) | 0)) << 16) | ((cg + (((220 - cg) * a) | 0)) << 8) | (cr + (((70 - cr) * a) | 0))) >>> 0;
+          }
+        }
+        // The bright coast: past the other sea, warm clear water, coming in over its first 300 px.
+        if (seaCoast && !dry && !i) {
+          const a = seaCoast.axisX ? (seaCoast.shifts ? seaCoast.ex - x : x - seaCoast.edge) : (seaCoast.shifts ? seaCoast.ex - y : y - seaCoast.edge);
+          let cw = 0;
+          for (const sp of seaCoast.spans) if (a >= sp[0] && a < sp[1]) { const v = Math.min(1, (a - sp[0]) / 300); if (v > cw) cw = v; }
+          if (cw > 0) {
+            const k = cw * 0.42, cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
+            c = (0xff000000 | ((cb + (((205 - cb) * k) | 0)) << 16) | ((cg + (((205 - cg) * k) | 0)) << 8) | (cr + (((70 - cr) * k) | 0))) >>> 0;
           }
         }
         stroke *= surfaceVis; waveS *= surfaceVis; refl *= surfaceVis;

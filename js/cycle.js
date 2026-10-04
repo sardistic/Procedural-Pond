@@ -129,7 +129,7 @@ function drawDetritus(r, world, rect) {
 function dawnExpand(world) {
   if (world.observe || typeof expandWorldPx !== 'function' || (world.expandPx || 0) >= maxDeepPx(world) - 8) return;
   const tier = (world.erosion && world.erosion.tier) || 0, pts = (world.game && world.game.points) || 0;
-  const grow = 2 + 0.8 * tier + 0.6 * Math.log10(1 + pts) + (world.landArea ? 0.05 * (world.landArea.cryptid || 0) : 0);
+  const grow = (2 + 0.8 * tier + 0.6 * Math.log10(1 + pts) + (world.landArea ? 0.05 * (world.landArea.cryptid || 0) : 0)) * (typeof growthDR === 'function' ? growthDR(world) : 1);
   queueGrowth(world, grow + (world.game.expandDue || 0));
   world.game.expandDue = 0; // (what an older pond had put by toward its next step)
 }
