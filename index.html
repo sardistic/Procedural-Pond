@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=52">
+  <link rel="stylesheet" href="style.css?v=53">
   <style id="entry-css">
     /* The entry screen: painted before any script loads (inline, so nothing waits on style.css). It is opaque:
        the pond stays hidden until you enter. js/entry-water.js draws the moving water on #entry-bg (in a worker). */
@@ -301,6 +301,7 @@
         <button type="button" data-toggle="life" title="Hunger, growth, breeding, predators and migration">Life</button>
         <button type="button" data-toggle="weather" title="Rain showers and wind gusts">Weather</button>
         <button type="button" data-toggle="fine" title="Close-up detail&#10;A finer pixel layer from 12×, finer again from 20×: sand, light, scales, fins and plants. Turn it off for the original pixels.">Detail</button>
+        <button type="button" id="opt-renderer" title="Renderer&#10;CPU: the pond is composed by the processor, as it always has been. GPU: the graphics card composes it (faster on big ponds); it works with the Classic waves, and steps back to the CPU for 3D or Seascape water, the bones view and the close-up detail.">Renderer: CPU</button>
         <button type="button" id="opt-waves" title="Waves&#10;Classic: the original pixel water. 3D: a moving water mesh that responds to wind, rain, surf and depth. Seascape: the sea surface raymarched on the GPU and pixelated (after Seascape by Alexander Alekseev, CC BY-NC-SA 3.0).">Waves: Classic</button>
         <button type="button" data-toggle="bars" title="Health bars&#10;Health (green to red) and fullness (amber) over every animal; a pip for each tenth it has grown on feeding.">Health bars</button>
         <button type="button" data-toggle="neighbours" title="Neighbours&#10;The ponds either side of yours along the beach, drawn past each end of it (and you can drag on into them). They appear by themselves once the pond is deep enough (past the tide pools); turning this on or off yourself holds from then on. Off: just your pond; the arrows by its name still walk you over.">Neighbours</button>
@@ -607,6 +608,7 @@
   <script src="js/waves.js?v=59"></script>
   <script src="js/water3d.js?v=62"></script>
   <script src="js/water-sdf.js?v=9"></script>
+  <script src="js/compose-gl.js?v=1"></script>
   <script src="js/raster.js?v=69"></script>
   <script src="js/creatures.js?v=61"></script>
   <script src="js/critters.js?v=55"></script>
@@ -672,7 +674,7 @@
   <script src="js/forage.js?v=3"></script>
   <script src="js/hud.js?v=75"></script>
   <script src="js/fine.js?v=55"></script>
-  <script src="js/main.js?v=87"></script>
+  <script src="js/main.js?v=88"></script>
   <script src="js/sfx.js?v=5"></script>
   <script src="js/visits.js?v=2"></script>
   <script src="js/guide.js?v=57"></script>

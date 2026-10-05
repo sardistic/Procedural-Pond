@@ -1175,3 +1175,24 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
 - compose_parts.py showed the remaining cost spread over about 15 features (1–5 ms each), with no single hot spot. That's why the GPU port is next.
 - Minds: `mindFishInputs` ran `mindWetRoute`, a route check, on every plant in the pond before the range test: about 65 ms a call on Thomas-Pond, with 4,192 plants. Food, plants and rocks are now range-checked first, with a bounding-box check and then mindDistance, which is the same test `put` applies, so results are unchanged. The mindplay probe passes.
 - Thomas-Pond, steady state, slow pan, headless: p50 / p90 / p99 = 38 / 61 / 108 ms, from 42 / 91 / 142 after the bake fixes (77 / 174 / 245 originally). 278 frames in 12 s.
+
+## GPU compose, as an option (2026-10-05)
+- Settings → Renderer: CPU (default) or GPU (`opts.renderer`). js/compose-gl.js is a WebGL2 port of Raster.compose: one full-screen fragment pass over the visible rect's tile (snapped to 32 px with a 4 px margin), drawn on a canvas laid over #pond and placed like the 3D water.
+  - CPU-side work left: the raster still draws everything.
+  - Per frame, the col, z, zBase, id, sh and bg tile go up straight from their arrays (UNPACK_ROW_LENGTH and SKIP), along with the per-id outline and flag tables (256×256: emissive, fade, thick, void level).
+  - Shore, depth, trench and island edge are packed into one RGBA8 texture, and the river mask and deep into an RG8. These are rebuilt when the tile moves or the terrain changes, at most every 1.5 s otherwise.
+  - Caustics and clouds are one RG32F texture. The wave table, island drain and refraction rows and columns share one R32F table. The light map is RGBA32F.
+  - 14 texture units in all.
+  - Glints are drawn as points over the result.
+  - The shader keeps the CPU's integer steps: shifts with rounding toward −∞ for negatives (`sr8`), `imul` hashes as uint multiplies, and truncations where the CPU uses `|0`.
+- It steps aside, and the CPU composes, for:
+  - 3D or Seascape water, since those read the CPU picture
+  - the bones view
+  - the close-up layer (FINE.rec)
+  - whole-pond renders (photos and shares)
+  - a lost context or a GL error.
+- Verified with .agent/runtime/gpu_compose_probe.py: the same captured frame composed by both, with GPU pixels read back.
+  - Test pond by day: only the glints differ (the GPU draws them; the CPU adds them after compose).
+  - Thomas-Pond by day: 0–0.02%. At night: at most 0.24% of pixels, each by 1 level (light-pool float rounding).
+  - .agent/runtime/gpu_place_probe.py: the same paused view screenshotted in both modes has 0 differing screen pixels, so placement is exact.
+- Speed can't be measured here: headless Chrome emulates WebGL with SwiftShader on the CPU. Main-thread cost in GPU mode is the uploads (about 19 B per visible pixel plus 512 KB of tables), against about 27 ms of CPU compose for the same Thomas-Pond view. Default stays CPU until it's tried on real hardware.

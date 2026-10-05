@@ -7,7 +7,7 @@ const OPTS_KEY = 'procedural-pond.opts';
 const DEFAULT_OPTS = {
   v: 5, world: 'auto', habitat: 'mixed', floor: 'sand', water: 'teal', light: 'cycle', dayLength: 180,
   current: 25, speed: 1, caustics: true, shadows: true, outlines: true, life: true, weather: true, sound: false,
-  music: false, musicLevel: 40, hard: false, neighbours: true, fine: true, waves: 'classic', hdWaves: false, bars: true,
+  music: false, musicLevel: 40, hard: false, neighbours: true, fine: true, waves: 'classic', hdWaves: false, bars: true, renderer: 'cpu',
 };
 // The water's look (the Waves button): the original pixel water, the 3D wave mesh (water3d.js), or Seascape, the
 // surface raymarched and pixelated (water-sdf.js). (hdWaves stays the switch the rest of the code reads for 3D.)
@@ -687,7 +687,7 @@ function render(full = false) {
   // (A glass day: the surface still, and the water clear far down into the deep.)
   const swell = surfaceSwell(world, glass);
   const skyColor = typeof heavensSky === 'function' ? heavensSky(world, skyReflection(light)) : skyReflection(light);
-  r.compose(out, {
+  const st = {
     bg: world.bg, bgLight: world.bgLight, lightTint: world.lightTint, caustic: world.caustic, t,
     outline: OUTLINE, emissive: EMISSIVE, fade: FADE, thick: THICK, anyThick, tint: light.tint,
     caustics: o.caustics && light.caustics && q < 2, causticT: water.caustic, shadows: o.shadows, outlines: o.outlines,
@@ -701,14 +701,20 @@ function render(full = false) {
     seaCoast: typeof seaCoastSpans === 'function' ? seaCoastSpans(world) : null,
     isleDrain: world.isleDrain || null, islandGround: world.islandGround || null, islandEdge: world.islandEdgeOf === world.islandGround ? world.islandEdge : null, harbors: typeof beaconZones === 'function' ? (beaconZones(world), BEACON.harbors) : null,
     waveMode: o.hdWaves ? 'mesh' : 'classic', waveT: waveTime(world), wavePh: world.wavePh, gust: glass ? 0 : seaOf(world).gust, rain: seaOf(world).rain,
-  }, rect);
+  };
+  // The compose: on the GPU if that's chosen and it can (compose-gl.js), else here. (The 3D and Seascape water, the
+  // bones, the close-up layer and whole-pond pictures read the CPU's picture, so they keep it.)
+  const gpu = o.renderer === 'gpu' && !full && !world.bones && o.waves === 'classic' && !(typeof FINE !== 'undefined' && FINE.rec) && typeof composeGL === 'function' && composeGL(r, st, rect, world);
+  if (!gpu) { r.compose(out, st, rect); if (typeof hideComposeGL === 'function') hideComposeGL(); }
   const waterState = { swell, sky: skyColor, darkness: light.darkness, visibility: surfaceVis, time: waveTime(world) };
   const meshReady = o.hdWaves && surfaceVis > 0.025 && typeof waterMeshAvailable === 'function' && waterMeshAvailable();
   if (o.hdWaves && !meshReady && typeof renderWater3D === 'function') renderWater3D(out, world, rect, waterState);
-  if (close < 0.9) drawGlints();
-  if (world.bones) drawBones();
-  if (full || world.bones) ctx.putImageData(image, 0, 0);
-  else ctx.putImageData(image, 0, 0, rect[0], rect[1], rect[2] - rect[0] + 1, rect[3] - rect[1] + 1);
+  if (!gpu) {
+    if (close < 0.9) drawGlints();
+    if (world.bones) drawBones();
+    if (full || world.bones) ctx.putImageData(image, 0, 0);
+    else ctx.putImageData(image, 0, 0, rect[0], rect[1], rect[2] - rect[0] + 1, rect[3] - rect[1] + 1);
+  }
   if (meshReady) {
     const waterRect = full ? visibleRect() : rect;
     if (!drawWaterMesh(canvas, world, waterState, waterRect, image)) {
@@ -1344,6 +1350,7 @@ function applyView() {
   if (typeof placeFine === 'function') placeFine();
   if (typeof placeWaterMesh === 'function') placeWaterMesh();
   if (typeof placeSeascape === 'function') placeSeascape();
+  if (typeof placeComposeGL === 'function') placeComposeGL();
   scheduleViewUrl();
 }
 
@@ -2805,6 +2812,18 @@ bindRange('opt-current', 'current', (v) => `${v}%`);
 bindRange('opt-speed', 'speed', (v) => `${v}×`);
 bindRange('opt-day', 'dayLength', (v) => `${v / 60}m`);
 
+// The Renderer button: the pond composed here (CPU) or by a shader (GPU: compose-gl.js; with the Classic water).
+{
+  const b = $('opt-renderer'), show = () => { const g = world.opts.renderer === 'gpu'; b.textContent = `Renderer: ${g ? 'GPU' : 'CPU'}`; b.setAttribute('aria-pressed', String(g)); };
+  show();
+  b.addEventListener('click', () => {
+    setOpt('renderer', world.opts.renderer === 'gpu' ? 'cpu' : 'gpu'); show();
+    if (world.opts.renderer === 'gpu') {
+      if (typeof composeGLAvailable === 'function' && !composeGLAvailable()) showTicker('The GPU renderer needs WebGL2: staying on the CPU');
+      else if (world.opts.waves !== 'classic') showTicker('The GPU renderer works with the Classic waves (3D and Seascape stay on the CPU)');
+    }
+  });
+}
 // The Waves button steps through the looks.
 {
   const b = $('opt-waves'), show = () => { b.textContent = `Waves: ${WAVE_LOOKS[world.opts.waves]}`; b.setAttribute('aria-label', `Waves: ${WAVE_LOOKS[world.opts.waves]}`); };
