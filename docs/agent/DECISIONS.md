@@ -1220,3 +1220,22 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
   - `animPose` gives spined animals only a lift; others (jellies and so on) keep the pose. `animHead` follows the bent head, so jaws and swallow line up.
   - The blow still lands at 40% of the attack, as the lunge peaks.
   - Probes: anim_sheet.py (contact sheet anim-sheet-<pred>.png) and anims_browser.py (the `scaled` check now looks for the bend). Both pass.
+
+## Swimming up and down, seen; volumetric weather (2026-10-05)
+- Height in the water now shows:
+  - Each animal is drawn at 1 + 0.45 × (z − its kind's middle height) / SURFACE_Z, clamped to 0.82–1.25 (r.setScale with kz 1, combined with a flare). A floor-dweller at home stays its size.
+  - In `wander`, a swimmer whose kind ranges above z 8 rises right under the surface 14% of the time (for 3–6 s) and drops to the floor 10% of the time.
+  - Within 4.5 of the surface it dimples it with silent ripples.
+  - Shadows were already offset by height.
+- Volumetrics (Settings → Volumetrics, `opts.volumetrics`, default off): js/volumetric.js, after the volume marching in Shadertoy tdjBR1 (front-to-back blending through a density field, with a short march toward the light at each sample for self-shadowing). It's a WebGL2 pass over the visible tile at a third of the pond's resolution, its alpha and light stepped with a Bayer dither. It sits as its own canvas (z-index 2) over the water layers and under the close-up and vignette, so it works with any renderer or waves.
+  - Rays go straight down: 14 steps through the air from z 96 to the water (or the land, from shore height), then 10 through the water to the floor.
+  - Air: 3D value-noise fbm drifting with the wind, made of:
+    - mist lying on the water, from 0.25 plus dawn, rain and the fog event, minus gust
+    - cloud higher up in rain
+    - rain curtains as a low-frequency field swept by the wind.
+    A 3-step march toward the sun shades it, and it goes grey and darker as cloud thickens.
+  - Water: a thin haze in the water's colour, and sun shafts from a sharpened ridged noise sampled where each point's light came through the surface (offset up the sun's slant). They fade with depth, rain and cloud, and add light.
+  - Sun from the upper left (−SHADOW_X, −SHADOW_Y), lower and warmer at dawn and dusk, tinted by the pond's light.
+  - Tuned from the first try (a white-out fog, because densities were about 10× too high, and shafts that hid what was under them), to a faint haze on a clear day, low pink mist at dawn and grey cloud and rain curtains in a storm.
+  - Probe: .agent/runtime/volumetric_probe.py (vol-clear, vol-off, vol-dawn and vol-storm screenshots). No errors.
+  - Cost: not measured on a real GPU (SwiftShader headless).

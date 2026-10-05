@@ -365,6 +365,8 @@ class Fish extends Creature {
     this.x = clamp(this.x + Math.cos(dir) * this.speed * dt, 1, world.W - 1);
     this.y = clamp(this.y + Math.sin(dir) * this.speed * dt, 1, world.H - 1);
     this.z += (this.tz - this.z) * Math.min(1, dt * 0.6);
+    // Right under the surface it dimples and breaks it.
+    if (this.z > SURFACE_Z - 4.5 && Math.random() < dt * 1.4 && typeof addRipple === 'function') addRipple(world, this.x, this.y, 0.7 + Math.random() * 0.6, true);
     this.body.resolve(this.x, this.y, dir);
     if (typeof islandKeepSwimmerWet === 'function') islandKeepSwimmerWet(world, this);
   }
@@ -377,6 +379,8 @@ class Fish extends Creature {
     if (typeof crowdAt === 'function' && crowdAt(world, this.x, this.y) >= 10) { this.timer = rand(12, 20); this.cruiseNow = this.cruise * rand(0.9, 1.2); }
     this.tz = rand(this.zMin, this.zMax);
     if (typeof deepZ === 'function') this.tz = deepZ(world, this, this.tz); // over the deep: up at night, down by day
+    // Now and then it rises right up under the surface (breaking it as it noses there), or goes down to the floor.
+    if (this.zMax >= 8) { const r = Math.random(); if (r < 0.14) { this.tz = SURFACE_Z - rand(1.5, 4); this.timer = rand(3, 6); } else if (r < 0.24) this.tz = Math.max(1.5, this.zMin * 0.4); }
     // Out of its active hours it rests: near cover, low down, drifting slowly.
     if (this.life && activity(world, this) < 0.55 && !this.alwaysSwims) {
       const s = (typeof crowdAt !== 'function' || crowdAt(world, this.x, this.y) < 10 || Math.random() < 0.3) && likedSpot(world, this);

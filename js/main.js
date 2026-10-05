@@ -7,7 +7,7 @@ const OPTS_KEY = 'procedural-pond.opts';
 const DEFAULT_OPTS = {
   v: 5, world: 'auto', habitat: 'mixed', floor: 'sand', water: 'teal', light: 'cycle', dayLength: 180,
   current: 25, speed: 1, caustics: true, shadows: true, outlines: true, life: true, weather: true, sound: false,
-  music: false, musicLevel: 40, hard: false, neighbours: true, fine: true, waves: 'classic', hdWaves: false, bars: true, renderer: 'cpu',
+  music: false, musicLevel: 40, hard: false, neighbours: true, fine: true, waves: 'classic', hdWaves: false, bars: true, renderer: 'cpu', volumetrics: false,
 };
 // The water's look (the Waves button): the original pixel water, the 3D wave mesh (water3d.js), or Seascape, the
 // surface raymarched and pixelated (water-sdf.js). (hdWaves stays the switch the rest of the code reads for 3D.)
@@ -653,11 +653,15 @@ function render(full = false) {
     if (THICK[c.id]) anyThick = true;
     // (Flaring up at a rival, or a warning; and the lunge, flinch, chomp or dash of an action: anims.js.)
     const pose = typeof animPose === 'function' ? animPose(c, world.t) : null, flare = c.flare ? 1 + 0.16 * c.flare : 1;
-    if (c.flare) r.setScale(c.x, c.y, flare);
+    // (Height in the water shows as size: risen above where its kind usually swims, nearer the eye and bigger; gone
+    // down below it, smaller. A crab on the floor stays as it is.)
+    const zMid = c.zMin != null && c.zMax != null ? (c.zMin + c.zMax) / 2 : c.z;
+    const zk = c.z != null && !c.ambient ? clamp(1 + 0.45 * (c.z - zMid) / SURFACE_Z, 0.82, 1.25) : 1, sk = flare * zk;
+    if (Math.abs(sk - 1) > 0.01) r.setScale(c.x, c.y, sk, 1);
     if (pose) r.setPose(pose.x, pose.y, pose.ang, pose.sa, pose.sb, pose.dx, pose.dy, pose.dz);
     const bent = typeof animBend === 'function' && c.anim && animBend(c, world.t); // (its spine bent through the action: anims.js)
     c.draw(r, t, world);
-    if (c.flare) r.setScale();
+    if (Math.abs(sk - 1) > 0.01) r.setScale();
     if (c.life && c.life.genome.eld) drawEldritch(r, c, t, world);
     if (c.life) drawQuirks(r, c, t);
     if (pose) r.setPose(); // (its marks and quirks move with it)
@@ -725,6 +729,8 @@ function render(full = false) {
   } else if (typeof hideWaterMesh === 'function') hideWaterMesh();
   // Seascape: the raymarched surface over the classic water (water-sdf.js).
   if (!(o.waves === 'sdf' && surfaceVis > 0.025 && typeof drawSeascape === 'function' && drawSeascape(world, waterState, full ? visibleRect() : rect, image)) && typeof hideSeascape === 'function') hideSeascape();
+  // Volumetrics: the weather's mist, cloud and rain over it, and the sun's shafts in the water (volumetric.js).
+  if (!(o.volumetrics && !full && typeof drawVolumetric === 'function' && drawVolumetric(world, waterState, rect, light)) && typeof hideVolumetric === 'function') hideVolumetric();
   if (!full) {
     const now = performance.now(), Q = QUALITY;
     Q.ema += (now - t0 - Q.ema) * 0.05;
@@ -1372,6 +1378,7 @@ function applyView() {
   if (typeof placeWaterMesh === 'function') placeWaterMesh();
   if (typeof placeSeascape === 'function') placeSeascape();
   if (typeof placeComposeGL === 'function') placeComposeGL();
+  if (typeof placeVolumetric === 'function') placeVolumetric();
   scheduleViewUrl();
 }
 
@@ -2843,6 +2850,15 @@ bindRange('opt-day', 'dayLength', (v) => `${v / 60}m`);
       if (typeof composeGLAvailable === 'function' && !composeGLAvailable()) showTicker('The GPU renderer needs WebGL2: staying on the CPU');
       else if (world.opts.waves !== 'classic') showTicker('The GPU renderer works with the Classic waves (3D and Seascape stay on the CPU)');
     }
+  });
+}
+// The Volumetrics button: the weather and the light as a volume over the pond (volumetric.js).
+{
+  const b = $('opt-volumetrics'), show = () => { const on = !!world.opts.volumetrics; b.textContent = `Volumetrics: ${on ? 'On' : 'Off'}`; b.setAttribute('aria-pressed', String(on)); };
+  show();
+  b.addEventListener('click', () => {
+    setOpt('volumetrics', !world.opts.volumetrics); show();
+    if (world.opts.volumetrics && typeof volumetricAvailable === 'function' && !volumetricAvailable()) showTicker('Volumetrics need WebGL2');
   });
 }
 // The Waves button steps through the looks.
