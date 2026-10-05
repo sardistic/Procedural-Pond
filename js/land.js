@@ -524,8 +524,9 @@ function updateLand(world, dt) {
       if (Math.abs(d) > 1e-3) { f.gs = (f.gs || 0) + Math.sign(d) * Math.min(Math.abs(d), dayK); moved = true; }
     }
     const sum = s.flora.reduce((a, f) => a + f.gs, 0);
-    if (moved && Math.abs(sum - (s.floraBaked ?? -99)) > 0.15) {
-      s.floraBaked = sum;
+    // (Redrawn as it fills in, but an island at most every 45 s: its flora creeps, and redrawing a big island costs.)
+    if (moved && Math.abs(sum - (s.floraBaked ?? -99)) > 0.15 && world.t - (s.floraBakeT ?? -1e9) > 45) {
+      s.floraBaked = sum; s.floraBakeT = world.t;
       landRebake(world, s.x, s.y, islandFloraRebakeRadius(world, s));
     }
   }
@@ -605,11 +606,13 @@ function landTintAt(world, x, y, c, dry = false) {
 }
 
 // ---- drawing: formations, sinking bones, bars, and the islands' flora (baked into the floor) --------------
-function bakeLand(r, world, next) {
+function bakeLand(r, world, next, rect = null) {
   const ids = new Map(), id = (m) => { if (!ids.has(m)) ids.set(m, next(m)); return ids.get(m); };
-  for (const f of world.forms || []) if (f.gs > 0.02) withSeed(`form/${f.seed}`, () => FORM_BAKE[f.k](r, f.x, f.y, f.gs, id, world));
-  for (const b of world.boneBeds || []) withSeed(`bones/${b.seed}`, () => bakeBoneBed(r, b, id));
-  for (const P of islePairs(world)) withSeed(`bar/${P.key}`, () => bakeBar(r, world, P, id));
+  // (Each is seeded on its own: a partial redraw visits only those that reach into it.)
+  const near = (x, y, R) => !rect || (x + R >= rect[0] && x - R <= rect[2] && y + R >= rect[1] && y - R <= rect[3]);
+  for (const f of world.forms || []) if (f.gs > 0.02 && near(f.x, f.y, 40)) withSeed(`form/${f.seed}`, () => FORM_BAKE[f.k](r, f.x, f.y, f.gs, id, world));
+  for (const b of world.boneBeds || []) if (near(b.x, b.y, (b.len || 20) / 2 + 20)) withSeed(`bones/${b.seed}`, () => bakeBoneBed(r, b, id));
+  for (const P of islePairs(world)) if (near((P.a.x + P.b.x) / 2, (P.a.y + P.b.y) / 2, P.d / 2 + Math.max(P.ra, P.rb) + 20)) withSeed(`bar/${P.key}`, () => bakeBar(r, world, P, id));
 }
 const FORM_BAKE = {
   bone(r, x, y, g, id) {

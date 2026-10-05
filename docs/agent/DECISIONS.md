@@ -1145,3 +1145,24 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
 - Textures: shore is now LINEAR (exact at texel centres, so the dry test is unchanged), and `world.sand` uploads as `u_sand`.
 - Probe: .agent/runtime/sand_sdf_probe.py (`--beach` for beach only). Screenshots: sand-beach-*.png, sand-isle-*.png. No errors. SwiftShader: beach 9.6 ms against 5.9 ms for Classic.
 - Seascape only. Classic and 3D are unchanged.
+
+## Big-pond stutter: floor redraws culled, near the view first, and staggered minds (2026-10-04)
+- Profiled Thomas-Pond as its owner (1280 × 7804 px, 179 structures, 4,192 plants) with .agent/runtime/perf_probe.py, which wraps each part of the frame loop, logs long frames, and records bake and queue sources. Options: `--secs`, `--span` (pan distance), `--warm`, `--waves`.
+- The causes:
+  - Partial floor redraws (bakeBackground with a rect) ran every structure's, rock's, pebble's, land form's, bone bed's and sandbar's bake code, plus every deep-floor cell, for the whole pond: about 120 ms for a small band.
+  - Islands' flora queued such redraws all over the pond every 2 s.
+  - Building, removing, the beacon lighting and coast islands each ran a whole-pond redraw: 3.6 s on Thomas-Pond.
+  - All minds sensed on the same quarter-second tick.
+- Fixes:
+  - **Culling.** A partial redraw draws only what reaches it. Structures by measured extent: `structureBox` runs the bake once on a bounds-only stand-in raster (`BOUNDS_R`) and caches it on the structure (non-enumerable, keyed by position, stack, size, levels, flora count and island shape). A size guess fell short, since grown islands' lava and reefs reach several times their radius. Rocks and pebbles keep their id order. Land forms, bone beds, sandbars and deep-floor cells are culled by position. Stains filter their sources before building lists.
+  - **Exactness.** Deep-floor decor ids now come from the cell and material in their own range (4100–4999), so outline colours can't depend on draw order. bake_parts.py checks 24 fixed rectangles plus 6 round structures: partial matches whole, with 1 differing pixel, the same as the original code.
+  - **Near-view queue.** queueBake now feeds `BAKE_DIRTY` instead of jobs. `bakeTick(8 ms)` redraws, a band at a time, the rects meeting the view expanded by 40% plus scroll heading (smoothed velocity × 0.8 s). Hovering the minimap (no buttons) readies the area under the pointer for 1.5 s. Far rects get one band per 8 s, and only after 3 s without input. The queue shifts with growth toward the top or left, and is cleared by whole redraws and layout.
+  - **Local redraws.** `structuresChanged(reshape, s, box)` redraws only round the structure. Islands reshape the beach through the depth-dirty path, as coast.js does. Callers: build settle, demolish (box taken before removal), island raise and branch upgrade (traits.js), the beacon, and seaDawn.
+  - An island's flora redraw is limited to once per 45 s.
+  - Minds sense on their own staggered quarter-second clocks.
+- Result: Thomas-Pond, steady state, slow pan, headless (no GPU), 15 s:
+  - Frames: 157 before, 277 after.
+  - Frame time p50 / p90 / p99: 77 / 174 / 245 ms before; 42 / 91 / 142 ms after.
+  - Bakes: 73 × 75 ms before, 28 × 19 ms after.
+  - Build redraw probe .agent/runtime/build_rebake_probe.py: a build shows within 0.6 s, and removing it restores the floor exactly.
+- Still per frame: compose about 30 ms headless for the visible 800×450 world px; mindPlayTick spikes up to about 90 ms; update about 10 ms. The world-sized canvas and buffers remain. Next candidates: compose on the GPU or in a worker; a viewport-sized canvas; streaming the world's buffers.

@@ -720,10 +720,10 @@ function applyStains(world, rect = null) {
   stain.fill(0, 0, RW * RH);
   // (Not around rocks or the wreck: a halo round them read as a glow. Living things and warm or
   // mineral-rich structures stain the ground; stone and old timber don't.)
-  const sources = [
-    ...(world.structures || []).filter((s) => !NO_STAIN.has(s.kind)).map((s) => [s.x, s.y, world.days - s.born, STRUCTURES[s.kind].size + 10, s.seed]),
-    ...world.plants.filter((p) => p.born != null).map((p) => [p.x, p.y, world.days - p.born, 5, p.seed]),
-  ];
+  // (Only those that can reach the part being repainted: a big pond has thousands of plants.)
+  const sources = [], M = 80;
+  for (const s of world.structures || []) if (!NO_STAIN.has(s.kind) && s.x + M >= qx0 && s.x - M <= qx1 && s.y + M >= qy0 && s.y - M <= qy1) sources.push([s.x, s.y, world.days - s.born, STRUCTURES[s.kind].size + 10, s.seed]);
+  for (const p of world.plants) if (p.born != null && p.x + 40 >= qx0 && p.x - 40 <= qx1 && p.y + 40 >= qy0 && p.y - 40 <= qy1) sources.push([p.x, p.y, world.days - p.born, 5, p.seed]);
   for (const [sx, sy, age, base, seed] of sources) {
     if (age < 0.5) continue;
     const R = Math.min(base + 34, base * 0.4 + 5 + age * 1.6), depth = Math.min(0.5, 0.06 + age * 0.035);

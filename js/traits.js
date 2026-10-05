@@ -118,7 +118,7 @@ function raiseIsland(world, s) {
   s.stack = (s.stack || 1) + 1;
   for (let k = 0; k < 30; k++) addBubbles(world, s.x + rand(-1, 1) * s.R * 1.3, s.y + rand(-1, 1) * s.R * 1.3, 1, 2);
   addRipple(world, s.x, s.y, 3);
-  if (typeof structuresChanged === 'function') structuresChanged(true);
+  if (typeof structuresChanged === 'function') structuresChanged(true, s);
   if (typeof narrate === 'function') narrate(world, 'island', { level: s.stack });
   logEvent(world, `You raised the island (level ${s.stack}): a new terrace, higher, wider and greener${s.stack === 3 ? '. It can go one of two ways now: lanterns of life, or the whispering stone' : s.stack > 3 && s.branch ? `, and room for the ${s.branch === 'life' ? 'lanterns' : 'stone'} to grow` : ''}`, null, { cat: 'pond', pri: 2 });
   return true;
@@ -134,7 +134,7 @@ function growIsland(world, s, branch) {
   if (!pay(world, B.cur, B.cost(lv), 'build')) { if (typeof notEnough === 'function') notEnough(B.cost(lv), B.cur); return false; }
   s.branch = branch;
   s.blv = lv + 1;
-  if (typeof structuresChanged === 'function') structuresChanged(false);
+  if (typeof structuresChanged === 'function') structuresChanged(false, s);
   logEvent(world, branch === 'life' ? `✦ The island glows with lanterns of life (level ${s.blv})` : `✦ The whispering stone on the island has grown (level ${s.blv}): the water near it will not stay sane`, null, { cat: 'rare', pri: 2 });
   if (branch === 'dark' && typeof scatterFrom === 'function') scatterFrom(world, s, 2);
   return true;

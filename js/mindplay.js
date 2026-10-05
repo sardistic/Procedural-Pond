@@ -259,11 +259,14 @@ function mindSteer(w, c) {
 function mindPlayTick(w, dt) {
   if (!w.creatures || w.observe || typeof mindControlled !== 'function') return;
   const minds = mindControlled(w);
-  MINDPLAY.clock -= dt;
-  const sense = MINDPLAY.clock <= 0 && !w.paused;
-  if (sense) MINDPLAY.clock = 0.25;
+  // (Each senses four times a second on its own clock, staggered, rather than all at once: a pond full of minds
+  // sensing together made a hitch every quarter second.)
   for (const c of minds) {
     const brain = c.mind || (c.mind = { status: 'Watching for an encounter', token: 0 });
+    if (brain.senseT == null) brain.senseT = Math.random() * 0.25;
+    brain.senseT -= w.paused ? 0 : dt;
+    const sense = brain.senseT <= 0 && !w.paused;
+    if (sense) brain.senseT = Math.max(0.05, brain.senseT + 0.25);
     if (sense) {
       // What it senses (for learning and the card), whatever drives it.
       const e = mindEncounter(w, c);

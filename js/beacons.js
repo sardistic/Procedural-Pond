@@ -204,7 +204,7 @@ function maybeLightBeacon(w) {
   const s = makeStructure('beacon', w, best[0], best[1]);
   w.structures.push(s);
   w.game.beaconLit = true; w.game.beaconKnown = true; w.gameDirty = true;
-  if (typeof bakeBackground === 'function') bakeBackground(w);
+  if (typeof structuresChanged === 'function' && w === world) structuresChanged(false, s); else if (typeof bakeBackground === 'function') bakeBackground(w);
   logEvent(w, '✦ Out in the darkest water, something has lit. A beacon stands on a rock of its own, its lamp turning, and the dark gives way round it. You could build lights like it: a lighthouse on an island (in Build)', s, { cat: 'rare', pri: 3 });
   if (typeof narrate === 'function') narrate(w, 'build', { what: 'A beacon' });
   if (typeof refreshSpeciesButtons === 'function') refreshSpeciesButtons();

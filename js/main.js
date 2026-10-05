@@ -134,10 +134,45 @@ const JOBS = [];
 let jobGen = 0;
 function queueJob(fn) { const g = jobGen; JOBS.push(() => { if (g === jobGen) fn(); }); }
 function runJobs() { const t0 = performance.now(); while (JOBS.length && performance.now() - t0 < 12) JOBS.shift()(); }
-// A part of the floor redrawn in bands of rows (about 25 ms each on the biggest ponds).
+// ---- the floor redrawn near the view first --------------------------------------------------------------------
+// Parts of the floor waiting to be redrawn (queueBake) are kept, not done at once: those in or near the view go
+// first, a band of rows at a time within a frame's budget; the rest wait until the view heads their way (scrolling
+// reaches ahead in the direction it's going, and the minimap reaches to wherever the pointer rests on it). A far one
+// is done only once in a long while, when nothing near is waiting and nothing's being done (each band is a hitch). (A big pond's islands and growth ask for redraws all over it, all the
+// time; doing them all, wherever they were, was most of its stutter.)
+const BAKE_DIRTY = [];
+let bakeHint = null, bakeLastC = null, bakeVel = [0, 0], bakeFarAt = 0, lastInputAt = 0;
+for (const ev of ['pointerdown', 'wheel', 'keydown', 'touchstart']) addEventListener(ev, () => { lastInputAt = performance.now(); }, { passive: true, capture: true });
+addEventListener('pointermove', (e) => { if (e.buttons) lastInputAt = performance.now(); }, { passive: true, capture: true });
 function queueBake(w, rect) {
-  const [x0, y0, x1, y1] = rect, rows = Math.max(16, Math.floor(110000 / Math.max(1, x1 - x0 + 1)));
-  for (let y = y0; y <= y1; y += rows) { const r = [x0, y, x1, Math.min(y1, y + rows - 1)]; queueJob(() => bakeBackground(w, r)); }
+  if (w !== world) { bakeBackground(w, rect); return; }
+  BAKE_DIRTY.push([Math.max(0, rect[0]), Math.max(0, rect[1]), Math.min(world.W - 1, rect[2]), Math.min(world.H - 1, rect[3])]);
+  if (BAKE_DIRTY.length > 48) { const m = mergeRects(BAKE_DIRTY); BAKE_DIRTY.length = 0; BAKE_DIRTY.push(...m); }
+}
+const rectsMeet = (a, b) => a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+function bakeInterest() {
+  const [x0, y0, x1, y1] = visibleRect(), w = x1 - x0, h = y1 - y0, vx = bakeVel[0] * 0.8, vy = bakeVel[1] * 0.8;
+  const out = [[x0 - w * 0.4 + Math.min(0, vx), y0 - h * 0.4 + Math.min(0, vy), x1 + w * 0.4 + Math.max(0, vx), y1 + h * 0.4 + Math.max(0, vy)]];
+  if (bakeHint && performance.now() < bakeHint.until) out.push([bakeHint.x - w * 0.7, bakeHint.y - h * 0.7, bakeHint.x + w * 0.7, bakeHint.y + h * 0.7]);
+  return out;
+}
+function bakeTick(budget) {
+  const v = visibleRect(), c = [(v[0] + v[2]) / 2, (v[1] + v[3]) / 2], now = performance.now();
+  if (bakeLastC) for (let i = 0; i < 2; i++) bakeVel[i] += ((c[i] - bakeLastC[i]) * 60 - bakeVel[i]) * 0.2; // (px a second, smoothed)
+  bakeLastC = c;
+  if (!BAKE_DIRTY.length || !world.bgBase) return;
+  const I = bakeInterest(), quiet = now - lastInputAt > 3000;
+  while (BAKE_DIRTY.length && performance.now() - now < budget) {
+    let k = BAKE_DIRTY.findIndex((r) => I.some((q) => rectsMeet(r, q))), far = false;
+    if (k < 0) {
+      if (!quiet || now < bakeFarAt) return;
+      k = 0; far = true; bakeFarAt = now + 8000;
+    }
+    const r = BAKE_DIRTY[k], rows = Math.max(16, Math.floor(110000 / Math.max(1, r[2] - r[0] + 1))), band = [r[0], r[1], r[2], Math.min(r[3], r[1] + rows - 1)];
+    if (band[3] >= r[3]) BAKE_DIRTY.splice(k, 1); else r[1] = band[3] + 1;
+    bakeBackground(world, band);
+    if (far) return;
+  }
 }
 function queueStains(w) {
   const rows = Math.max(32, Math.floor(500000 / Math.max(1, w.W)));
@@ -145,7 +180,7 @@ function queueStains(w) {
 }
 
 function layout(regen, deferBake = false) {
-  jobGen++; JOBS.length = 0; // (whatever was queued was for the pond as it was)
+  jobGen++; JOBS.length = 0; BAKE_DIRTY.length = 0; // (whatever was queued was for the pond as it was)
   const [W, H] = worldDims();
   if (W !== world.W || H !== world.H) {
     world.W = W; world.H = H;
@@ -766,6 +801,7 @@ function frame(now) {
     update(dt * world.opts.speed * (hardMode(world) ? HARD_PACE : 1)); // (hard mode runs slower)
   }
   runJobs();
+  bakeTick(8);
   if (typeof mindTick === 'function') mindTick(world);
   if (typeof mindPlayTick === 'function') mindPlayTick(world, world.paused ? 0 : dt);
   growTick(now);
@@ -890,7 +926,7 @@ function growInPlace(add) {
   const cx = (innerWidth / 2 - view.tx) / view.k + sx, cy = (innerHeight / 2 - view.ty) / view.k + sy;
   const old = { W: world.W, H: world.H, bg: world.bg, base: world.bgBase, z: world.raster.zBase, sand: world.sand };
   if (typeof noteSea === 'function') noteSea(world); // (the sea this new water opens into: seas.js)
-  if (sx || sy) shiftWorld(world, sx, sy);
+  if (sx || sy) { shiftWorld(world, sx, sy); for (const q of BAKE_DIRTY) { q[0] += sx; q[2] += sx; q[1] += sy; q[3] += sy; } } // (what's waiting to be redrawn moves with it)
   world.expandPx = (world.expandPx || 0) + add;
   const [W, H] = worldDims();
   world.W = W; world.H = H;
@@ -1041,7 +1077,7 @@ function updateBuildAnims(dt) {
         for (let k = 0; k < 14; k++) { const a = k / 14 * TAU; addBubbles(world, s.x + Math.cos(a) * R, s.y + Math.sin(a) * R, 1, 1); }
         addRipple(world, s.x, s.y, s.kind === 'ship' || s.kind === 'island' ? 3 : 1.5);
       }
-      structuresChanged(!!STRUCTURES[s.kind].shore);
+      structuresChanged(!!STRUCTURES[s.kind].shore, s);
     }
   }
 }
@@ -1078,11 +1114,28 @@ function spawnFx(c) {
   }
 }
 
-// Rebuild what depends on the floor after structures change (islands reshape the beach).
-function structuresChanged(reshape) {
-  if (reshape && world.shore) makeShore(world);
-  bakeBackground(world);
-  paintMinimapBackground();
+// Rebuild what depends on the floor after structures change (islands reshape the beach). Given the structure (or the
+// box it covered, when it's gone), just the floor round it is redrawn: on a big pond a whole redraw takes seconds.
+function structuresChanged(reshape, s = null, box = null) {
+  box = box || (s && typeof structureBox === 'function' ? structureBox(world, s) : null);
+  if (!box || !world.bgBase) {
+    if (reshape && world.shore) makeShore(world);
+    bakeBackground(world);
+    paintMinimapBackground();
+    return;
+  }
+  let rects = [[Math.max(0, Math.floor(box[0])), Math.max(0, Math.floor(box[1])), Math.min(world.W - 1, Math.ceil(box[2])), Math.min(world.H - 1, Math.ceil(box[3]))]];
+  if (reshape && world.shore) {
+    // (The beach is reshaped; the depths say which patches of it moved.)
+    world.depthDirty = [];
+    makeShore(world);
+    const dirty = world.depthDirty;
+    world.depthDirty = null;
+    if (!dirty) { bakeBackground(world); paintMinimapBackground(); return; }
+    rects = mergeRects([...dirty, ...rects]);
+  }
+  for (const r of rects) queueBake(world, r);
+  queueJob(paintMinimapBackground);
 }
 
 function build(kind, x, y) {
@@ -1124,12 +1177,13 @@ function demolish(s) {
     while (world.hatchery.stock.length) releaseStock(world, 0);
     setHatchery(false);
   }
+  const box = typeof structureBox === 'function' ? structureBox(world, s) : null; // (the floor it covered, to redraw)
   world.structures.splice(world.structures.indexOf(s), 1);
   divest(world, 'build', s.worth || def.pearls);
   setTimeout(markBuilt, 0);
   world.game.pearls += Math.round(def.pearls / 2);
   world.gameDirty = true;
-  structuresChanged(!!def.shore);
+  structuresChanged(!!def.shore, null, box);
   showTicker(`Took down the ${def.label.toLowerCase()}: +${Math.round(def.pearls / 2)} pearls`);
 }
 
@@ -1755,11 +1809,14 @@ function drawMinimap() {
   if (right > left && bottom > top) mctx.strokeRect(Math.round(left) + 0.5, Math.round(top) + 0.5, Math.max(2, Math.round(right - left)) - 1, Math.max(2, Math.round(bottom - top)) - 1);
 }
 
-function miniJump(e) {
+function miniPoint(e) {
   const r = mini.getBoundingClientRect(), g = miniLayout();
   const u = g.x + clamp((e.clientX - r.left) / r.width, 0, 1) * g.span;
   const v = g.y + clamp((e.clientY - r.top) / r.height, 0, 1) * g.span;
-  const [x, y] = miniWorld(u, v);
+  return miniWorld(u, v);
+}
+function miniJump(e) {
+  const [x, y] = miniPoint(e);
   settleMapView();
   centerOn(x, y);
   drawMinimap();
@@ -1773,7 +1830,12 @@ function settleMapView() {
   view.lastTy = clamp(view.lastTy, yl, yh);
 }
 mini.addEventListener('pointerdown', (e) => { mini.setPointerCapture(e.pointerId); miniJump(e); });
-mini.addEventListener('pointermove', (e) => { if (e.buttons) miniJump(e); });
+mini.addEventListener('pointermove', (e) => {
+  if (e.buttons) { miniJump(e); return; }
+  // (Resting over the map: the floor there is readied, so a jump to it comes up drawn.)
+  const [x, y] = miniPoint(e);
+  bakeHint = { x, y, until: performance.now() + 1500 };
+});
 // The side cut uses a widened beach in its first quarter, just like drawSlice.
 const slice = document.getElementById('slice');
 function sliceJump(e) {

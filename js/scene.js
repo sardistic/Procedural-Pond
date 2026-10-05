@@ -145,10 +145,18 @@ const FLOOR_ALIASES = { gravel: 'pebbles', mud: 'leaves' }; // older saved setti
 
 // Decor shapes, drawn into the bake raster with outline colours taken from their own palette.
 function makeDecor(r, outline) {
-  let nid = 1000;
-  const next = (m) => { nid = nid >= 4094 ? 1000 : nid + 1; outline[nid] = mixColor(m[0], 0xff000000, 0.35); return nid; };
+  let nid = 1000, fixed = null;
+  // (Set to a cell with at(): its ids come from that cell and the material, in a range of their own (4100-4999, clear
+  // of the floor's decor below and the structures above), so ids that coincide across the pond always carry the same
+  // outline colour, and a partial redraw gives exactly what a whole one does.)
+  const slot = (m) => (m === DEEP_ROCKS[0] ? 0 : m === DEEP_ROCKS[1] ? 1 : m === DEEP_STALK ? 2 : 3);
+  const next = (m) => {
+    if (fixed != null) { const id = 4100 + (fixed % 225) * 4 + slot(m); outline[id] = mixColor(m[0], 0xff000000, 0.35); return id; }
+    nid = nid >= 4094 ? 1000 : nid + 1; outline[nid] = mixColor(m[0], 0xff000000, 0.35); return nid; // (the floor's decor: 1001-4094)
+  };
   const vein = (m) => [m[0], m[0], m[1], m[1]];
   return {
+    at(k) { fixed = k; },
     pebble(x, y, a, m, dome = rand(0.5, 0.75)) { r.ellipsoid(x, y, a, a * rand(0.72, 1), rand(0, PI), 0, a * dome, m, next(m)); },
     stone(x, y, a, m) {
       const seed = randi(0, 999);
@@ -452,15 +460,18 @@ const DEEP_SILT = hexToInt('#2a2e34');
 const DEEP_ROCKS = [mat('#101216', '#1c2026', '#2c3038', '#40464e'), mat('#16120e', '#241e18', '#362c24', '#4a3e32')];
 const DEEP_STALK = mat('#6a6a7a', '#9a9aaa', '#c8c8d4', '#eeeef4');
 const DEEP_CELL = 26;
-function deepDecor(world, d) {
+function deepDecor(world, d, rect = null) {
   const { W, H } = world, depth = world.depth, [ox, oy] = world.expandPx ? originOf(world) : [0, 0], C = DEEP_CELL, seed = hashString(world.seed || 'pond') % 9973;
-  for (let cj = Math.floor(-oy / C); cj * C + oy < H; cj++) {
-    for (let ci = Math.floor(-ox / C); ci * C + ox < W; ci++) {
+  // (Each cell is seeded on its own, so a partial redraw need only visit the cells round it.)
+  const [qx0, qy0, qx1, qy1] = rect || [0, 0, W - 1, H - 1], M = 14;
+  for (let cj = Math.max(Math.floor(-oy / C), Math.floor((qy0 - M - oy) / C) - 1); cj * C + oy < Math.min(H, qy1 + M + C); cj++) {
+    for (let ci = Math.max(Math.floor(-ox / C), Math.floor((qx0 - M - ox) / C) - 1); ci * C + ox < Math.min(W, qx1 + M + C); ci++) {
       const x = ox + (ci + hash2(ci, cj, seed + 1)) * C, y = oy + (cj + hash2(ci, cj, seed + 2)) * C;
       if (x < 0 || y < 0 || x >= W || y >= H) continue;
       const v = depth[(y | 0) * W + (x | 0)];
       if (!v) continue;
       const h = hash2(ci, cj, seed + 3);
+      if (d.at) d.at((ci * 7 + cj * 131) * 3 & 0xffff);
       withSeed(`${seed}/deep/${ci},${cj}`, () => {
         if (v < 110 && h < 0.7) d.stone(x, y, rand(3, 7), pick(DEEP_ROCKS));
         else if (h < 0.78) d.pebble(x, y, rand(1.5, 3), pick(DEEP_ROCKS));
@@ -468,6 +479,35 @@ function deepDecor(world, d) {
       });
     }
   }
+}
+
+// How far a structure's baked parts reach, measured: its bake run once on a stand-in raster that only notes the
+// bounds of every shape it would draw (no pixels), kept until what shapes it changes. (A guess from its size fell
+// short: grown islands throw lava and reefs out several times their radius.)
+const BOUNDS_R = {
+  x0: 0, y0: 0, x1: 0, y1: 0, alpha: 1, scaled: false, posed: false, clip: [-1e9, -1e9, 1e9, 1e9],
+  reset() { this.x0 = this.y0 = Infinity; this.x1 = this.y1 = -Infinity; },
+  add(x, y, r) { if (x - r < this.x0) this.x0 = x - r; if (y - r < this.y0) this.y0 = y - r; if (x + r > this.x1) this.x1 = x + r; if (y + r > this.y1) this.y1 = y + r; },
+  ellipsoid(cx, cy, a, b) { this.add(cx, cy, Math.max(a, b, 0.6)); },
+  tube(ax, ay, ar, az, bx, by, br) { this.add(ax, ay, ar); this.add(bx, by, br); },
+  strip(xs, ys, ws, from, to) { for (let i = from; i <= to; i++) this.add(xs[i], ys[i], ws[i] || 1); },
+  dot(x, y) { this.add(x, y, 1); }, put(x, y) { this.add(x, y, 1); },
+  setScale() {}, setPose() {}, setClip() {}, begin() {},
+};
+function structureBox(world, s) {
+  const isle = s.kind === 'island';
+  const key = `${s.x}|${s.y}|${s.stack || 1}|${s.big || 1}|${s.lv ? JSON.stringify(s.lv) : ''}|${(s.flora || []).length}`
+    + (isle ? `|${typeof isleShapeKey === 'function' ? isleShapeKey(s) : ''}|${typeof islandRadius === 'function' ? islandRadius(world, s).toFixed(1) : ''}` : '');
+  if (s.bakeBox !== undefined && s.bakeBoxKey === key) return s.bakeBox;
+  let box = null;
+  try {
+    BOUNDS_R.reset();
+    withSeed(`bake/${s.seed}`, () => BAKE[s.kind](BOUNDS_R, s, () => 1, world));
+    if (BOUNDS_R.x0 <= BOUNDS_R.x1) box = [BOUNDS_R.x0 - 4, BOUNDS_R.y0 - 4, BOUNDS_R.x1 + 4, BOUNDS_R.y1 + 4];
+  } catch { box = null; } // (if it can't be measured, it's always drawn)
+  Object.defineProperty(s, 'bakeBox', { value: box, writable: true, configurable: true, enumerable: false });
+  Object.defineProperty(s, 'bakeBoxKey', { value: key, writable: true, configurable: true, enumerable: false });
+  return box;
 }
 
 // Rasterize rocks and floor decor once, bake them into the floor image, and keep
@@ -495,15 +535,21 @@ function bakeBackground(world, rect = null) {
   if (part) for (let y = r.clip[1]; y <= r.clip[3]; y++) r.zBase.fill(0, r.clip[0] + y * W, r.clip[2] + 1 + y * W);
   else r.zBase.fill(0);
   r.begin();
+  if (!part && typeof BAKE_DIRTY !== 'undefined') BAKE_DIRTY.length = 0; // (a whole redraw covers whatever was waiting)
   const outline = new Uint32Array(8192);
   let nid = 1;
+  // (A partial redraw draws only what can reach into it: what's well outside is left as it was.)
+  const qx0 = r.clip[0], qy0 = r.clip[1], qx1 = r.clip[2], qy1 = r.clip[3];
+  const reaches = (x, y, R) => !part || (x + R >= qx0 && x - R <= qx1 && y + R >= qy0 && y - R <= qy1);
   for (const rock of world.rocks) {
+    if (!reaches(rock.x, rock.y, Math.max(rock.a, rock.b) + 4)) { nid++; continue; } // (its id kept, as a whole redraw would give it)
     outline[nid] = rock.outline;
     r.ellipsoid(rock.x, rock.y, rock.a, rock.b, rock.ang, 0, rock.h, rock.shader, nid++);
   }
   if (floor.pebbles) {
     for (const pb of world.pebbles) {
       const id = nid < 999 ? nid++ : 999;
+      if (!reaches(pb.x, pb.y, pb.s + 3)) continue;
       outline[id] = pb.m[0];
       r.ellipsoid(pb.x, pb.y, pb.s, pb.s * 0.8, pb.x, 0, pb.s * 0.8, pb.m, id);
     }
@@ -516,12 +562,17 @@ function bakeBackground(world, rect = null) {
     for (const k of Object.keys(dec)) shifted[k] = (x, y, ...rest) => dec[k](x + ox, y + oy, ...rest);
     withSeed(`${world.seed}/floor/${key}`, () => floor.decor(shifted, W0, H0));
   }
-  if (world.depth) deepDecor(world, makeDecor(r, outline));
+  if (world.depth) deepDecor(world, makeDecor(r, outline), part ? r.clip : null);
   // Structures' solid parts (see structures.js), with outline ids from 5000 up.
   let sid = 5000;
   const nextS = (m) => { const i = Math.min(8190, sid++); outline[i] = outlineOf(m); return i; };
-  for (const s of world.structures || []) if (!s.anim) withSeed(`bake/${s.seed}`, () => BAKE[s.kind](r, s, nextS, world)); // same shape every bake (not while it's still arriving)
-  if (typeof bakeLand === 'function' && world.game) bakeLand(r, world, nextS); // what the land has grown (land.js)
+  for (const s of world.structures || []) {
+    if (s.anim) continue;
+    const bx = part ? structureBox(world, s) : null;
+    if (bx && (bx[2] < qx0 || bx[0] > qx1 || bx[3] < qy0 || bx[1] > qy1)) continue;
+    withSeed(`bake/${s.seed}`, () => BAKE[s.kind](r, s, nextS, world)); // same shape every bake (not while it's still arriving)
+  }
+  if (typeof bakeLand === 'function' && world.game) bakeLand(r, world, nextS, part ? r.clip : null); // what the land has grown (land.js)
   // (The lit floor and the sunlit beach are blended from this as it's drawn: raster.js compose.)
   const bg = part ? world.bgBase : new Uint32Array(W * H);
   const { id, z, col, sh } = r;

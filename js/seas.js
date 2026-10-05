@@ -118,9 +118,8 @@ function seaDawn(world) {
   const light = makeStructure('lighthouse', world, x + 2, y - 2);
   world.structures.push(light);
   G.coastIsles = made + 1;
-  if (typeof makeShore === 'function') makeShore(world);
-  if (typeof bakeBackground === 'function') bakeBackground(world);
-  if (typeof paintMinimapBackground === 'function') paintMinimapBackground();
+  if (typeof structuresChanged === 'function') structuresChanged(true, isle);
+  else { makeShore(world); bakeBackground(world); if (typeof paintMinimapBackground === 'function') paintMinimapBackground(); }
   if (typeof logEvent === 'function') logEvent(world, made ? 'Another island has come up along the bright coast, a lighthouse already on it' : 'An island has come up out of the bright coast, and there is a lighthouse on it, lit: a harbor forms round it', null, { cat: 'rare', pri: 3 });
 }
 
