@@ -1166,3 +1166,12 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
   - Bakes: 73 × 75 ms before, 28 × 19 ms after.
   - Build redraw probe .agent/runtime/build_rebake_probe.py: a build shows within 0.6 s, and removing it restores the floor exactly.
 - Still per frame: compose about 30 ms headless for the visible 800×450 world px; mindPlayTick spikes up to about 90 ms; update about 10 ms. The world-sized canvas and buffers remain. Next candidates: compose on the GPU or in a worker; a viewport-sized canvas; streaming the world's buffers.
+
+## CPU trims: compose tables, and the minds' plant scan (2026-10-05)
+- Compose (raster.js) works out these once a frame instead of per pixel, with output verified pixel-exact against the previous commit's compose on 6 Thomas-Pond frames by .agent/runtime/compose_exact.py (it extracts the reference compose from `--ref` and runs both on captured frames):
+  - the island-drain fade curve (`inlandK`) and each island's breath (`breath`)
+  - the coast strength along its axis (`coastK`)
+  - which harbors reach each row (`rowHarbors`)
+- compose_parts.py showed the remaining cost spread over about 15 features (1–5 ms each), with no single hot spot. That's why the GPU port is next.
+- Minds: `mindFishInputs` ran `mindWetRoute`, a route check, on every plant in the pond before the range test: about 65 ms a call on Thomas-Pond, with 4,192 plants. Food, plants and rocks are now range-checked first, with a bounding-box check and then mindDistance, which is the same test `put` applies, so results are unchanged. The mindplay probe passes.
+- Thomas-Pond, steady state, slow pan, headless: p50 / p90 / p99 = 38 / 61 / 108 ms, from 42 / 91 / 142 after the bake fixes (77 / 174 / 245 originally). 278 frames in 12 s.

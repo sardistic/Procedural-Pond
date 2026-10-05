@@ -389,8 +389,10 @@ function mindFishInputs(w,c,encounter) {
   const profile=encounter.state.creature,prey=encounter.options.find(o=>o.action==='hunt')?.prey;
   const rival=encounter.options.find(o=>o.action==='fight')?.rival,fury=clamp((profile.weights.fight||0)/2,0,1);
   const fear=typeof mindLearnedFear==='function'?mindLearnedFear(c,encounter):null;
+  // (Out of reach first: the route check is costly, and a big pond has thousands of plants.)
+  const inReach=(p)=>Math.abs(p.x-c.x)<=radius && Math.abs(p.y-c.y)<=radius && mindDistance(c,p)<=radius;
   if(profile.abilities.feeds && c.life.energy<.95)for(const fd of w.food){
-    if(!fd.eaten && Math.abs((fd.z||0)-c.z)<14 && (!c.foodFilter||c.foodFilter(fd)) && mindWetRoute(w,c,fd))put(fd,'food');
+    if(!fd.eaten && Math.abs((fd.z||0)-c.z)<14 && (!c.foodFilter||c.foodFilter(fd)) && inReach(fd) && mindWetRoute(w,c,fd))put(fd,'food');
   }
   forNear(w,c.x,c.y,radius,(q,d)=>{
     if(q===c || !mindHere(q) || Math.abs((q.z||0)-c.z)>14 ||
@@ -404,8 +406,8 @@ function mindFishInputs(w,c,encounter) {
     const vy=(q.speed||0)*Math.sin(q.heading||0)-(c.speed||0)*Math.sin(c.heading);
     put(q,'motion',clamp(Math.hypot(vx,vy)/Math.max(1,mindTop(c)*2),0,1));
   });
-  for(const p of w.plants)if(mindWetRoute(w,c,p))put(p,'cover');
-  for(const p of w.rocks||[])put(p,'obstacle',.5);
+  for(const p of w.plants)if(inReach(p) && mindWetRoute(w,c,p))put(p,'cover');
+  for(const p of w.rocks||[])if(inReach(p))put(p,'obstacle',.5);
   for(let i=0;i<16;i++)for(const distance of [6,14,28]){
     const angle=c.heading+i*Math.PI*2/16,p={x:c.x+Math.cos(angle)*distance,y:c.y+Math.sin(angle)*distance};
     if(p.x<1 || p.y<1 || p.x>w.W-2 || p.y>w.H-2 || !mindWetRoute(w,c,p))

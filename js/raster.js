@@ -292,6 +292,26 @@ class Raster {
     const isleDrain = s.isleDrain || null, islandGround = isleDrain ? s.islandGround || null : null, islandEdge = islandGround ? s.islandEdge || null : null;
     const harbors = s.harbors && s.harbors.length ? s.harbors.filter((h) => h.x + h.r >= rect[0] && h.x - h.r <= rect[2] && h.y + h.r >= rect[1] && h.y - h.r <= rect[3]) : null, hT = (t * 4) | 0;
     const seaCoast = s.seaCoast || null; // (the bright coast's stretches past the other sea: seas.js)
+    // (Worked out once a frame, not at every pixel: the drain's fade inland and each island's slow breath; the coast's
+    // strength along its axis; and which harbors reach each row.)
+    let inlandK = null, breath = null;
+    if (islandGround) {
+      inlandK = new Float32Array(256);
+      for (let e = 0; e < 256; e++) inlandK[e] = islandEdge ? 0.12 + 0.88 * Math.pow(Math.max(0, 1 - e / 26), 1.4) : 1;
+      breath = new Float32Array(isleDrain.length + 1);
+      for (let k = 1; k <= isleDrain.length; k++) breath[k] = 0.66 + 0.08 * Math.sin(t * 0.5 + k);
+    }
+    let coastK = null;
+    if (seaCoast) {
+      const n = seaCoast.axisX ? rect[2] - rect[0] + 1 : rect[3] - rect[1] + 1, from = seaCoast.axisX ? rect[0] : rect[1];
+      coastK = new Float32Array(n);
+      for (let j = 0; j < n; j++) {
+        const u = from + j, a = seaCoast.shifts ? seaCoast.ex - u : u - seaCoast.edge;
+        let cw = 0;
+        for (const sp of seaCoast.spans) if (a >= sp[0] && a < sp[1]) { const v = Math.min(1, (a - sp[0]) / 300); if (v > cw) cw = v; }
+        coastK[j] = cw;
+      }
+    }
     // Chop: short, quick waves in the shallows when it blows; spindrift: streaks of foam blown along the deep in a storm.
     const chop = s.chop || 0, spin = s.spindrift || 0, L3 = 10, w3x = (sw0x(s) * 1024) / L3, w3y = (sw0y(s) * 1024) / L3, w3t = t * 4 * 1024 / L3;
     // The eldritch: veins of void in marked skin, crawling slowly, with stars in them.
@@ -315,6 +335,8 @@ class Raster {
     const physical = hdWaves ? waveField({ ...s, t: s.waveT ?? s.t }) : null, surface = hdWaves ? new Float32Array(4) : null;
     const [rx0, ry0, rx1, ry1] = rect, rowMin = this.rowMin, rowMax = this.rowMax, ring = anyThick ? 2 : 1;
     for (let y = ry0; y <= ry1; y++) {
+      const rowHarbors = harbors ? harbors.filter((h) => Math.abs(y - h.y) < h.r * 1.03 + 1) : null, anyHarbor = rowHarbors && rowHarbors.length;
+      const coastRow = coastK && !seaCoast.axisX ? coastK[y - ry0] : 0;
       // (The outline search reaches one pixel, or two for a thick outline: only near this row's or a neighbour's drawn span.)
       let oLo = W, oHi = -1;
       for (let yy = Math.max(0, y - ring); yy <= Math.min(H - 1, y + ring); yy++) { if (rowMin[yy] < oLo) oLo = rowMin[yy]; if (rowMax[yy] > oHi) oHi = rowMax[yy]; }
@@ -548,9 +570,9 @@ class Raster {
         // The surface over it all (after the deep has darkened the floor below): the sky in calm
         // water, the lit and shadowed faces of waves, foam on the biggest.
         // A harbor: warm, clear tropical water, its edge marked by blinking channel lights.
-        if (harbors && harbors.length && !dry && !i) {
+        if (anyHarbor && !dry && !i) {
           let hw = 0, ring = false;
-          for (const h of harbors) {
+          for (const h of rowHarbors) {
             const dx = x - h.x, dy = y - h.y, d2 = dx * dx + dy * dy, r2 = h.r * h.r;
             if (d2 >= r2 * 1.06) continue;
             if (d2 < r2) { const w = 1 - d2 / r2; if (w > hw) hw = w; }
@@ -563,10 +585,8 @@ class Raster {
           }
         }
         // The bright coast: past the other sea, warm clear water, coming in over its first 300 px.
-        if (seaCoast && !dry && !i) {
-          const a = seaCoast.axisX ? (seaCoast.shifts ? seaCoast.ex - x : x - seaCoast.edge) : (seaCoast.shifts ? seaCoast.ex - y : y - seaCoast.edge);
-          let cw = 0;
-          for (const sp of seaCoast.spans) if (a >= sp[0] && a < sp[1]) { const v = Math.min(1, (a - sp[0]) / 300); if (v > cw) cw = v; }
+        if (coastK && !dry && !i) {
+          const cw = seaCoast.axisX ? coastK[x - rx0] : coastRow;
           if (cw > 0) {
             const k = cw * 0.42, cr = c & 255, cg = (c >> 8) & 255, cb = (c >>> 16) & 255;
             c = (0xff000000 | ((cb + (((205 - cb) * k) | 0)) << 16) | ((cg + (((205 - cg) * k) | 0)) << 8) | (cr + (((70 - cr) * k) | 0))) >>> 0;
@@ -599,10 +619,9 @@ class Raster {
           const k = islandGround[p];
           if (k) {
             // (Strongest at its shore, where the black water meets it, fading inland.)
-            const e = islandEdge ? islandEdge[p] : 0, inland = islandEdge ? Math.pow(Math.max(0, 1 - e / 26), 1.4) : 1;
-            const dr = isleDrain[k - 1] * (0.12 + 0.88 * inland);
+            const dr = isleDrain[k - 1] * inlandK[islandEdge ? islandEdge[p] : 0];
             if (dr > 0.02) {
-              const q = Math.min(3, (dr * (0.66 + 0.08 * Math.sin(t * 0.5 + k)) * 4 + BAYER4[(x & 3) | ((y & 3) << 2)] + 0.5) | 0), f = 256 - q * 52;
+              const q = Math.min(3, (dr * breath[k] * 4 + BAYER4[(x & 3) | ((y & 3) << 2)] + 0.5) | 0), f = 256 - q * 52;
               if (q > 0) c = (0xff000000 | (((((c >>> 16) & 255) * f) >> 8) << 16) | (((((c >> 8) & 255) * f) >> 8) << 8) | (((c & 255) * f) >> 8)) >>> 0;
             }
           }
