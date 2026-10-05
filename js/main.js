@@ -137,13 +137,11 @@ function runJobs() { const t0 = performance.now(); while (JOBS.length && perform
 // ---- the floor redrawn near the view first --------------------------------------------------------------------
 // Parts of the floor waiting to be redrawn (queueBake) are kept, not done at once: those in or near the view go
 // first, a band of rows at a time within a frame's budget; the rest wait until the view heads their way (scrolling
-// reaches ahead in the direction it's going, and the minimap reaches to wherever the pointer rests on it). A far one
-// is done only once in a long while, when nothing near is waiting and nothing's being done (each band is a hitch). (A big pond's islands and growth ask for redraws all over it, all the
+// reaches ahead in the direction it's going, and the minimap reaches to wherever the pointer rests on it). Far ones
+// wait for the page to be hidden (bakeAway: each band is a hitch). (A big pond's islands and growth ask for redraws all over it, all the
 // time; doing them all, wherever they were, was most of its stutter.)
 const BAKE_DIRTY = [];
-let bakeHint = null, bakeLastC = null, bakeVel = [0, 0], bakeFarAt = 0, lastInputAt = 0;
-for (const ev of ['pointerdown', 'wheel', 'keydown', 'touchstart']) addEventListener(ev, () => { lastInputAt = performance.now(); }, { passive: true, capture: true });
-addEventListener('pointermove', (e) => { if (e.buttons) lastInputAt = performance.now(); }, { passive: true, capture: true });
+let bakeHint = null, bakeLastC = null, bakeVel = [0, 0];
 function queueBake(w, rect) {
   if (w !== world) { bakeBackground(w, rect); return; }
   BAKE_DIRTY.push([Math.max(0, rect[0]), Math.max(0, rect[1]), Math.min(world.W - 1, rect[2]), Math.min(world.H - 1, rect[3])]);
@@ -161,21 +159,17 @@ function bakeTick(budget) {
   if (bakeLastC) for (let i = 0; i < 2; i++) bakeVel[i] += ((c[i] - bakeLastC[i]) * 60 - bakeVel[i]) * 0.2; // (px a second, smoothed)
   bakeLastC = c;
   if (!BAKE_DIRTY.length || !world.bgBase) return;
-  const I = bakeInterest(), quiet = now - lastInputAt > 3000;
+  const I = bakeInterest();
   while (BAKE_DIRTY.length && performance.now() - now < budget) {
-    let k = BAKE_DIRTY.findIndex((r) => I.some((q) => rectsMeet(r, q))), far = false;
-    if (k < 0) {
-      if (!quiet || now < bakeFarAt) return;
-      k = 0; far = true; bakeFarAt = now + 8000;
-    }
+    const k = BAKE_DIRTY.findIndex((r) => I.some((q) => rectsMeet(r, q)));
+    if (k < 0) return; // (the far ones wait: until the view comes their way, or the page is hidden: bakeAway)
     const r = BAKE_DIRTY[k], rows = Math.max(16, Math.floor(110000 / Math.max(1, r[2] - r[0] + 1))), band = [r[0], r[1], r[2], Math.min(r[3], r[1] + rows - 1)];
     if (band[3] >= r[3]) BAKE_DIRTY.splice(k, 1); else r[1] = band[3] + 1;
     bakeBackground(world, band);
-    if (far) return;
   }
 }
 function queueStains(w) {
-  const rows = Math.max(32, Math.floor(500000 / Math.max(1, w.W)));
+  const rows = Math.max(16, Math.floor(60000 / Math.max(1, w.W))); // (small bands: each is a frame's job)
   for (let y = 0; y < w.H; y += rows) { const r = [0, y, w.W - 1, Math.min(w.H - 1, y + rows - 1)]; queueJob(() => applyStains(w, r)); }
 }
 
@@ -618,10 +612,14 @@ function visibleRect() {
 // back when there's room again.
 const QUALITY = { level: 0, ema: 12, at: 0 };
 function render(full = false) {
-  const r = world.raster, t = world.t, o = world.opts, t0 = performance.now(), q = QUALITY.level;
+  const r = world.raster, t = world.t, o = world.opts, t0 = performance.now();
   const light = world.light || (world.light = lighting());
   const rect = full ? [0, 0, world.W - 1, world.H - 1] : visibleRect();
   if (typeof fineBegin === 'function') fineBegin(!full); // (close up: fine.js notes the eyes as they're drawn)
+  // (On the GPU the light pools, caustics, chop and cloud glints cost next to nothing: they stay, whatever the
+  // quality governor makes of the frame time.)
+  const gpuLikely = o.renderer === 'gpu' && !full && !world.bones && o.waves === 'classic' && !(typeof FINE !== 'undefined' && FINE.rec) && typeof CGL !== 'undefined' && !CGL.failed;
+  const q = gpuLikely ? 0 : QUALITY.level;
   // Rasterize a margin above/left of the view: shadows of things just off-screen still land on it.
   r.setClip(rect[0] - 30, rect[1] - 30, rect[2] + 3, rect[3] + 3);
   r.begin();
@@ -657,11 +655,13 @@ function render(full = false) {
     const pose = typeof animPose === 'function' ? animPose(c, world.t) : null, flare = c.flare ? 1 + 0.16 * c.flare : 1;
     if (c.flare) r.setScale(c.x, c.y, flare);
     if (pose) r.setPose(pose.x, pose.y, pose.ang, pose.sa, pose.sb, pose.dx, pose.dy, pose.dz);
+    const bent = typeof animBend === 'function' && c.anim && animBend(c, world.t); // (its spine bent through the action: anims.js)
     c.draw(r, t, world);
     if (c.flare) r.setScale();
     if (c.life && c.life.genome.eld) drawEldritch(r, c, t, world);
     if (c.life) drawQuirks(r, c, t);
     if (pose) r.setPose(); // (its marks and quirks move with it)
+    if (bent) animUnbend(c);
   }
   r.alpha = 1;
   r.lod = 0;
@@ -1041,15 +1041,36 @@ function carryFloor(old, sx, sy) {
 // The pond's steady creep outward: a pixel at a time of what it's owed (game.growDue: the dawn's growth, a new
 // depth's room), when nothing is being done with it, as often as it can without being felt (each step rebuilds
 // the pond: about 20 ms on a young one, more on a big one, so the bigger the pond the longer between).
-let growNext = 0;
+let growNext = 0, growCost = 0;
+// (A big pond's step takes seconds, every buffer of it rebuilt: it isn't grown while it's being watched. It grows all
+// it's owed at once while the page is hidden instead: growAway.)
+const growBig = () => growCost > 60 || world.W * world.H > 3e6;
 function growTick(now) {
   const G = world.game;
-  if (!G || !(G.growDue >= 1) || world.observe || world.grab || press || pinch || world.paused || document.hidden || now < growNext) return;
+  if (!G || !(G.growDue >= 1) || world.observe || world.grab || press || pinch || world.paused || document.hidden || now < growNext || growBig()) return;
   if ((world.expandPx || 0) >= maxDeepPx(world) - 8) { G.growDue = 0; return; }
   const t0 = performance.now();
   G.growDue -= 1;
   if (!growInPlace(1)) { G.growDue += 1; growNext = now + 2500; return; }
-  growNext = now + clamp((performance.now() - t0) * 120, 2500, 15000);
+  growCost = performance.now() - t0;
+  growNext = now + clamp(growCost * 120, 2500, 15000);
+}
+function growAway() {
+  const G = world.game;
+  if (!G || !(G.growDue >= 1) || world.observe || !world.bgBase) return;
+  const add = Math.floor(Math.min(G.growDue, maxDeepPx(world) - 8 - (world.expandPx || 0)));
+  if (add < 1) { if ((world.expandPx || 0) >= maxDeepPx(world) - 8) G.growDue = 0; return; }
+  const t0 = performance.now();
+  if (growInPlace(add)) { G.growDue -= add; growCost = performance.now() - t0; }
+}
+// And the floor redraws waiting far from the view are done then too.
+function bakeAway() {
+  if (!world.bgBase) return;
+  const t0 = performance.now();
+  while (BAKE_DIRTY.length && performance.now() - t0 < 4000) {
+    const r = BAKE_DIRTY.shift();
+    bakeBackground(world, r);
+  }
 }
 
 // ---- arrivals: each structure comes into the pond in its own way -----------------------------------
@@ -3110,7 +3131,12 @@ async function updateLink() {
   }
 }
 
-addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { saveNow(); syncPond(); } });
+addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'hidden') return;
+  // (Nobody's watching: the heavy work that would hitch a big pond is done now.)
+  try { if (growBig()) growAway(); bakeAway(); } catch (e) { console.warn(e); }
+  saveNow(); syncPond();
+});
 addEventListener('pagehide', saveNow);
 
 const PAN_KEYS = { arrowleft: [1, 0], arrowright: [-1, 0], arrowup: [0, 1], arrowdown: [0, -1], a: [1, 0], d: [-1, 0], w: [0, 1], s: [0, -1] };

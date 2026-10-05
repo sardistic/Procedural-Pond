@@ -18,7 +18,7 @@ const CGL_FS = `#version 300 es
 precision highp float; precision highp int; precision highp usampler2D;
 uniform sampler2D t_col, t_z, t_zb, t_sh, t_bg, t_ter, t_riv, t_cc, t_tab, t_light, t_outline, t_flags;
 uniform usampler2D t_id, t_isle;
-uniform ivec2 u_org, u_size, u_world, u_lsize;
+uniform ivec2 u_org, u_size, u_world, u_lsize, u_torg, u_tsize;
 uniform int u_flags; // 1 caustics, 2 shadows, 4 outlines, 8 anyThick, 16 fog, 32 clouds, 64 lights, 128 tint, 256 river, 512 depth, 1024 trench, 2048 isles, 4096 void, 8192 isleEdge
 uniform float u_t, u_causticT, u_tideL, u_surf, u_wave, u_surfaceVis, u_swell, u_chop, u_spin, u_deepK, u_lvis, u_riverDeep, u_calm, u_fogAmt, u_fogK;
 uniform ivec2 u_o1, u_o2, u_vo; uniform int u_starT, u_hT;
@@ -32,6 +32,7 @@ const float BAYER[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0
 const float VOIDT[8] = float[8](0.0, 0.05, 0.08, 0.12, 0.17, 0.22, 0.28, 0.35);
 // ---- reading the buffers (world pixels; the tile starts at u_org) ----
 ivec2 tl(int x, int y) { return ivec2(clamp(x - u_org.x, 0, u_size.x - 1), clamp(y - u_org.y, 0, u_size.y - 1)); }
+ivec2 tt(int x, int y) { return ivec2(clamp(x - u_torg.x, 0, u_tsize.x - 1), clamp(y - u_torg.y, 0, u_tsize.y - 1)); } // (the terrain's own, larger tile)
 ivec3 C(vec4 v) { return ivec3(floor(v.rgb * 255.0 + 0.5)); }
 ivec3 colAt(int x, int y) { return C(texelFetch(t_col, tl(x, y), 0)); }
 ivec3 bgAt(int x, int y) { return C(texelFetch(t_bg, tl(x, y), 0)); }
@@ -39,8 +40,8 @@ float zAt(int x, int y) { return texelFetch(t_z, tl(x, y), 0).r; }
 float zbAt(int x, int y) { return texelFetch(t_zb, tl(x, y), 0).r; }
 int idAt(int x, int y) { return int(texelFetch(t_id, tl(x, y), 0).r); }
 float shAt(int x, int y) { return texelFetch(t_sh, tl(x, y), 0).r * 255.0; }
-vec4 ter(int x, int y) { return floor(texelFetch(t_ter, tl(x, y), 0) * 255.0 + 0.5); } // shore, depth, trench, islandEdge
-vec4 riv(int x, int y) { return floor(texelFetch(t_riv, tl(x, y), 0) * 255.0 + 0.5); } // inland, deep
+vec4 ter(int x, int y) { return floor(texelFetch(t_ter, tt(x, y), 0) * 255.0 + 0.5); } // shore, depth, trench, islandEdge
+vec4 riv(int x, int y) { return floor(texelFetch(t_riv, tt(x, y), 0) * 255.0 + 0.5); } // inland, deep
 float caus(int i, int j) { return texelFetch(t_cc, ivec2(i & 127, j & 127), 0).r; }
 float cloud(int i, int j) { return texelFetch(t_cc, ivec2(i & 127, j & 127), 0).g; }
 float WT(int i) { return texelFetch(t_tab, ivec2(i & 1023, 0), 0).r; }
@@ -275,7 +276,7 @@ void main() {
     else if (waveS < -0.14) { int f = 256 - min(4, int((-waveS - 0.14) * 4.0 + 0.5 + bq)) * 26; c = scale8(c, f); }
   }
   if ((u_flags & 2048) != 0) {
-    int k = int(texelFetch(t_isle, tl(x, y), 0).r);
+    int k = int(texelFetch(t_isle, tt(x, y), 0).r);
     if (k > 0 && k <= u_drainN) {
       float e = T0.a, inl = (u_flags & 8192) != 0 ? 0.12 + 0.88 * pow(max(0.0, 1.0 - e / 26.0), 1.4) : 1.0;
       float dr = drain(k - 1) * inl;
@@ -376,7 +377,6 @@ function composeGL(r, s, rect, world) {
   const tw = x1 - x0, th = y1 - y0, maxT = G.maxT || (G.maxT = gl.getParameter(gl.MAX_TEXTURE_SIZE));
   if (tw <= 0 || th <= 0 || tw > maxT || th > maxT) return false;
   if (G.W !== tw || G.H !== th) { G.cv.width = tw; G.cv.height = th; G.cv.style.width = `${tw}px`; G.cv.style.height = `${th}px`; G.W = tw; G.H = th; G.terrainKey = ''; }
-  const moved = G.x !== x0 || G.y !== y0;
   G.x = x0; G.y = y0;
   gl.viewport(0, 0, tw, th); gl.useProgram(G.prog);
   gl.bindBuffer(gl.ARRAY_BUFFER, G.quad); gl.enableVertexAttribArray(G.qloc); gl.vertexAttribPointer(G.qloc, 2, gl.FLOAT, false, 0, 0);
@@ -389,28 +389,34 @@ function composeGL(r, s, rect, world) {
   cglUpload(gl, G, 't_id', r.id, W, x0, y0, tw, th, gl.R16UI, gl.RED_INTEGER, gl.UNSIGNED_SHORT);
   cglUpload(gl, G, 't_sh', r.sh, W, x0, y0, tw, th, gl.R8, gl.RED, gl.UNSIGNED_BYTE);
   cglUpload(gl, G, 't_bg', u8(s.bg), W, x0, y0, tw, th, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
-  // What changes slowly: shore, depth, trench and island edge in one, the river in another (and the islands' ids).
-  const RM = s.riverMask || null;
-  const key = [x0, y0, tw, th, !!s.shore && s.shore.length, s.depth ? 1 : 0, s.trench ? 1 : 0, s.islandEdge ? 1 : 0, RM ? `${RM.x0},${RM.y0},${RM.w},${RM.h}` : ''].join('|');
+  // What changes slowly: shore, depth, trench and island edge in one, the river in another (and the islands' ids),
+  // over a larger tile of their own (the view and 256 px round it), packed again only when the view leaves it or what
+  // they hold has changed (so panning doesn't repack them every frame).
+  const RM = s.riverMask || null, TM = 256;
+  const inTer = G.tx0 != null && x0 >= G.tx0 && y0 >= G.ty0 && x1 <= G.tx0 + G.ttw && y1 <= G.ty0 + G.tth;
+  const key = [!!s.shore && s.shore.length, s.depth ? 1 : 0, s.trench ? 1 : 0, s.islandEdge ? 1 : 0, s.islandGround ? 1 : 0, RM ? `${RM.x0},${RM.y0},${RM.w},${RM.h}` : ''].join('|');
   const now = performance.now();
-  if (moved || key !== G.terrainKey || G.shoreRef !== s.shore || G.depthRef !== s.depth || G.trenchRef !== s.trench || now - (G.terrainAt || 0) > 1500) {
-    const n = tw * th, T = G.terBuf && G.terBuf.length === n * 4 ? G.terBuf : (G.terBuf = new Uint8Array(n * 4)), Rv = G.rivBuf && G.rivBuf.length === n * 2 ? G.rivBuf : (G.rivBuf = new Uint8Array(n * 2));
+  if (!inTer || key !== G.terrainKey || G.shoreRef !== s.shore || G.depthRef !== s.depth || G.trenchRef !== s.trench || G.isleRef !== s.islandGround || now - (G.terrainAt || 0) > 10000) {
+    const ax = Math.max(0, Math.floor((x0 - TM) / TM) * TM), ay = Math.max(0, Math.floor((y0 - TM) / TM) * TM);
+    const bx = Math.min(W, Math.ceil((x1 + TM) / TM) * TM), by = Math.min(H, Math.ceil((y1 + TM) / TM) * TM), aw = bx - ax, ah = by - ay;
+    const n = aw * ah, T = G.terBuf && G.terBuf.length === n * 4 ? G.terBuf : (G.terBuf = new Uint8Array(n * 4)), Rv = G.rivBuf && G.rivBuf.length === n * 2 ? G.rivBuf : (G.rivBuf = new Uint8Array(n * 2));
     T.fill(0); Rv.fill(0);
     const sh = s.shore, dp = s.depth, tr = s.trench, ie = s.islandEdge;
-    for (let y = 0; y < th; y++) {
-      const row = (y0 + y) * W + x0, o = y * tw;
-      for (let x = 0; x < tw; x++) { const p = row + x, k = (o + x) * 4; if (sh) T[k] = sh[p]; if (dp) T[k + 1] = dp[p]; if (tr) T[k + 2] = tr[p]; if (ie) T[k + 3] = ie[p]; }
+    for (let y = 0; y < ah; y++) {
+      const row = (ay + y) * W + ax, o = y * aw;
+      for (let x = 0; x < aw; x++) { const p = row + x, k = (o + x) * 4; if (sh) T[k] = sh[p]; if (dp) T[k + 1] = dp[p]; if (tr) T[k + 2] = tr[p]; if (ie) T[k + 3] = ie[p]; }
     }
     if (RM && RM.data) for (let y = 0; y < RM.h; y++) for (let x = 0; x < RM.w; x++) {
-      const wx = RM.x0 + x - x0, wy = RM.y0 + y - y0;
-      if (wx < 0 || wy < 0 || wx >= tw || wy >= th) continue;
-      const k = (wx + wy * tw) * 2; Rv[k] = RM.data[x + y * RM.w] === 1 ? 255 : 0; if (RM.deep) Rv[k + 1] = RM.deep[x + y * RM.w];
+      const wx = RM.x0 + x - ax, wy = RM.y0 + y - ay;
+      if (wx < 0 || wy < 0 || wx >= aw || wy >= ah) continue;
+      const k = (wx + wy * aw) * 2; Rv[k] = RM.data[x + y * RM.w] === 1 ? 255 : 0; if (RM.deep) Rv[k + 1] = RM.deep[x + y * RM.w];
     }
-    cglPlain(gl, G, 't_ter', tw, th, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, T);
-    cglPlain(gl, G, 't_riv', tw, th, gl.RG8, gl.RG, gl.UNSIGNED_BYTE, Rv);
-    if (s.islandGround) cglUpload(gl, G, 't_isle', s.islandGround, W, x0, y0, tw, th, gl.R16UI, gl.RED_INTEGER, gl.UNSIGNED_SHORT);
+    cglPlain(gl, G, 't_ter', aw, ah, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, T);
+    cglPlain(gl, G, 't_riv', aw, ah, gl.RG8, gl.RG, gl.UNSIGNED_BYTE, Rv);
+    if (s.islandGround) cglUpload(gl, G, 't_isle', s.islandGround, W, ax, ay, aw, ah, gl.R16UI, gl.RED_INTEGER, gl.UNSIGNED_SHORT);
     else cglPlain(gl, G, 't_isle', 1, 1, gl.R16UI, gl.RED_INTEGER, gl.UNSIGNED_SHORT, new Uint16Array(1));
-    G.terrainKey = key; G.shoreRef = s.shore; G.depthRef = s.depth; G.trenchRef = s.trench; G.terrainAt = now;
+    G.tx0 = ax; G.ty0 = ay; G.ttw = aw; G.tth = ah;
+    G.terrainKey = key; G.shoreRef = s.shore; G.depthRef = s.depth; G.trenchRef = s.trench; G.isleRef = s.islandGround; G.terrainAt = now;
   }
   // The caustic and cloud tiles (once), the wave table, the islands' drain and the refraction rows and columns.
   if (G.ccRef !== s.caustic || G.cloudRef !== (s.clouds || null)) {
@@ -441,7 +447,7 @@ function composeGL(r, s, rect, world) {
   const isleOn = !!(s.isleDrain && s.islandGround), voidOn = !!s.voidSkin;
   const flags = (s.caustics ? 1 : 0) | (s.shadows ? 2 : 0) | (s.outlines ? 4 : 0) | (s.anyThick && s.thick ? 8 : 0) | (fog && fog.amount > 0 ? 16 : 0) | (s.clouds ? 32 : 0) | (LM ? 64 : 0) | (s.tint ? 128 : 0)
     | (RM ? 256 : 0) | (s.depth ? 512 : 0) | (s.trench ? 1024 : 0) | (isleOn ? 2048 : 0) | (voidOn ? 4096 : 0) | (s.islandEdge ? 8192 : 0);
-  i2('u_org', x0, y0); i2('u_size', tw, th); i2('u_world', W, H); i2('u_lsize', LM ? LM.lw : 1, LM ? LM.lh : 1); i1('u_flags', flags);
+  i2('u_org', x0, y0); i2('u_size', tw, th); i2('u_torg', G.tx0, G.ty0); i2('u_tsize', G.ttw, G.tth); i2('u_world', W, H); i2('u_lsize', LM ? LM.lw : 1, LM ? LM.lh : 1); i1('u_flags', flags);
   f1('u_t', t); f1('u_causticT', s.causticT || 0.09); f1('u_tideL', (s.tide ?? 1) * 255); f1('u_surf', s.surf || 0); f1('u_wave', s.wave || 0); f1('u_surfaceVis', s.surfaceVis ?? 1);
   f1('u_swell', s.waveMode === 'mesh' ? 0 : swell); f1('u_chop', s.chop || 0); f1('u_spin', s.spindrift || 0); f1('u_deepK', s.deepK ?? 1); f1('u_lvis', s.lightVis || 0); f1('u_riverDeep', s.riverDeep ?? 0.5);
   f1('u_calm', clamp(1 - swell * 1.5, 0, 1) * (s.skyK ?? 1)); f1('u_fogAmt', fog ? fog.amount : 0); f1('u_fogK', 64 / SURFACE_Z);

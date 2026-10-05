@@ -1196,3 +1196,27 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
   - Thomas-Pond by day: 0–0.02%. At night: at most 0.24% of pixels, each by 1 level (light-pool float rounding).
   - .agent/runtime/gpu_place_probe.py: the same paused view screenshotted in both modes has 0 differing screen pixels, so placement is exact.
 - Speed can't be measured here: headless Chrome emulates WebGL with SwiftShader on the CPU. Main-thread cost in GPU mode is the uploads (about 19 B per visible pixel plus 512 KB of tables), against about 27 ms of CPU compose for the same Thomas-Pond view. Default stays CPU until it's tried on real hardware.
+
+## Hitches, GPU lights, and animals that move through their actions (2026-10-05)
+- Owner-session profile: .agent/runtime/perf_probe.py with saving on (`noSave` cleared) logs each frame over 70 ms with what ran in it. On Thomas-Pond:
+  - Growth steps (growInPlace rebuilds every buffer and the shore): 1.7–2.8 s, every 2.5–15 s. This was the user's 10–30 s hitch.
+  - The dawn shore update: about 1 s. Island restamps about 590 ms, sand about 100 ms. When the pond's size changes, carveTrenches adds about 900 ms and depthIn about 400 ms.
+  - Stain repaints after these: 500k-px bands at about 120 ms each, for 4 s.
+  - The 15 s save: about 24–80 ms.
+- Fixes:
+  - A big pond (over 3M px, or a step over 60 ms) doesn't grow while watched. `growAway` grows all that's owed in one go when the page is hidden, and `bakeAway` then does the far floor redraws (far ones are no longer done on a timer). Small ponds keep the visible creep.
+  - carveTrenches works out each trench's line and width once per line (Float64, so exact: trench_exact.py shows 0 differences, 945 → 76 ms).
+  - Stains are repainted in bands of about 60k px.
+  - Still left: the dawn island restamp (about 0.6 s, when islands grew that day) and sand (about 0.1 s). Fixing them means time-slicing the stamp.
+- GPU lights: the quality governor was turning light pools, caustics, clouds and chop off when frames ran slow, and only back on after 5 s of fast frames. In GPU mode that happened whenever the camera moved, because the terrain was repacked on every tile move. Now:
+  - In GPU mode the governor's level is ignored for those (q = 0).
+  - The terrain (shore, depth, trench, island edge, river, island ids) has its own tile, the view plus 256 px, repacked only when the view leaves it or a terrain array is replaced (or every 10 s). The shader reads it through `tt()`.
+  - gpu_compose_probe and gpu_place_probe still match.
+- Animations (anims.js): an animal with a spine is bent through the action as it's drawn (`animBend`, restored by `animUnbend` after its marks and quirks), instead of the whole-body squash and slide.
+  - Each joint's direction is turned by the head's turn (fading down the neck), a bend growing toward the tail and a travelling wave. The body is then laid out again from the head along its own links, so it curves without stretching.
+  - Attack (0.7 s): coil into a C away from the target (head drawn back); snap straight and past it with the head swinging onto the target as it lunges; shake the bite (seven head wrenches, dying down); pull off in an arc.
+  - Hit: knocked aside, folding round the blow, with a whip down the body.
+  - Flee: C-start curl, tail flick, tail beat. Eat: head dips and tugs, tail working.
+  - `animPose` gives spined animals only a lift; others (jellies and so on) keep the pose. `animHead` follows the bent head, so jaws and swallow line up.
+  - The blow still lands at 40% of the attack, as the lunge peaks.
+  - Probes: anim_sheet.py (contact sheet anim-sheet-<pred>.png) and anims_browser.py (the `scaled` check now looks for the bend). Both pass.

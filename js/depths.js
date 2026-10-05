@@ -210,15 +210,19 @@ function carveTrenches(world, depth, rect) {
     a1: ex * 0.05, f1: 0.0035 + 0.002 * hash2(k, seed, 9), p1: hash2(k, seed, 11) * TAU,
     a2: ex * 0.012, f2: 0.012, p2: hash2(k, seed, 13) * TAU, w: 9 + 5 * hash2(k, seed, 17),
   }));
+  // (Each trench's line and width depend only on the position along it: worked out once a line, not per pixel.)
+  const u0 = axisX ? y0 : x0, nU = (axisX ? y1 : x1) - u0 + 1, CC = tr.map(() => new Float64Array(nU)), WW = tr.map(() => new Float64Array(nU));
+  tr.forEach((t, k) => { for (let j = 0; j < nU; j++) { const u = u0 + j; CC[k][j] = t.c + t.a1 * Math.sin(u * t.f1 + t.p1) + t.a2 * Math.sin(u * t.f2 + t.p2); WW[k][j] = t.w * (0.8 + 0.2 * Math.sin(u * 0.02 + t.p2)); } });
+  let reachMax = 0;
+  for (let k = 0; k < tr.length; k++) for (let j = 0; j < nU; j++) reachMax = Math.max(reachMax, CC[k][j] + WW[k][j]);
   for (let y = y0; y <= y1; y++) {
     for (let x = x0, p = x0 + y * W; x <= x1; x++, p++) {
       const a = axisX ? (shifts ? ex - x : x - (W0 - 1)) : (shifts ? ex - y : y - (H0 - 1));
-      if (a < ex * 0.2) continue;
-      const u = axisX ? y : x;
+      if (a < ex * 0.2 || a > reachMax) continue;
+      const j = (axisX ? y : x) - u0;
       let best = 0, lit = false;
-      for (const t of tr) {
-        const cc = t.c + t.a1 * Math.sin(u * t.f1 + t.p1) + t.a2 * Math.sin(u * t.f2 + t.p2), w = t.w * (0.8 + 0.2 * Math.sin(u * 0.02 + t.p2));
-        const v = 1 - Math.abs(a - cc) / w;
+      for (let k = 0; k < tr.length; k++) {
+        const cc = CC[k][j], v = 1 - Math.abs(a - cc) / WW[k][j];
         if (v > best) { best = v; lit = a < cc; }
       }
       if (best > 0) { T[p] = Math.round(best * 127) + (lit ? 128 : 0); if (best > 0.3) depth[p] = 255; }
