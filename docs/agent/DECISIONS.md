@@ -1239,3 +1239,11 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
   - Tuned from the first try (a white-out fog, because densities were about 10× too high, and shafts that hid what was under them), to a faint haze on a clear day, low pink mist at dawn and grey cloud and rain curtains in a storm.
   - Probe: .agent/runtime/volumetric_probe.py (vol-clear, vol-off, vol-dawn and vol-storm screenshots). No errors.
   - Cost: not measured on a real GPU (SwiftShader headless).
+- Revised the same day at the user's word ("looks more like cloud coverage; remove the pixelated filter; vapour around and coming from the ocean, waves and islands; actual rain falling"):
+  - No cloud layer, and no stepping or dither. Drawn at one pond pixel per pixel, scaled smoothly (#volumetric `image-rendering: auto`).
+  - The vapour is what the water breathes out:
+    - a thin humid layer on all the water (e-folding 3 units up), from `hum`: dawn, dusk, recent rain (a slow-tracking `world.volWet`) and fog, less in wind
+    - spray and mist rising where the waves break: the band within 26–56 shore units of the tide, at the beach and round every island (they're in the shore map), stronger with surf, gust and storm, reaching higher in surf
+    - noise sampled at a point leaned downwind by height and rising over time, so wisps climb, drift and thin out.
+  - Rain: streaks in three depths (cells 7, 12 and 17 px; longer and quicker nearer), slanted by the wind and falling over time, plus expanding splash rings on the water (11 px cells). Composited over the volume.
+  - Underwater sun shafts are unchanged.
