@@ -1247,3 +1247,15 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
     - noise sampled at a point leaned downwind by height and rising over time, so wisps climb, drift and thin out.
   - Rain: streaks in three depths (cells 7, 12 and 17 px; longer and quicker nearer), slanted by the wind and falling over time, plus expanding splash rings on the water (11 px cells). Composited over the volume.
   - Underwater sun shafts are unchanged.
+
+## Volumetrics: glow, soft light and accumulation, after "Then and Before" (2026-10-05)
+- The user asked for the volumetric atmosphere of Altair's 4K intro "Then and Before" (KK, Lesnik, Virgill), for the water and above it, and pasted its Shadertoy source. No licence was given for it, so none of its code was used: only its ideas, written fresh in js/volumetric.js and credited in the header. The ideas:
+  - light gathered all along each ray from whatever glows nearby
+  - the light direction jittered each frame, so shadows come out soft
+  - frames blended one into the next, so per-frame noise settles into smooth haze.
+- In the pond:
+  - Glow: the light map (depths.js `world.lightMap`: glowing animals, plants, builds, beacons, lighthouses, sea lights; 4 px RGB float cells) is copied for the tile plus 40 px to an RGBA16F linear texture, soft-saturated as c / (1 + max). In the water, each of the now 12 steps adds glow × (0.02 + 0.06 × depth) × step, so the deep glows more. In the air, vapour steps add glow × 1.6 × their opacity. Each sample is taken a random way off the point, by up to a spread that grows with depth or height, so summed over frames a light becomes a halo.
+  - The sun's direction is jittered by ±0.06 each frame (vapour shading and the shafts' slant).
+  - Accumulation: pass 1 draws into one of two textures (RGBA16F when EXT_color_buffer_float or EXT_color_buffer_half_float allows; else RGBA8), mixed 0.82 with the other, sampled where that point was last frame (the tile origin shift, in rows running upward). History starts over on a resize, on hide, or where the old frame doesn't cover. Half floats were chosen because in 8 bits a faint value at 0.82 keep rounds back to itself (2/255) and never fades.
+  - Pass 2 draws the accumulated volume to the canvas and puts the rain on top, so the streaks and rings stay crisp and aren't smeared by the blending.
+- Probe: volumetric_probe.py, with night and night-with-glowing-animals cases added (vol-night, vol-glow2 vs vol-glowOff). No errors; half floats in use under SwiftShader. The halos are soft and modest in this shallow test pond. Not measured on a real GPU.
