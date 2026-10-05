@@ -133,6 +133,7 @@ function buildLights(world, rect) {
   for (let gy = gy0; gy <= gy1; gy++) D.fill(0, (gx0 + gy * M.lw) * 3, (gx1 + 1 + gy * M.lw) * 3);
   M.any = false;
   const big = [rect[0] - 90, rect[1] - 90, rect[2] + 90, rect[3] + 90];
+  M.at = performance.now(); M.rect = big; // (when and where it's current: volumetric.js asks)
   M.occReady = false; M.occWorld = world; M.occRect = big;
   // A crowd glows as a few lamps, not hundreds: one creature light per 12 px patch.
   const taken = new Set();
