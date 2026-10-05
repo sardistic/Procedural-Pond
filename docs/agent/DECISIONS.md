@@ -1271,3 +1271,22 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
     - .agent/runtime/vol_thomas.py runs Thomas-Pond from the live API with GPU, Seascape and night, and an injected 1160 px light, saving volt-<tag>-*.png.
     - volumetric_probe.py also passes.
     - No errors. The reach-180 case gives a moderate teal lift, not white.
+
+## Volumetrics as a real volume, after tdjBR1 (2026-10-05)
+- The user said the volumetrics "needs more work": it had two levels (the air pass and the water pass read as separate layers), the rain was too much, and it wasn't really a volumetric SDF. They want it to look like Shadertoy tdjBR1, and also pasted SebH's "Volumetric integration" and Robert Cupisz's light-shafts shader as references. None of their code was used; the techniques were written fresh in js/volumetric.js (v=9).
+- Three WebGL2 passes each frame:
+  1. Density into an R8 3D texture: up to 192×192 voxels, at least 8 px each, over the tile plus a margin for the lean; 24 layers from z −32 (the floor) to 64, filled a layer at a time with framebufferTextureLayer. One medium:
+     - below the surface, a thin haze (0.04 + 0.12·depth)
+     - above it, a humid breath (hum·1.3·e^(−h/10)) plus spray at wave breaks (leaned downwind with height)
+     - both shaped by one billow noise. It's domain-warped fbm, stretched vertically (z frequency 0.018 against 0.035 across), so from above a column is either in a clump or clear. It's sharpened with pow 3.5 and smoothsteps, rising and drifting with the wind.
+     Voxels below the floor or inside land are empty.
+  2. Sunlight into a second R8 3D texture: from each voxel, 12 steps of 5 px toward the sun through the density, storing exp(−τ). This is the self-shadowing that shapes the billows, and the mist shades the water under it.
+  3. View, at half the pond's resolution: 30 steps from the top of the volume to the floor. Above the surface the ray leans along the screen's up (tilt 0.7, so what rises is seen rising); below it the ray is straight.
+     - Each step adds T·(sun·sunlight + ambient (sky, or the water's colour) + the light map's glow)·albedo·(1 − e^(−σ·ds)), and T is multiplied by e^(−σ·ds). This is the energy-conserving per-step integration.
+     - The albedo is tinted 30% by a cosine palette of density, as tdjBR1 colours by density: thin edges cool, dense cores warm.
+     - Ray starts follow a fixed interleaved-gradient pattern; nothing is random per frame.
+- Rain is much lighter: one sparse layer of streaks (probability rain²·0.35, alpha 0.13) and a few rings.
+- Kept from before: the stale light-map rebuild, and the wide-average damping of broad lights.
+- Dropped: the separate underwater sun shafts and the two-pass air and water layering.
+- Probes: volumetric_probe (now with vol-close and vol-closeDawn at 5×) and vol_thomas.py. No errors. Not measured on a real GPU. The per-frame cost is about 0.9M voxel shader runs plus the view march at half resolution.
+
