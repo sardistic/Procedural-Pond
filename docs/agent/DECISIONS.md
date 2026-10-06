@@ -1289,4 +1289,11 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
 - Kept from before: the stale light-map rebuild, and the wide-average damping of broad lights.
 - Dropped: the separate underwater sun shafts and the two-pass air and water layering.
 - Probes: volumetric_probe (now with vol-close and vol-closeDawn at 5×) and vol_thomas.py. No errors. Not measured on a real GPU. The per-frame cost is about 0.9M voxel shader runs plus the view march at half resolution.
+- Revised the next day (v=10) when the user said "too much, looks like shit, super pixelated, not cool or atmospheric":
+  - The grain came from the interleaved-gradient dither of ray starts, drawn at half the pond's resolution and then magnified by the zoom. The dither is gone: every ray samples at mid-step, with 44 steps instead of 30. The canvas is now drawn at up to 2 pixels per pond pixel as the view zooms in (`B = 1 / clamp(min(view.k, 2, sqrt(2.5M / tile area)), 0.5, 2)`) and scaled smoothly.
+  - Much less mist:
+    - breath 0.45·hum·e^(−h/8), spray about 0.4× before, water haze about 0.7×, SIG 0.07
+    - softer billows (pow 2.2, one wide smoothstep)
+    - opacity capped at 0.4 (premultiplied colour scaled down with it), so the pond always shows through.
+  - Lamps light clear air and water a little too: each step adds T·glow·0.006·ds with no extinction, giving soft halos and glows round island lights that add light and hide nothing.
 

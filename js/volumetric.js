@@ -13,9 +13,9 @@
 // Lit by the sun (or moon) through itself, so the mist shades the water under it; by the sky; and by the pond's
 // lamps (the light map, depths.js) glowing up into it. The view leans a little (as if the camera were tipped toward
 // the bottom of the screen), so what rises is seen rising. Rain falls over it lightly.
-// Drawn at half the pond's resolution, smooth, as a layer over everything (whatever composes the pond).
+// Drawn finer than the pond's pixels when zoomed in (no grain), smooth, never more than a veil, as a layer over everything (whatever composes the pond).
 
-const VOL = { failed: false, cv: null, gl: null, W: 0, H: 0, B: 2 };
+const VOL = { failed: false, cv: null, gl: null, W: 0, H: 0, B: 1 };
 // The volume: z from the floor (ZB) to the top of the mist (ZT), in pond pixels with the water surface at 0.
 const VOL_ZB = -32, VOL_ZT = 64, VOL_NZ = 24, VOL_MAXN = 192, VOL_TILT = 0.7;
 const VOL_VS = `#version 300 es
@@ -23,7 +23,7 @@ in vec2 a_pos; void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }`;
 const VOL_COMMON = `#version 300 es
 precision highp float;
 precision highp sampler3D;
-const float ZB = ${VOL_ZB}.0, ZT = ${VOL_ZT}.0, SIG = 0.09;
+const float ZB = ${VOL_ZB}.0, ZT = ${VOL_ZT}.0, SIG = 0.07;
 uniform vec2 u_vorg, u_vsize, u_dims; // the volume's world origin and size (px), and its voxels across and down
 float h3(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
 float h2(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
@@ -52,8 +52,8 @@ float billow(vec3 p) {
   vec3 q = vec3((p.xy - u_wind * u_t * 6.0) * 0.035, p.z * 0.018 - u_t * 0.06);
   float warp = fbm(q * 0.7 + vec3(0.0, 0.0, u_t * 0.04));
   float d = fbm(q + 1.8 * vec3(cos(warp * 6.2832), sin(warp * 6.2832), warp));
-  d = pow(d, 3.5);
-  return 0.7 * smoothstep(0.07, 0.19, d) + 0.8 * smoothstep(0.19, 0.45, d);
+  d = pow(d, 2.2);
+  return 1.1 * smoothstep(0.04, 0.5, d);
 }
 void main() {
   vec3 p = voxel();
@@ -64,14 +64,14 @@ void main() {
   float b = billow(p), d;
   if (p.z < 0.0) {
     // The water: a thin haze, the deeper the thicker, barely clumped.
-    d = (0.04 + 0.12 * depth) * (0.5 + 0.5 * min(b, 1.0));
+    d = (0.03 + 0.08 * depth) * (0.6 + 0.4 * min(b, 1.0));
   } else {
     float h = p.z - max(ground, 0.0);
     // Leaned downwind as it rises (the source of the mist at this height lies upwind).
     float se2 = texture(u_shore, tile(p.xy - u_wind * h * 1.2)).r * 255.0;
     float brk = se2 > 0.5 ? smoothstep(26.0 + 30.0 * u_surf, 0.0, abs(u_tide - se2)) : 0.0;
-    float breath = u_hum * 1.3 * exp(-h / 10.0);
-    float spray = brk * (0.5 + 1.8 * u_surf + 0.8 * u_storm) * 2.2 * exp(-h / (12.0 + 14.0 * u_surf));
+    float breath = u_hum * 0.45 * exp(-h / 8.0);
+    float spray = brk * (0.4 + 1.2 * u_surf + 0.5 * u_storm) * 0.9 * exp(-h / (12.0 + 14.0 * u_surf));
     d = (breath + spray) * b;
   }
   o = vec4(clamp(d, 0.0, 1.0), 0.0, 0.0, 1.0);
@@ -136,10 +136,9 @@ void main() {
   vec2 uv = tile(w);
   float se = texture(u_shore, uv).r * 255.0, depth = texture(u_depth, uv).r;
   float floorZ = se > u_tide ? (se - u_tide) * 0.12 : -32.0 * max(depth, 0.15);
-  // (Where along its first step each ray starts: a fixed pattern on the pond, so nothing crawls frame to frame.)
-  vec2 wp = floor(w / u_block);
-  float jit = fract(52.9829 * fract(0.06711 * wp.x + 0.00584 * wp.y));
-  const int N = 30;
+  // (Every ray samples at the middle of its steps: no dither, which shows as grain once the pond is zoomed.)
+  float jit = 0.5;
+  const int N = 44;
   float dz = (ZT - floorZ) / float(N), seg = dz * sqrt(1.0 + u_tilt * u_tilt);
   vec3 amb = u_sky * (0.14 + 0.4 * u_day), wamb = u_water * (0.2 + 0.35 * u_day);
   float sunI = 0.12 + 0.88 * u_day;
@@ -149,9 +148,11 @@ void main() {
     if (z < floorZ || T < 0.02) break;
     vec3 p = vec3(w - u_up * max(z, 0.0) * u_tilt, z); // (the screen's up leans the ray; below the surface it's straight)
     vec3 t3 = uvw(p);
-    float sigma = texture(u_dens, t3).r * SIG;
+    float sigma = texture(u_dens, t3).r * SIG, ds = z > 0.0 ? seg : dz;
+    // (The lamps light even clear air and water a little, as a glow round them that adds light and hides nothing.)
+    if (u_glow > 0.0) scat += T * glowAt(p, floorZ) * 0.006 * ds;
     if (sigma < 1e-5) continue;
-    float ds = z > 0.0 ? seg : dz, sun = texture(u_lit, t3).r;
+    float sun = texture(u_lit, t3).r;
     // What this bit of medium sends toward the eye: the sun through the medium between, the sky (under water, the
     // water's own colour), and the lamps; integrated over the step against its own extinction.
     vec3 lit = u_sunCol * sunI * sun + (z > 0.0 ? amb : wamb) + (u_glow > 0.0 ? glowAt(p, floorZ) * 2.5 : vec3(0.0));
@@ -163,7 +164,9 @@ void main() {
     scat += T * lit * albedo * (1.0 - ext);
     T *= ext;
   }
+  // (Never more than a veil: the pond always shows through.)
   vec4 v = vec4(min(scat, vec3(1.0)), 1.0 - T);
+  if (v.a > 0.4) v *= 0.4 / v.a;
   vec4 r = rain(w, se <= u_tide);
   o = r + v * (1.0 - r.a);
 }`;
@@ -273,13 +276,14 @@ function volLayers(G, gl, U, tex, nz) {
 }
 function drawVolumetric(w, state, rect, light) {
   if (!volumetricAvailable()) return false;
-  const G = VOL, gl = G.gl, B = G.B;
+  const G = VOL, gl = G.gl;
   const m = 8, snap = 48;
   const x0 = Math.max(0, Math.floor((rect[0] - m) / snap) * snap), y0 = Math.max(0, Math.floor((rect[1] - m) / snap) * snap);
   const x1 = Math.min(w.W, Math.ceil((rect[2] + m + 1) / snap) * snap), y1 = Math.min(w.H, Math.ceil((rect[3] + m + 1) / snap) * snap);
-  const W = x1 - x0, H = y1 - y0, cw = Math.ceil(W / B), ch = Math.ceil(H / B), maxT = G.maxT || (G.maxT = gl.getParameter(gl.MAX_TEXTURE_SIZE));
+  // (Drawn finer than the pond's pixels as it's zoomed in, up to 2 a pixel and about 2.5M in all: smooth, not blocky.)
+  const W = x1 - x0, H = y1 - y0, B = G.B = 1 / clamp(Math.min(view.k, 2, Math.sqrt(2.5e6 / Math.max(1, W * H))), 0.5, 2), cw = Math.ceil(W / B), ch = Math.ceil(H / B), maxT = G.maxT || (G.maxT = gl.getParameter(gl.MAX_TEXTURE_SIZE));
   if (W <= 0 || H <= 0 || W > maxT || H > maxT) return false;
-  if (G.W !== W || G.H !== H) { G.cv.width = cw; G.cv.height = ch; G.cv.style.width = `${cw * B}px`; G.cv.style.height = `${ch * B}px`; G.W = W; G.H = H; G.terrainAt = 0; }
+  if (G.W !== W || G.H !== H || G.cw !== cw) { G.cw = cw; G.cv.width = cw; G.cv.height = ch; G.cv.style.width = `${cw * B}px`; G.cv.style.height = `${ch * B}px`; G.W = W; G.H = H; G.terrainAt = 0; }
   const moved = G.x !== x0 || G.y !== y0;
   G.x = x0; G.y = y0;
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
