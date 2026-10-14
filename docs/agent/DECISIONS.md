@@ -1297,3 +1297,7 @@ Swimmers keep `SHORE_MARGIN` (0.2 beach elevation) of water below the tide, samp
     - opacity capped at 0.4 (premultiplied colour scaled down with it), so the pond always shows through.
   - Lamps light clear air and water a little too: each step adds T·glow·0.006·ds with no extinction, giving soft halos and glows round island lights that add light and hide nothing.
 
+## Website analytics (2026-10-13)
+- The ordinary website loads the deferred Umami tracker from `analytics.sardistic.com`, registered as `pond.nz`. Automatic pageviews collect standard traffic, referrer and device information. Domain filtering limits collection to `pond.nz` and `www.pond.nz`; local previews do not generate events.
+- Search parameters and fragments are excluded so shared pond serialization does not enter analytics. No player account identifier or gameplay state is supplied, and session recording stays disabled.
+- The hosting CSP permits only the analytics origin in `script-src` and `connect-src`, alongside the existing Cloudflare beacon allowances. The pending YouTube export builder strips scripts with a website ID so the Playable retains its external-request restrictions.
