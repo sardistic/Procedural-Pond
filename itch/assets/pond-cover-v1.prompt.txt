@@ -1,0 +1,16 @@
+Generated with the built-in image_gen tool on 2026-10-14.
+Reference: dist/attack-preview.png, native gameplay renderer, used for style only.
+Output: pond-cover-v1.png, promotional artwork rather than a gameplay screenshot.
+Select Graphics in itch.io's generative AI disclosure if using this cover.
+
+Use case: ads-marketing
+Asset type: itch.io game cover, landscape aspect ratio 630:500. Output a 630 x 500 PNG if supported; preserve this aspect ratio.
+Primary request: Create the cover artwork for the browser ecosystem simulation pond.nz. An inviting living pond becomes quietly unsettling as you notice the dark water.
+Input image: The provided local image is a STYLE REFERENCE ONLY: a four-panel screenshot showing the game's native tiny pixel fish, crab, articulated spider and octopus. Do not reproduce its panels, labels or UI.
+Scene: top-down view of a living pond. Irregular mossy shoreline and reeds frame one upper corner, a few lily pads in green-blue shallow water. A little orange-white koi and long green fish curve gracefully across the shallows, a small articulated crab near the shore. The lower half transitions into deep dark teal water; a slender pale aquatic creature with a small luminous lure is partly visible there, its long body disappearing into the dark. Subtle water ripples and drifting specks.
+Style: crisp hand-crafted-looking 2D pixel-art illustration, visible square pixel clusters, compact limited palette, organic curving anatomy like the reference. Avoid smooth painted surfaces or noisy AI texture.
+Composition: one continuous top-down aquatic scene with generous readable space for the title in the upper middle. Keep creatures small enough to feel like part of an ecosystem. Strong thumbnail readability. Calm living shallows contrasted with an eerie unexplored depth.
+Text verbatim: "pond.nz", lowercase. Large warm ivory pixel lettering centered in the upper middle, with a subtle dark pixel shadow. This is the only text.
+Mood/palette: moss green, muted sea teal, charcoal blue depths, occasional warm orange fish and soft mint glow. Immersive, quiet, curious, slightly creepy.
+Avoid: humans, cartoon faces, generic fantasy monsters, gore, large staring eyes, photorealism, smooth 3D, glossy effects, interface buttons, borders, panels, watermarks, extra text.
+This is promotional cover artwork, not a claimed gameplay screenshot.

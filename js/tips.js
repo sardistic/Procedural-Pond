@@ -48,7 +48,7 @@ function toolTip(name, t) {
 // ---- the tooltip ------------------------------------------------------------------------------------------
 const TIP = { el: null, target: null, show: 0, text: '', world: false };
 function tipBox() {
-  if (!TIP.el) { TIP.el = document.createElement('div'); TIP.el.className = 'tip'; TIP.el.hidden = true; document.body.append(TIP.el); }
+  if (!TIP.el) { TIP.el = document.createElement('div'); TIP.el.id = 'pond-tooltip'; TIP.el.className = 'tip'; TIP.el.setAttribute('role', 'tooltip'); TIP.el.hidden = true; document.body.append(TIP.el); }
   return TIP.el;
 }
 function renderTip(text) {

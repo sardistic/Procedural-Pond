@@ -655,7 +655,9 @@ function arriveDeep(world) {
   // (A kind that's never been here waits its turn, and each pond has its own odds: arrivals.js.)
   const pool = Object.keys(DEEP).filter((k) => deepAvailable(world, k) && (!DEEP[k].mythic || Math.random() < 0.06 * (1 + lure + stars)) && (typeof canDiscover !== 'function' || canDiscover(world, k)));
   if (!pool.length) return;
-  const kind = typeof pickByOdds === 'function' ? pickByOdds(world, pool) : pick(pool);
+  const recent = pool.filter((k) => DEEP[k].tier >= (world.erosion?.tier || 0) - 1 && !world.game?.seen?.includes(`species:${k}`));
+  const choices = recent.length && Math.random() < 0.55 ? recent : pool;
+  const kind = typeof pickByOdds === 'function' ? pickByOdds(world, choices) : pick(choices);
   if (world.creatures.filter((c) => c.species === kind).length >= (DEEP[kind].mythic ? 1 : 3)) return;
   const group = SPECIES[kind].spawn(world, ...deepSpot(world, kind));
   for (const c of group) { initLife(c, { alpha: 0 }); noteBorn(world, c, 'arrived'); }

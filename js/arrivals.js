@@ -9,8 +9,8 @@
 //  - Each pond has its own odds for each kind, from its seed: some kinds are common here, some rare.
 //    The odds drift with the seasons, each kind on its own slow cycle, so what's likely changes.
 //  - Ways round it: a lure (pearls) makes a kind far likelier to be the next to come, for two days;
-//    a summons (essence) brings it at the next dawn, ready or not. The expanded creature rail
-//    includes undiscovered kinds; their species cards offer both choices.
+//    a summons (essence) brings it at the next dawn, ready or not. The Animals list
+//    includes undiscovered kinds and offers both choices.
 
 const FIND_GAP = (n, world) => (1.1 + 0.3 * Math.max(0, n - 5)) * (world && hardMode(world) ? 1.6 : 1); // pond days to wait after a first arrival, by how many are known (longer in hard mode)
 const kindHash = (k) => hashString(k) % 9973;
@@ -70,7 +70,6 @@ function discover(world, k, subject = null) {
   if (G.summon === k) G.summon = null;
   logEvent(world, `✦ New to the pond: ${plural(SINGULAR[k] || k, 2).toLowerCase()}.${hardMode(world) ? ' Keep them, and more may come' : ' You can spawn them from the dock now'}`, subject, { cat: 'rare', pri: 3 });
   if (typeof refreshSpeciesButtons === 'function') setTimeout(refreshSpeciesButtons, 0);
-  if (typeof wildUi !== 'undefined' && wildUi.open) renderWild();
 }
 // Weighted choice among kinds, by this pond's odds (lured ones far more).
 function pickByOdds(world, kinds) {
@@ -97,8 +96,7 @@ function dawnArrivals(world) {
   }
 }
 
-// ---- the Wildlife window ---------------------------------------------------------------------------------------
-const wildUi = { open: false };
+// ---- attracting new species ---------------------------------------------------------------------------------------
 const lurePrice = (world, k) => Math.round(30 * (1 + 0.25 * (world.game.known || []).length) / Math.max(0.3, kindOdds(world, k)));
 const summonPrice = (world, k) => Math.round(3 * spawnCost(k) + 12 * (world.game.known || []).length);
 function lureKind(world, k) {
@@ -107,7 +105,6 @@ function lureKind(world, k) {
   if (!spend(world, lurePrice(world, k), 'life')) return false;
   G.lures = { ...(G.lures || {}), [k]: world.days + 2 };
   logEvent(world, `You set out a lure for ${plural(SINGULAR[k], 2).toLowerCase()}`, null, { cat: 'pond', pri: 1 });
-  if (wildUi.open) renderWild();
   return true;
 }
 function summonKind(world, k) {
@@ -116,67 +113,9 @@ function summonKind(world, k) {
   if (!spendEssence(world, summonPrice(world, k), 'life')) return false;
   G.summon = k;
   logEvent(world, `You summoned ${plural(SINGULAR[k], 2).toLowerCase()}: they come at dawn`, null, { cat: 'pond', pri: 2 });
-  if (wildUi.open) renderWild();
   return true;
 }
 // Kinds that could come to this pond now or later (its water, its depth), not yet known.
 function undiscovered(world) {
   return Object.keys(SPECIES).filter((k) => !knows(world, k) && fitsHabitat(world, SPECIES_HABITAT[k] || 'both') && (!DEEP[k] || (deepAvailable(world, k) && !DEEP[k].mythic)));
-}
-function setWild(open) {
-  wildUi.open = open;
-  byId('wild').hidden = !open;
-  if (open) { closeWindows('wild'); renderWild(); }
-}
-function renderWild() {
-  if (!wildUi.open) return;
-  const G = world.game, list = undiscovered(world).sort((a, b) => kindOdds(world, b) - kindOdds(world, a)), rows = [];
-  const due = (G.nextFind || 0) - world.days, mins = Math.max(0, Math.round(due * world.opts.dayLength / 60));
-  byId('wild-status').replaceChildren(colorize(list.length ? `${(G.known || []).length} kinds have found their way in; ${list.length} could still come. ${due > 0.05 ? `The next new kind can come in about ${mins ? `${mins} minute${mins === 1 ? '' : 's'}` : 'a moment'} (a pond day is ${Math.round(world.opts.dayLength / 60)} minutes).` : 'A new kind could come any time now.'} Each pond has its own odds, and they drift with the seasons.` : 'Every kind this pond can have has found its way in.'));
-  for (const k of list) {
-    const o = kindOdds(world, k), li = el('li', 'wild-row'), ic = el('span', 'ic'), lured = G.lures && G.lures[k] > world.days, summoned = G.summon === k;
-    ic.append(iconImg(speciesIcon(k), 28));
-    const need = SUCCESSION[k] ?? 0, ready = (world.maturity ?? 0) >= need || !!DEEP[k];
-    const info = el('div', 'who');
-    info.append(el('b', null, SINGULAR[k]), colored('span', 'note', [oddsWord(o), !ready ? 'the pond isn’t alive enough for it yet' : '', lured ? 'lured' : '', summoned ? 'summoned: it comes at dawn' : ''].filter(Boolean).join(' · ')));
-    const lure = el('button', 'lure'), sum = el('button', 'summon');
-    lure.type = sum.type = 'button';
-    lure.append(document.createTextNode('Lure '), el('i', 'pearl'), document.createTextNode(fmt(lurePrice(world, k))));
-    sum.append(document.createTextNode('Summon '), el('i', 'essence'), document.createTextNode(fmt(summonPrice(world, k))));
-    lure.title = 'A lure\nFor two days this kind is far likelier to be the next to come, and it can come a little sooner.';
-    sum.title = 'A summons\nIt comes at the next dawn, whatever the odds (and whether or not the pond is ready).';
-    lure.disabled = !!world.observe || lured || G.pearls < lurePrice(world, k);
-    sum.disabled = !!world.observe || !!G.summon || (G.essence || 0) < summonPrice(world, k) || hardMode(world);
-    if (hardMode(world)) sum.title = 'A summons\nNot in hard mode: here, animals only come of their own accord (a lure helps).';
-    else if (G.summon && !summoned) sum.title = `A summons\n${SINGULAR[G.summon] || G.summon} is already on its way at dawn.`;
-    lure.addEventListener('click', () => lureKind(world, k));
-    sum.addEventListener('click', () => summonKind(world, k));
-    for (const target of [ic, info]) {
-      target.tabIndex = 0;
-      target.title = 'Open species card';
-      target.addEventListener('click', () => {
-        setWild(false);
-        openSpawnCard(k, byId('wild-btn'));
-      });
-      target.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); target.click(); } });
-    }
-    li.append(ic, info, lure, sum);
-    rows.push(li);
-  }
-  byId('wild-list').replaceChildren(...rows);
-}
-// The rail's arrow shows how many kinds haven't come yet.
-function refreshWildButton() {
-  const b = byId('wild-btn');
-  if (!b || !world.game) return;
-  ensureKnown(world);
-  const n = undiscovered(world).length;
-  b.hidden = false;
-  const count = b.querySelector('b');
-  count.textContent = n;
-  count.hidden = !n;
-  const due = Math.max(0, (world.game.nextFind || 0) - world.days);
-  const mins = Math.round(due * world.opts.dayLength / 60);
-  const next = !n ? 'Every available kind has arrived.' : due > 0.05 ? `A new kind may arrive in about ${mins || 1} minute${mins === 1 ? '' : 's'}.` : 'A new kind could arrive now.';
-  b.title = `${typeof dockUi !== 'undefined' && dockUi.expanded ? 'Collapse' : 'Expand'} creature list\n${n} kind${n === 1 ? '' : 's'} still to discover. ${next} Open a kind to lure, summon or spawn it.`;
 }

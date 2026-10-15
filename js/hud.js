@@ -10,7 +10,7 @@ const byId = (id) => document.getElementById(id);
 // closes it (the actions panel and the menu are tools, not windows, and stay).
 const WINDOWS = [
   ['creature', () => hideCreature()], ['object', () => hideObject()], ['spawn-card', () => closeSpawnCard()], ['hatchery', () => setHatchery(false)],
-  ['evo', () => setEvo(false)], ['census', () => setCensus(false)], ['wild', () => setWild(false)], ['paragons', () => setParagons(false)], ['log-panel', () => setJournal(false)], ['score-panel', () => setScore(false)], ['sky-panel', () => setSky(false)],
+  ['evo', () => setEvo(false)], ['census', () => setCensus(false)], ['log-panel', () => setJournal(false)], ['score-panel', () => setScore(false)], ['sky-panel', () => setSky(false)],
 ];
 function closeWindows(except = null) {
   for (const [id, close] of WINDOWS) { const e = byId(id); if (id !== except && e && !e.hidden) close(); }
@@ -208,12 +208,12 @@ function iconImg(icon, box = ICON_CSS) {
   return img;
 }
 
-// ---- creature rail: a short ranked list, or the full list with names -----------
+// ---- creature rail: ranked spawn shortcuts; Animals opens the full list -----------
 
 const DOCK_KINDS = Object.keys(SPECIES);
-const dockUi = { expanded: false, capacity: 10 };
+const dockUi = { capacity: 10 };
 
-// Undiscovered kinds live in the expanded rail too: their card offers a lure or summons.
+// Undiscovered kinds appear in Animals too, with lure and summon actions.
 function dockSpeciesVisible(w, kind) {
   if (!fitsHabitat(w, SPECIES_HABITAT[kind] || 'both') || !deepAvailable(w, kind)) return false;
   if (typeof spawnable === 'function' && spawnable(w, kind)) return true;
@@ -244,27 +244,6 @@ function updateDockVisibility() {
     const overflow = !b.hidden && shown++ >= dockUi.capacity;
     b.classList.toggle('dock-overflow', overflow);
   }
-}
-
-function setDockExpanded(open) {
-  dockUi.expanded = !!open;
-  const animals = byId('animals'), bar = animals.closest('.dock-bar'), toggle = byId('wild-btn');
-  if (dockUi.expanded) {
-    if (typeof setHud === 'function' && !byId('hud').classList.contains('hidden')) setHud(false);
-    if (typeof setActions === 'function' && !byId('actions').hidden) setActions(false);
-    if (census.open) setCensus(false);
-  }
-  bar.classList.toggle('expanded', dockUi.expanded);
-  if (!dockUi.expanded) animals.scrollTop = 0;
-  toggle.setAttribute('aria-expanded', dockUi.expanded);
-  toggle.setAttribute('aria-controls', 'animals');
-  toggle.setAttribute('aria-label', dockUi.expanded ? 'Collapse creature list' : 'Expand creature list');
-  toggle.querySelector('span').textContent = dockUi.expanded ? '◂' : '▸';
-  if (typeof setWild === 'function' && wildUi.open) setWild(false);
-  hideLineage();
-  closeSpawnCard();
-  updateDockVisibility();
-  refreshWildButton();
 }
 
 function buildDock() {
@@ -336,7 +315,7 @@ const lineUi = { kind: null, anchor: null, timer: 0 };
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 function showLineage(kind, anchor) {
-  if (dockUi.expanded) return;
+  if (census.open) return;
   lineUi.kind = kind;
   lineUi.anchor = anchor;
   lineUi.timer = 0;
@@ -452,13 +431,21 @@ function renderLineage() {
 
 // ---- census: details about the animals in the pond ------------------------------------------
 
-const census = { open: false, expanded: new Set(), timer: 0 };
+const census = { open: false, expanded: new Set(), timer: 0, query: '', order: [], limits: new Map(), statusStrips: new Map() };
 
 function setCensus(open) {
+  const wasOpen = census.open;
+  if (!open && creatureUi.inList) hideCreature();
+  if (!open && spawnUi.inList) closeSpawnCard();
   census.open = open;
   byId('census').hidden = !open;
   byId('census-btn').setAttribute('aria-expanded', open);
-  if (open) { renderCensus(); closeWindows('census'); if (typeof setHud === 'function' && !byId('hud').classList.contains('hidden')) setHud(false); } // (one window down the left at a time)
+  if (open) {
+    if (!wasOpen) { census.order = []; closeWindows('census'); }
+    hideLineage();
+    if (typeof setHud === 'function' && !byId('hud').classList.contains('hidden')) setHud(false);
+    renderCensus();
+  }
 }
 
 function el(tag, cls, text) {
@@ -476,7 +463,87 @@ function energyBar(v) {
   return bar;
 }
 
+function refreshAnimalsBadge() {
+  const button = byId('census-btn');
+  if (!world.game) return;
+  const ready = (world.game.supers || []).length, missing = undiscovered(world).length;
+  button.dataset.new = ready || '';
+  button.classList.toggle('has-new', ready > 0);
+  button.setAttribute('aria-label', `Animals${ready ? `, ${ready} Paragons ready` : ''}`);
+  button.title = `Animals (C)\nSpecies, individuals, spawning and Paragons. ${missing} kinds still to discover.${ready ? ` ${ready} Paragons ready to claim.` : ''}`;
+}
+
+function animalSpeciesDetails(kind) {
+  const box = el('div', 'animal-species-details'), G = world.game;
+  const note = typeof SPECIES_NOTES !== 'undefined' && SPECIES_NOTES[kind];
+  if (note) box.append(colored('p', 'note', note));
+  if (kind !== 'tadpole') {
+    const actions = el('div', 'animal-species-actions');
+    if (spawnable(world, kind)) {
+      const add = crButton(`Add · ◆ ${fmt(spawnCost(kind))}`, null, `add:${kind}`, () => {
+        if (!world.observe && spawnable(world, kind) && buyAnimal(kind)) { updateCounts(); renderCensus(); }
+      });
+      add.disabled = !!world.observe || hardMode(world) || (G.essence || 0) < spawnCost(kind);
+      add.title = hardMode(world) ? 'Direct spawning is off in hard mode.' : 'Add a normal group of this species for essence.';
+      actions.append(add);
+    } else if (!knows(world, kind)) {
+      const lured = G.lures?.[kind] > world.days, summoned = G.summon === kind;
+      const lure = crButton(lured ? 'Lured' : `Lure · ● ${fmt(lurePrice(world, kind))}`, null, `lure:${kind}`, () => { if (lureKind(world, kind)) renderCensus(); });
+      const summon = crButton(summoned ? 'Arriving at dawn' : `Summon · ◆ ${fmt(summonPrice(world, kind))}`, null, `summon:${kind}`, () => { if (summonKind(world, kind)) renderCensus(); });
+      lure.disabled = !!world.observe || lured || (G.pearls || 0) < lurePrice(world, kind);
+      summon.disabled = !!world.observe || !!G.summon || hardMode(world) || (G.essence || 0) < summonPrice(world, kind);
+      lure.title = 'Make this species more likely to arrive for two pond days.';
+      summon.title = hardMode(world) ? 'Summoning is off in hard mode.' : 'Bring this species at the next dawn.';
+      actions.append(lure, summon);
+    }
+    if (!world.observe) {
+      const options = crButton('Spawn options', null, `spawn-options:${kind}`, () => openSpawnCard(kind, options));
+      actions.append(options);
+    }
+    box.append(actions);
+    for (const [reward] of supersFor(world, kind)) {
+      const claim = crButton('♛ Claim Paragon · free', 'animal-paragon', `claim:${kind}:${(G.supers || []).indexOf(reward)}`, () => {
+        const index = (world.game.supers || []).indexOf(reward);
+        if (!world.observe && index >= 0 && claimSuper(world, index)) { updateCounts(); refreshAnimalsBadge(); renderCensus(); }
+      });
+      claim.disabled = !!world.observe;
+      claim.title = `Pristine, always settles, with rare traits and a gift.${reward.traits.length ? ` Traits: ${traitText(reward.traits, 5)}` : ''}`;
+      box.append(claim);
+    }
+    const progress = el('ol', 'par-progress');
+    if (G.spPts?.[kind]) {
+      const points = G.spPts[kind], next = SPECIES_MILESTONE(G.spHit?.[kind] || 0);
+      const row = el('li');
+      row.append(el('span', null, `♛ Next Paragon: ${fmt(points)} / ${fmt(next)} points`));
+      const bar = el('span', 'gbar'), fill = el('i'); fill.style.width = `${Math.round(clamp(points / next, 0, 1) * 100)}%`; bar.append(fill); row.append(bar); progress.append(row);
+    }
+    for (const [key, count] of Object.entries(G.lines || {}).filter(([key]) => key.startsWith(kind + '|')).sort((a,b) => b[1]-a[1])) {
+      const next = LINE_MILESTONES.find((n) => n > count), row = el('li');
+      row.append(colored('span', null, `${key.split('|')[1].split('+').filter(Boolean).map(traitName).join(', ')} · bred ${count}${next ? ` / ${next} for a Paragon` : ' · all milestones reached'}`));
+      progress.append(row);
+    }
+    if (progress.children.length) box.append(progress);
+    if (!progress.children.length && !supersFor(world, kind).length) box.append(el('p', 'note', '♛ Breed a rare line 3 times or earn 150 species points for your first Paragon.'));
+    if (kind === 'wild' && WILD_SPECIES.length) {
+      const cards = el('ul', 'wild-cards'), living = world.creatures.filter((c) => c.species === 'wild' && alive(c));
+      for (const sp of WILD_SPECIES) {
+        const n = living.filter((c) => c.sp === sp).length, card = el('li', n ? 'wild-card' : 'wild-card gone');
+        card.append(iconImg(wildIcon(sp), 32), el('b', null, sp.name), el('span', 'sub', sp.habitat === 'salt' ? 'reef' : 'freshwater'), el('span', 'ct', n ? `${n} here` : 'moved on'));
+        cards.append(card);
+      }
+      box.append(cards);
+    }
+  }
+  return box;
+}
+
 function renderCensus() {
+  const panel = byId('census'), scroll = panel.scrollTop;
+  const focusKey = panel.contains(document.activeElement) ? document.activeElement.dataset.focusKey : null;
+  // Reuse the existing inspectors inside the selected row across list refreshes.
+  const inspector = byId('creature'), spawn = byId('spawn-card');
+  if (creatureUi.inList) inspector.remove();
+  if (spawnUi.inList) spawn.remove();
   const groups = new Map();
   let total = 0, rares = 0;
   for (const c of world.creatures) {
@@ -486,7 +553,9 @@ function renderCensus() {
     total++;
     if (c.life.traits.length) rares++;
   }
-  byId('census-summary').textContent = `${total} animals · ${groups.size} species · ${rares} rare`;
+  const rewards = world.game.supers || [];
+  byId('census-summary').textContent = `${total} animals · ${groups.size} species · ${rares} rare${rewards.length ? ` · ♛ ${rewards.length} ready to claim` : ''}`;
+  byId('clear').hidden = !!world.observe;
   byId('census-stats').textContent = `born ${ECO.births} · arrived ${ECO.arrivals} · moved on ${ECO.departures} · died ${ECO.died || 0} · eaten ${ECO.eaten}`;
   let room = byId('census-capacity');
   if (!room) {
@@ -498,12 +567,20 @@ function renderCensus() {
   const bonus = world.maxPopBonus || 0;
   room.textContent = `Breeding room: ${pondPopulation(world)} / ${world.maxPop || base + bonus} pond animals (${base} from pond size + ${bonus} from deep habitat). Expand the pond, or place structures and grow plants in deep water; the deep bonus updates at dawn.`;
 
-  const rows = [], sum = speciesSummary(world);
+  const rows = [], sum = speciesSummary(world), statusStrips = new Map();
   const worth = (k) => (k === 'tadpole' ? 0 : (sum.get(k) || { value: 0 }).value);
-  const kinds = [...DOCK_KINDS, 'tadpole'].filter((k) => groups.get(k)).sort((a, b) => worth(b) - worth(a));
-  byId('census-summary').textContent += ` · worth ${[...sum.values()].reduce((a, s) => a + s.value, 0)} essence`;
+  const eligible = [...DOCK_KINDS, 'tadpole'].filter((k) => groups.has(k) || rewards.some((s) => s.k === k)
+    || creatureUi.inList && creatureUi.c?.species === k || k !== 'tadpole' && (dockSpeciesVisible(world, k)
+    || world.game.spPts?.[k] || Object.keys(world.game.lines || {}).some((key) => key.startsWith(k + '|'))));
+  const ranked = eligible.sort((a, b) => Number(rewards.some((s) => s.k === b)) - Number(rewards.some((s) => s.k === a))
+    || Number(groups.has(b)) - Number(groups.has(a)) || worth(b) - worth(a) || (SPECIES[a]?.label || a).localeCompare(SPECIES[b]?.label || b));
+  census.order = [...census.order.filter((k) => eligible.includes(k)), ...ranked.filter((k) => !census.order.includes(k))];
+  const q = census.query.trim().toLowerCase();
+  const kinds = census.order.filter((k) => !q || [SPECIES[k]?.label || k, ...(groups.get(k) || []).map((c) => c.life.name),
+    ...(k === 'wild' ? WILD_SPECIES.map((s) => s.name) : []), rewards.some((s) => s.k === k) ? 'paragon' : ''].join(' ').toLowerCase().includes(q));
   for (const kind of kinds) {
-    const list = groups.get(kind), S = sum.get(kind === 'tadpole' ? 'frog' : kind);
+    const list = groups.get(kind) || [], S = sum.get(kind === 'tadpole' ? 'frog' : kind);
+    const waiting = supersFor(world, kind);
     // Most valuable first (rarer and bigger animals are worth more).
     list.sort((a, b) => recycleValue(b) - recycleValue(a) || b.life.age - a.life.age);
     const stage = { young: 0, adult: 0, elder: 0 };
@@ -515,8 +592,10 @@ function renderCensus() {
       gen = Math.max(gen, c.life.gen);
     }
     const open = census.expanded.has(kind), li = el('li', open ? 'row open' : 'row');
+    li.dataset.kind = kind;
     const head = el('button', 'row-head');
-    head.title = 'Click to list them, the most valuable first; click one to follow it.';
+    head.dataset.focusKey = `species:${kind}`;
+    head.title = 'Open species: animals, spawning and Paragons';
     head.type = 'button';
     head.setAttribute('aria-expanded', open);
     const facts = [stage.young && `${stage.young} young`, stage.adult && `${stage.adult} adult`, stage.elder && `${stage.elder} elder`,
@@ -525,29 +604,58 @@ function renderCensus() {
     if (S && S.best >= 2 && kind !== 'tadpole') li.style.setProperty('--tier', TIER_COLOR[S.best]);
     const st = world.game.stance && world.game.stance[kind], over = kind !== 'tadpole' && typeof overAbundant === 'function' && overAbundant(world, kind);
     head.append(el('span', 'ic'), el('b', 'nm', kind === 'tadpole' ? 'Tadpoles' : SPECIES[kind].label),
-      el('span', 'ct', list.length), colored('span', 'facts', [facts, over ? 'outgrowing the pond' : '', st === 'protect' ? '🛡 protected' : st === 'cull' ? '🎯 culled' : ''].filter(Boolean).join(' · ')));
+      el('span', 'ct', `${list.length} here ${open ? '▾' : '▸'}`), colored('span', 'facts', [waiting.length ? `♛ ${waiting.length} Paragon${waiting.length === 1 ? '' : 's'} ready` : '',
+        rare ? `✦ ${rare} rare` : '', hungry ? `${hungry} hungry` : '', !list.length ? (knows(world, kind) ? 'None here right now' : 'Not discovered yet') : '',
+        over ? 'outgrowing the pond' : '', st === 'protect' ? '🛡 protected' : st === 'cull' ? '🎯 culled' : ''].filter(Boolean).join(' · ')));
     if (over) li.classList.add('over');
     head.firstChild.append(iconImg(speciesIcon(kind), 28));
     head.addEventListener('click', () => {
-      if (census.expanded.has(kind)) census.expanded.delete(kind); else census.expanded.add(kind);
+      if (census.expanded.has(kind)) {
+        census.expanded.delete(kind);
+        if (creatureUi.inList && creatureUi.c?.species === kind) hideCreature();
+        if (spawnUi.inList && spawnUi.kind === kind) closeSpawnCard();
+      } else census.expanded.add(kind);
       renderCensus();
     });
     li.append(head);
     if (open) {
+      const speciesDetails = animalSpeciesDetails(kind);
+      if (facts) speciesDetails.append(colored('p', 'note', facts));
+      li.append(speciesDetails);
+      const spawnSlot = el('div', 'animal-spawn-slot');
+      if (spawnUi.inList && spawnUi.kind === kind) spawnSlot.append(spawn);
+      li.append(spawnSlot);
       const ul = el('ul', 'members');
-      for (const c of list.slice(0, 60)) {
+      const limit = census.limits.get(kind) || 60;
+      for (const c of list.slice(0, limit)) {
         const d = describe(c), m = el('li');
         const b = el('button', c.life.traits.length ? 'member rare' : 'member');
         b.type = 'button';
-        b.title = 'Follow';
+        b.title = 'Animal details';
+        b.dataset.focusKey = `animal:${c.seed}`;
+        b.setAttribute('aria-expanded', String(creatureUi.inList && creatureUi.c === c));
         b.append(el('b', null, `${isSafe(c) ? '🔒 ' : ''}${c.life.paragon ? '♛ ' : ''}${c.life.name}`), el('span', 'sub', `${d.label === SPECIES[kind]?.label ? '' : `${d.label} · `}${d.stage} · gen ${d.gen} · ${ageLabel(d.age)} · ${GRADES[gradeOf(c.life.genome)].toLowerCase()}`),
-          energyBar(d.energy), colored('span', 'mood', [d.traits.length && `✦ ${TIERS[d.tier]}: ${traitText(d.traits, 3)}`, d.mood, comfortWord(d.comfort), d.fed && 'well fed'].filter(Boolean).join(' · ')));
-        b.addEventListener('click', () => { if (alive(c)) { follow(c); showCreature(c); } });
+          energyBar(d.energy), colored('span', 'mood', d.traits.length ? `✦ ${TIERS[d.tier]}: ${traitText(d.traits, 3)}` : ''));
+        b.addEventListener('click', () => { if (alive(c)) {
+          if (creatureUi.inList && creatureUi.c === c) { hideCreature(); renderCensus(); }
+          else showCreature(c, false, true);
+        } });
         b.append(el('span', 'val', `◆${recycleValue(c)}`));
         m.append(b);
+        const strip = animalStateStrip(world, c, true, census.statusStrips.get(c.seed));
+        statusStrips.set(c.seed, strip);
+        m.append(strip);
+        if (creatureUi.inList && creatureUi.c === c) m.append(inspector);
         ul.append(m);
       }
-      if (list.length > 60) ul.append(el('li', 'more', `and ${list.length - 60} more`));
+      if (list.length > limit) {
+        const more = el('li');
+        more.append(crButton(`Show ${Math.min(60, list.length - limit)} more`, 'animal-more', `more:${kind}`, () => { census.limits.set(kind, limit + 60); renderCensus(); }));
+        ul.append(more);
+      }
+      if (creatureUi.inList && creatureUi.c?.species === kind && !ul.contains(inspector)) {
+        const detail = el('li'); detail.append(inspector); ul.append(detail);
+      }
       if (kind !== 'tadpole' && !world.observe && typeof setStance === 'function') {
         const bar = el('li', 'stance'), mk = (k, label, tip) => { const b = el('button', null, label); b.type = 'button'; b.setAttribute('aria-pressed', st === k); b.title = tip; b.addEventListener('click', () => { setStance(world, kind, k); renderCensus(); }); return b; };
         bar.append(mk('protect', '🛡 Protect', 'Protect them\nThe hunters leave them alone (a pearl a dawn for every two of them).'),
@@ -566,18 +674,13 @@ function renderCensus() {
     }
     rows.push(li);
   }
+  if (!rows.length) rows.push(el('li', 'note', q ? 'No matching species or animals.' : 'No animals here yet. Life will find its way in.'));
   byId('census-rows').replaceChildren(...rows);
-
-  // Wild species discovered in this pond, with how many are here now.
-  const here = new Map();
-  for (const c of groups.get('wild') || []) here.set(c.sp, (here.get(c.sp) || 0) + 1);
-  byId('wild-count').textContent = WILD_SPECIES.length ? `${WILD_SPECIES.length} discovered` : 'none yet';
-  byId('wild-cards').replaceChildren(...WILD_SPECIES.map((sp) => {
-    const card = el('li', here.get(sp) ? 'wild-card' : 'wild-card gone');
-    const habits = [sp.habitat === 'salt' ? 'reef' : 'freshwater', sp.schooling && 'schools', sp.predator && 'predator', sp.small ? 'small' : 'large'].filter(Boolean).join(' · ');
-    card.append(iconImg(wildIcon(sp), 32), el('b', null, sp.name), el('span', 'sub', habits), el('span', 'ct', here.get(sp) ? `${here.get(sp)} here` : 'moved on'));
-    return card;
-  }));
+  census.statusStrips = statusStrips;
+  if (creatureUi.inList && !panel.contains(inspector)) { byId('object').before(inspector); hideCreature(); }
+  if (spawnUi.inList && !panel.contains(spawn)) { byId('object').before(spawn); closeSpawnCard(); }
+  panel.scrollTop = scroll;
+  if (focusKey) panel.querySelector(`[data-focus-key="${CSS.escape(focusKey)}"]`)?.focus({preventScroll:true});
 }
 
 // ---- journal: one line of recent activity that opens into the full log ------------------------
@@ -976,7 +1079,7 @@ function traitChips(traits, max = 5) {
 
 // ---- spawn card: click a dock icon to buy that animal with essence --------------------------
 
-const spawnUi = { kind: null, anchor: null, enh: new Set(), grade: 0, ancient: null, timer: 0 };
+const spawnUi = { kind: null, anchor: null, enh: new Set(), grade: 0, ancient: null, timer: 0, inList: false };
 const RARITY_WORDS = ['a common species', 'an uncommon species', 'a scarce species', 'an exotic species', 'a legendary species'];
 const yearsLabel = (y) => (y < 1 ? `${Math.round(y * 12)} months` : `${y} years`);
 
@@ -985,17 +1088,23 @@ function openSpawnCard(kind, anchor) {
   if (spawnUi.kind === kind) { closeSpawnCard(); return; }
   spawnUi.kind = kind;
   spawnUi.anchor = anchor;
+  spawnUi.inList = !!anchor.closest('#census');
+  byId('spawn-card').classList.toggle('in-animal-list', spawnUi.inList);
+  if (!spawnUi.inList) byId('object').before(byId('spawn-card'));
   spawnUi.enh = new Set();
   spawnUi.grade = 0;
   spawnUi.ancient = null;
   hideLineage();
-  closeWindows('spawn-card');
+  if (spawnUi.inList) renderCensus(); else closeWindows('spawn-card');
   renderSpawnCard();
 }
 
 function closeSpawnCard() {
   spawnUi.kind = null;
+  spawnUi.inList = false;
   byId('spawn-card').hidden = true;
+  byId('spawn-card').classList.remove('in-animal-list');
+  byId('object').before(byId('spawn-card'));
 }
 
 function renderSpawnCard() {
@@ -1125,12 +1234,13 @@ function renderSpawnCard() {
     supers = el('div', 'sc-supers');
     const b = el('button', 'super');
     b.type = 'button';
-    b.append(colored('b', null, `♛ ${sups.length === 1 ? 'A Paragon' : `${sups.length} Paragons`} of this kind ${sups.length === 1 ? 'is' : 'are'} waiting: open Paragons`));
-    b.addEventListener('click', () => { closeSpawnCard(); setParagons(true); });
+    b.append(colored('b', null, `♛ ${sups.length} ready to claim in Animals`));
+    b.addEventListener('click', () => { closeSpawnCard(); setParagons(true, kind); });
     supers.append(b);
   }
   box.replaceChildren(...[head, supers, facts, have, boosts, grades, ancient, action].filter(Boolean));
   box.hidden = false;
+  if (spawnUi.inList) return;
   const a = spawnUi.anchor.getBoundingClientRect(), w = box.offsetWidth;
   if (spawnUi.anchor.closest('#rail, #actions') && innerWidth > 760) { // (beside what opened it: the animals down the left, or all actions)
     const acts = byId('actions'), R = acts.hidden || !spawnUi.anchor.closest('#actions') ? a : acts.getBoundingClientRect();
@@ -1151,7 +1261,7 @@ function renderSpawnCard() {
 const masteryTip = (k, lv, max) => (typeof MASTERY_LOOKS === 'undefined' || !MASTERY_LOOKS[k] ? '' : lv >= max ? `. Built all the way: ${MASTERY_LOOKS[k]}` : `. At level ${max} it shows: ${MASTERY_LOOKS[k]}`);
 // Opened by clicking an animal, and shown automatically while following or touring.
 
-const creatureUi = { c: null, auto: false, timer: 0, rec: null, more: false, logMore: false, tab: 'about', open: new Set() };
+const creatureUi = { c: null, auto: false, timer: 0, rec: null, more: false, logMore: false, tab: 'about', open: new Set(), inList: false };
 const LOCUS_INFO = {
   albino: ['albino', 'recessive'], melanistic: ['melanistic', 'recessive'], piebald: ['piebald', 'recessive'],
   xanthic: ['xanthic', 'recessive'], axanthic: ['axanthic', 'recessive'], leu: ['leucistic', 'incomplete'],
@@ -1173,14 +1283,19 @@ const GENE_TIPS = {
   luck: 'A rare trait bonus carried by shiny and iridescent animals.',
 };
 
-function showCreature(c, auto = false) {
+function showCreature(c, auto = false, inList = false) {
   if (!c || !c.life) return;
+  if (auto && census.open) return;
   if (auto && creatureUi.c && !creatureUi.auto && alive(creatureUi.c)) return; // don't replace one you opened
-  if (!auto) closeWindows('creature');
+  if (!auto && !inList) closeWindows('creature');
+  if (!inList) byId('object').before(byId('creature'));
+  creatureUi.inList = inList;
+  byId('creature').classList.toggle('in-animal-list', inList);
   if(creatureUi.c!==c){creatureUi.more=false;creatureUi.logMore=false;}
   creatureUi.c = c;
   creatureUi.auto = auto;
   creatureUi.rec = world.lineage && world.lineage.get(c.seed);
+  if (inList) { census.expanded.add(c.species); renderCensus(); }
   byId('creature').hidden = false;
   renderCreature();
 }
@@ -1188,7 +1303,10 @@ function showCreature(c, auto = false) {
 function hideCreature() {
   creatureUi.c = null;
   creatureUi.auto = false;
+  creatureUi.inList = false;
   byId('creature').hidden = true;
+  byId('creature').classList.remove('in-animal-list');
+  byId('object').before(byId('creature'));
 }
 
 function geneBar(key, v) {
@@ -1284,9 +1402,9 @@ function crActions(c, d) {
   const keep = crButton(isSafe(c) ? '🔒 Kept safe' : 'Keep safe', isSafe(c) ? 'keep on' : 'keep', 'act:keep', () => { toggleSafe(c); renderCreature(); });
   keep.title = isSafe(c) ? 'Kept safe from recycling (the Net and recycle all skip it). Click to unmark' : 'Keep this animal safe from recycling';
   const r = crButton('', 'recycle', 'act:recycle', () => {
-    if (d.tier >= 3 && !confirm(`Recycle ${d.name}, a ${TIERS[d.tier]} ${d.label}? It will be gone for good.`)) return;
-    recycle(c);
-    renderCreature();
+    const apply = () => { recycle(c); renderCreature(); };
+    if (d.tier >= 3 && !PondPlatform.ask(`Recycle ${d.name}, a ${TIERS[d.tier]} ${d.label}? It will be gone for good.`, apply)) return;
+    apply();
   });
   r.append(document.createTextNode('Recycle +'), el('i', 'essence'), document.createTextNode(String(recycleValue(c))));
   r.title = 'Return this animal to the pond for essence';
@@ -1536,8 +1654,7 @@ function renderCreature() {
     size.title = 'Size from feeding: it keeps growing, more slowly the bigger it gets, faster on bigger meals.';
     vitals.append(size);
     parts.push(vitals);
-    const water = waterOf(c), mm = mismatch(world, c), a = aggressionAt(world, c.x, c.y);
-    parts.push(colored('p', 'cr-sub cr-mood', [d.mood, comfortWord(L.comfort), aggressionWord(a), water && (mm > 0.3 ? `out of place in ${water === 'fresh' ? 'salt' : 'fresh'} water` : `in ${water} water`), d.fed && 'well fed', ...d.temper].filter(Boolean).join(' · ')));
+    parts.push(animalStateStrip(world, c, false, box.querySelector('.cr-states:not(.compact)')));
     if (!world.observe) parts.push(crActions(c, d));
   }
   // The tabs it has something for.
@@ -2300,6 +2417,7 @@ function initHud() {
   addEventListener('resize', updateDockVisibility);
   buildJournalFilters();
   byId('census-btn').addEventListener('click', () => setCensus(!census.open));
+  byId('animals-search').addEventListener('input', (e) => { census.query = e.target.value; renderCensus(); });
   byId('log-line').addEventListener('click', () => setJournal(!journalUi.open));
   byId('sky-btn').addEventListener('click', () => setSky(!skyUi.open));
   byId('census-close').addEventListener('click', () => setCensus(false));
@@ -2307,7 +2425,7 @@ function initHud() {
   byId('score-btn').addEventListener('click', () => setScore(!scoreUi.open));
   // The spawn card closes when you click anywhere but the card or the dock.
   addEventListener('pointerdown', (e) => {
-    if (spawnUi.kind && !e.target.closest('#spawn-card, #animals')) closeSpawnCard();
+    if (spawnUi.kind && !e.target.closest('#spawn-card, #animals, #census')) closeSpawnCard();
   });
   byId('score-close').addEventListener('click', () => setScore(false));
   byId('hatch-close').addEventListener('click', () => setHatchery(false));
@@ -2350,7 +2468,7 @@ function initHud() {
 
 let hudCountTimer = 0;
 function hudTick(dt) {
-  if ((hudTick.pt = (hudTick.pt || 0) - dt) <= 0) { hudTick.pt = 1; refreshParagonBadge(); if (parUi.open) renderParagons(); }
+  if ((hudTick.pt = (hudTick.pt || 0) - dt) <= 0) { hudTick.pt = 1; refreshAnimalsBadge(); }
   hudCountTimer -= dt;
   if (hudCountTimer <= 0) { hudCountTimer = 0.5; updateCounts(); }
   census.timer -= dt;
@@ -2419,60 +2537,12 @@ function afterRename() {
   if (typeof syncSoon === 'function') syncSoon();
 }
 
-// ---- the Paragons: what they are, the ones waiting, and how close the next are ----------------------------------
-const parUi = { open: false, sig: '' };
-function setParagons(open) {
-  parUi.open = open;
-  byId('paragons').hidden = !open;
-  byId('rail-paragons').setAttribute('aria-expanded', open);
-  if (open) { closeWindows('paragons'); parUi.sig = ''; renderParagons(); }
-}
-function renderParagons() {
-  if (!parUi.open || !world.game) return;
-  const G = world.game, sup = G.supers || [];
-  const sig = JSON.stringify([sup.map((s) => s.k + s.traits.join()), G.lines, G.spPts && Object.values(G.spPts).map((v) => Math.floor(v / 10)), !!world.observe]);
-  if (sig === parUi.sig) return;
-  parUi.sig = sig;
-  const wait = sup.map((S, i) => {
-    const b = el('button', 'super'), ic = el('span', 'ic');
-    b.type = 'button';
-    ic.append(iconImg(speciesIcon(S.k), 26));
-    b.append(ic, colored('b', null, `♛ Paragon ${byRarity(S.traits).slice(0, 3).join(' ')} ${(SINGULAR[S.k] || S.k).toLowerCase()}`.replace(/\s+/g, ' ')), el('span', 'go', 'Claim'));
-    b.title = 'Claim it\nIt arrives now, with a few of its kind (Superb), wherever there is room.';
-    b.disabled = !!world.observe;
-    b.addEventListener('click', () => { if (claimSuper(world, i)) { parUi.sig = ''; renderParagons(); refreshParagonBadge(); } });
-    return b;
-  });
-  byId('paragons-waiting').replaceChildren(...(wait.length ? wait : [el('p', 'note', 'None waiting yet. Breed a rare line (the same rare traits in the same kind) and keep breeding it.')]));
-  const rows = [];
-  // Rare lines, the most bred first: how many times, and the next step.
-  const lines = Object.entries(G.lines || {}).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  for (const [key, n] of lines) {
-    const [sp, tr] = key.split('|'), next = LINE_MILESTONES.find((m) => m > n);
-    if (!SINGULAR[sp] && sp !== 'wild') continue;
-    const li = el('li');
-    li.append(colored('b', null, `${tr.split('+').filter(Boolean).join(' ')} ${sp === 'wild' ? 'wild fish' : (SINGULAR[sp] || sp).toLowerCase()}`), el('span', 'note', next ? `bred ${n} times · a Paragon at ${next}` : `bred ${n} times · every milestone reached`));
-    if (next) { const bar = el('span', 'gbar'), f = el('i'); f.style.width = `${Math.round(clamp(n / next, 0, 1) * 100)}%`; bar.append(f); li.append(bar); }
-    rows.push(li);
+// Older spawn-card entry points now open the unified Animals list.
+function setParagons(open, kind = null) {
+  if (open) {
+    if (kind) census.expanded.add(kind);
+    else for (const reward of world.game.supers || []) census.expanded.add(reward.k);
   }
-  // Kinds that have scored for you: points, and the next step.
-  const pts = Object.entries(G.spPts || {}).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  for (const [k, p] of pts) {
-    if (!SINGULAR[k]) continue;
-    const next = SPECIES_MILESTONE((G.spHit && G.spHit[k]) || 0), li = el('li');
-    li.append(colored('b', null, `${SINGULAR[k]}: ${fmt(p)} points`), el('span', 'note', `a Paragon at ${fmt(next)}`));
-    const bar = el('span', 'gbar'), f = el('i'); f.style.width = `${Math.round(clamp(p / next, 0, 1) * 100)}%`; bar.append(f); li.append(bar);
-    rows.push(li);
-  }
-  byId('paragons-progress').replaceChildren(...(rows.length ? rows : [el('li', 'note', 'Nothing yet: rare births start a line, and every birth scores for its kind.')]));
+  setCensus(open);
+  if (open && kind) byId('census-rows').querySelector(`[data-kind="${CSS.escape(kind)}"]`)?.scrollIntoView({block:'nearest'});
 }
-function refreshParagonBadge() {
-  const b = byId('rail-paragons');
-  if (!b || !world.game) return;
-  const n = (world.game.supers || []).length;
-  b.dataset.new = n || '';
-  b.classList.toggle('has-new', n > 0);
-  b.hidden = !!world.observe;
-}
-byId('rail-paragons').addEventListener('click', () => setParagons(!parUi.open));
-byId('paragons-close').addEventListener('click', () => setParagons(false));

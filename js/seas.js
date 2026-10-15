@@ -13,7 +13,7 @@ const SEA_KINDS = {
   alien: { name: 'the other sea', glow: ['#b06aff', '#5af0ff', '#ff6ad8'] },
   coast: { name: 'the bright coast' },
 };
-const seaWanted = (world) => { const t = (world.erosion && world.erosion.tier) || 0; return t >= 15 ? 'coast' : t >= 12 ? 'alien' : 'deep'; };
+let seaWanted = (world) => { const t = (world.erosion && world.erosion.tier) || 0; return t >= 15 ? 'coast' : t >= 12 ? 'alien' : 'deep'; };
 const seaBands = (world) => (world.game && world.game.seas) || [];
 // Just before the pond grows: if the sea it's opening into has changed, a new stretch begins here.
 function noteSea(world) {
@@ -22,7 +22,8 @@ function noteSea(world) {
   if (k === last) return;
   B.push({ from: world.expandPx || 0, k });
   if (typeof logEvent === 'function') logEvent(world, k === 'alien' ? 'Beyond the drop-off the water has turned strange: light moves in fissures down there, and it is not any sea of this world'
-    : k === 'coast' ? 'Past the other sea the floor is climbing: warm, clear water ahead, and a coast with lights on it' : 'The deep goes on', null, { cat: 'rare', pri: 3 });
+    : k === 'coast' ? 'Past the other sea the floor is climbing: warm, clear water ahead, and a coast with lights on it'
+    : `Beyond the drop-off, ${SEA_KINDS[k]?.name || 'the deep'} opens. Different tracks mark the floor; something new is moving there`, null, { cat: 'rare', pri: 3 });
 }
 // Which sea a distance past the original edge lies in.
 function seaAtInto(world, into) {

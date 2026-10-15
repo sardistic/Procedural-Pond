@@ -137,7 +137,7 @@ const GUIDE_OTHERS = [
   ['Gnat', 'Clouds of them over the water by day: food for frogs and fish at the surface.'],
   ['Gull', 'Visits any pond with a beach by day: it circles, walks the sand, and dives for frogs, crabs and dragonflies (a third of the time it catches one). It would rather scavenge remains, and leaves at dusk or in heavy rain.'],
   ['Wanderers', 'Fierce animals that leave one pond sometimes turn up in another, on rare occasions, to terrorize the natives.'],
-  ['Paragons', 'The finest of a line: breed a rare line again and again (3, 8, 20 and 50 times), or score well with a species, and it earns a Paragon: free, Pristine, carrying its line’s traits and a gift, with a crown of light. The rail’s ♛ lists the ones waiting and how close the next are.'],
+  ['Paragons', 'The finest of a line: breed a rare line again and again (3, 8, 20 and 50 times), or score well with a species, and it earns a Paragon: free, Pristine, carrying its line’s traits and a gift, with a crown of light. Open Animals (C) and a species to claim one or see its progress.'],
 ];
 
 // ---- the looks: rare colours and forms ------------------------------------------------------------------
@@ -294,7 +294,7 @@ function chapterStart() {
       { key: 's:feed', name: 'Feed', text: 'Pick Pellets (free) and click the water to drop them. Well-fed animals grow, breed and stay; hungry ones wander off. Better food is in the actions.' },
       { key: 's:touch', name: 'Look closer', text: 'Click an animal for its card (genes, traits, family, what it’s doing, and boosts to buy); drag one to move it. Click a plant or a structure to read about it and grow its traits. Point at almost anything for a tip.' },
       { key: 's:rail', name: 'The item bar and the actions', text: 'Along the bottom: your pinned actions, then ▴ for all of them (food, tools, plants, builds and creatures). Hover one and press + to pin it. NEW marks what just opened up.' },
-      { key: 's:dock', name: 'The animals', text: 'Down the left, under ☰ the menu: the census on top (how many live here; click it for the details), then one button per kind (click one to spawn it for essence; its card lets you add boosts and a grade), then ? for the wildlife still to come, and the hatchery. Deep species join once you unlock them in the depths.' },
+      { key: 's:dock', name: 'The animals', text: 'Animals (C) opens one searchable species list: counts, individual animals, spawning, discoveries and Paragons. Expand a species, then an animal to read its details in place. The small icons down the left are quick spawn shortcuts. Deep species join once you unlock them in the depths.' },
       { key: 's:hard', name: 'Hard mode', tags: [['points ×1.5', '#ef6f6c']], text: 'A pond’s own choice, under Fresh, Both and Salt in the menu: animals can’t be bought or summoned, only drawn in by the habitat you build and plant (and lures). Fewer come, fewer breed, it starts with fewer, and time runs slower. Its points count half again. New ponds start the way you last left it; the pond’s bar says HARD.' },
       { key: 's:kinds', name: 'New kinds come slowly', text: 'A new pond knows only its pioneers. The rest find their way in one kind at a time, with a pause after each that grows as the pond gets to know more; each pond has its own odds for each kind (from its seed), and they drift with the seasons. You can spawn a kind from the dock once it has come. The dock’s ? lists what could still come and how likely each is here: lure one (pearls) to make it far likelier to come next, or summon it (essence) to bring it at dawn.' },
       { key: 's:music', name: 'Sound and music', text: 'Sound (M) is a soundscape made live from what you’re looking at. Music (N) is off until you turn it on: quiet phrases of two pieces, cut up and cued by what happens in the pond (a birth, a hunt, dawn, something from the deep), faded in and out with long rests between, and muffled the deeper you look. Set its level in the menu’s Scene.' },
@@ -386,11 +386,20 @@ function chapterBuilds() {
 
 function chapterBreeding() {
   return [
+    { title: 'Animal condition icons', note: 'Hover, focus, tap or hold a metric for its inputs and effects. These read the current simulation.', entries: [
+      { key: 'state:behavior', name: 'Fish · Behavior', text: 'The current action flag: hunting, fleeing, being held, leaving, or routine behavior. Routine says no special action flag is active; comfort has its own meter.' },
+      { key: 'state:comfort', name: 'Leaf · Comfort', text: '0–100% habitat satisfaction. Liked cover and auras help; tension, mismatched water and pollution can hurt. Comfort affects aging, departures and dawn income.' },
+      { key: 'state:tension', name: 'Crossed spines · Tension', text: 'Local ecological pressure, 0–100. Predators, recent hunts, crowding, surf and mismatched water raise it; cover lowers it. Natural breeding is blocked at 75 or more.' },
+      { key: 'state:water', name: 'Droplet · Water match', text: '100% means no simulated fresh/salt mismatch. The mismatch system applies in mixed ponds, and tolerance softens its effects.' },
+      { key: 'state:vigor', name: 'Heart · Vigor', text: 'Birth temperament, normally 0.80–1.25×. Higher vigor slows aging. Its tooltip includes the combined aging multiplier after genes, comfort, feeding and auras.' },
+      { key: 'state:roam', name: 'Compass · Roaming', text: 'A 0–100 tendency index. Its tooltip shows the separate current chance of departure per six-second migration check and the factors that change it.' },
+      { key: 'state:fed', name: 'Food jar · Well-fed bonus', text: 'A timed benefit, separate from fullness: 15% slower aging and half the departure risk while it lasts.' },
+    ] },
     { title: 'How animals breed', entries: [
       { key: 'br:pairs', name: 'Pairs', text: 'Two grown, well-fed animals of a kind in breeding condition lay eggs (on plants, the floor, rocks or the surface, by kind). Brine shrimp, krill and bloodworms bring them straight into condition. The young inherit their parents’ genes, and the rare ones pass on.' },
       { key: 'br:caps', name: 'Crowding', text: 'Each kind breeds up to a cap for the pond’s size. Crowded species fight and sicken; the last few of a kind are always spared.' },
       { key: 'br:hab', name: 'Breeding habitats', text: 'Some kinds breed only at a habitat (the spawning gravel, the amphibian pool, the reef nursery, the brood chamber), and every kind lays more at its own. What stands around one shapes the young: glowing plants, springs and corals for better; litter, carrion and the idol for worse.' },
-      { key: 'br:lines', name: 'Lines and Paragons', text: 'Breed the same rare again and each one is worth 25% more, up to 3×. Breed a line 3, 8, 20 and 50 times, or score well with a species, and it earns a Paragon, free: the finest of its line. The rail’s ♛ has them, and how close the next are.' },
+      { key: 'br:lines', name: 'Lines and Paragons', text: 'Breed the same rare again and each one is worth 25% more, up to 3×. Breed a line 3, 8, 20 and 50 times, or score well with a species, and it earns a Paragon, free: the finest of its line. Open its species in Animals (C) for claims and progress.' },
       { key: 'br:keep', name: 'Keep safe', text: 'Mark an animal Keep safe on its card and nothing recycles it until you unmark it.' },
     ] },
     { title: 'The hatchery', note: 'A build (one of a kind): up to five breeding pens, fed by clicking, taking turns; its broods lean toward the trait you pick.', entries: [
@@ -416,7 +425,7 @@ function chapterGenes() {
 }
 
 function chapterDepths() {
-  const top = Math.max(15, pondTier() + 1), entries = [];
+  const top = Math.max(23, pondTier() + 1), entries = [];
   for (let i = 0; i <= top && DEPTH_TIERS[i]; i++) {
     const kinds = Object.keys(DEEP).filter((k) => DEEP[k].tier === i && SPECIES[k]).map((k) => SINGULAR[k]);
     const builds = Object.values(STRUCTURES).filter((d) => (d.tier || 0) === i && i).map((d) => d.label);
@@ -637,10 +646,10 @@ function chapterPonds() {
 
 function chapterKeys() {
   const K = [['Click', 'look (with the pointer), or use the picked action'], ['Esc', 'back to the pointer'], ['Drag', 'move an animal, or pan the water'], ['Scroll, + / −', 'zoom'], ['Zoomed right in', 'from 12×, a finer layer of detail: sand grains, ripples and pebbles, cracked rock, glints and drifting motes, scales, fin rays and gills, a glint in the eye, veins in leaves (Scene → Detail turns it off)'], ['Arrows / WASD', 'pan'], ['0', 'reset the view'], ['F', 'follow the animal under the pointer'],
-    ['T', 'tour: the camera wanders between animals'], ['C', 'the census'], ['J', 'the journal'], ['P', 'the score and leaderboard'], ['L', 'change the light'], ['B', 'bones: the spines and legs'],
+    ['T', 'tour: the camera wanders between animals'], ['C', 'the Animals list'], ['J', 'the journal'], ['P', 'the score and leaderboard'], ['L', 'change the light'], ['B', 'bones: the spines and legs'],
     ['Space', 'pause'], ['M', 'sound'], ['N', 'music'], ['H', 'the menu'], ['G', 'this guide'], ['Right-click / long-press', 'a plant’s traits']];
   const T = [['Tap', 'look, or use the picked action (like a click)'], ['Drag', 'pan the water, or move an animal'], ['Pinch', 'zoom'], ['Follow', 'from the animal’s card (the view keeps it clear of the card)'],
-    ['Press and hold', 'a button: what it does (letting go then doesn’t press it); the pond: the card of what’s there, or what it is'], ['▦', 'show or hide the map (beside the zoom)'], ['The news line', 'tap it for the journal']];
+    ['Press and hold', 'a button: what it does (letting go then doesn’t press it); the pond: the card of what’s there, or what it is'], ['▦', 'show or hide the map'], ['The news line', 'tap it for the journal']];
   return [{ title: 'Controls', entries: K.map(([k, v]) => ({ key: `k:${k}`, name: k, text: gCap(v) })) },
     { title: 'On a phone or tablet', note: 'Windows come up from the bottom (or down the side, held sideways); × or a tap on the water closes them.', entries: T.map(([k, v]) => ({ key: `kt:${k}`, name: k, text: gCap(v) })) }];
 }

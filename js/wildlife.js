@@ -294,6 +294,7 @@ class Octopus extends Creature {
     for (const arm of this.arms) {
       const [bx, by, a] = this.armBase(arm);
       if (this.grip && typeof gripArm === 'function' && gripArm(this, arm, bx, by)) continue;
+      if (!swimming && typeof attackArm === 'function' && attackArm(this, arm, bx, by)) continue;
       if (swimming) {
         arm.ch.resolve(bx, by, a + PI);
         arm.stepping = false; arm.lift = 2;

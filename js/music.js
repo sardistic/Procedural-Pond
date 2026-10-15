@@ -37,7 +37,7 @@ const Music = {
     this.filter.type = 'lowpass'; this.filter.frequency.value = 7000; this.filter.Q.value = 0.4;
     this.out = ctx.createGain();
     this.out.gain.value = this.levelGain();
-    this.filter.connect(this.out).connect(ctx.destination);
+    this.filter.connect(this.out).connect(PondPlatform.audioOutput(ctx, () => this.on));
     return true;
   },
   levelGain() { return 0.5 * Math.pow(clamp((world.opts.musicLevel ?? 40) / 100, 0, 1), 1.5); },
@@ -376,7 +376,7 @@ function initMusic() {
     if (e.target.closest && e.target.closest('select, input, textarea')) return;
     if ((e.key === 'n' || e.key === 'N') && !e.ctrlKey && !e.metaKey && !e.altKey) setMusic(!Music.on);
   });
-  document.addEventListener('visibilitychange', () => {
+  if (!PondPlatform.playables) document.addEventListener('visibilitychange', () => {
     if (!Music.ctx || !Music.on) return;
     if (document.hidden) { Music.stop(0.5); Music.ctx.suspend(); } else Music.ctx.resume();
   });

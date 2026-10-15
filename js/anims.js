@@ -6,25 +6,29 @@
 //
 // Animations run in pond time. Each creature has at most one (c.anim). An animal with a spine (a body chain) is
 // moved through the action by bending it, joint by joint, as it's drawn (animBend; put back afterwards, so the
-// swimming isn't disturbed): an attack coils into a C, snaps straight with the head swinging onto the target as it
-// lunges, shakes the bite side to side and lets go, recoiling in an arc; the one hit is knocked aside and a whip runs
+// swimming isn't disturbed): an attack coils into a C, drives the head toward its target, and eases back into its
+// swimming curve; the one hit is knocked aside and a whip runs
 // down its body; a flight is a fish's C-start, a tight curl away and a hard tail-flick off; a meal is a dip of the
 // head, bite by bite, the tail working. Others (jellies, crabs, octopus, the shelled) take a pose instead (animPose,
-// Raster.setPose): squashed or stretched along the action and moved along it. Effects draw the jaws, impact,
+// Raster.setPose); walkers solve their planted limbs again, and arms reach through FABRIK. Effects draw jaws, impact,
 // streaks, zaps, crumbs and the swallow.
 
-const ANIM_DUR = { attack: 0.7, eat: 0.6, hit: 0.55, flee: 0.7, sting: 0.45 };
+const ANIM_DUR = { attack: 0.95, eat: 0.7, hit: 0.55, flee: 0.7, sting: 0.45 };
 const ANIM_FX_CAP = 214;
 const animFx = (world, e) => { if (world.effects && world.effects.length < ANIM_FX_CAP) world.effects.push(e); };
 
 // dir: the line of the action (toward the target for an attack, away from the blow for a hit).
 function playAnim(world, c, kind, dir = null, delay = 0) {
-  if (!c || c.gone) return;
-  // (A meal or an attack is never cut short by a flinch; a fresh flight doesn't restart a dash.)
+  if (!c || c.gone) return false;
+  // Finish the current action, including recovery. Repeated contact used to
+  // reset a half-finished pose to zero, especially while a giant swept up food.
   const A = c.anim;
-  if (A && world.t - A.at < A.dur && (A.kind === 'attack' || A.kind === 'eat') && (kind === 'hit' || kind === 'flee')) return;
-  if (A && A.kind === kind && world.t - A.at < A.dur * 0.5) return;
-  c.anim = { kind, at: world.t + delay, dur: ANIM_DUR[kind] || 0.4, dir: Number.isFinite(dir) ? dir : null, side: Math.random() < 0.5 ? -1 : 1 };
+  if (A && world.t - A.at < A.dur) return false;
+  const heading = c.body?.a?.[0] ?? c.heading ?? 0;
+  const aimTurn = Number.isFinite(dir) ? wrapA(dir - heading) : 0;
+  const side = Math.abs(aimTurn) > 0.15 ? Math.sign(aimTurn) : Math.random() < 0.5 ? -1 : 1;
+  c.anim = { kind, at: world.t + delay, dur: ANIM_DUR[kind] || 0.4, dir: Number.isFinite(dir) ? dir : null, side, aimTurn };
+  return true;
 }
 const animToward = (a, b) => Math.atan2(b.y - a.y, b.x - a.x);
 // (Its head where it was last drawn this moment, bent: the jaws and the swallow follow that.)
@@ -35,6 +39,22 @@ const animWidth = (c) => (c.tents && c.R ? c.R : c.body && c.body.w ? Math.max(.
 
 // Easing.
 const easeOut = (t) => 1 - (1 - t) * (1 - t), easeIn = (t) => t * t, seg = (p, a, b) => clamp((p - a) / (b - a), 0, 1);
+const animEase = (t) => t * t * (3 - 2 * t);
+// One continuous action drives the body, planted feet, grasping limbs and mouth.
+function attackMotion(c, now) {
+  const A = c.anim;
+  if (!A || A.kind !== 'attack') return null;
+  const p = (now - A.at) / A.dur;
+  if (p < 0 || p >= 1) return null;
+  const wind = animEase(seg(p, 0, 0.24)) * (1 - animEase(seg(p, 0.24, 0.42)));
+  const drive = animEase(seg(p, 0.24, 0.42)) * (1 - animEase(seg(p, 0.56, 1)));
+  return { p, wind, drive, settle: Math.sin(PI * seg(p, 0.42, 1)) ** 2, dir: A.dir ?? c.heading ?? 0, side: A.side || 1 };
+}
+function actionFin(c, side) {
+  const M = attackMotion(c, world.t);
+  const idle = Math.sin(world.t * 2.2 + (c.phase || 0) + side * 0.4) * 0.08;
+  return side * (M ? idle * (1 - clamp(M.wind + M.drive, 0, 1)) + 0.55 * M.wind - 0.65 * M.drive : idle);
+}
 // The pose to draw it in right now: { x, y, ang, sa, sb, dx, dy, dz } (about its middle, along ang), or null.
 function animPose(c, now) {
   const A = c.anim;
@@ -44,30 +64,30 @@ function animPose(c, now) {
   if (p < 0) return null; // (waiting for its moment: a blow lands when the lunge does)
   if (animBends(c) && A.kind !== 'sting') {
     // (Bent instead, joint by joint: only a lift as it strikes or is struck.)
-    const dz = A.kind === 'attack' ? 1.2 * Math.sin(PI * seg(p, 0.25, 0.6)) : A.kind === 'hit' ? 0.8 * Math.sin(PI * seg(p, 0, 0.4)) : 0;
+    const grounded = typeof Walker !== 'undefined' && c instanceof Walker || typeof Frog !== 'undefined' && c instanceof Frog;
+    const dz = grounded ? 0 : A.kind === 'attack' ? 0.6 * Math.sin(PI * seg(p, 0.24, 0.65)) : A.kind === 'hit' ? 0.5 * Math.sin(PI * seg(p, 0, 0.4)) : 0;
     return dz ? { x: c.x, y: c.y, ang: 0, sa: 1, sb: 1, dx: 0, dy: 0, dz } : null;
   }
   const ang = A.dir ?? c.heading ?? 0, w = animWidth(c), cx = c.x, cy = c.y;
   let sa = 1, sb = 1, d = 0, dz = 0;
   switch (A.kind) {
     case 'attack': {
-      // Wind back (squashed, pulled away), then the lunge (stretched, thrown out at it), then the recoil.
-      const reach = clamp(w * 1.3, 2, 7), back = seg(p, 0, 0.3), out = seg(p, 0.3, 0.45), home = seg(p, 0.45, 1);
-      const wind = easeOut(back) * (1 - out), strike = easeOut(out) * (1 - easeIn(home));
-      d = -0.35 * reach * wind + reach * strike;
-      sa = 1 - 0.14 * wind + 0.28 * strike; sb = 1 + 0.1 * wind - 0.14 * strike;
+      const M = attackMotion(c, now), reach = clamp(w * 1.3, 2, 7);
+      d = reach * (-0.35 * M.wind + M.drive);
+      sa = 1 - 0.14 * M.wind + 0.28 * M.drive; sb = 1 + 0.1 * M.wind - 0.14 * M.drive;
       break;
     }
     case 'hit': {
       // Knocked back along the blow, squashed against it, then a wobble that dies away.
-      const k = easeOut(seg(p, 0, 0.18)), wob = Math.exp(-5 * p) * Math.sin(p * 22);
-      d = clamp(w * 0.9, 1.5, 4) * (k - easeIn(seg(p, 0.18, 1)) * 0.9);
-      sa = 1 - 0.22 * k * (1 - seg(p, 0.18, 0.5)) + 0.08 * wob; sb = 1 + 0.16 * k * (1 - seg(p, 0.18, 0.5)) - 0.06 * wob;
+      const k = animEase(seg(p, 0, 0.18)) * (1 - animEase(seg(p, 0.18, 1)));
+      const wob = k * Math.exp(-5 * p) * Math.sin(p * 22);
+      d = clamp(w * 0.9, 1.5, 4) * k;
+      sa = 1 - 0.22 * k + 0.08 * wob; sb = 1 + 0.16 * k - 0.06 * wob;
       break;
     }
     case 'eat': {
       // Two bites: the head bobs forward, a little stretched, and back.
-      const bite = Math.pow(Math.abs(Math.sin(2 * PI * p)), 0.7);
+      const bite = Math.sin(2 * PI * p) ** 2;
       d = clamp(w * 0.5, 0.8, 2.5) * bite; sa = 1 + 0.1 * bite; sb = 1 - 0.05 * bite;
       break;
     }
@@ -84,13 +104,14 @@ function animPose(c, now) {
       break;
     }
   }
+  if (c.arms && Array.isArray(c.arms)) { sa = sb = 1; d = 0; dz *= 0.35; }
   return { x: cx, y: cy, ang, sa, sb, dx: Math.cos(ang) * d, dy: Math.sin(ang) * d, dz };
 }
 // (The older name, for anything still asking for a plain scale: none now.)
 const animScale = () => null;
 
 // ---- bending the spine ------------------------------------------------------------------------------------
-const animBends = (c) => !!(c.body && c.body.a && c.body.links && !c.tents && c.body.n >= 3);
+const animBends = (c) => !!(c.body && c.body.a && c.body.links && !c.tents && !Array.isArray(c.arms) && c.body.n >= 2);
 const BEND_SAVE = new WeakMap();
 const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 // Bend its body for the action, as it's about to be drawn; animUnbend puts it back. Each joint's direction is turned
@@ -101,62 +122,61 @@ function animBend(c, now) {
   if (!A || !animBends(c) || A.kind === 'sting') return false;
   const p = (now - A.at) / A.dur;
   if (p < 0 || p >= 1) return false;
-  const n = B.n, h0 = B.a[0], w = animWidth(c), reach = clamp(w * 1.5, 2, 9);
+  const grounded = typeof Walker !== 'undefined' && c instanceof Walker || typeof Frog !== 'undefined' && c instanceof Frog;
+  const n = B.n, h0 = B.a[0], w = animWidth(c), reach = grounded ? Math.min(2.5, w * 0.55) : clamp(w * 1.5, 2, 9);
   let S = BEND_SAVE.get(B);
   if (!S || S.x.length !== n) { S = { x: new Float64Array(n), y: new Float64Array(n), a: new Float64Array(n) }; BEND_SAVE.set(B, S); }
   S.x.set(B.x); S.y.set(B.y); S.a.set(B.a);
-  const dir = A.dir ?? h0, toT = clamp(wrapA(dir - h0), -1, 1), side = A.side || 1;
+  const dir = A.dir ?? h0, side = A.side || 1;
+  // Keep the initial angle branch and coil side through the whole action.
+  // Recomputing its sign near the target could mirror a 64-joint body in one frame.
+  const aim = A.aimTurn ?? (A.aimTurn = wrapA(dir - h0));
+  const toT = clamp(aim + wrapA(dir - h0 - aim), -1, 1);
   // headTurn: the head's own turn; bend: the curve from head to tail (radians, all told); wave: a travelling whip;
   // thrust: the head moved along the line of the action; knock: the whole body moved along it.
   let headTurn = 0, bend = 0, wave = 0, wavePh = 0, thrust = 0, knock = 0;
   switch (A.kind) {
     case 'attack': {
-      const sideT = Math.abs(toT) > 0.15 ? Math.sign(toT) : side;
-      if (p < 0.3) {
-        // Coiling: the body curls into a C away from it, the head drawn back and turned off it a little.
-        const k = easeOut(seg(p, 0, 0.3));
-        bend = -sideT * 1.4 * k; headTurn = -sideT * 0.3 * k; thrust = -0.5 * reach * k;
-      } else if (p < 0.42) {
-        // The strike: the C snaps straight and past it (the tail whips the other way), the head swinging onto the
-        // target as it's thrown out at it.
-        const k = easeOut(seg(p, 0.3, 0.42));
-        bend = -sideT * 1.4 * (1 - k) + sideT * 0.6 * k; headTurn = toT * k - sideT * 0.3 * (1 - k); thrust = -0.5 * reach * (1 - k) + reach * k;
-      } else if (p < 0.78) {
-        // The bite held and shaken: the head wrenches side to side, the body whipping against it, dying down.
-        const k = seg(p, 0.42, 0.78), yaw = Math.sin(k * PI * 7) * 0.45 * (1 - k);
-        bend = sideT * 0.6 * (1 - k) - yaw * 0.8; headTurn = toT * (0.75 + 0.25 * (1 - k)) + yaw; thrust = reach * (0.85 + 0.12 * Math.sin(k * PI * 7) * (1 - k));
-        wave = 0.25 * (1 - k); wavePh = k * 18;
-      } else {
-        // Letting go: it pulls back off it in an arc and straightens.
-        const k = seg(p, 0.78, 1), e = easeIn(k);
-        bend = -sideT * 0.45 * Math.sin(PI * k); headTurn = toT * 0.75 * (1 - e); thrust = reach * 0.85 * (1 - e) - 0.3 * reach * Math.sin(PI * k);
-      }
+      const M = attackMotion(c, now);
+      bend = side * (-1.1 * M.wind + 0.28 * M.drive - 0.16 * M.settle);
+      headTurn = -side * 0.2 * M.wind + toT * M.drive;
+      thrust = reach * (-0.35 * M.wind + M.drive);
+      wave = 0.18 * M.drive; wavePh = p * 9;
       break;
     }
     case 'hit': {
       // Knocked aside along the blow: the body folds round where it was struck, a whip runs down it, and it rights.
-      const k = easeOut(seg(p, 0, 0.14)), back = easeIn(seg(p, 0.14, 1));
-      bend = side * 1.1 * k * (1 - seg(p, 0.14, 0.55)); headTurn = -side * 0.5 * k * (1 - seg(p, 0.14, 0.5));
-      wave = 0.55 * Math.exp(-4 * p); wavePh = p * 16;
-      knock = clamp(w * 1.1, 1.5, 5) * (k - back * 0.9);
+      const k = animEase(seg(p, 0, 0.14)) * (1 - animEase(seg(p, 0.14, 1)));
+      bend = side * 1.1 * k * (1 - animEase(seg(p, 0.14, 0.55))); headTurn = -side * 0.5 * k * (1 - animEase(seg(p, 0.14, 0.5)));
+      wave = 0.55 * k * Math.exp(-4 * p); wavePh = p * 16;
+      knock = clamp(w * 1.1, 1.5, 5) * k;
       break;
     }
     case 'flee': {
       // The C-start: a tight curl away, then a hard flick of the tail that throws it off, and the tail beating.
-      const curl = easeOut(seg(p, 0, 0.22)), flick = seg(p, 0.22, 0.38);
-      if (p < 0.22) { bend = side * 1.3 * curl; headTurn = side * 0.5 * curl; }
-      else if (p < 0.38) { const k = easeOut(flick); bend = side * 1.3 * (1 - k) - side * 0.6 * k; headTurn = side * 0.5 * (1 - k); thrust = reach * 0.6 * k; }
-      else { const k = seg(p, 0.38, 1); bend = -side * 0.7 * (1 - k); wave = 0.6 * (1 - k); wavePh = k * 26; thrust = reach * 0.6 * (1 - easeIn(k)); }
+      const curl = animEase(seg(p, 0, 0.22)) * (1 - animEase(seg(p, 0.22, 0.38)));
+      const flick = animEase(seg(p, 0.22, 0.38)) * (1 - animEase(seg(p, 0.38, 1)));
+      bend = side * (1.3 * curl - 0.6 * flick); headTurn = side * 0.5 * curl;
+      wave = 0.5 * animEase(seg(p, 0.28, 0.46)) * (1 - animEase(seg(p, 0.46, 1)));
+      wavePh = (p - 0.28) * 26; thrust = reach * 0.6 * flick;
       break;
     }
     case 'eat': {
       // Bite by bite: the head dips at it and tugs, the tail sweeping to drive it in.
-      const bite = Math.pow(Math.abs(Math.sin(2 * PI * p)), 0.6), tug = Math.sin(4 * PI * p);
-      headTurn = toT * 0.6 + 0.18 * tug * bite; thrust = clamp(w * 0.8, 1, 3.5) * bite;
-      wave = 0.28; wavePh = p * 20;
+      const envelope = animEase(seg(p, 0, 0.16)) * (1 - animEase(seg(p, 0.72, 1)));
+      const bite = Math.sin(2 * PI * p) ** 2, tug = Math.sin(4 * PI * p);
+      headTurn = (toT * 0.6 + 0.18 * tug * bite) * envelope; thrust = clamp(w * 0.8, 1, 3.5) * bite;
+      wave = 0.28 * envelope; wavePh = p * 20;
       break;
     }
     default: return false;
+  }
+  if (grounded) { headTurn *= 0.3; bend *= 0.18; wave *= 0.2; knock *= 0.4; }
+  else {
+    // A giant keeps its normal swimming wave; a small action must not whip
+    // hundreds of pixels of tail around as quickly as a short fish's body.
+    const actionScale = Math.min(1, 24 / B.links.reduce((sum, length) => sum + length, 0));
+    headTurn *= actionScale; bend *= actionScale; wave *= actionScale;
   }
   // Lay the body out again from the head along its links, each joint turned by its share.
   const X = B.x, Y = B.y, Aa = B.a;
@@ -170,8 +190,38 @@ function animBend(c, now) {
     X[i] = X[i - 1] - Math.cos(Aa[i]) * B.links[i - 1];
     Y[i] = Y[i - 1] - Math.sin(Aa[i]) * B.links[i - 1];
   }
-  c.animHeadXY = [X[0], Y[0]]; c.animHeadT = world.t;
+  c.animHeadXY = [X[0], Y[0]]; c.animHeadA = Aa[0]; c.animHeadT = world.t;
   return true;
+}
+
+// Keep feet in world space while their shoulders follow the moving spine.
+function actionFoot(c, L, now) {
+  const M = attackMotion(c, now);
+  if (!M) return [L.fx, L.fy, L.lift];
+  const front = L.bi <= Math.max(1, Math.floor(c.body.n * 0.35));
+  const active = front && L.side === M.side;
+  const stride = active ? (L.l1 + L.l2) * 0.35 * M.drive : -0.12 * M.wind;
+  return [L.fx + Math.cos(M.dir) * stride, L.fy + Math.sin(M.dir) * stride,
+    L.lift + (active ? Math.sin(PI * seg(M.p, 0.2, 0.62)) * 0.8 : 0)];
+}
+
+// A real two-link claw, attached to its shoulder, with a closing pincer.
+function drawActionClaw(r, c, bx, by, facing, side, length, armMat, clawMat, z, t) {
+  const M = attackMotion(c, world.t), active = M && side === M.side;
+  const drive = active ? M.drive : M ? M.drive * 0.25 : 0, wind = M ? M.wind : 0;
+  const yaw = active ? clamp(wrapA(M.dir - facing), -1.2, 1.2) * drive : 0;
+  const a = facing + side * (0.35 + 0.45 * wind - 0.22 * drive) + yaw;
+  const reach = length * (0.72 - 0.2 * wind + 0.26 * drive);
+  const tx = bx + Math.cos(a) * reach, ty = by + Math.sin(a) * reach;
+  const [ex, ey, fx, fy] = solveLimb(bx, by, tx, ty, length * 0.5, length * 0.5, side);
+  const id = c.id, tip = Math.atan2(fy - ey, fx - ex), open = M ? 0.13 + 0.58 * wind + 0.15 * (1 - drive) : 0.18 + 0.07 * Math.sin(t * 1.7 + side);
+  r.tube(bx, by, 0.55, z, ex, ey, 0.45, z + 0.35, 0.8, armMat, id);
+  r.tube(ex, ey, 0.45, z + 0.35, fx, fy, 0.65, z + 0.55, 0.8, armMat, id);
+  r.ellipsoid(fx, fy, length * 0.24, length * 0.16, tip, z + 0.55, 0.65, clawMat, id);
+  for (const s of [-1, 1]) {
+    const pa = tip + s * open, px = fx + Math.cos(tip) * length * 0.14, py = fy + Math.sin(tip) * length * 0.14;
+    r.tube(px, py, 0.35, z + 0.55, px + Math.cos(pa) * length * 0.28, py + Math.sin(pa) * length * 0.28, 0.12, z + 0.55, 0.8, clawMat, id);
+  }
 }
 function animUnbend(c) {
   const B = c.body, S = B && BEND_SAVE.get(B);
@@ -191,21 +241,29 @@ function animLine(r, x0, y0, x1, y1, z, hex) {
 
 // Jaws snapping shut in front of the head (or a claw's pinch).
 class Jaws {
-  constructor(c, pinch = false) { this.c = c; this.t = 0; this.life = ANIM_DUR.attack * 0.6; this.pinch = pinch; }
+  constructor(c, pinch = false) { this.c = c; this.t = 0; this.life = c.anim?.dur || ANIM_DUR.attack; this.pinch = pinch; }
   update(dt) { this.t += dt; return this.t < this.life && !this.c.gone; }
   draw(r) {
-    const c = this.c, A = c.anim, h = A && A.dir != null ? A.dir : c.heading || 0, w = animWidth(c), L = Math.max(2.5, w * 1.3);
-    // Open wide through the wind-up, shut hard at full reach (a third of the way in), a glint as they meet.
-    const p = this.t / this.life, open = (p < 0.55 ? Math.sin(PI / 2 * Math.min(1, p / 0.45)) : Math.max(0, 1 - (p - 0.55) / 0.1)) * (this.pinch ? 0.55 : 0.75);
-    const pose = animPose(c, world.t), [hx, hy] = animHead(c), z = (c.z || 0) + 4;
-    const ox = pose ? pose.dx : 0, oy = pose ? pose.dy : 0;
-    const fx = hx + ox + Math.cos(h) * (w * 0.6), fy = hy + oy + Math.sin(h) * (w * 0.6);
-    for (const s of [1, -1]) {
-      const a = h + s * open, ex = fx + Math.cos(a) * L, ey = fy + Math.sin(a) * L;
-      animLine(r, fx, fy, ex, ey, z, this.pinch ? '#ff8a5a' : '#f4f0e0');
-      if (!this.pinch && open > 0.1) r.dot(ex - Math.sin(a) * s, ey + Math.cos(a) * s, z, animMat('#ffffff'), animId()); // a tooth
+    const c = this.c, design = typeof DESIGNS !== 'undefined' && DESIGNS[c.species];
+    // Claws and tentacles perform the action themselves; no floating cartoon jaws.
+    if (this.pinch || Array.isArray(c.arms) || (typeof Crab !== 'undefined' && c instanceof Crab) || design?.look.claws) return;
+    const M = attackMotion(c, world.t);
+    if (!M) return;
+    const h = c.animHeadT === world.t ? c.animHeadA : M.dir, [hx, hy] = animHead(c);
+    const w = Math.max(0.7, c.body?.w[0] || animWidth(c)), L = Math.min(4, w * 0.8);
+    const z = (c.z || 0) + w * (c.sp?.hs || 1) + 0.35;
+    const skin = c.sp?.base || c.skinMat || c.mat || animMat('#56756e');
+    const open = 0.08 + 0.55 * M.wind + 0.12 * (1 - M.drive);
+    const fx = hx + Math.cos(h) * w * 0.55, fy = hy + Math.sin(h) * w * 0.55;
+    r.ellipsoid(fx, fy, L, Math.max(0.35, L * open), h, z, 0.12, animMat('#080a10'), c.id);
+    for (const side of [-1, 1]) {
+      const a = h + side * open, ex = fx + Math.cos(a) * L, ey = fy + Math.sin(a) * L;
+      r.tube(fx, fy, w * 0.16, z + 0.1, ex, ey, w * 0.08, z + 0.1, 0.7, skin, c.id);
+      for (let i = 1; i <= 2; i++) {
+        const x = lerp(fx, ex, i / 3), y = lerp(fy, ey, i / 3);
+        r.tube(x, y, 0.15, z + 0.18, x - Math.sin(a) * side * 0.45, y + Math.cos(a) * side * 0.45, 0.05, z + 0.18, 0.8, WHITE_FANG, c.id);
+      }
     }
-    if (p > 0.55 && p < 0.72) r.dot(fx + Math.cos(h) * L, fy + Math.sin(h) * L, z + 1, animMat('#ffffff'), animId()); // (the snap)
   }
 }
 // Where a blow lands: a burst of short sparks and a ring spreading in the water.
@@ -281,8 +339,7 @@ class Dazed {
 // A meal: chomps and crumbs for food; for prey, the lunge and snap, and the prey drawn into the mouth.
 function animMeal(world, c, f) {
   if (typeof Creature !== 'undefined' && f instanceof Creature) {
-    playAnim(world, c, 'attack', animToward(c, f));
-    animFx(world, new Jaws(c));
+    if (playAnim(world, c, 'attack', animToward(c, f))) animFx(world, new Jaws(c));
     if (f.draw) animFx(world, new Swallow(world, f, c));
   } else {
     playAnim(world, c, 'eat', Number.isFinite(f.x) ? animToward(c, f) : null);
@@ -293,10 +350,9 @@ function animMeal(world, c, f) {
 // A blow landed in a fight: the attacker lunges and snaps, the one hit flinches.
 function animStrike(world, attacker, target) {
   const a = animToward(attacker, target);
-  playAnim(world, attacker, 'attack', a);
-  animFx(world, new Jaws(attacker));
+  if (playAnim(world, attacker, 'attack', a)) animFx(world, new Jaws(attacker));
   // (The blow lands when the lunge reaches it.)
-  const contact = ANIM_DUR.attack * 0.4;
+  const contact = (attacker.anim?.dur || ANIM_DUR.attack) * 0.42;
   playAnim(world, target, 'hit', a, contact);
   animFx(world, new Impact((attacker.x + target.x * 2) / 3, (attacker.y + target.y * 2) / 3, Math.max(attacker.z || 0, target.z || 0), a, contact));
 }
@@ -316,8 +372,9 @@ function tentacleGrab(world, c, prey) {
     (typeof huntable === 'function' && !huntable(world, prey)) || Math.hypot(prey.x - c.x, prey.y - c.y) > GRIP_REACH) return false;
   const toward = Math.atan2(prey.y - c.y, prey.x - c.x);
   const arms = c.arms.map((arm) => ({ arm, d: Math.abs(wrapAngle(c.heading + arm.ang - toward)) })).sort((a, b) => a.d - b.d).slice(0, 3);
-  for (const { arm } of arms) arm.grip = true;
-  c.grip = { prey, at: world.t };
+  for (const { arm } of arms) { arm.grip = true; arm.gripFrom = [arm.tx, arm.ty]; }
+  playAnim(world, c, 'attack', toward);
+  c.grip = { prey, at: world.t, preyHeading: prey.heading || 0 };
   prey.heldBy = c;
   playAnim(world, prey, 'hit', animToward(c, prey));
   if (typeof glyph === 'function') glyph(world, prey, 'bang');
@@ -327,14 +384,30 @@ function tentacleGrab(world, c, prey) {
 function gripArm(c, arm, bx, by) {
   if (!c.grip || !arm.grip) return false;
   const q = c.grip.prey, curl = Math.sin(((c.grip.curl || 0) + arm.ang) * 3) * 1.2;
-  arm.tx = q.x + curl; arm.ty = q.y - curl; arm.lift = 3; arm.stepping = false;
+  const reach = animEase(clamp((world.t - c.grip.at) / (GRIP_TIME * 0.3), 0, 1));
+  const from = arm.gripFrom || [arm.tx, arm.ty];
+  arm.tx = lerp(from[0], q.x + curl * reach, reach); arm.ty = lerp(from[1], q.y - curl * reach, reach);
+  arm.lift = 1.5 * Math.sin(PI * reach); arm.stepping = false;
+  arm.ch.reach(bx, by, arm.tx, arm.ty);
+  return true;
+}
+// Fighting without a held victim: the forward arms unfurl while the rear arms brace.
+function attackArm(c, arm, bx, by) {
+  const M = attackMotion(c, world.t);
+  if (!M || Math.cos(c.heading + arm.ang - M.dir) < 0.3) return false;
+  if (arm.attackAt !== c.anim.at) { arm.attackAt = c.anim.at; arm.attackFrom = [arm.tx, arm.ty]; }
+  const length = arm.ch.links.reduce((a,b)=>a+b,0), from = arm.attackFrom;
+  const reach = length * (0.66 + 0.23 * M.drive), angle = M.dir + Math.sin(arm.ang) * 0.25;
+  const x = bx + Math.cos(angle) * reach, y = by + Math.sin(angle) * reach;
+  arm.tx = lerp(from[0], x, M.drive); arm.ty = lerp(from[1], y, M.drive);
+  arm.lift = 1.8 * Math.sin(PI * M.drive); arm.stepping = false;
   arm.ch.reach(bx, by, arm.tx, arm.ty);
   return true;
 }
 function releaseGrip(c) {
   if (!c.grip) return;
   if (c.grip.prey && c.grip.prey.heldBy === c) c.grip.prey.heldBy = null;
-  for (const arm of c.arms || []) arm.grip = false;
+  for (const arm of c.arms || []) { arm.grip = false; arm.gripFrom = null; }
   c.grip = null;
 }
 function updateGrips(world, dt) {
@@ -347,8 +420,9 @@ function updateGrips(world, dt) {
     if (!q || q.gone || q.caught || c.gone || c.dying || c.grabbed || c.jet > 0 || (typeof huntable === 'function' && !huntable(world, q))) { releaseGrip(c); continue; }
     // Haul it in toward the beak, struggling.
     const [mx, my] = [c.x + Math.cos(c.heading) * 1.5, c.y + Math.sin(c.heading) * 1.5], k = Math.min(1, dt * (1.5 + 3 * p));
-    q.x += (mx - q.x) * k; q.y += (my - q.y) * k;
-    q.heading = (q.heading || 0) + Math.sin(world.t * 22) * 0.25;
+    const haul = animEase(clamp((p - 0.3) / 0.7, 0, 1));
+    q.x += (mx - q.x) * k * haul; q.y += (my - q.y) * k * haul;
+    q.heading = G.preyHeading + Math.sin(world.t * 14) * 0.18 * haul;
     if (q.body && q.body.resolve) q.body.resolve(q.x, q.y, q.heading);
     if (q.speed != null) q.speed = 0;
     c.speed = (c.speed || 0) * 0.8;
@@ -377,7 +451,7 @@ function updateStings(world, dt) {
       if (Math.abs((q.z || 0) - (c.z || 0)) > (jelly ? 16 : 8) || animWidth(q) > animWidth(c) * (jelly ? 3 : 1.6)) return;
       if (typeof huntable === 'function' && !huntable(world, q)) return;
       // A crab only pinches what is in front of its claws.
-      if (crab && Math.cos(Math.atan2(q.y - c.y, q.x - c.x) - c.heading) < 0.4) return;
+      if (crab && Math.cos(Math.atan2(q.y - c.y, q.x - c.x) - c.legBase()) < 0.4) return;
       victim = q;
     });
     if (!victim) continue;
@@ -396,8 +470,9 @@ function updateStings(world, dt) {
       if (typeof hurt === 'function') hurt(world, victim, 0.05, { why: 'pinched by a crab', canKill: false });
       if (typeof forageLearn === 'function') forageLearn(victim, c.species, 0, 0.05);
     }
-    playAnim(world, victim, 'hit', animToward(c, victim));
-    animFx(world, new Impact(victim.x, victim.y, victim.z || 0, animToward(c, victim)));
+    const contact = crab ? c.anim.dur * 0.42 : 0;
+    playAnim(world, victim, 'hit', animToward(c, victim), contact);
+    animFx(world, new Impact(victim.x, victim.y, victim.z || 0, animToward(c, victim), contact));
     if (typeof startle === 'function') startle(world, victim, c.x, c.y, 1.5);
   }
 }

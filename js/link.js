@@ -13,7 +13,7 @@
 // energy/growth, and parents or generation. The bytes are deflated and
 // written as base64url: "p2z.<data>". Version 1 links still open.
 
-const LINK_V = 3; // 3 added the working genes and loci; 2 still decodes
+const LINK_V = 4; // 4 extends species codes past 255; versions 1, 2 and 3 still decode
 // Append-only code tables: an index written into a link must keep its meaning.
 // Kinds that school: a link records which school each belongs to (bestiary.js adds its schoolers).
 const SCHOOL_KINDS = new Set(['tetra', 'cavefish', 'snailfish']);
@@ -130,6 +130,9 @@ function packPond(world) {
   }
   w.u8(Math.min(255, schools.length));
   for (const s of schools.slice(0, 255)) w.u8(Math.max(0, SCHOOL_CODES.indexOf(s.kind || null)));
+  const seas = (world.game?.seas || []).slice(0, 64);
+  w.vu(seas.length);
+  for (const band of seas) { w.vu(Math.round(band.from)); w.str(band.k); }
 
   // Scenery: what the player removed from the generated pond, and what they added.
   const removed = world.removed || { plants: [], pads: [], rocks: [] };
@@ -163,10 +166,11 @@ function packPond(world) {
     const explicit = !hasParents && !sameGenome(g, genomeFor(c.seed));
     const hasName = L.name !== nameFor(c.seed), hasLife = Math.abs(L.lifespan - lifespanFor(c.species, c.seed)) > 1;
     // (Kinds past the first 32 set bit 16 of the extra byte: the code is then 32 more.)
-    // (The kind's code: its low five bits here, bits 5, 6 and 7 as extra's 16, 32 and 64, so up to 256 kinds.)
-    const code = KIND_CODES.indexOf(c.make), extra = (c.state === 'sit' ? 1 : 0) | (hasName ? 2 : 0) | (hasLife ? 4 : 0) | (numbered ? 0 : 8) | (code & 32 ? 16 : 0) | (code & 64 ? 32 : 0) | (code & 128 ? 64 : 0);
+    // Low eight species bits retain the old layout; extra bit 128 adds a high varint in v4.
+    const code = KIND_CODES.indexOf(c.make), extra = (c.state === 'sit' ? 1 : 0) | (hasName ? 2 : 0) | (hasLife ? 4 : 0) | (numbered ? 0 : 8) | (code & 32 ? 16 : 0) | (code & 64 ? 32 : 0) | (code & 128 ? 64 : 0) | (code >= 256 ? 128 : 0);
     w.u8((code & 31) | (hasParents ? 32 : 0) | (explicit ? 64 : 0) | (extra ? 128 : 0));
     if (extra) w.u8(extra);
+    if (code >= 256) w.vu(Math.floor(code / 256));
     if (numbered) { w.vu(zig(c.sn - prevSn)); prevSn = c.sn; }
     w.u8(Math.min(15, Math.floor(c.x / W * 16)) | (Math.min(15, Math.floor(c.y / H * 16)) << 4));
     w.vu(Math.round(L.age / 4)); // v3: a varint (lifespans now run past 255 × 4 s)
@@ -212,8 +216,8 @@ function packPond(world) {
   w.vu(grown.length);
   for (const p of grown) w.u8(Math.round(clamp(p.growth ?? 1, 0, 1) * 255));
   const want = Object.entries((world.succession && world.succession.want) || {}).filter(([k]) => KIND_CODES.includes(k));
-  w.u8(world.succession ? 1 + want.length : 0);
-  for (const [k, n] of want) { w.u8(KIND_CODES.indexOf(k)); w.u8(Math.min(255, n)); }
+  w.vu(world.succession ? 1 + want.length : 0);
+  for (const [k, n] of want) { w.vu(KIND_CODES.indexOf(k)); w.u8(Math.min(255, n)); }
   // How far the mark has gone in each marked animal (and whether it's bound).
   const marked = saved.map((c, i) => [c, i]).filter(([c]) => c.life.genome.eld);
   w.vu(marked.length);
@@ -228,7 +232,7 @@ function packPond(world) {
   for (const l of lit) { w.u8(LITTER_CODES.indexOf(l.k) | (Math.min(15, l.hp) << 4)); w.u16(Math.round(l.x)); w.u16(Math.round(l.y)); }
   const B = world.blight;
   w.u8(B ? BLIGHT_CODES.indexOf(B.k) : 0);
-  if (B) { w.u16(Math.round(clamp(B.until - world.days, 0, 60) * 1000)); w.u8(B.sp && KIND_CODES.includes(B.sp) ? KIND_CODES.indexOf(B.sp) : 255); }
+  if (B) { w.u16(Math.round(clamp(B.until - world.days, 0, 60) * 1000)); w.vu(B.sp && KIND_CODES.includes(B.sp) ? KIND_CODES.indexOf(B.sp) + 1 : 0); }
   // each structure's upgrades (in the order above),
   w.u8(st.length);
   for (const s of st) {
@@ -273,7 +277,7 @@ function packPond(world) {
   w.u8(sup.length);
   for (const s of sup) {
     const tr = s.traits.filter((t) => TK.includes(t)).slice(0, 5);
-    w.u8(KIND_CODES.indexOf(s.k)); w.u8(tr.length);
+    w.vu(KIND_CODES.indexOf(s.k)); w.u8(tr.length);
     for (const t of tr) w.u8(TK.indexOf(t));
   }
   w.u8(st.length);
@@ -445,6 +449,17 @@ function unpackV2(r, v = 2) {
   for (let n = r.vu(); n > 0; n--) { const v = r.u8() | (r.u8() << 8) | (r.u8() << 16); s.wild.push([v & 0x200000 ? 'salt' : 'fresh', v & 0x1fffff]); }
   s.schools = [];
   for (let n = r.u8(); n > 0; n--) s.schools.push({ tx: s.W / 2, ty: s.H / 2, tz: 22, until: 0, kind: SCHOOL_CODES[r.u8()] || null });
+  if (v >= 4) {
+    s.seas = [];
+    let from = -1;
+    for (let n = linkBoundedVu(r, 64); n > 0; n--) {
+      const next = linkBoundedVu(r, 40000), length = linkBoundedVu(r, 32);
+      if (next < from || length > r.b.length - r.i) throw Error('bad sea band');
+      const key = new TextDecoder().decode(r.b.subarray(r.i, r.i + length)); r.i += length;
+      if (typeof SEA_KINDS === 'undefined' || !Object.hasOwn(SEA_KINDS, key)) throw Error('unknown sea band');
+      s.seas.push({ from: next, k: key }); from = next;
+    }
+  }
   s.removed = {};
   for (const key of ['plants', 'pads', 'rocks']) { s.removed[key] = []; for (let n = r.vu(); n > 0; n--) s.removed[key].push(r.vu()); }
   s.addedPlants = [];
@@ -460,7 +475,9 @@ function unpackV2(r, v = 2) {
   s.creatures = [];
   let prevSn = 0;
   for (let i = 0, n = r.vu(); i < n; i++) {
-    const b = r.u8(), extra = b & 128 ? r.u8() : 0, k = KIND_CODES[(b & 31) + (extra & 16 ? 32 : 0) + (extra & 32 ? 64 : 0) + (extra & 64 ? 128 : 0)];
+    const b = r.u8(), extra = b & 128 ? r.u8() : 0;
+    const code = (b & 31) + (extra & 16 ? 32 : 0) + (extra & 32 ? 64 : 0) + (extra & 64 ? 128 : 0) + (v >= 4 && extra & 128 ? r.vu() * 256 : 0);
+    const k = KIND_CODES[code];
     const numbered = !(extra & 8);
     let sn = null;
     if (numbered) { sn = prevSn + unzig(r.vu()); prevSn = sn; }
@@ -525,10 +542,10 @@ function unpackV2(r, v = 2) {
         if (r.i < r.b.length) {
           s.growth = [];
           for (let n = r.vu(); n > 0; n--) s.growth.push(r.u8() / 255);
-          const ns = r.u8();
+          const ns = v >= 4 ? r.vu() : r.u8();
           if (ns) {
             s.succession = { want: {}, seen: [] };
-            for (let n = ns - 1; n > 0; n--) { const k = KIND_CODES[r.u8()], c = r.u8(); if (k) s.succession.want[k] = c; }
+            for (let n = ns - 1; n > 0; n--) { const k = KIND_CODES[v >= 4 ? r.vu() : r.u8()], c = r.u8(); if (k) s.succession.want[k] = c; }
           }
           if (r.i < r.b.length) {
             for (let n = r.vu(); n > 0; n--) {
@@ -541,7 +558,7 @@ function unpackV2(r, v = 2) {
             s.litter = [];
             for (let n = r.u8(); n > 0; n--) { const v = r.u8(), x = r.u16(), y = r.u16(), k = LITTER_CODES[v & 15]; if (k) s.litter.push({ k, x, y, hp: (v >> 4) || 1 }); }
             const bk = BLIGHT_CODES[r.u8()];
-            if (bk) { const left = r.u16() / 1000, sp = KIND_CODES[r.u8()] || null; s.blight = { k: bk, left, sp }; }
+            if (bk) { const left = r.u16() / 1000, code = v >= 4 ? r.vu() - 1 : r.u8(), sp = code < 0 || v < 4 && code === 255 ? null : KIND_CODES[code] || null; s.blight = { k: bk, left, sp }; }
             const ns = r.u8();
             for (let i = 0; i < ns; i++) {
               const a = r.u8(), b = r.u8(), t = s.structures[i];
@@ -573,7 +590,7 @@ function unpackV2(r, v = 2) {
               if (r.i < r.b.length) {
                 for (let n = r.vu(); n > 0; n--) { const i = r.vu(), f = r.u8(), c = s.creatures[i]; if (c) { if (f & 1) c.L.safe = true; if (f & 2) c.L.paragon = true; } }
                 const TK = Object.keys(TRAIT_RARITY), sup = [];
-                for (let n = r.u8(); n > 0; n--) { const k = KIND_CODES[r.u8()], tr = []; for (let m = r.u8(); m > 0; m--) tr.push(TK[r.u8()]); if (k) sup.push({ k, traits: tr.filter(Boolean) }); }
+                for (let n = r.u8(); n > 0; n--) { const k = KIND_CODES[v >= 4 ? r.vu() : r.u8()], tr = []; for (let m = r.u8(); m > 0; m--) tr.push(TK[r.u8()]); if (k) sup.push({ k, traits: tr.filter(Boolean) }); }
                 if (s.game) s.game.supers = sup;
                 for (let n = r.u8(), i = 0; i < n; i++) { const v = r.u8(), t = s.structures[i]; if (t && v) t.deep = v / 100; }
                 if (r.i < r.b.length) {
@@ -769,7 +786,11 @@ async function decodePond(text) {
     if (m[2] === 'z') bytes = await pipeBytes(bytes, new DecompressionStream('deflate-raw'));
     const r = new ByteReader(bytes), v = r.u8();
     if (v !== +m[1]) return null;
-    if (v === 2 || v === 3) return linkToSave(unpackV2(r, v));
+    if (v === 2 || v === 3 || v === 4) {
+      const parsed = unpackV2(r, v);
+      if (v >= 4 && parsed.game) parsed.game.seas = parsed.seas;
+      return linkToSave(parsed);
+    }
     if (v === 1) return linkToSave(unpackV1(r));
     return null;
   } catch {

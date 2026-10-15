@@ -37,7 +37,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=55">
+  <link rel="stylesheet" href="style.css?v=59">
   <style id="entry-css">
     /* The entry screen: painted before any script loads (inline, so nothing waits on style.css). It is opaque:
        the pond stays hidden until you enter. js/entry-water.js draws the moving water on #entry-bg (in a worker). */
@@ -251,8 +251,9 @@
       </div>
     </div>
   </div>
+  <script src="js/platform.js?v=2"></script>
   <script src="js/entry-water.js?v=1"></script>
-  <script src="js/entry.js?v=8"></script>
+  <script src="js/entry.js?v=10"></script>
   <canvas id="pond" aria-label="A living pixel-art pond of procedurally animated animals"></canvas>
   <div class="vignette" aria-hidden="true"></div>
   <noscript>
@@ -337,6 +338,7 @@
       <button type="button" id="open-hatchery" title="The hatchery (build one first)">Hatchery</button>
       <button type="button" id="open-guide" class="span3" title="Everything in the game, in one place (G)">Guide</button>
     </div>
+    <p class="pond-support"><a href="https://ko-fi.com/pondnz" target="_blank" rel="noopener noreferrer" data-umami-event="support-pond">Support Pond on Ko-fi ↗</a><br><span>Help keep the pond growing.</span></p>
     <p class="keys">Drag to pan · scroll to zoom · G for the guide · H for this menu</p>
   </aside>
   <div id="signin-nudge" class="signin-nudge" hidden role="dialog" aria-label="Sign in">
@@ -346,25 +348,23 @@
   </div>
   <nav id="rail" class="rail" aria-label="The menu and the animals">
     <div class="dock-bar">
-      <button type="button" id="census-btn" class="census-btn" aria-expanded="false" aria-controls="census" title="Details about the animals in the pond (C)">
-        <b id="census-count">0</b><span class="caret" aria-hidden="true">▸</span>
+      <button type="button" id="census-btn" class="census-btn" aria-expanded="false" aria-controls="census" aria-label="Animals" title="Animals (C)&#10;Species, individuals, spawning and Paragons">
+        <b id="census-count">0</b><span class="animals-label">Animals</span>
       </button>
       <div id="animals" class="animals" role="group" aria-label="The animals: add more, or read about them"></div>
-      <button type="button" id="wild-btn" class="wild-dock" aria-expanded="false" aria-controls="animals" aria-label="Expand creature list" title="Expand creature list"><span aria-hidden="true">▸</span><b>0</b></button>
       <button type="button" id="hatch-btn" class="hatch-dock" hidden aria-label="Hatchery"><span class="egg" aria-hidden="true"></span></button>
     </div>
-    <button type="button" id="rail-paragons" class="rail-btn crown" aria-expanded="false" aria-controls="paragons" aria-label="Paragons" title="Paragons&#10;The finest of your lines, earned by breeding: what they are, the ones waiting for you, and how close the next are">♛</button>
     <button type="button" id="rail-guide" class="rail-btn ask" aria-expanded="false" aria-controls="guide" aria-label="Guide" title="Guide (G)&#10;Everything in the game: every animal, plant, build, trait, event and control">?</button>
   </nav>
   <section id="census" class="pop census" hidden aria-label="Animals in the pond">
     <header class="pop-head">
-      <b id="census-summary"></b>
-      <button type="button" id="census-close" class="icon" aria-label="Close animal details">×</button>
+      <b>Animals</b>
+      <button type="button" id="census-close" class="icon" aria-label="Close animals">×</button>
     </header>
-    <p class="note" id="census-stats"></p>
+    <p class="note" id="census-summary"></p>
+    <input type="search" id="animals-search" placeholder="Find a species or animal…" aria-label="Find a species or animal" autocomplete="off" spellcheck="false">
+    <details class="animals-balance"><summary>Pond balance</summary><p class="note" id="census-stats"></p></details>
     <ol class="census-rows" id="census-rows"></ol>
-    <h3>Wild species <span id="wild-count"></span></h3>
-    <ul class="wild-cards" id="wild-cards"></ul>
     <button type="button" id="clear" class="wide">Clear animals</button>
   </section>
   <section id="actions" class="pop actions" hidden aria-label="All actions">
@@ -525,15 +525,6 @@
     <p id="nb-ask-text"></p>
     <div class="grid2"><button type="button" id="nb-go">Go</button><button type="button" id="nb-stay">Stay here</button></div>
   </div>
-  <section id="paragons" class="pop paragons" hidden aria-label="Paragons">
-    <header class="pop-head"><b>♛ Paragons</b><button type="button" id="paragons-close" class="icon" aria-label="Close">×</button></header>
-    <p class="note">A Paragon is the finest animal a line of yours can produce: <b>free</b>, graded <b>Pristine</b>, carrying its line's rare traits plus a gift, hardier and longer-lived than its kind, with a crown of light over its head. It always settles in, and the rest of its spawn come Superb.</p>
-    <p class="note">You earn one by breeding: each time a rare line (the same rare traits in the same kind) has been bred <b>3, 8, 20 and 50</b> times, and each time a kind's births and finds have scored you <b>150, 600, 2,400…</b> points (four times the last).</p>
-    <h3>Waiting for you</h3>
-    <div class="sc-supers" id="paragons-waiting"></div>
-    <h3>Coming along</h3>
-    <ol class="par-progress" id="paragons-progress"></ol>
-  </section>
   <section id="guide" class="pop guide" hidden aria-label="Guide">
     <header class="pop-head">
       <div class="g-top">
@@ -550,11 +541,6 @@
       <nav class="chips g-nav" id="guide-nav" aria-label="Chapters"></nav>
     </header>
     <div id="guide-body" class="g-list"></div>
-  </section>
-  <section id="wild" class="pop wild" hidden aria-label="Wildlife">
-    <header class="pop-head"><b>Wildlife</b><button type="button" id="wild-close" class="icon" aria-label="Close">×</button></header>
-    <p class="note" id="wild-status"></p>
-    <ol class="wild-list" id="wild-list"></ol>
   </section>
   <section id="evo" class="pop evo" hidden aria-label="The depths">
     <header class="pop-head"><b>The depths</b><button type="button" id="evo-close" class="icon" aria-label="Close">×</button></header>
@@ -589,21 +575,11 @@
 
     <div class="corner">
       <button type="button" id="map-toggle" class="map-toggle" aria-pressed="false" aria-label="Map" title="Map&#10;Show or hide the sectional map and side view">&#9638;</button>
-      <div class="zoom" role="group" aria-label="Zoom">
-        <button type="button" id="zoom-in" class="icon" aria-label="Zoom in" title="Zoom in (+)">+</button>
-        <button type="button" id="zoom-level" title="Reset zoom (0)">2×</button>
-        <button type="button" id="zoom-out" class="icon" aria-label="Zoom out" title="Zoom out (-)">−</button>
-      </div>
       <div class="mini-wrap">
         <div class="map-tools"><button type="button" id="map-depths" title="Depths and evolution">Depths</button><button type="button" id="map-expand" aria-pressed="false" title="Expand map to window height">Expand ↗</button></div>
         <canvas id="slice" class="slice" width="211" height="48" aria-label="Side view of the pond; click or drag to move the viewport"></canvas>
         <canvas id="minimap" class="minimap" width="211" height="211" aria-label="Map of this pond section; click or drag to move the view"></canvas>
         <button type="button" id="map-layer" class="map-layer" title="Map layer: click to switch">Map</button>
-        <div class="map-sections" role="group" aria-label="Pond map sections">
-          <button type="button" id="map-prev" aria-label="Previous map section" title="Previous section">‹</button>
-          <span id="map-section-count" aria-live="polite">Section 1 / 1</span>
-          <button type="button" id="map-next" aria-label="Next map section" title="Next section">›</button>
-        </div>
       </div>
     </div>
   </div>
@@ -615,32 +591,32 @@
   <script src="js/compose-gl.js?v=2"></script>
   <script src="js/volumetric.js?v=10"></script>
   <script src="js/raster.js?v=69"></script>
-  <script src="js/creatures.js?v=62"></script>
-  <script src="js/critters.js?v=55"></script>
-  <script src="js/wildlife.js?v=57"></script>
-  <script src="js/wildfish.js?v=55"></script>
-  <script src="js/sound.js?v=58"></script>
+  <script src="js/creatures.js?v=63"></script>
+  <script src="js/critters.js?v=56"></script>
+  <script src="js/wildlife.js?v=58"></script>
+  <script src="js/wildfish.js?v=56"></script>
+  <script src="js/sound.js?v=59"></script>
   <script src="js/life.js?v=62"></script>
   <script src="js/skins.js?v=1"></script>
   <script src="js/growth.js?v=2"></script>
-  <script src="js/anims.js?v=6"></script>
+  <script src="js/anims.js?v=8"></script>
   <script src="js/plants.js?v=56"></script>
-  <script src="js/scene.js?v=58"></script>
+  <script src="js/scene.js?v=59"></script>
   <script src="js/character.js?v=55"></script>
   <script src="js/structures.js?v=62"></script>
-  <script src="js/erosion.js?v=57"></script>
+  <script src="js/erosion.js?v=58"></script>
   <script src="js/sky.js?v=55"></script>
   <script src="js/ecology.js?v=55"></script>
   <script src="js/game.js?v=56"></script>
-  <script src="js/deep.js?v=56"></script>
+  <script src="js/deep.js?v=57"></script>
   <script src="js/remains.js?v=56"></script>
   <script src="js/eldritch.js?v=56"></script>
   <script src="js/coast.js?v=59"></script>
   <script src="js/gulls.js?v=55"></script>
   <script src="js/shore.js?v=55"></script>
   <script src="js/traits.js?v=56"></script>
-  <script src="js/save.js?v=63"></script>
-  <script src="js/link.js?v=57"></script>
+  <script src="js/save.js?v=64"></script>
+  <script src="js/link.js?v=58"></script>
   <script src="js/abyss.js?v=55"></script>
   <script src="js/quirks.js?v=55"></script>
   <script src="js/hunters.js?v=55"></script>
@@ -648,15 +624,15 @@
   <script src="js/habitats.js?v=58"></script>
   <script src="js/artifacts.js?v=57"></script>
   <script src="js/story.js?v=55"></script>
-  <script src="js/lineage.js?v=55"></script>
-  <script src="js/depths.js?v=62"></script>
+  <script src="js/lineage.js?v=56"></script>
+  <script src="js/depths.js?v=63"></script>
   <script src="js/sand.js?v=55"></script>
   <script src="js/heavens.js?v=55"></script>
   <script src="js/nature.js?v=58"></script>
   <script src="js/pollution.js?v=55"></script>
   <script src="js/prehistoric.js?v=55"></script>
   <script src="js/alien.js?v=57"></script>
-  <script src="js/bestiary.js?v=56"></script>
+  <script src="js/bestiary.js?v=57"></script>
   <script src="js/bestiary2.js?v=1"></script>
   <script src="js/land.js?v=60"></script>
   <script src="js/isles.js?v=58"></script>
@@ -664,26 +640,28 @@
   <script src="js/flora.js?v=55"></script>
   <script src="js/flora2.js?v=2"></script>
   <script src="js/cycle.js?v=56"></script>
-  <script src="js/arrivals.js?v=55"></script>
+  <script src="js/arrivals.js?v=56"></script>
   <script src="js/interact.js?v=55"></script>
-  <script src="js/net.js?v=56"></script>
+  <script src="js/net.js?v=58"></script>
   <script src="js/account.js?v=55"></script>
   <script src="js/wander.js?v=55"></script>
   <script src="js/hinterland.js?v=55"></script>
   <script src="js/imps.js?v=55"></script>
   <script src="js/structures2.js?v=2"></script>
   <script src="js/beacons.js?v=6"></script>
-  <script src="js/seas.js?v=2"></script>
-  <script src="js/minds.js?v=14"></script>
+  <script src="js/seas.js?v=3"></script>
+  <script src="js/frontiers.js?v=1"></script>
+  <script src="js/minds.js?v=16"></script>
   <script src="js/mindplay.js?v=9"></script>
   <script src="js/forage.js?v=3"></script>
-  <script src="js/hud.js?v=75"></script>
+  <script src="js/animal-status.js?v=1"></script>
+  <script src="js/hud.js?v=78"></script>
   <script src="js/fine.js?v=55"></script>
-  <script src="js/main.js?v=91"></script>
-  <script src="js/sfx.js?v=5"></script>
+  <script src="js/main.js?v=96"></script>
+  <script src="js/sfx.js?v=6"></script>
   <script src="js/visits.js?v=2"></script>
-  <script src="js/guide.js?v=57"></script>
-  <script src="js/music.js?v=56"></script>
-  <script src="js/tips.js?v=55"></script>
+  <script src="js/guide.js?v=61"></script>
+  <script src="js/music.js?v=57"></script>
+  <script src="js/tips.js?v=56"></script>
 </body>
 </html>

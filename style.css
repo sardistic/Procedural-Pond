@@ -149,6 +149,10 @@ summary:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
 .grid2 { grid-template-columns: repeat(2, 1fr); }
 .grid3 { grid-template-columns: repeat(3, 1fr); }
 .foot { margin-top: 12px; }
+.pond-support { margin: 14px 0 8px; font: 13px/1.6 system-ui, sans-serif; }
+.pond-support a { color: #a8ded3; text-decoration: underline; text-underline-offset: 3px; }
+.pond-support a:hover, .pond-support a:focus-visible { color: #e2fff6; }
+.pond-support span { color: var(--muted); font-size: 11px; }
 
 button {
   display: flex;
@@ -560,6 +564,31 @@ output {
 }
 
 .census-btn b { margin: 0; font-weight: 400; color: var(--hot); }
+.census-btn { position: relative; }
+.census-btn .animals-label { font-size: 7px; }
+.census-btn.has-new::after { content: '♛ ' attr(data-new); position: absolute; top: -7px; left: 24px; width: max-content; padding: 1px 3px; color: #1a1400; background: #ffd166; border: 1px solid #7a5a10; font-size: 9px; pointer-events: none; }
+.census-btn[aria-expanded="true"] { border-color: var(--hot); }
+#animals-search { width: 100%; min-width: 0; margin: 0 0 8px; padding: 8px; border: 2px solid var(--edge); background: var(--ink); color: var(--text); font: inherit; font-size: 11px; }
+.animals-balance { color: var(--muted); font-size: 10px; }
+.animals-balance summary { cursor: pointer; }
+.animal-species-details { margin: 8px 8px 8px 40px; font-size: 10px; min-width: 0; }
+.animal-species-details > .note { margin: 6px 0; line-height: 1.5; }
+.animal-species-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.animal-species-actions button, .animal-paragon { min-height: 34px; font-size: 10px; padding: 6px 8px; box-shadow: none; }
+.animal-paragon { width: 100%; justify-content: flex-start; color: #ffd166; margin: 4px 0; }
+.animal-species-details .par-progress { margin: 8px 0; }
+.animal-species-details .par-progress li { display: block; line-height: 1.5; }
+.animal-species-details .par-progress .gbar { display: block; margin-top: 4px; }
+.animal-spawn-slot { min-width: 0; }
+#census .in-animal-list { position: static !important; inset: auto !important; transform: none !important; width: auto !important; max-width: 100%; max-height: none !important; margin: 8px 0; padding: 10px; box-shadow: none; font-size: 10px; }
+#census .row-head { min-height: 48px; }
+#census .row-head .nm, #census .member b { min-width: 0; overflow-wrap: anywhere; }
+#census .row-head .ct { white-space: nowrap; font-size: 10px; }
+#census { background: rgb(8, 26, 34); }
+#census .row-head .facts { font-size: 10px; line-height: 1.5; }
+#census .member { min-height: 44px; }
+#census .wild-cards { grid-template-columns: 1fr; }
+.animal-more { width: 100%; font-size: 10px; }
 .census { position: fixed; top: 60px; left: 64px; bottom: auto; z-index: 8; width: min(620px, calc(100vw - 80px)); max-height: calc(100vh - 200px); } /* (beside the animals down the left, under the pond's bar) */
 .census h3 { margin: 14px 0 6px; font-size: 11px; font-weight: 400; color: var(--hot); }
 .census h3 span { color: var(--muted); }
@@ -643,11 +672,6 @@ output {
 .wild-card .ct { grid-area: ct; font-size: 9px; color: var(--hot); }
 .wild-card.gone { opacity: 0.55; }
 .wild-card.gone .ct { color: var(--muted); }
-
-/* Zoom sits in a column to the left of the minimap: + on top, the level, − below. */
-.corner .zoom { display: flex; flex-direction: column; gap: 4px; }
-.corner .zoom button { width: 34px; height: 32px; padding: 0; }
-.zoom #zoom-level { font-size: 10px; color: var(--hot); }
 
 .minimap {
   width: min(211px, var(--map-fit-width, 211px));
@@ -1022,12 +1046,8 @@ body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, bo
 .map-tools { display: none; justify-content: space-between; gap: 4px; width: min(211px, var(--map-fit-width, 211px)); }
 .map-tools button { flex: 1; min-width: 0; padding: 2px 4px; font-size: 9px; box-shadow: none; }
 .slice, .minimap { touch-action: none; }
-.map-layer { position: absolute; bottom: 34px; right: 4px; padding: 2px 5px; font-size: 8px; box-shadow: none; opacity: 0.85; }
+.map-layer { position: absolute; bottom: 4px; right: 4px; padding: 2px 5px; font-size: 8px; box-shadow: none; opacity: 0.85; }
 .slice { width: min(211px, var(--map-fit-width, 211px)); height: 48px; image-rendering: pixelated; border: 2px solid var(--edge); box-shadow: 3px 3px 0 var(--ink); background: var(--ink); cursor: pointer; }
-.map-sections { width: min(211px, var(--map-fit-width, 211px)); height: 26px; display: grid; grid-template-columns: 32px 1fr 32px; gap: 4px; }
-.map-sections button { min-width: 0; padding: 0; font-size: 18px; line-height: 1; box-shadow: none; }
-.map-sections button:disabled { opacity: 0.4; cursor: default; }
-.map-sections span { display: flex; justify-content: center; align-items: center; min-width: 0; padding: 0 3px; border: 2px solid var(--edge); background: var(--panel); color: var(--hot); font-size: 10px; white-space: nowrap; }
 
 /* ---- the depths ---- */
 
@@ -1238,23 +1258,10 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
 .grid3 > .span3 { grid-column: 1 / -1; }
 
 /* ---- wildlife: the kinds that haven't come yet ---- */
-.wild-dock { position: relative; flex: none; align-self: center; flex-direction: column; gap: 0; width: 40px; height: 40px; padding: 0; font-size: 14px; color: #bff4ff; border-style: dashed; }
-.wild-dock b { font-size: 8px; font-weight: 400; color: var(--muted); }
-#wild { position: fixed; top: 60px; left: 50%; bottom: auto; transform: translateX(-50%); z-index: 9; width: min(520px, calc(100vw - 24px)); max-height: calc(100vh - 200px); font-size: 10px; color: var(--muted); }
-.wild-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
-.wild-row { display: grid; grid-template-columns: 30px 1fr auto auto; align-items: center; gap: 6px; padding: 4px 6px; border: 2px solid #1c4654; }
-.wild-row .ic { display: grid; place-items: center; }
-.wild-row img { image-rendering: pixelated; }
-.wild-row .who { display: grid; gap: 1px; min-width: 0; }
-.wild-row .who b { font-weight: 400; color: var(--text); }
-.wild-row .who .note { margin: 0; }
-.wild-row button { padding: 3px 6px; box-shadow: none; font-size: 9px; white-space: nowrap; }
-.wild-row button:disabled { opacity: 0.45; cursor: not-allowed; }
 /* The census: protect or cull a kind; one that has outgrown the pond is marked. */
 .members .stance { display: flex; gap: 6px; margin: 4px 0; }
 .members .stance button { flex: 1; padding: 3px 6px; box-shadow: none; font-size: 9px; }
 .census-rows .row.over .row-head .facts { color: #f0a15c; }
-@media (max-width: 760px) { #wild { top: 60px; left: 60px; transform: none; width: calc(100vw - 72px); } }
 
 /* ---- the beach's neighbours, by the pond's name ---- */
 .score { display: flex; align-items: stretch; gap: 4px; }
@@ -1293,29 +1300,19 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
 .journal li { font-size: 11px; line-height: 1.55; }
 .chip.reps[aria-pressed="true"] { color: var(--hot); border-color: var(--hot); }
 
-/* ---- the Paragons ---- */
-#paragons { position: fixed; top: 60px; left: 50%; bottom: auto; transform: translateX(-50%); z-index: 9; width: min(480px, calc(100vw - 24px)); max-height: calc(100vh - 200px); font-size: 10px; color: var(--muted); background: rgba(8, 26, 34, 0.97); }
-#paragons h3 { margin: 12px 0 6px; font-size: 11px; font-weight: 400; color: var(--hot); }
-#paragons .note b { font-weight: 400; color: var(--text); }
-#paragons .super { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 8px; width: 100%; margin-bottom: 4px; text-align: left; }
-#paragons .super .ic { display: grid; place-items: center; }
-#paragons .super img { image-rendering: pixelated; }
-#paragons .super .go { color: var(--hot); font-size: 9px; }
+/* ---- Paragon progress inside a species row ---- */
 .par-progress { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .par-progress li { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; }
 .par-progress li b { font-weight: 400; color: var(--text); }
 .par-progress li .note { margin: 0; justify-self: end; }
 .par-progress .gbar { grid-column: 1 / -1; height: 5px; background: #0f2c38; border: 1px solid #1c4654; }
 .par-progress .gbar i { display: block; height: 100%; background: linear-gradient(90deg, #d0a020, #ffd24a); }
-.rail-btn.crown { font-size: 15px; color: #ffd24a; }
-.rail-btn.crown.has-new::after { content: attr(data-new); position: absolute; top: -6px; right: -6px; min-width: 14px; padding: 1px 3px; font-size: 8px; line-height: 12px; text-align: center; color: #1a1400; background: #ffd166; border: 1px solid #7a5a10; box-shadow: 1px 1px 0 var(--ink); pointer-events: none; }
-@media (max-width: 760px) { #paragons { left: 60px; transform: none; width: calc(100vw - 72px); } }
 
 /* ---- phones and small screens: the bottom bar, the map, windows, and touch ------------------------------------
    Portrait: cards and lists come up from the bottom as sheets (thumb-high), menus drop beside the rail.
    Landscape (short screens): windows take the height of the screen beside the rail, and the rail's buttons shrink so
    the pins fit. Either way windows are solid and above the rail and the bottom bar, the news is one line, and the map
-   comes and goes with a button beside the zoom. */
+   comes and goes with its map toggle. */
 .slice { height: auto; aspect-ratio: 211 / 48; }
 .map-toggle { display: none; }
 @media (max-width: 760px), (max-height: 500px) {
@@ -1328,7 +1325,7 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
   .pop, .spawn-card, #hud { background: rgb(8, 26, 34); }
   .bottom { z-index: 6; }
   .sky { z-index: 7; }
-  .creature, .object, .spawn-card, #hud, .actions, #guide, #wild, #paragons, .evo, .hatch, .nb-ask, .signin-nudge { z-index: 9; }
+  .creature, .object, .spawn-card, #hud, .actions, #guide, .evo, .hatch, .nb-ask, .signin-nudge { z-index: 9; }
   .pop-head .icon, .cr-head .icon, .sc-head .icon { min-width: 34px; min-height: 34px; }
   button, .rail-btn { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
   /* (Out from under a notch or the rounded corners.) */
@@ -1348,18 +1345,18 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
   .evo { left: 8px !important; right: 8px; width: auto !important; transform: none !important; }
   /* The map floats above the news at the right, when it's shown. */
   body.map-open .mini-wrap { position: fixed; right: max(8px, env(safe-area-inset-right)); bottom: 164px; z-index: 1; } /* (above the news line) */
-  .minimap, .slice, .map-sections, .map-tools { width: min(176px, var(--map-fit-width, 176px)); }
+  .minimap, .slice, .map-tools { width: min(176px, var(--map-fit-width, 176px)); }
   .corner { gap: 4px; }
 }
 @media (max-height: 500px) {
   .rail { gap: 4px; max-height: calc(100vh - 64px); }
-  .rail-btn, .rail-pins > button, .ani, .census-btn, .wild-dock, .hatch-dock { width: 36px; height: 36px; }
+  .rail-btn, .rail-pins > button, .ani, .census-btn, .hatch-dock { width: 36px; height: 36px; }
   .rail-pins { gap: 4px; }
   .rail-pins .ticon { width: 24px; height: 24px; }
   #hud { top: 56px; left: auto; right: 76px; max-height: calc(100vh - 64px); }
   .actions { top: 8px; bottom: auto !important; left: 56px; transform: none; width: min(440px, calc(100vw - 68px)); max-height: calc(100vh - 16px); }
   /* (Under the pond's bar, which stays in view.) */
-  #guide, #wild, #paragons, .hatch, .evo { top: 56px !important; left: 56px !important; transform: none !important; width: min(600px, calc(100vw - 68px)) !important; max-height: calc(100vh - 64px) !important; }
+  #guide, .hatch, .evo { top: 56px !important; left: 56px !important; transform: none !important; width: min(600px, calc(100vw - 68px)) !important; max-height: calc(100vh - 64px) !important; }
   .creature, .object { top: 56px; bottom: auto; left: auto; right: max(8px, env(safe-area-inset-right)); width: min(380px, calc(100vw - 68px)); max-height: calc(100vh - 64px); }
   .census, .log-panel { position: fixed; top: 56px; bottom: auto; left: 56px; right: auto; width: min(560px, calc(100vw - 68px)); transform: none; max-height: calc(100vh - 64px); }
   .spawn-card { top: 56px !important; bottom: auto !important; max-height: calc(100vh - 64px); }
@@ -1369,8 +1366,8 @@ button.done[data-tool] { opacity: 0.45; filter: grayscale(1); cursor: not-allowe
   .log { flex: 0 1 280px; }
   .item-bar { padding: 4px; gap: 4px; }
   .dock-bar { padding: 2px; }
-  .minimap, .slice, .map-sections, .map-tools { width: min(150px, var(--map-fit-width, 150px)); }
-  .corner .zoom button, .map-toggle { width: 32px; height: 30px; }
+  .minimap, .slice, .map-tools { width: min(150px, var(--map-fit-width, 150px)); }
+  .map-toggle { width: 32px; height: 30px; }
   .banner { top: 56px; }
   .narrator { top: 100px; }
 }
@@ -1467,7 +1464,6 @@ html:not(.font-pixel) .sc-facts { font-size: 12px; }
 body.map-tall.map-open .mini-wrap { position: fixed; top: 8px; left: max(64px, env(safe-area-inset-left)); right: auto; bottom: auto; z-index: 8; width: min(calc(81vh - 50px), calc(100vw - 80px)); padding: 4px; background: var(--panel); border: 2px solid var(--edge); box-shadow: 4px 4px 0 var(--ink); }
 body.map-tall.map-open .mini-wrap .minimap,
 body.map-tall.map-open .mini-wrap .slice,
-body.map-tall.map-open .mini-wrap .map-sections,
 body.map-tall.map-open .mini-wrap .map-tools { display: block; width: 100%; max-width: none; }
 body.map-tall.map-open .mini-wrap .map-tools { display: flex; }
 body.map-tall.map-open .mini-wrap .minimap { height: auto; }
@@ -1481,26 +1477,15 @@ body.map-tall.map-open .mini-wrap .slice { height: auto; }
   #show-hud:hover .menu-line { animation: none !important; }
 }
 
-/* The compact dock keeps the strongest species in view; the arrow unfolds the full list. */
-.dock-bar:not(.expanded) .animals { overflow-y: hidden; }
-.dock-bar:not(.expanded) .ani-label,
-.dock-bar:not(.expanded) .ani.dock-overflow { display: none; }
-.dock-bar.expanded { width: min(220px, calc(100vw - 80px)); align-items: stretch; }
-.dock-bar.expanded .animals { width: 100%; max-height: calc(100vh - 280px); overflow-y: auto; align-items: stretch; }
-.dock-bar.expanded .ani,
-.dock-bar.expanded .ani.dock-overflow { display: flex; justify-content: flex-start; gap: 8px; width: 100%; height: 42px; padding: 2px 9px; }
-.dock-bar.expanded .ani img { flex: none; max-width: 32px; max-height: 32px; object-fit: contain; }
-.dock-bar.expanded .ani-label { display: block; min-width: 0; padding-right: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+/* The compact dock keeps spawn shortcuts; Animals opens the full list. */
+.dock-bar .animals { overflow-y: hidden; }
+.dock-bar .ani-label,
+.dock-bar .ani.dock-overflow { display: none; }
 .ani.undiscovered { border-style: dashed; }
 .ani.undiscovered img { opacity: 0.52; }
-.dock-bar.expanded .wild-dock { align-self: stretch; width: 100%; height: 32px; flex-direction: row; justify-content: space-between; padding: 0 10px; }
-.dock-bar.expanded .wild-dock b { margin-left: 0; }
 .sc-arrival { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .sc-arrival .sc-buy { min-width: 0; }
 .spawn-card .boost:disabled { opacity: 0.48; cursor: not-allowed; }
-@media (max-height: 500px) {
-  .dock-bar.expanded .animals { max-height: calc(100vh - 170px); }
-}
 @media (max-width: 760px), (max-height: 500px) {
   .sky { z-index: 10; } /* keep the menu toggle reachable above an open panel */
 }
@@ -1523,7 +1508,20 @@ body.map-tall.map-open .mini-wrap .slice { height: auto; }
 .cr-meter .bar { margin-top: 0; }
 .cr-meter b { font-weight: 400; color: var(--text); font-variant-numeric: tabular-nums; }
 .cr-size { font-size: 10px; color: #bff4ff; white-space: nowrap; }
-.cr-mood { color: var(--muted); }
+.cr-states { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 8px 0; }
+.cr-state { display: grid; grid-template-columns: 17px minmax(0, 1fr); grid-template-areas: "icon label" "icon value"; align-items: center; gap: 2px 5px; min-width: 0; min-height: 42px; padding: 5px; border: 1px solid #285060; background: #0b2530; box-shadow: none; text-align: left; }
+.cr-state svg { grid-area: icon; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: square; stroke-linejoin: miter; shape-rendering: crispEdges; color: var(--metric-color, #91bfce); }
+.cr-state-label { grid-area: label; font-size: 8px; color: #a8c8cd; line-height: 1.2; }
+.cr-state-value { grid-area: value; margin: 0; color: var(--metric-color, var(--text)); font-size: 10px; font-weight: 400; line-height: 1.3; overflow-wrap: anywhere; }
+.cr-state.good { --metric-color: #9de0b0; }
+.cr-state.warn { --metric-color: #f0c46d; }
+.cr-state.bad { --metric-color: #ff8b86; }
+.cr-state:focus-visible { outline: 2px solid var(--hot); outline-offset: 1px; }
+.cr-states.compact { gap: 3px; margin: 3px 0 6px; }
+.cr-states.compact .cr-state { grid-template-areas: "icon value"; min-height: 30px; padding: 4px; }
+.cr-states.compact .cr-state-label { display: none; }
+.cr-states.compact .cr-state-value { font-size: 9px; }
+@media (max-width: 400px) { .cr-states:not(.compact) { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .cr-tabs { display: flex; gap: 0; margin: 10px -2px 0; border-bottom: 1px solid var(--btn-edge); overflow-x: auto; }
 .cr-tabs button { flex: 1 0 auto; min-height: 30px; padding: 4px 8px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; box-shadow: none; font-size: 10px; color: var(--muted); }
 .cr-tabs button[aria-selected="true"] { color: var(--hot); border-bottom-color: var(--hot); }

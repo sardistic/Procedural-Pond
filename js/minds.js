@@ -136,7 +136,7 @@ function mindLocomotion(c) {
   return 'crawler';
 }
 const mindRarity = (c) => Math.max(tierOf(c.life?.traits || []), SPECIES_STATS[c.species]?.rarity || 0);
-const mindEligible = (c) => mindSupported(c);
+const mindEligible = (c) => !(typeof PondPlatform !== 'undefined' && PondPlatform.offline) && mindSupported(c);
 // A finite top speed for any body (dragonflies and jellies have no maxSpeed).
 const mindTop = (c) => Number.isFinite(c.maxSpeed) && c.maxSpeed > 0 ? c.maxSpeed : Number.isFinite(c.cruise) && c.cruise > 0 ? c.cruise * 1.6 : 10;
 const mindHere = (c) => c && !c.gone && !c.caught && !c.leaving && !c.dying;

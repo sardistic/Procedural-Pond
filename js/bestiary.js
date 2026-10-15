@@ -79,6 +79,24 @@ class DesignedFish extends WildFish {
     }
     if (X.has('glowspots')) for (let i = 1; i < nb - 1; i += 2) for (const s of [-1, 1]) r.dot(b.px(i, s * PI / 2.4, 0.3), b.py(i, s * PI / 2.4, 0.3), z + w[i] * 0.4, gm, gid);
     if (X.has('eyes')) for (let i = 1; i < nb - 1; i++) for (const s of [-1, 1]) if (Math.sin(t * 0.8 + i * 1.3 + s) > -0.3) r.dot(b.px(i, s * PI / 3, 0), b.py(i, s * PI / 3, 0), top(i), gm, gid);
+    if (X.has('filaments')) for (const side of [-1, 1]) {
+      const i=nb-3, length=Math.max(2,sp.W*k), a=b.a[i]+PI+side*0.4;
+      let x=b.px(i,side*PI/2,0), y=b.py(i,side*PI/2,0);
+      for (let j=1;j<=4;j++) {
+        const angle=a+Math.sin(t*1.8-j*0.65+this.phase)*0.22;
+        const nx=x+Math.cos(angle)*length/2, ny=y+Math.sin(angle)*length/2;
+        r.tube(x,y,0.25,z,nx,ny,0.1,z+Math.sin(t+j)*0.3,0.8,fin,id); x=nx; y=ny;
+      }
+    }
+    if (X.has('ribcage')) for (let i=2;i<nb-2;i+=2) for (const side of [-1,1]) {
+      r.tube(b.x[i],b.y[i],0.3,top(i),b.px(i,side*PI/2,0.2),b.py(i,side*PI/2,0.2),0.15,z+0.4,0.8,sp.accent,id);
+    }
+    if (X.has('crown')) for (let i=-2;i<=2;i++) {
+      const a=h+i*0.45+Math.sin(t*0.6+i)*0.08, length=w[0]*(1.4+0.2*Math.cos(i));
+      const x=b.x[0]+Math.cos(a)*length, y=b.y[0]+Math.sin(a)*length;
+      r.tube(b.x[0],b.y[0],0.25,top(0),x,y,0.12,top(0)+1,0.8,fin,id);
+      r.ellipsoid(x,y,0.5,0.5,0,top(0)+1,0.5,gm,gid);
+    }
   }
 }
 const WHITE_FANG = mat('#8a8a80', '#bcbcb0', '#e4e4d8', '#ffffff'), DOME_MAT = mat('#3a6a5a', '#5a9a8a', '#8ad0c0', '#d0fff0');
@@ -113,10 +131,9 @@ class DesignedCrawler extends Walker {
     this.drawLegs(r, this.colA);
     this.drawSpine(r, 0, n - 1, z, 0.6, this.skin, id);
     if (L.shell) { const i = Math.min(n - 1, Math.round(n * 0.55)); r.ellipsoid(b.x[i], b.y[i], b.w[i] * 1.7, b.w[i] * 1.5, b.a[i], z + b.w[i] * 0.3, b.w[i] * 1.4, ramp(...L.shell), id); }
-    if (L.claws) for (const s of [-1, 1]) {
-      const a = h + s * 0.55, ex = b.x[0] + Math.cos(a) * 3.2, ey = b.y[0] + Math.sin(a) * 3.2;
-      r.tube(b.px(0, s * 0.8, 0), b.py(0, s * 0.8, 0), 0.5, z, ex, ey, 0.6, z + 0.4, 0.8, this.colA, id);
-      r.ellipsoid(ex + Math.cos(a) * 0.8, ey + Math.sin(a) * 0.8, 1.2, 0.75, a, z + 0.4, 0.8, this.col, id);
+    if (L.claws) for (const side of [-1, 1]) {
+      drawActionClaw(r, this, b.px(0, side * 0.8, 0), b.py(0, side * 0.8, 0), h, side,
+        Math.max(3.5, b.w[0] * 2), this.colA, this.col, z + 0.2, T);
     }
     if (L.antennae) for (const s of [-1, 1]) { const a = h + s * (0.35 + 0.1 * Math.sin(T * 3 + s)); r.tube(b.x[0], b.y[0], 0.2, z + 0.6, b.x[0] + Math.cos(a) * L.antennae, b.y[0] + Math.sin(a) * L.antennae, 0.12, z + 0.9, 0.8, this.colA, id); }
     if (L.proboscis) { const a = h + Math.sin(T * 1.5) * 0.3; r.tube(b.x[0], b.y[0], 0.4, z + 0.3, b.x[0] + Math.cos(a) * 5, b.y[0] + Math.sin(a) * 5, 0.3, z + 0.3, 0.8, this.colA, id); }

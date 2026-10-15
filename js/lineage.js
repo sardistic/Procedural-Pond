@@ -26,7 +26,7 @@ function earnSuper(world, kind, traits, why) {
   G.supers = [...(G.supers || []), { k: kind, traits: (traits || []).filter((t) => t !== 'paragon').slice(0, 5) }];
   const what = `a paragon ${[...traits].slice(0, 3).join(' ')} ${SINGULAR[kind] || kind}`.replace(/\s+/g, ' ');
   logEvent(world, `✦ A Paragon earned: ${what} (${why}). Claim it from ♛ Paragons on the left`, null, { cat: 'rare', pri: 3 });
-  if (typeof refreshParagonBadge === 'function') refreshParagonBadge();
+  if (typeof refreshAnimalsBadge === 'function') refreshAnimalsBadge();
   if (typeof narrate === 'function') narrate(world, 'super', { what: capFirst(what) });
 }
 

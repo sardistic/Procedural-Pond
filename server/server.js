@@ -79,13 +79,8 @@ const SESSION_DAYS = 60;
 const SESSION_COOKIE = 'pond_session', STATE_COOKIE = 'pond_oauth';
 const SECURE = PUBLIC_URL.startsWith('https:') ? '; Secure' : '';
 
-const SPECIES = new Set(['koi', 'tetra', 'eel', 'axolotl', 'turtle', 'crab', 'ray', 'frog', 'snake', 'snail', 'jelly', 'clown',
-  'puffer', 'octopus', 'duck', 'shrimp', 'dragonfly', 'wild', 'starfish',
-  'shark', 'sandshark', 'angler', 'gulper', 'vampire', 'isopod', 'catfish', 'cavefish', 'olm', 'kraken', 'leviathan', 'watcher',
-  'snailfish', 'frilled', 'boneeel', 'siphon', 'squid', 'deepone', 'sleeper',
-  'trilobite', 'anomalocaris', 'ammonite', 'eurypterid', 'lungfish', 'dunkleosteus', 'coelacanth', 'placoderm', 'temnospondyl', 'plesiosaur', 'mosasaur', 'hyneria',
-  // the bestiary (js/bestiary.js)
-  'mandarin', 'tang', 'lionfish', 'seahorse', 'moray', 'hermit', 'cleaner', 'nudibranch', 'goldfish', 'guppy', 'betta', 'loach', 'crayfish', 'newt', 'pleco', 'pike', 'lanternfish', 'hatchetfish', 'combjelly', 'sturgeon', 'burbot', 'paddlefish', 'viperfish', 'dragonfish', 'oarfish', 'cavecrab', 'glassfish', 'cavesalamander', 'barreleye', 'tripodfish', 'seaspider', 'wraithcarp', 'belljelly', 'choirfish', 'amphipod', 'cuskeel', 'cryptcrab', 'shroudfish', 'firesquid', 'swallower', 'rootcrawler', 'lampeel', 'gargoyle', 'lanternjelly', 'bellwarden', 'runefish', 'dreamer', 'thoughtfish', 'opabinia', 'helicoprion', 'arandaspis', 'tiktaalik', 'glasseel', 'voidmanta', 'lattice', 'starfin', 'hollowwalker', 'mirrorfish']);
+// Mirrored frontend catalogue; the expansion browser test checks it for drift.
+const SPECIES = new Set(require('./species.json'));
 const TRAIT_RARITY = {
   pale: 1, piebald: 1, giant: 2, dwarf: 2, melanistic: 2, xanthic: 2, marbled: 2, axanthic: 3, albino: 3, leucistic: 3,
   shiny: 4, ghost: 4, glow: 4, chimera: 5, touched: 4, changed: 5, eldritch: 7,
@@ -247,7 +242,7 @@ function cleanFind(f) {
 function cleanMeta(m) {
   if (!m || typeof m !== 'object') m = {};
   return {
-    points: int(m.points, 0, 1e12), erosion: Math.max(0, Math.min(1e7, Number(m.erosion) || 0)), animals: int(m.animals, 0, 5000), species: int(m.species, 0, 200), rares: int(m.rares, 0, 5000),
+    points: int(m.points, 0, 1e12), erosion: Math.max(0, Math.min(1e7, Number(m.erosion) || 0)), animals: int(m.animals, 0, 5000), species: int(m.species, 0, 5000), rares: int(m.rares, 0, 5000),
     gen: int(m.gen, 0, 100000), days: Math.max(0, Math.min(1e7, Math.round((Number(m.days) || 0) * 100) / 100)),
     habitat: HABITATS.has(m.habitat) ? m.habitat : 'mixed', board: m.board !== false, best: cleanFind(m.best),
     lock: m.lock === true, // the owner lets visitors look only (no copies of their own)

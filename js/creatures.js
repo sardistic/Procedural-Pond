@@ -465,7 +465,7 @@ class Koi extends Fish {
     r.tube(b.x[10], b.y[10], w[9] * 2.1, z, b.x[11], b.y[11], w[9] * 3.3, z, 0.25, this.fin, id);
     if (r.lod) { this.drawEyes(r, 1.15, 1.1, z + w[0] + 0.6, false); return; } // (in a crowd: no small fins)
     for (const s of [-1, 1]) {
-      r.ellipsoid(b.px(3, s * PI / 3, 0), b.py(3, s * PI / 3, 0), w[3] * 0.92, w[3] * 0.36, b.a[2] - s * PI / 4, z + 0.3, 0.5, this.fin, id);
+      r.ellipsoid(b.px(3, s * PI / 3, 0), b.py(3, s * PI / 3, 0), w[3] * 0.92, w[3] * 0.36, b.a[2] - s * PI / 4 + actionFin(this,s), z + 0.3, 0.5, this.fin, id);
       r.ellipsoid(b.px(7, s * PI / 2, 0), b.py(7, s * PI / 2, 0), w[3] * 0.55, w[3] * 0.2, b.a[6] - s * PI / 4, z + 0.3, 0.4, this.fin, id);
     }
     r.tube(b.x[4], b.y[4], 0.8, z + w[4] + 0.1, b.x[7], b.y[7], 0.6, z + w[7] + 0.1, 0.6, this.fin, id);
@@ -698,10 +698,20 @@ class Walker extends Creature {
   drawLegs(r, m) {
     const z = this.zBody, id = this.id, a = this.body.a;
     for (const L of this.legs) {
-      const ez = 0.8 + L.lift * 0.7;
-      r.tube(L.sx, L.sy, L.r1, z + 0.6, L.ex, L.ey, L.r2, ez, 0.8, m, id);
-      r.tube(L.ex, L.ey, L.r2, ez, L.dfx, L.dfy, L.r2 * 0.9, L.lift, 0.8, m, id);
-      r.ellipsoid(L.dfx, L.dfy, L.foot, L.foot * 0.8, a[L.bi], L.lift, 0.8, m, id);
+      if (!this.anim) {
+        const ez = 0.8 + L.lift * 0.7;
+        r.tube(L.sx, L.sy, L.r1, z + 0.6, L.ex, L.ey, L.r2, ez, 0.8, m, id);
+        r.tube(L.ex, L.ey, L.r2, ez, L.dfx, L.dfy, L.r2 * 0.9, L.lift, 0.8, m, id);
+        r.ellipsoid(L.dfx, L.dfy, L.foot, L.foot * 0.8, a[L.bi], L.lift, 0.8, m, id);
+        continue;
+      }
+      const b = this.body, sa = this.legBase(L) + L.sAng, sd = b.w[L.bi] - L.inset;
+      const sx = b.x[L.bi] + Math.cos(sa) * sd, sy = b.y[L.bi] + Math.sin(sa) * sd;
+      const [tx, ty, lift] = typeof actionFoot === 'function' ? actionFoot(this, L, world.t) : [L.fx, L.fy, L.lift];
+      const [ex, ey, fx, fy] = solveLimb(sx, sy, tx, ty, L.l1, L.l2, L.bend), ez = 0.8 + lift * 0.7;
+      r.tube(sx, sy, L.r1, z + 0.6, ex, ey, L.r2, ez, 0.8, m, id);
+      r.tube(ex, ey, L.r2, ez, fx, fy, L.r2 * 0.9, lift, 0.8, m, id);
+      r.ellipsoid(fx, fy, L.foot, L.foot * 0.8, a[L.bi], lift, 0.8, m, id);
     }
   }
 }

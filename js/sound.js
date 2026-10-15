@@ -20,7 +20,8 @@ const Sound = {
     const ctx = this.ctx = new AC();
     this.master = ctx.createGain();
     this.master.gain.value = 0.55;
-    this.master.connect(ctx.destination);
+    this.output = PondPlatform.audioOutput(ctx, () => this.on);
+    this.master.connect(this.output);
 
     // Two seconds of brown noise, looped, feeds the beds.
     const len = ctx.sampleRate * 2, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);

@@ -17,7 +17,7 @@
   // Without OffscreenCanvas they're drawn here instead (the same code, loaded as a plain script before this one).
   const cv = $('entry-bg');
   let worker = null, send = null;
-  if (cv.transferControlToOffscreen && window.Worker) {
+  if (!PondPlatform.playables && cv.transferControlToOffscreen && window.Worker) {
     try {
       worker = new Worker('js/entry-water.js?v=1');
       const off = cv.transferControlToOffscreen();
@@ -35,7 +35,9 @@
   const handOver = (c) => (worker ? c.transferControlToOffscreen() : c);
   const stopWater = () => { send({ type: 'stop' }); send = () => {}; worker = null; };
   addEventListener('resize', () => { if (root.isConnected) send({ type: 'size', w: innerWidth, h: innerHeight }); });
-  document.addEventListener('visibilitychange', () => send({ type: 'hidden', on: document.hidden }));
+  if (!PondPlatform.playables) document.addEventListener('visibilitychange', () => send({ type: 'hidden', on: document.hidden }));
+  PondPlatform.onPause(() => send({ type: 'hidden', on: true }));
+  PondPlatform.onResume(() => send({ type: 'hidden', on: false }));
   // Your pointer trails ripples across the water; a click drops a big one.
   let lastPoke = 0;
   root.addEventListener('pointermove', (e) => { if (still || (e.target !== root && e.target !== cv) || e.timeStamp - lastPoke < 30) return; lastPoke = e.timeStamp; send({ type: 'poke', x: e.clientX, y: e.clientY, r: 1.6, d: 2.2 }); });
@@ -82,7 +84,7 @@
     // A splash as you dive in, if there's sound (the music on here, or the pond's sound switch).
     let pondSound = false;
     try { pondSound = !!JSON.parse(localStorage.getItem('procedural-pond.opts') || '{}').sound; } catch { /* no storage */ }
-    if (songWanted || pondSound) { try { const a = new Audio('audio/sfx/ui_enter.mp3'); a.volume = 0.1; a.play().catch(() => {}); } catch { /* no audio */ } }
+    if (songWanted || pondSound) { try { const a = new Audio('audio/sfx/ui_enter.mp3'); a.volume = 0.1; PondPlatform.playMedia(a); } catch { /* no audio */ } }
     setTimeout(() => root.remove(), 700);
     document.removeEventListener('keydown', key, true);
     if (window.Entry.onDone) window.Entry.onDone();
@@ -90,10 +92,10 @@
   // Enter or Escape goes in, unless Enter is meant for a link, tab or question that has the focus. (Escape first
   // closes the brains diagram, if it's open.)
   function key(e) {
-    if (e.key === 'Escape' && !$('entry-brains').hidden) { e.preventDefault(); e.stopPropagation(); closeBrains(); return; }
+    if (e.key === 'Escape' && !$('entry-brains').hidden) { if (!PondPlatform.playables) e.preventDefault(); e.stopPropagation(); closeBrains(); return; }
     if (!root.classList.contains('ready')) return;
     const el = document.activeElement, own = el && el !== document.body && el !== root && el !== $('entry-enter') && root.contains(el);
-    if (e.key === 'Escape' || (e.key === 'Enter' && !own)) { e.preventDefault(); e.stopPropagation(); done(false); }
+    if (e.key === 'Escape' || (e.key === 'Enter' && !own)) { if (!PondPlatform.playables || e.key !== 'Escape') e.preventDefault(); e.stopPropagation(); done(false); }
   }
   $('entry-enter').addEventListener('click', () => done(false));
 
@@ -103,7 +105,7 @@
   $('entry-brains-open').addEventListener('click', (e) => { brainsFrom = e.currentTarget; $('entry-brains').hidden = false; $('entry-brains-close').focus(); });
   $('entry-brains-close').addEventListener('click', closeBrains);
   $('entry-brains').addEventListener('click', (e) => { if (e.target === $('entry-brains')) closeBrains(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && root.isConnected && !$('entry-brains').hidden && !root.classList.contains('ready')) { e.preventDefault(); closeBrains(); } }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && root.isConnected && !$('entry-brains').hidden && !root.classList.contains('ready')) { if (!PondPlatform.playables) e.preventDefault(); closeBrains(); } }, true);
 
   // ---- music: the whole of Subdued Progression, quietly, while you're here --------------------------------
   // Its seventeen pieces (audio/music/) played back to back with no gap, looping, through a low gain. Sound needs
@@ -120,13 +122,13 @@
   }
   // Keep about twenty seconds queued: fetch and decode the next piece, start it exactly where the last one ends.
   async function songQueue() {
-    if (!SONG.on || !SONG.ctx) return;
+    if (!SONG.on || !SONG.ctx || PondPlatform.paused) return;
     const files = await songFiles();
-    while (SONG.on && SONG.at - SONG.ctx.currentTime < 20) {
+    while (SONG.on && !PondPlatform.paused && SONG.at - SONG.ctx.currentTime < 20) {
       const f = files[SONG.next % files.length];
       let buf;
       try { buf = await SONG.ctx.decodeAudioData(await fetch(f.url, { cache: 'force-cache' }).then((r) => r.arrayBuffer())); } catch { return; }
-      if (!SONG.on) return;
+      if (!SONG.on || PondPlatform.paused) return;
       const src = SONG.ctx.createBufferSource();
       src.buffer = buf; src.connect(SONG.gain);
       const at = Math.max(SONG.at, SONG.ctx.currentTime + 0.05);
@@ -141,7 +143,7 @@
     if (!SONG.ctx) {
       SONG.ctx = new AC(); SONG.gain = SONG.ctx.createGain(); SONG.gain.gain.value = 0;
       const lp = SONG.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5200; // (low and soft: it sits under the screen)
-      SONG.gain.connect(lp).connect(SONG.ctx.destination);
+      SONG.gain.connect(lp).connect(PondPlatform.audioOutput(SONG.ctx, () => SONG.on));
     }
     if (SONG.ctx.state === 'suspended') SONG.ctx.resume();
     SONG.on = true;
@@ -192,7 +194,7 @@
   try { const k = localStorage.getItem('pond.entryTab'); if (tabs.includes(k)) pick(k); } catch { /* no storage */ }
 
   // ---- the server's parts: public ponds, high scores, signing in ----------------------------------------
-  const api = /^https?:$/.test(location.protocol) ? '/api' : null;
+  const api = !PondPlatform.offline && /^https?:$/.test(location.protocol) ? '/api' : null;
   const getJson = (path) => fetch(api + path, { headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin' })
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))));
   const node = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -222,6 +224,16 @@
   try { sortBy = localStorage.getItem('pond.entrySort') || 'score'; } catch { /* no storage */ }
   function renderPonds() {
     const box = $('ep-ponds'), out = [];
+    if (PondPlatform.offline) {
+      out.push(node('h2', null, 'Your ponds'));
+      const saves = typeof listSaves === 'function' ? listSaves() : [];
+      for (const s of saves) {
+        const b = node('button', null, s.seed); b.type = 'button';
+        b.addEventListener('click', () => { done(false); openPond(s); }); out.push(b);
+      }
+      out.push(node('p', 'note', saves.length ? 'Choose a pond to carry on, or enter the pond on the left.' : PondPlatform.itch ? 'Feed, plant and build. Your pond saves in this browser on this device.' : 'Feed, plant and build. YouTube keeps your pond so you can return to it.'));
+      box.replaceChildren(...out); return;
+    }
     rowBgs = [];
     if (me && me.user && me.ponds && me.ponds.length) {
       const ul = node('ul', 'list');
@@ -286,9 +298,10 @@
     },
     // The pond is ready: the Enter button lights up (or straight in, if skipped or only visiting).
     ready(info) {
+      if (PondPlatform.offline) renderPonds();
       set('Ready', 1);
       root.classList.add('ready');
-      if (skip || info.skip) { done(); return; }
+      if (skip || info.skip) { done(); PondPlatform.gameReady(); return; }
       const line = $('entry-pond');
       line.replaceChildren();
       if (info.name) line.append(info.lead || 'Your pond: ', node('b', null, info.name), info.facts ? ` · ${info.facts}` : '');
@@ -307,12 +320,14 @@
       }
       document.addEventListener('keydown', key, true);
       setTimeout(() => b.focus(), 50);
+      PondPlatform.gameReady();
     },
     done,
     skipping: () => skip,
   };
   // Never strand anyone on the entry screen: if loading fails or stalls, offer the way in anyway.
   const rescue = (why) => { if (!root.isConnected || root.classList.contains('ready')) return;
+    if (PondPlatform.playables) { set(why); return; } // Never announce a broken loading screen as gameReady.
     window.Entry.ready({ name: '', blurb: why, button: 'Enter anyway' }); };
   window.addEventListener('error', () => setTimeout(() => rescue('Something went wrong while the pond was loading. It may still work.'), 1500));
   setTimeout(() => rescue('The pond is taking a long time to load.'), 30000);

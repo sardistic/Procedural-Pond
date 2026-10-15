@@ -11,7 +11,7 @@ const DEFAULT_OPTS = {
 };
 // The water's look (the Waves button): the original pixel water, the 3D wave mesh (water3d.js), or Seascape, the
 // surface raymarched and pixelated (water-sdf.js). (hdWaves stays the switch the rest of the code reads for 3D.)
-const WAVE_LOOKS = { classic: 'Classic', mesh: '3D', sdf: 'Seascape' };
+const WAVE_LOOKS = { classic: 'Classic', mesh: '3D', ...(!PondPlatform.itch ? { sdf: 'Seascape' } : {}) };
 // The pond is a fixed-size world, larger than the screen at the default zoom.
 // "Fit screen" makes it the window at 2x pixels, so zoom 2 fills the screen exactly.
 const WORLD_SIZES = {
@@ -90,7 +90,7 @@ const urlSeed = (params.get('pond') || '').toLowerCase().replace(/[^a-z0-9-]/g, 
 
 // Screen-sized worlds: half the window in each direction (2x pixels), within sane
 // bounds. A shared link carries the exact size so the recipient gets the same pond.
-const screenWorld = () => [clamp(Math.round(innerWidth / 2), 360, 1400), clamp(Math.round(innerHeight / 2), 300, 900)];
+const screenWorld = () => [clamp(Math.round(innerWidth / 2), 360, PondPlatform.playables ? 960 : 1400), clamp(Math.round(innerHeight / 2), 300, PondPlatform.playables ? 540 : 900)];
 world.autoSize = (() => {
   const m = /^(\d{3,4})x(\d{3,4})$/.exec(params.get('size') || '');
   if (!m) return screenWorld();
@@ -310,14 +310,14 @@ function recycle(c, quiet = false) {
 }
 
 // Recycle every animal of a species (asking first, and naming the rare ones).
-function recycleAll(kind) {
+function recycleAll(kind, approved = false) {
   const all = world.creatures.filter((c) => c.life && !c.leaving && !c.unsettled && (c.species === kind || (kind === 'frog' && c.species === 'tadpole')));
   const list = all.filter((c) => !(typeof isSafe === 'function' && isSafe(c))), kept = all.length - list.length;
   if (!list.length) { if (kept) showTicker(`All ${kept} are kept safe`); return 0; }
   const worth = list.reduce((a, c) => a + recycleValue(c), 0), label = SPECIES[kind] ? SPECIES[kind].label : kind;
   const rares = list.filter((c) => tierOf(c.life.traits) >= 2).sort((a, b) => tierOf(b.life.traits) - tierOf(a.life.traits));
   const warn = rares.length ? ` That includes ${rares.length} rare: ${rares.slice(0, 4).map((c) => `${c.life.name} (${TIERS[tierOf(c.life.traits)]} ${c.life.traits.join(' ')})`).join(', ')}${rares.length > 4 ? '…' : ''}.` : '';
-  if (!confirm(`Recycle all ${list.length} ${label.toLowerCase()} for ${worth} essence?${warn}${kept ? ` (${kept} kept safe will stay.)` : ''}`)) return 0;
+  if (!approved && !PondPlatform.ask(`Recycle all ${list.length} ${label.toLowerCase()} for ${worth} essence?${warn}${kept ? ` (${kept} kept safe will stay.)` : ''}`, () => recycleAll(kind, true))) return 0;
   let got = 0;
   for (const c of list) got += recycle(c, true);
   world.targets[kind] = kept;
@@ -660,18 +660,23 @@ function render(full = false) {
     if (Math.abs(sk - 1) > 0.01) r.setScale(c.x, c.y, sk, 1);
     if (pose) r.setPose(pose.x, pose.y, pose.ang, pose.sa, pose.sb, pose.dx, pose.dy, pose.dz);
     const bent = typeof animBend === 'function' && c.anim && animBend(c, world.t); // (its spine bent through the action: anims.js)
-    c.draw(r, t, world);
-    if (Math.abs(sk - 1) > 0.01) r.setScale();
-    if (c.life && c.life.genome.eld) drawEldritch(r, c, t, world);
-    if (c.life) drawQuirks(r, c, t);
-    if (pose) r.setPose(); // (its marks and quirks move with it)
-    if (bent) animUnbend(c);
+    try {
+      c.draw(r, t, world);
+      if (Math.abs(sk - 1) > 0.01) r.setScale();
+      if (c.life && c.life.genome.eld) drawEldritch(r, c, t, world);
+      if (c.life) drawQuirks(r, c, t);
+    } finally {
+      if (Math.abs(sk - 1) > 0.01) r.setScale();
+      if (pose) r.setPose(); // (its marks and quirks move with it)
+      if (bent) animUnbend(c);
+    }
   }
   r.alpha = 1;
   r.lod = 0;
   if (world.opts.bars !== false && typeof drawBars === 'function') drawBars(r, world, near);
   for (const e of world.eggs) e.draw(r, t);
   world.motes.draw(r, world);
+  if (typeof drawFrontierAtmosphere === 'function') drawFrontierAtmosphere(r, world, rect);
   r.castShadows = false;
   for (const e of world.effects) e.draw(r, t);
   r.castShadows = true;
@@ -801,8 +806,11 @@ function drawBones() {
   }
 }
 
-let last = performance.now(), mapTimer = 0, nbTimer = 2;
+let last = performance.now(), mapTimer = 0, nbTimer = 2, frameId = 0, frameStarted = false;
+function queueFrame() { if (!frameId && !PondPlatform.paused) frameId = requestAnimationFrame(frame); }
 function frame(now) {
+  frameId = 0;
+  if (PondPlatform.paused) return; // Resume schedules one fresh frame; no simulation or rendering while host-paused.
   // The first rAF timestamp can predate the load-time performance.now(); never step backwards.
   const elapsed = Math.max(0, (now - last) / 1000);
   const dt = Math.min(elapsed, 0.05);
@@ -838,8 +846,10 @@ function frame(now) {
   if (statusTimer <= 0) { statusTimer = 1; updateSaveStatus(); if(typeof renderGuideMinds==='function')renderGuideMinds(now); }
   mapTimer -= dt;
   if (mapTimer <= 0) { mapTimer = 0.12; drawMinimap(); }
-  requestAnimationFrame(frame);
+  queueFrame();
 }
+PondPlatform.onPause(() => { cancelAnimationFrame(frameId); frameId = 0; if (world.raster) saveNow(); });
+PondPlatform.onResume(() => { last = performance.now(); if (frameStarted) queueFrame(); });
 
 // ---- tools --------------------------------------------------------------------
 
@@ -1203,9 +1213,9 @@ function build(kind, x, y) {
   if (kind === 'hatchery') setHatchery(true);
 }
 
-function demolish(s) {
+function demolish(s, approved = false) {
   const def = STRUCTURES[s.kind];
-  if (!confirm(`Take down the ${def.label.toLowerCase()}? Half its pearls come back.`)) return;
+  if (!approved && !PondPlatform.ask(`Take down the ${def.label.toLowerCase()}? Half its pearls come back.`, () => demolish(s, true))) return;
   if (s.kind === 'hatchery' && world.hatchery) {
     while (world.hatchery.stock.length) releaseStock(world, 0);
     setHatchery(false);
@@ -1312,6 +1322,7 @@ function viewParams(u) {
   return u;
 }
 function scheduleViewUrl() {
+  if (PondPlatform.playables) return;
   if (!viewUrlReady || viewUrlTimer) return;
   viewUrlTimer = setTimeout(() => {
     viewUrlTimer = 0;
@@ -1337,7 +1348,6 @@ function screenToWorld(sx, sy) {
 const canvasTransform = (tx, ty, k, r, W, H) => (r === 1 ? `translate(${tx + H * k}px, ${ty}px) scale(${k}) rotate(90deg)`
   : r === 2 ? `translate(${tx + W * k}px, ${ty + H * k}px) scale(${k}) rotate(180deg)`
   : r === 3 ? `translate(${tx}px, ${ty + W * k}px) scale(${k}) rotate(270deg)` : `translate(${tx}px, ${ty}px) scale(${k})`);
-const zoomLabel = document.getElementById('zoom-level');
 // The zoom at which the pond covers the whole window (no border): the view starts one step in from it.
 const coverK = () => { const [w, h] = view.r % 2 ? [world.H, world.W] : [world.W, world.H]; return Math.max(1, Math.ceil(Math.min(16, Math.max(innerWidth / w, innerHeight / h)) - 1e-6)); };
 const defaultK = () => coverK() + 1; // one step in, so the pond carries on past the edges
@@ -1371,7 +1381,6 @@ function applyView() {
   }
   view.lastTx = view.tx; view.lastTy = view.ty;
   canvas.style.transform = canvasTransform(view.tx, view.ty, view.k, view.r, world.W, world.H);
-  zoomLabel.textContent = Number.isInteger(view.k) ? `${view.k}×` : 'fit'; // (zoomed all the way out, the pond just covering the window)
   if (typeof placeBeyond === 'function') { placeBeyond(); edgePull(); }
   if (typeof placeHinter === 'function') placeHinter();
   if (typeof placeFine === 'function') placeFine();
@@ -1673,15 +1682,15 @@ function updateChip() {
 
 // ---- minimap ------------------------------------------------------------------------
 // One square section of the pond: the floor, animals, and the current view. The
-// section buttons travel across its longer screen axis; panning follows along.
+// map follows the camera across its longer screen axis.
 
 const mini = document.getElementById('minimap'), mctx = mini.getContext('2d');
 const miniBg = document.createElement('canvas');
 let miniSection = 0, miniSampleKey = '';
 function sizeMinimap(W = world.W, H = world.H) {
   if (!W || !H) return;
-  // Leave space for the side slice, section controls, bottom bar, and safe area.
-  const reserved = innerWidth <= 760 ? 255 : innerHeight <= 500 ? 235 : 210;
+  // Leave space for the side slice, bottom bar, and safe area.
+  const reserved = innerWidth <= 760 ? 225 : innerHeight <= 500 ? 205 : 180;
   const fit = Math.max(56, Math.min(211, Math.floor(innerHeight - reserved)));
   mini.closest('.mini-wrap').style.setProperty('--map-fit-width', `${fit}px`);
   miniSampleKey = '';
@@ -1708,9 +1717,6 @@ const miniDisplay = (x, y) => view.r === 1 ? [world.H - y, x] : view.r === 2 ? [
 const miniWorld = (u, v) => view.r === 1 ? [v, world.H - u] : view.r === 2 ? [world.W - u, world.H - v]
   : view.r === 3 ? [world.W - v, u] : [u, v];
 function miniUi(g) {
-  $('map-section-count').textContent = `Section ${miniSection + 1} / ${g.count}`;
-  $('map-prev').disabled = miniSection === 0;
-  $('map-next').disabled = miniSection === g.count - 1;
   mini.title = `Section ${miniSection + 1} of ${g.count}. Click or drag to move the view.`;
 }
 function miniFollowView() {
@@ -1900,18 +1906,7 @@ expandMap.addEventListener('click', () => {
   drawMinimap(); drawSlice();
 });
 document.getElementById('map-depths').addEventListener('click', () => setEvo(!evoUi.open));
-function miniPage(delta) {
-  const g = miniLayout(), next = clamp(miniSection + delta, 0, g.count - 1);
-  if (next === miniSection) return;
-  miniSection = next;
-  const section = miniLayout(), [x, y] = miniWorld(section.x + section.span / 2, section.y + section.span / 2);
-  settleMapView();
-  centerOn(x, y);
-  drawMinimap();
-}
-document.getElementById('map-prev').addEventListener('click', () => miniPage(-1));
-document.getElementById('map-next').addEventListener('click', () => miniPage(1));
-// On a phone the map comes and goes with a button beside the zoom (shown at first when the screen is short and
+// On a phone the map comes and goes with its toggle (shown at first when the screen is short and
 // wide, or big enough; remembered once you choose).
 {
   const btn = document.getElementById('map-toggle');
@@ -2428,7 +2423,7 @@ function button(label) {
 }
 
 // Where the page lives: "/" on the web; the file itself when opened from disk.
-const HOME = location.protocol === 'file:' ? location.pathname : '/';
+const HOME = location.protocol === 'file:' || PondPlatform.itch ? location.pathname : '/';
 
 function shareUrl() {
   const u = new URL(location.href);
@@ -2461,12 +2456,9 @@ function updateCard(dt) {
   traits.textContent = [d.traits.length && `✦ ${TIERS[d.tier]}: ${traitText(d.traits, 5)}`, d.carries.length && `carries ${d.carries.join(', ')}`].filter(Boolean).join('  ·  ');
   traits.style.color = d.tier ? TIER_COLOR[d.tier] : '';
   card.querySelector('.meta').textContent = [d.stage, d.gen != null && `gen ${d.gen}`, age].filter(Boolean).join(' · ');
-  card.querySelector('.mood').textContent = d.mood;
-  const likes = c.life ? likesOf(c) : null;
-  card.querySelector('.care').textContent = !c.life ? '' : [
-    d.comfort != null && (likes ? `${comfortWord(d.comfort)} (likes ${likes.map((k) => LIKE_LABEL[k]).join(', ')})` : comfortWord(d.comfort)),
-    d.fed && 'well fed', ...d.temper,
-  ].filter(Boolean).join(' · ');
+  const states = c.life ? animalStateMetrics(world, c) : [];
+  card.querySelector('.mood').textContent = states[0]?.value || d.mood;
+  card.querySelector('.care').textContent = states.filter((s) => s.key !== 'behavior').map((s) => `${s.label} ${s.value}`).join(' · ');
   const bar = card.querySelector('.bar');
   bar.hidden = d.energy == null;
   if (d.energy != null) bar.firstElementChild.style.width = `${Math.round(d.energy * 100)}%`;
@@ -2627,7 +2619,6 @@ function renderQuickBar() {
 // All actions, as icons, by kind; each kind folds away (remembered in this browser).
 const CATS_KEY = 'pond.actCats';
 function setActions(open) {
-  if (open && dockUi.expanded) setDockExpanded(false);
   $('actions').hidden = !open;
   updateActiveTool();
   $('rail-more').setAttribute('aria-expanded', open);
@@ -2661,8 +2652,6 @@ addEventListener('resize', placeActions);
     });
   }
   $('rail-more').addEventListener('click', () => setActions($('actions').hidden));
-$('wild-btn').addEventListener('click', () => setDockExpanded(!dockUi.expanded));
-$('wild-close').addEventListener('click', () => setWild(false));
   $('actions-close').addEventListener('click', () => setActions(false));
 }
 
@@ -2741,7 +2730,7 @@ function refreshSpeciesButtons() {
   if (MINI_LAYERS[miniLayer][0] === 'water' && world.opts.habitat !== 'mixed') setMiniLayer(0);
   if (typeof renderQuickBar === 'function' && $('quickbar')) renderQuickBar();
   if (typeof markBuilt === 'function') { markBuilt(); markNew(); }
-  if (typeof refreshWildButton === 'function') refreshWildButton();
+  if (typeof refreshAnimalsBadge === 'function') refreshAnimalsBadge();
   if (typeof updateDockVisibility === 'function') updateDockVisibility();
   syncHard();
 }
@@ -2776,10 +2765,10 @@ $('opt-floor').addEventListener('change', (e) => { setOpt('floor', e.target.valu
 $('opt-water').addEventListener('change', (e) => { setOpt('water', e.target.value); rebake(); });
 $('opt-light').addEventListener('change', (e) => setOpt('light', e.target.value));
 $('opt-world').addEventListener('change', (e) => {
-  if (hasHistory() && !confirm(REGROW_WARNING)) { e.target.value = world.opts.world; return; }
-  setOpt('world', e.target.value);
-  if (e.target.value === 'auto') world.autoSize = screenWorld();
-  regrow();
+  const value = e.target.value;
+  const apply = () => { setOpt('world', value); $('opt-world').value = value; if (value === 'auto') world.autoSize = screenWorld(); regrow(); };
+  if (hasHistory() && !PondPlatform.ask(REGROW_WARNING, apply)) { e.target.value = world.opts.world; return; }
+  apply();
 });
 
 // Regrowing a pond (new habitat or world size) keeps its name and its link.
@@ -2797,8 +2786,8 @@ const hasHistory = () => world.days > 1.3 || ECO.births > 0;
 const REGROW_WARNING = 'This regrows the pond from day 1, and its current animals, rares and journal will be lost. ' +
   'To keep them, start a New pond from "Your ponds" instead. Continue?';
 
-function setHabitat(h) {
-  if (h !== world.opts.habitat && hasHistory() && !confirm(REGROW_WARNING)) { refreshSpeciesButtons(); return; }
+function setHabitat(h, approved = false) {
+  if (!approved && h !== world.opts.habitat && hasHistory() && !PondPlatform.ask(REGROW_WARNING, () => setHabitat(h, true))) { refreshSpeciesButtons(); return; }
   setOpt('habitat', h);
   const d = HABITAT_DEFAULTS[h];
   setOpt('water', d.water); setOpt('floor', d.floor);
@@ -2810,9 +2799,9 @@ for (const b of document.querySelectorAll('[data-hab]')) b.addEventListener('cli
 // Hard mode: this pond's own (game.hard), and how new ponds start (opts.hard). See ecology.js.
 const HARD_ASK = 'Hard mode for this pond: animals can’t be bought or summoned, only drawn in by the habitat you build and plant (and lures). ' +
   'Fewer arrive and fewer breed, and time runs slower. Points count half again. New ponds will start in hard mode too, with fewer animals. Turn it on?';
-function setHard(on) {
+function setHard(on, approved = false) {
   if (!world.game || world.observe) { syncHard(); return; }
-  if (on && !hardMode(world) && !confirm(HARD_ASK)) { syncHard(); return; }
+  if (!approved && on && !hardMode(world) && !PondPlatform.ask(HARD_ASK, () => setHard(on, true))) { syncHard(); return; }
   if (on) world.game.hard = true; else delete world.game.hard;
   setOpt('hard', on);
   world.gameDirty = true;
@@ -2895,7 +2884,6 @@ const cycleLight = () => setLight(LIGHT_ORDER[(LIGHT_ORDER.indexOf(world.opts.li
 function setBones(on) { world.bones = on; $('bones').setAttribute('aria-pressed', on); }
 function setPaused(on) { world.paused = on; $('pause').setAttribute('aria-pressed', on); }
 function setHud(show) {
-  if (show && dockUi.expanded) setDockExpanded(false);
   hud.classList.toggle('hidden', !show);
   $('show-hud').setAttribute('aria-pressed', show);
   if (show && typeof census !== 'undefined' && census.open) setCensus(false); // (one window down the left at a time)
@@ -2908,9 +2896,6 @@ $('bones').addEventListener('click', () => setBones(!world.bones));
 $('pause').addEventListener('click', () => setPaused(!world.paused));
 $('collapse').addEventListener('click', () => setHud(false));
 $('show-hud').addEventListener('click', () => setHud(hud.classList.contains('hidden')));
-$('zoom-in').addEventListener('click', () => zoomStep(1));
-$('zoom-out').addEventListener('click', () => zoomStep(-1));
-zoomLabel.addEventListener('click', resetView);
 $('clear').addEventListener('click', () => {
   release();
   for (const c of world.creatures) noteGone(world, c, 'cleared');
@@ -2950,6 +2935,7 @@ function entryChoose({ habitat, hard, create }) {
 // up to date. Only without a server (opened from a file, or it's unreachable)
 // does it fall back to a long link that carries the pond itself.
 async function sharePond() {
+  if (PondPlatform.playables) return;
   let url = null;
   if (world.observe) url = `${shortUrl(linkName(world.observe))}${viewSearch()}`;
   if (!url && Net.base) {
@@ -3060,6 +3046,13 @@ const ago = (ms) => {
 
 function updateSaveStatus() {
   const el = $('save-status');
+  if (PondPlatform.playables) {
+    const status = PondPlatform.saveStatus;
+    el.textContent = saveFailed || status === 'error' ? "couldn't save · retrying" : status === 'preview' ? 'preview · session only' : status === 'pending' ? 'saving to YouTube…' : lastSaved ? 'saved to YouTube' : 'saving…';
+    el.title = 'YouTube keeps your pond and settings. Progress saves regularly and when YouTube pauses the game.';
+    const best = $('yt-best'); if (best) best.textContent = `${PondPlatform.bestDepth.toLocaleString()} fathoms`;
+    return;
+  }
   if (world.observe) { el.textContent = 'look only'; el.title = "Someone else's pond: nothing here is saved or changed"; return; }
   el.textContent = saveFailed ? "can't save here" : lastSaved ? `saved ${ago(Date.now() - lastSaved)}` : 'saving…';
   el.title = saveFailed
@@ -3070,6 +3063,17 @@ function updateSaveStatus() {
 // Switch to another saved pond (a page load, so everything starts clean).
 function openPond(s) {
   if (s.seed !== world.seed) saveNow();
+  if (PondPlatform.offline) {
+    const resume = loadSave(s.seed);
+    if (!resume) return;
+    world.resume = resume; world.seed = resume.seed; world.expandPx = resume.expandPx || 0;
+    world.shoreSide = resume.shoreSide; world.autoSize = (resume.base || resume.size).slice();
+    Object.assign(world.opts, resume.opts); syncControls(); layout(true);
+    closeWindows(); world.hover = null;
+    scoreUi.shown = ''; updateScoreHud(); world.journalDirty = true;
+    syncHard(); updateCounts(); saveNow(); renderPondList();
+    return;
+  }
   world.noSave = true; // don't let the page-hide save overwrite what we're opening
   location.assign(s.link && HOME === '/' ? `/${s.slug || s.link}` : `${HOME}?pond=${encodeURIComponent(s.seed)}`);
 }
@@ -3110,9 +3114,8 @@ function renderPondList() {
       del.setAttribute('aria-label', `Delete ${s.seed}`);
       del.title = 'Delete this pond';
       del.addEventListener('click', () => {
-        if (!confirm(`Delete the pond "${s.seed}"? Its animals and journal will be gone for good.`)) return;
-        deleteSave(s.seed);
-        renderPondList();
+        const remove = () => { deleteSave(s.seed); renderPondList(); };
+        if (PondPlatform.ask(`Delete the pond "${s.seed}"? Its animals and journal will be gone for good.`, remove)) remove();
       });
       li.append(del);
     }
@@ -3128,6 +3131,7 @@ $('ponds').addEventListener('toggle', () => { if ($('ponds').open) renderPondLis
 // from a file there is no server, so there the whole pond rides in the #fragment.
 let linkBusy = false;
 async function updateLink() {
+  if (PondPlatform.playables) return;
   if (linkBusy || world.noSave || !world.raster) return;
   if (HOME === '/') {
     const want = world.link ? `/${linkName(world.link)}${viewSearch()}` : `/${new URL(shareUrl()).search}`;
@@ -3147,13 +3151,13 @@ async function updateLink() {
   }
 }
 
-addEventListener('visibilitychange', () => {
+if (!PondPlatform.playables) addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'hidden') return;
   // (Nobody's watching: the heavy work that would hitch a big pond is done now.)
   try { if (growBig()) growAway(); bakeAway(); } catch (e) { console.warn(e); }
   saveNow(); syncPond();
 });
-addEventListener('pagehide', saveNow);
+if (!PondPlatform.playables) addEventListener('pagehide', saveNow);
 
 const PAN_KEYS = { arrowleft: [1, 0], arrowright: [-1, 0], arrowup: [0, 1], arrowdown: [0, -1], a: [1, 0], d: [-1, 0], w: [0, 1], s: [0, -1] };
 addEventListener('keydown', (e) => {
@@ -3215,6 +3219,8 @@ const entryPaint = () => new Promise((resolve) => { let done = false; const go =
   requestAnimationFrame(() => setTimeout(go, 0)); setTimeout(go, 60); });
 
 async function boot() {
+  await PondPlatform.ready;
+  await PondPlatform.waitActive();
   if (window.Entry) Entry.status('Finding the pond…', 0.62);
   setTool('pointer');
   initHud();
@@ -3292,6 +3298,7 @@ async function boot() {
   }
   syncControls();
   if (window.Entry) { Entry.status(resume ? 'Filling the pond…' : 'Digging a new pond…', 0.75); await entryPaint(); }
+  await PondPlatform.waitActive();
   layout(true);
   world.linkAdopt = false;
   const vx = Number(params.get('x')), vy = Number(params.get('y')), vz = Number(params.get('z')), vr = Number(params.get('r'));
@@ -3344,10 +3351,10 @@ async function boot() {
   // A word about signing in, once the pond has had a little while (and not again for a few days if put off).
   setTimeout(() => { if (typeof maybeNudgeSignIn === 'function') maybeNudgeSignIn(); }, firstVisit ? 90000 : 20000);
   if (location.hash === '#bones') setBones(true);
-  if (observe) { /* keep the address: it names the pond you're looking at */ } else if (HOME === '/') updateLink(); else history.replaceState(null, '', `${HOME}${new URL(shareUrl()).search}`);
+  if (PondPlatform.playables || observe) { /* host owns navigation, or keep the observed address */ } else if (HOME === '/') updateLink(); else history.replaceState(null, '', `${HOME}${new URL(shareUrl()).search}`);
   syncTimer = world.link ? 30 : adopt ? 2 : 8; // a pond without a link gets one in a few seconds
-  requestAnimationFrame(frame);
-  if (window.Entry) { Entry.status('Waking the animals…', 0.95); await entryPaint(); Entry.ready(entryInfo(observe)); }
+  frameStarted = true; queueFrame();
+  if (window.Entry) { Entry.status('Waking the animals…', 0.95); await entryPaint(); await PondPlatform.waitActive(); Entry.ready(entryInfo(observe)); }
   else document.getElementById('entry')?.remove(); // (no controller ran: never leave the screen over the pond)
   // Back from signing in (or not); either way, your ponds go into your account.
   const login = params.get('login');

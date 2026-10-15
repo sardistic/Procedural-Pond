@@ -18,6 +18,7 @@ const MAX_SAVES = 12;
 // ponds only from pages of this season, so a page left open from before can't bring an old pond back.
 const SAVE_EPOCH = 2;
 const saveReset = (() => {
+  if (typeof PondPlatform !== 'undefined' && PondPlatform.offline) return false; // Packaged progress is independent of website seasons.
   try {
     if (typeof localStorage === 'undefined' || localStorage.getItem('pond.epoch') === String(SAVE_EPOCH)) return false;
     let n = 0;
@@ -56,6 +57,7 @@ function deleteSave(seed) {
   try {
     localStorage.removeItem(SAVE_PREFIX + seed);
     localStorage.setItem(SAVE_INDEX, JSON.stringify(readIndex().filter((s) => s.seed !== seed)));
+    if (typeof PondPlatform !== 'undefined') PondPlatform.changed();
   } catch { /* storage unavailable */ }
 }
 
@@ -63,6 +65,12 @@ function deleteSave(seed) {
 // least recently played ponds are dropped to make room. Throws if even that fails.
 function storeSave(d) {
   const text = JSON.stringify(d);
+  const info = {
+    seed: d.seed, habitat: d.opts.habitat, days: d.days, savedAt: d.savedAt, points: d.game ? d.game.points : 0, link: d.link ? d.link.id : null, slug: (d.link && d.link.slug) || null,
+    depth: fathomsOf(d.erosion ? d.erosion.e : 0, d.opts.habitat === 'fresh' ? 'fresh' : 'salt'),
+    animals: d.creatures.length, rares: d.creatures.filter((c) => c.L.traits && c.L.traits.length).length,
+  };
+  if (typeof PondPlatform !== 'undefined' && PondPlatform.playables) return PondPlatform.storePond(d, info);
   const list = listSaves().filter((s) => s.seed !== d.seed);
   while (list.length >= MAX_SAVES) localStorage.removeItem(SAVE_PREFIX + list.pop().seed);
   for (;;) {
@@ -71,11 +79,7 @@ function storeSave(d) {
       localStorage.removeItem(SAVE_PREFIX + list.pop().seed);
     }
   }
-  list.unshift({
-    seed: d.seed, habitat: d.opts.habitat, days: d.days, savedAt: d.savedAt, points: d.game ? d.game.points : 0, link: d.link ? d.link.id : null, slug: (d.link && d.link.slug) || null,
-    depth: fathomsOf(d.erosion ? d.erosion.e : 0, d.opts.habitat === 'fresh' ? 'fresh' : 'salt'),
-    animals: d.creatures.length, rares: d.creatures.filter((c) => c.L.traits && c.L.traits.length).length,
-  });
+  list.unshift(info);
   localStorage.setItem(SAVE_INDEX, JSON.stringify(list));
 }
 

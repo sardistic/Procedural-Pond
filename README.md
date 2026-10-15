@@ -431,7 +431,25 @@ JSON-LD) plus `robots.txt`, `sitemap.xml` and `manifest.webmanifest`.
 
 ## Third-party work
 
+For the separate YouTube Playables build, run `python tools/build_playables.py`.
+The upload ZIP, SDK integration, local checks and submission steps are documented
+in [playables/README.md](playables/README.md).
+
 The Seascape water look (Settings → Waves → Seascape) uses sea functions adapted from
 ["Seascape"](https://www.shadertoy.com/view/Ms2SD1) by Alexander Alekseev (TDM), 2014, licensed under
 [CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/). The adaptation in `js/water-sdf.js` is
 offered under the same licence; its header lists the changes.
+
+
+## Expanded creatures and itch.io edition
+
+The catalogue now includes 48 additional species (277 catalogue entries), with articulated
+attacks, planted IK feet, working claws, fin strokes and reaching tentacles.
+Nine named frontiers from tiers 15–23 add salt cracks, bone beds, thermal
+chimneys, drowned paving, glass facets and quiet drifting light. Existing
+species indices and progression thresholds are preserved; p4 share links extend
+species codes past 255 and retain sea bands, while p1–p3 links still load.
+
+Support Pond through [Ko-fi](https://ko-fi.com/pondnz) from the game menu.
+Build the standalone browser upload with `python tools/build_itch.py`;
+[itch/README.md](itch/README.md) has account upload steps and validation commands.

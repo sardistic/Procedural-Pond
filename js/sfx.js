@@ -28,9 +28,9 @@ const SFX = {
         try { this.buf[k] = await ctx.decodeAudioData(await fetch(`audio/sfx/${v.f}`, { cache: 'force-cache' }).then((r) => r.arrayBuffer())); } catch { /* skip that one */ }
       }));
       // Menus straight out; the pond's sounds and the soundscape through the water (a lowpass the zoom closes).
-      this.ui = ctx.createGain(); this.ui.gain.value = 0.2; this.ui.connect(ctx.destination);
+      this.ui = ctx.createGain(); this.ui.gain.value = 0.2; this.ui.connect(Sound.output || ctx.destination);
       this.under = ctx.createBiquadFilter(); this.under.type = 'lowpass'; this.under.frequency.value = 18000; this.under.Q.value = 0.5;
-      this.under.connect(ctx.destination);
+      this.under.connect(Sound.output || ctx.destination);
       Sound.master.disconnect(); Sound.master.connect(this.under);
       this.fx = ctx.createGain(); this.fx.gain.value = 0.25; this.fx.connect(this.under);
       // The three beds, looping, silent until the zoom brings them up.
@@ -46,7 +46,7 @@ const SFX = {
         const s = ctx.createBufferSource(), g = ctx.createGain();
         s.buffer = this.buf[k]; s.loop = true; g.gain.value = 0;
         const above = k === this.shore || k === this.far;
-        s.connect(g).connect(above ? ctx.destination : this.under); // (the shore and the far view are heard above the water)
+        s.connect(g).connect(above ? Sound.output || ctx.destination : this.under); // (the shore and the far view are heard above the water)
         s.start(0, Math.random() * Math.max(0.1, this.buf[k].duration - 1));
         this.beds[k === this.shore ? 'amb_surface' : k === this.far ? 'amb_far' : k] = g;
         if (k === this.shore) this.shoreG = G0(k);
@@ -59,7 +59,7 @@ const SFX = {
         if (!this.buf[id]) continue;
         const s = ctx.createBufferSource(), g = ctx.createGain();
         s.buffer = this.buf[id]; s.loop = true; g.gain.value = 0;
-        s.connect(g).connect(ctx.destination);
+        s.connect(g).connect(Sound.output || ctx.destination);
         s.start(0, Math.random() * Math.max(0.1, this.buf[id].duration - 1));
         this.land[k] = { g, k: G0(id) };
       }

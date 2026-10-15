@@ -521,6 +521,7 @@ function bakeBackground(world, rect = null) {
   const light = hexToInt(water.light), black = hexToInt('#000000');
   world.waterColor = typeof charWater === 'function' ? charWater(world, hexToInt(water.color)) : hexToInt(water.color); // (this pond's own: character.js)
   const tintF = typeof floorTintFn === 'function' && key !== 'tiles' ? floorTintFn(world) : (c) => c;
+  const frontierF = typeof frontierFloorFn === 'function' && key !== 'tiles' ? frontierFloorFn(world) : null;
   world.lightTint = light;
   if (world.motes) world.motes.mat = solid(water.mote);
   if (key === 'tiles') { world.shore = null; world.islandGround = null; } // a pool has no beach
@@ -530,8 +531,10 @@ function bakeBackground(world, rect = null) {
   const savedClip = r.clip;
   const part = !!(rect && world.bgBase && world.bgBase.length === W * H);
   const [rx0, ry0, rx1, ry1] = part ? rect : [0, 0, W - 1, H - 1];
-  // (A margin cleared round a partial redraw, so its edges don't read the last frame's animals.)
-  r.clip = part ? [Math.max(0, rx0 - 2), Math.max(0, ry0 - 2), Math.min(W - 1, rx1 + 2), Math.min(H - 1, ry1 + 2)] : [0, 0, W - 1, H - 1];
+  // Include the shadow-casting geometry beyond a partial redraw, not only its
+  // immediate outline neighbours. Tall frontier formations cast into the patch.
+  const margin = 32;
+  r.clip = part ? [Math.max(0, rx0 - margin), Math.max(0, ry0 - margin), Math.min(W - 1, rx1 + margin), Math.min(H - 1, ry1 + margin)] : [0, 0, W - 1, H - 1];
   if (part) for (let y = r.clip[1]; y <= r.clip[3]; y++) r.zBase.fill(0, r.clip[0] + y * W, r.clip[2] + 1 + y * W);
   else r.zBase.fill(0);
   r.begin();
@@ -566,6 +569,7 @@ function bakeBackground(world, rect = null) {
   // Structures' solid parts (see structures.js), with outline ids from 5000 up.
   let sid = 5000;
   const nextS = (m) => { const i = Math.min(8190, sid++); outline[i] = outlineOf(m); return i; };
+  if (typeof bakeFrontiers === 'function' && key !== 'tiles') bakeFrontiers(world, r, nextS, part ? r.clip : null);
   for (const s of world.structures || []) {
     if (s.anim) continue;
     const bx = part ? structureBox(world, s) : null;
@@ -600,6 +604,7 @@ function bakeBackground(world, rect = null) {
           if (world.sand && world.sand[p]) c = sandOver(world, c, world.sand[p], x, y);
           c = tintF(c);
           if (world.depth && world.depth[p]) c = mixColor(c, DEEP_SILT, Math.min(1, world.depth[p] / 160));
+          if (frontierF) c = frontierF(c, x, y, p);
           if (islandGround && islandGround[p]) {
             const sand = islandSands[islandGround[p] - 1];
             // (Shades in organic patches at two scales with a little per-pixel grain: a 4 px block hash showed squares.)
@@ -619,7 +624,8 @@ function bakeBackground(world, rect = null) {
       bg[p] = c;
     }
   }
-  if (part) for (let y = ry0; y <= ry1; y++) r.zBase.set(r.z.subarray(rx0 + y * W, rx1 + 1 + y * W), rx0 + y * W);
+  // All geometry in the cleared collar was redrawn; retain its heights too.
+  if (part) for (let y = r.clip[1]; y <= r.clip[3]; y++) r.zBase.set(r.z.subarray(r.clip[0] + y * W, r.clip[2] + 1 + y * W), r.clip[0] + y * W);
   else r.zBase.set(r.z);
   r.clip = savedClip;
   if (part) {

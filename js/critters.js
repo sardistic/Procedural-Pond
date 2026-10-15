@@ -57,16 +57,7 @@ class Crab extends Walker {
     for (const s of [-1, 1]) {
       const la = f + s * PI / 2;
       const bx = cx + fx * 1.8 + Math.cos(la) * 2.2, by = cy + fy * 1.8 + Math.sin(la) * 2.2;
-      const ca = f + s * 0.35;
-      const hx = bx + Math.cos(ca) * 2.6, hy = by + Math.sin(ca) * 2.6;
-      r.tube(bx, by, 0.8, z + 1, hx, hy, 0.8, z + 1.2, 0.8, this.legMat, id);
-      r.ellipsoid(hx + fx * 0.6, hy + fy * 0.6, 1.7, 1.1, f + s * 0.2, z + 1.3, 1.2, this.shellMat, id);
-      const open = Math.sin(t * 3 + this.phase + s) > 0.6 ? 0.55 : 0.15;
-      for (const k of [-1, 1]) {
-        const pa = f + k * open;
-        const px = hx + fx * 1.8, py = hy + fy * 1.8;
-        r.tube(px, py, 0.6, z + 1.5, px + Math.cos(pa) * 1.6, py + Math.sin(pa) * 1.6, 0.4, z + 1.5, 0.8, this.shellMat, id);
-      }
+      drawActionClaw(r, this, bx, by, f, s, 5.2, this.legMat, this.shellMat, z + 1, t);
       r.dot(cx + fx * 2.3 + Math.cos(la) * 0.9, cy + fy * 2.3 + Math.sin(la) * 0.9, z + 3.4, EYE, id);
     }
   }
@@ -290,9 +281,12 @@ class Frog extends Creature {
     const tg = this.tongue;
     if (tg && tg.mx !== undefined) r.tube(tg.mx, tg.my, 0.5, z + 1.5, tg.x, tg.y, 0.6, z + 1.8, 0.8, FROG_TONGUE, id);
     for (const L of this.legs) {
-      r.tube(L.sx, L.sy, 1.0, z + 0.8, L.ex, L.ey, 0.8, z + 0.6, 0.8, m, id);
-      r.tube(L.ex, L.ey, 0.8, z + 0.6, L.fx, L.fy, 0.6, z + 0.3, 0.8, m, id);
-      r.ellipsoid(L.fx, L.fy, 1.3, 0.9, b.a[2] + PI, z + 0.2, 0.4, m, id);
+      const sx = this.anim ? b.px(2, L.side * PI * 0.72, -0.8) : L.sx;
+      const sy = this.anim ? b.py(2, L.side * PI * 0.72, -0.8) : L.sy;
+      const [ex,ey,fx,fy] = this.anim ? solveLimb(sx,sy,L.fx,L.fy,2.6,2.8,L.side) : [L.ex,L.ey,L.fx,L.fy];
+      r.tube(sx, sy, 1.0, z + 0.8, ex, ey, 0.8, z + 0.6, 0.8, m, id);
+      r.tube(ex, ey, 0.8, z + 0.6, fx, fy, 0.6, z + 0.3, 0.8, m, id);
+      r.ellipsoid(fx, fy, 1.3, 0.9, b.a[2] + PI, z + 0.2, 0.4, m, id);
     }
     for (const s of [-1, 1]) {
       const hx = b.px(1, s * PI / 3.2, 1.4), hy = b.py(1, s * PI / 3.2, 1.4);

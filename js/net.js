@@ -9,7 +9,7 @@
 // the pond behind the link. Anyone else who opens it gets their own copy.
 
 const Net = {
-  base: /^https?:$/.test(location.protocol) ? '/api' : null,
+  base: typeof PondPlatform !== 'undefined' && PondPlatform.offline ? null : /^https?:$/.test(location.protocol) ? '/api' : null,
   downUntil: 0, // the server failed; don't try again before this (performance.now ms)
   board: null,  // { top, high, finds, ponds, at }
   rank: null,   // this pond's place on the leaderboard
