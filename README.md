@@ -443,12 +443,29 @@ offered under the same licence; its header lists the changes.
 
 ## Expanded creatures and itch.io edition
 
-The catalogue now includes 48 additional species (277 catalogue entries), with articulated
+The catalogue now includes 60 additional species (289 catalogue entries), with articulated
 attacks, planted IK feet, working claws, fin strokes and reaching tentacles.
 Nine named frontiers from tiers 15–23 add salt cracks, bone beds, thermal
 chimneys, drowned paving, glass facets and quiet drifting light. Existing
 species indices and progression thresholds are preserved; p4 share links extend
 species codes past 255 and retain sea bands, while p1–p3 links still load.
+
+Six further regions at tiers 24–29 pass through prismatic and auroral abysses,
+quiet futuristic island settlements and a world-edge cascade into a galactic
+archipelago. Their buildings can be inspected and their relays attuned. Twelve
+new species carry distinct neon palettes; optional Volumetrics integrates nearby
+emissive volumes into its existing GPU raymarch. Local sources are capped at eight.
+
+The forest beyond the original jungle grows on a separate saved clock, revealing
+forking river channels, rope crossings and five concealed places. Repeated contact
+with the imps reveals offering bowls, knotted chimes and wick lanterns. The river
+exchange trades once per pond day; offerings and attuned relays use real resources.
+Old ponds begin the added forest slowly. Browser saves, named ponds and current p4
+links preserve these exploration states. New links containing the exploration
+trailer require the current client.
+
+`python tools/test_horizons_browser.py` checks the new terrain, species gates,
+GPU programs, four shore orientations, capped worlds, transactions and persistence.
 
 Support Pond through [Ko-fi](https://ko-fi.com/pondnz) from the game menu.
 Build the standalone browser upload with `python tools/build_itch.py`;

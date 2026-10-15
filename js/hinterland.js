@@ -13,7 +13,7 @@
 // new day's river), lit by the pond's light, with a few things moving over it: the river's flecks, a
 // heron by day, fireflies at night, and the eyes.
 
-const HINTER_MAX = 440;                             // how far up the beach the land can show (world px)
+const HINTER_MAX = 820;                             // how far up the beach the land can show (world px)
 const HZ_SAND = 64, HZ_DUNE = 176, HZ_SCRUB = 292;  // where each band ends (the jungle past the last)
 const HINTER_HAZE = 18;                             // the haze at the edge of what shows
 const HINTER = {
@@ -30,7 +30,8 @@ function hinterReach(world) {
   const E = world.erosion, G = world.game, cur = typeof curseLevel === 'function' ? curseLevel(world) : 0;
   const now = 30 + 1.3 * (world.days || 0) + 0.8 * (E ? E.e || 0 : 0) + 240 * cur;
   if (G && !world.observe && now > (G.landReach || 0)) G.landReach = Math.round(now * 10) / 10;
-  return clamp(Math.max(now, (G && G.landReach) || 0), 30, HINTER_MAX);
+  const old = Math.min(440,Math.max(now,(G && G.landReach)||0));
+  return clamp(old >= 438 && typeof wildsReach === 'function' ? Math.max(old,wildsReach(world)) : old,30,HINTER_MAX);
 }
 
 // Where the picture sits: a strip along the landward edge, in the pond's own coordinates.
@@ -86,7 +87,8 @@ function hinterRiver(world) {
     uc[dd] = lerp(riverCenter(world, C, -dd), valley, smoothstep(0, 220, dd)); // (the first land pixel continues the first pond pixel)
     hw[dd] = Math.max(2.5, Rv.w * 0.4 * lerp(1, 0.8, clamp(dd / 320, 0, 1)));
   }
-  return { uc, hw, flow: Rv.flow || 1, deep: typeof riverDeepK === 'function' ? riverDeepK(world) : 0.5 };
+  const branches=[-1,1].map(side=>Float32Array.from(uc,(u,dd)=>clamp(u+side*Math.max(0,dd-450)*0.19+Math.sin(dd*0.023)*Math.max(0,dd-450)*0.025,8,along-9)));
+  return { uc, hw, branches, flow: Rv.flow || 1, deep: typeof riverDeepK === 'function' ? riverDeepK(world) : 0.5 };
 }
 
 // ---- painting ----------------------------------------------------------------------------------------
@@ -161,7 +163,8 @@ function* hinterPaint(world, geo) {
       if (L < 44) { const h = hash2(px, py, S + 5); if (h < 0.004) c = HL.shell; else if (h < 0.02 && Math.abs(dd - 9 - 7 * vnoise(u * 0.05, 3, S)) < 2.5) c = HL.wrack; }
       // The river uses the pond channel's cross-section at the join, then bends inland.
       if (riv) {
-        const du = Math.abs(u - riv.uc[dd]), hw = riv.hw[dd];
+        let du = Math.abs(u - riv.uc[dd]), hw = riv.hw[dd];
+        if (dd > 450) for (const branch of riv.branches || []) { const d=Math.abs(u-branch[dd]); if (d < du) { du=d;hw=riv.hw[dd]*0.58; } }
         if (du <= hw) {
           const e = Math.max(0.02, 1 - (du / hw) ** 2), kk = e * e * (3 - 2 * e), fadeIn = Math.min(1, e * 6);
           c = mixColor(mixColor(c, water, (0.66 + 0.3 * kk) * fadeIn), HL.black,
@@ -183,8 +186,8 @@ function* hinterPaint(world, geo) {
     for (let k = 0; k < along * 0.1; k++) P.push([hab === 'fresh' ? 'willow' : 'palm', rand(168, 300), rand(0, along), hab === 'fresh' ? rand(5, 9) : rand(7, 11)]);
     if (riv) for (let dd = 80; dd < 300; dd += rand(2, 5)) for (const sd of [-1, 1]) if (Math.random() < 0.55) P.push(['reed', dd, riv.uc[dd | 0] + sd * (riv.hw[dd | 0] + rand(0.5, 2.5))]);
     if (riv) for (let dd = 96; dd < 300; dd += rand(8, 16)) P.push(['stone', dd, riv.uc[dd | 0] + rand(-1, 1) * riv.hw[dd | 0], rand(1, 2.2)]);
-    for (let k = 0; k < along * 2.6; k++) P.push(['canopy', rand(262, 452), rand(-8, along + 8), rand(5, 13)]);
-    for (let k = 0; k < along / 45; k++) P.push(['crown', rand(300, 420), rand(0, along), rand(11, 17)]);
+    for (let k = 0; k < along * 2.6 * (M - 262) / 190; k++) P.push(['canopy', rand(262, M + 12), rand(-8, along + 8), rand(5, 13)]);
+    for (let k = 0; k < along / 45 * (M - 300) / 120; k++) P.push(['crown', rand(300, M - 20), rand(0, along), rand(11, 17)]);
   });
   // (By the climate, on its own seed: the rest of the land is as it always was.)
   withSeed(`${world.seed}/hinter2`, () => {
@@ -201,7 +204,7 @@ function* hinterPaint(world, geo) {
   });
   const put = (px, py, c, mark) => { if (px < 0 || py < 0 || px >= cw || py >= ch) return; const i = (px | 0) + (py | 0) * cw; base[i] = c; if (mark) cover[i] = mark; };
   const at = (dd, u) => { const [px, py] = hinterToPx(s, dd | 0, u | 0); return px >= 0 && py >= 0 && px < cw && py < ch ? px + py * cw : -1; };
-  const inRiver = (dd, u, m) => riv && dd >= 0 && dd < M && Math.abs(u - riv.uc[dd | 0]) < riv.hw[dd | 0] + m;
+  const inRiver = (dd, u, m) => riv && dd >= 0 && dd < M && (Math.abs(u - riv.uc[dd | 0]) < riv.hw[dd | 0] + m || dd > 450 && (riv.branches || []).some(b=>Math.abs(u-b[dd | 0]) < riv.hw[dd | 0]*0.58+m));
   // A lumpy ball of leaves, lit from up and left, dark at its rim, with its shadow cast down and right.
   const ball = (cx, cy, R, pal, mark, shadow) => {
     const R2 = R * R, sh = R * 0.45;
@@ -311,6 +314,7 @@ function* hinterPaint(world, geo) {
       const rc = riv ? riv.uc[dd | 0] : u, [rx, ry] = hinterToPx(s, dd, rc);
       for (let k = 0; k < 3; k++) line(cx, cy, lerp(cx, rx, 0.6) + k - 1, lerp(cy, ry, 0.6) + k - 1, (x, y, f) => { if (f > 0.5) put(x, y, HL.root); });
     } else if (kind === 'canopy' || kind === 'crown') {
+      if (dd > 450 && inRiver(dd,u,2)) continue;
       // The jungle: thick and dark, darker the further in. (Its trees over the river too: it goes under.)
       if (L < (kind === 'crown' ? 290 : 262) + (hash2(cx, cy, S + 51) - 0.5) * 30) continue;
       const pal = kind === 'crown' ? HL.crown : HL.canopy, fade = smoothstep(340, 440, L);
@@ -407,6 +411,8 @@ function hinterOnScreen() {
 // Each frame: keep the picture current (painting a new one a slice at a time), creep the haze back,
 // relight it as the light changes, and move what moves.
 function hinterTick(world, dt) {
+  if (typeof updateWilds === 'function') updateWilds(world,world.paused ? 0 : dt);
+  if (typeof updateHorizons === 'function' && !world.paused) updateHorizons(world);
   const H = HINTER;
   if (!H.cv) return;
   const want = hinterReach(world);
@@ -525,6 +531,7 @@ function hinterSprites(world) {
       dot(x, y, cs); dot(across ? x + 2 : x, across ? y : y + 2, cs);
     }
   } else H.eyes.length = 0;
+  if (typeof drawWildsSprites === 'function') drawWildsSprites(world,dot,css);
   if (typeof impSprites === 'function') impSprites(world, dot, css); // (what comes out of the jungle: imps.js)
 }
 
@@ -536,6 +543,7 @@ function hinterWorldToLocal(world, x, y) {
 
 // A click on the land: what it is.
 function hinterClick(world, x, y) {
+  if (typeof wildsClick === 'function' && wildsClick(world,x,y)) return true;
   const [dd, u] = hinterWorldToLocal(world, x, y), H = HINTER;
   if (dd < 0) return false;
   let text;

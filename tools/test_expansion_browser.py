@@ -40,8 +40,8 @@ def run():
               if (deepAvailable(world,'cradleeel')) throw Error('Late species bypasses progression: ' + JSON.stringify({d:DEEP.cradleeel,e:world.erosion}));
               world.erosion.tier=23;
               if (!deepAvailable(world,'cradleeel')) throw Error('Late species cannot unlock');
-              for (let i=0;i<FRONTIER_DESIGNS.length;i++) {
-                const c=makeCreature(FRONTIER_DESIGNS[i].kind,world,140+(i%8)*50,110+Math.floor(i/8)*35,{},3000+i);
+              for (let i=0;i<FRONTIER_DESIGNS.length+HORIZON_DESIGNS.length;i++) {
+                const c=makeCreature([...FRONTIER_DESIGNS,...HORIZON_DESIGNS][i].kind,world,140+(i%8)*50,110+Math.floor(i/8)*35,{},3000+i);
                 initLife(c); world.creatures.push(c);
               }
               render();
@@ -51,12 +51,12 @@ def run():
               world.game.supers=[{k:highest,traits:['glow']}];
               world.game.seas=[{from:0,k:'brine'},{from:100,k:'bone'}];
               const encoded=await encodePond(world), decoded=await decodePond(encoded);
-              if (!decoded || decoded.creatures.length!==48 || !decoded.creatures.some(c=>c.k===highest)) throw Error('Extended species links failed: ' + JSON.stringify({decoded:decoded?.creatures?.map(c=>c.k),highest,version:encoded.slice(0,4)}));
+              if (!decoded || decoded.creatures.length!==60 || !decoded.creatures.some(c=>c.k===highest)) throw Error('Extended species links failed: ' + JSON.stringify({decoded:decoded?.creatures?.map(c=>c.k),highest,version:encoded.slice(0,4)}));
               if (decoded.succession?.want[highest]!==2 || decoded.blight?.sp!==highest || decoded.game.supers[0]?.k!==highest) throw Error('Extended species metadata failed');
               if (JSON.stringify(decoded.game.seas)!==JSON.stringify(world.game.seas)) throw Error('Sea history was lost from a link');
               const saved=serializePond(world); storeSave(saved);
               const restored=loadSave(world.seed);
-              if (!restored || restored.creatures.length!==48 || !restored.creatures.some(c=>c.k===highest)) throw Error('New species failed to save');
+              if (!restored || restored.creatures.length!==60 || !restored.creatures.some(c=>c.k===highest)) throw Error('New species failed to save');
               const geometry=[];
               for (const key of ['pike','frog','crab','ribwalker','ossuaryspider','cradleeel']) {
                 const c=makeCreature(key,world,300,180,{},903); initLife(c); c.body.place(c.x,c.y,0);
@@ -100,7 +100,7 @@ def run():
                 if (frontierSampler(world)(world.W-10,100,world.W-10+100*world.W).key!=='nursery') throw Error('Memory cap blocks later habitats');
               } finally { maxDeepPx=maxBefore;world.game.seas=bandsBefore; }
               render();
-              return {species:Object.keys(SPECIES).length,newSpecies:48,legacyLink:true,extendedLink:encoded.slice(0,4),savedSpecies:restored.creatures.length,geometry,partialFloor:{checked,differences},frontiers:FRONTIERS.length,cappedHabitatProgression:true};
+              return {species:Object.keys(SPECIES).length,newSpecies:60,legacyLink:true,extendedLink:encoded.slice(0,4),savedSpecies:restored.creatures.length,geometry,partialFloor:{checked,differences},frontiers:FRONTIERS.length,cappedHabitatProgression:true};
             }''', {'legacy':legacy,'backend':backend})
             result['errors'] = errors
             assert not errors, errors

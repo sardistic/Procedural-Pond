@@ -99,6 +99,19 @@ uniform sampler2D u_shore, u_depth, u_light;
 uniform vec2 u_org, u_size, u_res, u_up, u_lorg, u_lsize, u_wind;
 uniform vec3 u_sunCol, u_sky, u_water;
 uniform float u_block, u_t, u_tide, u_day, u_rain, u_glow, u_tilt;
+uniform int u_emitterCount;
+uniform vec4 u_emitters[8], u_emitterColors[8];
+vec3 localGlow(vec3 p) {
+  vec3 light=vec3(0.0);
+  for(int j=0;j<8;j++){
+    if(j>=u_emitterCount)break;
+    vec4 e=u_emitters[j];
+    vec3 d=(p-e.xyz)/vec3(e.w,e.w,e.w*1.35);
+    float k=max(0.0,1.0-dot(d,d));
+    light+=u_emitterColors[j].rgb*u_emitterColors[j].a*k*k;
+  }
+  return light;
+}
 out vec4 o;
 vec2 tile(vec2 w) { return clamp((w - u_org) / u_size, vec2(0.0), vec2(1.0)); }
 // The lamps' light near a point (the light map, wider and fainter the further above the floor), the broad part of it
@@ -151,6 +164,9 @@ void main() {
     float sigma = texture(u_dens, t3).r * SIG, ds = z > 0.0 ? seg : dz;
     // (The lamps light even clear air and water a little, as a glow round them that adds light and hides nothing.)
     if (u_glow > 0.0) scat += T * glowAt(p, floorZ) * 0.006 * ds;
+    // Local emissive volumes are integrated along the same rays, never painted as screen-space bloom.
+    vec3 exotic=localGlow(p);
+    scat += T * exotic * 0.018 * ds;
     if (sigma < 1e-5) continue;
     float sun = texture(u_lit, t3).r;
     // What this bit of medium sends toward the eye: the sun through the medium between, the sky (under water, the
@@ -165,7 +181,7 @@ void main() {
     T *= ext;
   }
   // (Never more than a veil: the pond always shows through.)
-  vec4 v = vec4(min(scat, vec3(1.0)), 1.0 - T);
+  vec4 v = vec4(u_emitterCount > 0 ? vec3(1.0) - exp(-scat) : min(scat, vec3(1.0)), 1.0 - T);
   if (v.a > 0.4) v *= 0.4 / v.a;
   vec4 r = rain(w, se <= u_tide);
   o = r + v * (1.0 - r.a);
@@ -332,6 +348,13 @@ function drawVolumetric(w, state, rect, light) {
     u_lorg: G.lorg || [0, 0], u_lsize: G.lsize || [1, 1], u_sunCol: sunCol, u_sky: rgb(state.sky), u_water: rgb(w.waterColor || 0xff7c6a1b),
     u_block: B, u_t: t, u_tide: tide, u_day: V.day, u_rain: V.rain, u_glow: glow ? 1 : 0, u_tilt: VOL_TILT,
   });
+  const emitters = w.opts.lights !== false && typeof exoticEmitters === 'function' ? exoticEmitters(w,rect) : [];
+  const positions=new Float32Array(32), colors=new Float32Array(32);
+  emitters.forEach((e,i)=>{positions.set([e.x,e.y,e.z,e.r],i*4);colors.set([...rgb(typeof e.col === 'number' ? e.col : hexToInt(e.col)),e.k],i*4);});
+  gl.uniform1i(gl.getUniformLocation(G.view,'u_emitterCount'),emitters.length);
+  gl.uniform4fv(gl.getUniformLocation(G.view,'u_emitters[0]'),positions);
+  gl.uniform4fv(gl.getUniformLocation(G.view,'u_emitterColors[0]'),colors);
+  G.emitterCount=emitters.length;
   gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   G.frames = (G.frames || 0) + 1;

@@ -23,14 +23,14 @@ test('visitors plant and give minds only where the owner allows; the owner takes
     let ready=false;
     for(let i=0;i<50;i++){try{ready=(await call('/health')).status===200;}catch{}if(ready)break;await delay(50);}
     assert.ok(ready,'isolated API starts');
-    const created=await call('/ponds',{meta:{epoch:2,board:false,animals:277,species:277,
-      best:{species:'nightnurse',traits:['glow']},finds:[{species:'unwritten',traits:['glow']},{species:'not-a-registered-kind',traits:['glow']}]},save});
+    const created=await call('/ponds',{meta:{epoch:2,board:false,animals:289,species:289,
+      best:{species:'constellationeel',traits:['glow']},finds:[{species:'orbitkeeper',traits:['glow']},{species:'not-a-registered-kind',traits:['glow']}]},save});
     assert.equal(created.status,201);
     const {id,key}=created.body,plant={kind:'plant',plant:'lotus',x:40,y:50},mind={kind:'mind',seed:12345,controller:'fly-brain'};
     const expanded=(await call(`/ponds/${id}`)).body.meta;
-    assert.equal(expanded.species,277,'expanded biodiversity is not truncated');
-    assert.equal(expanded.best.species,'nightnurse');
-    assert.deepEqual((await call('/board')).body.finds.map(f=>f.species),['unwritten'],'new kinds are recognized while unknown kinds are rejected');
+    assert.equal(expanded.species,289,'expanded biodiversity is not truncated');
+    assert.equal(expanded.best.species,'constellationeel');
+    assert.deepEqual((await call('/board')).body.finds.map(f=>f.species),['orbitkeeper'],'new kinds are recognized while unknown kinds are rejected');
     // Closed by default.
     assert.equal((await call(`/ponds/${id}/visit`,plant)).status,403);
     // The owner opens it to planting only.

@@ -292,6 +292,7 @@ function packPond(world) {
   packIslandTrailer(w, st, rocks);
   // (Artifacts past the eighth, only when there are any: links without them read as before.)
   if (artBits >> 8) { w.u8(LINK_ART_MARK); w.u8(LINK_ART_TRAILER); w.u8(artBits >> 8); }
+  if (typeof packExplorationTrailer === 'function') packExplorationTrailer(w,world);
   return w.bytes();
 }
 
@@ -420,7 +421,8 @@ function unpackIslandTrailer(r, s) {
       t.fl.push([type, x, y, b, span, g, seed, code & 128 ? 1 : 0]);
     }
   }
-  if (r.i < r.b.length) unpackArtTrailer(r, s);
+  if (r.i < r.b.length && r.b[r.i] === LINK_ART_MARK) unpackArtTrailer(r, s);
+  if (r.i < r.b.length && r.b[r.i] === 0x57 && typeof unpackExplorationTrailer === 'function') unpackExplorationTrailer(r,s);
   if (r.i !== r.b.length) throw new Error('extra pond link data');
 }
 
@@ -432,7 +434,9 @@ function unpackV2(r, v = 2) {
   s.floor = FLOOR_CODES[o1 >> 2] || 'sand';
   s.water = WATER_CODES[o2 & 7] || 'teal';
   s.world = WORLD_CODES[o2 >> 3] || 'auto';
-  s.W = clamp(r.u16(), 200, 2000); s.H = clamp(r.u16(), 200, 2000);
+  const limit = v >= 4 ? MAX_DEEP_PX + 2000 : 2000;
+  s.W = clamp(r.u16(), 200, limit); s.H = clamp(r.u16(), 200, limit);
+  if (v >= 4 && s.W * s.H > PX_BUDGET) throw new Error('pond link exceeds the pixel budget');
   s.days = r.vu() / 1000; s.t = r.vu();
   s.moon0 = r.u8() / 255; s.tide0 = r.u8() / 255;
   const wb = r.u8();
@@ -598,7 +602,11 @@ function unpackV2(r, v = 2) {
                   for (let n = r.vu(); n > 0; n--) { const i = r.vu(), lo = r.u8(), hi = r.u8(), size = r.u8() / 100, bits = lo | (hi << 8); s.warps.set(i, { warps: WARP_KEYS.filter((k, j) => bits & (1 << j)), size }); }
                   // (Either trailer may be missing: the island one first, then the artifacts'.)
                   if (r.i < r.b.length && r.b[r.i] === LINK_ISLE_MARK) unpackIslandTrailer(r, s);
-                  else if (r.i < r.b.length) { unpackArtTrailer(r, s); if (r.i !== r.b.length) throw new Error('extra pond link data'); }
+                  else if (r.i < r.b.length) {
+                    if (r.b[r.i] === LINK_ART_MARK) unpackArtTrailer(r, s);
+                    if (r.i < r.b.length && r.b[r.i] === 0x57 && typeof unpackExplorationTrailer === 'function') unpackExplorationTrailer(r,s);
+                    if (r.i !== r.b.length) throw new Error('extra pond link data');
+                  }
                 }
               }
             }
@@ -696,6 +704,7 @@ function linkToSave(s) {
     const probe = { ...tmp };
     withSeed(`${s.seed}/${s.habitat}`, () => { probe.shoreSide = randi(0, 3); });
     if (deepAxisX(probe.shoreSide)) tmp.W -= ex; else tmp.H -= ex;
+    if (tmp.W < 1 || tmp.H < 1) throw new Error('invalid expanded pond dimensions');
   }
   withSeed(`${s.seed}/${s.habitat}`, () => generateScenery(tmp));
   const [gx, gy] = ex && deepShifts(tmp.shoreSide) ? (deepAxisX(tmp.shoreSide) ? [ex, 0] : [0, ex]) : [0, 0];

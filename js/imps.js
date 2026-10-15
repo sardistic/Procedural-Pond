@@ -96,8 +96,8 @@ function updateImps(world, dt) {
 }
 function startOuting(world, S) {
   const H = HINTER, along = world.shoreSide < 2 ? world.H : world.W, cur = curseLevel(world);
-  const tribute = (world.structures || []).find((s) => s.kind === 'tribute' && !s.anim);
-  const visit = !!tribute && Math.random() < Math.min(0.85, 0.06 * (S.seen + 1));
+  const tribute = (world.structures || []).find((s) => s.kind === 'impbowl' && !s.anim && world.game.essence >= 4) || (world.structures || []).find((s) => s.kind === 'tribute' && !s.anim);
+  const visit = !!tribute && Math.random() < Math.min(0.85, 0.06 * (S.seen + 1) + ((world.structures || []).some(s=>s.kind==='impchimes')?0.12:0));
   const [, tu] = tribute ? hinterWorldToLocal(world, tribute.x, tribute.y) : [0, 0];
   // From a dark gap at the jungle's edge (the nearest to the tribute, if they're going to it).
   const gaps = H.gaps.map((g) => hinterToLocal(H.geo.s, g[0], g[1])).filter(([dd]) => dd < HZ_SCRUB + 60 && dd < H.shown - 4);
@@ -126,6 +126,7 @@ function enterPond(world, O) {
   O.phase = 'pond';
   const s = O.tribute && (world.structures.includes(O.tribute) ? O.tribute : world.structures.find((q) => q.seed === O.tribute.seed));
   if (!s || !world.structures.includes(s)) { O.phase = 'up'; return; }
+  if (s.kind === 'impbowl' && !spendEssence(world,4)) { O.phase='up'; return; }
   O.imps.forEach((m, k) => {
     const [x, y] = coastXY(world, 1, clamp(m.u, 1, (world.shoreSide < 2 ? world.H : world.W) - 2));
     const c = new Imp(world, x, y, s, k, O.imps.length);
@@ -149,7 +150,7 @@ class Imp extends Creature {
     if (!world.structures.includes(this.tribute)) this.tribute = world.structures.find((q) => q.seed === this.tribute.seed) || this.tribute; // (a new depth rebuilds the pond)
     const s = this.tribute, p = world.pointer;
     if (!world.structures.includes(s) && this.act !== 'leave') this.act = 'leave';
-    if (this.act !== 'leave' && p && p.inside && (p.x - this.x) ** 2 + (p.y - this.y) ** 2 < 500) { this.act = 'leave'; this.fled = true; } // (they shy from the pointer)
+    if (this.act !== 'leave' && p && p.inside && (p.x - this.x) ** 2 + (p.y - this.y) ** 2 < ((world.structures || []).some(q=>q.kind==='impchimes') ? 120 : 500)) { this.act = 'leave'; this.fled = true; } // (they shy from the pointer)
     let gx, gy, spd = 7;
     if (this.act === 'come' || this.act === 'dance') {
       const a = (this.act === 'dance' ? this.t * 0.9 : 0) + this.k / this.n * TAU, R = 7.5;
@@ -167,19 +168,26 @@ class Imp extends Creature {
     const { x, y, id, face: f } = this, z = 0.6 + this.hop, st = Math.sin(this.gait) * 0.5;
     for (const sd of [-1, 1]) { const a = f + sd * PI / 2; r.tube(x + Math.cos(a) * 0.5, y + Math.sin(a) * 0.5, 0.35, z + 0.6, x + Math.cos(a) * 0.5 + Math.cos(f) * st * sd, y + Math.sin(a) * 0.5 + Math.sin(f) * st * sd, 0.3, z - 0.6, 1, IMP_M.skin, id); }
     r.ellipsoid(x, y, 0.9, 0.8, f, z + 0.4, 1.4, IMP_M.skin, id);
+    // Small jointed arms swing while walking and lift during the ring dance.
+    for(const sd of [-1,1]){
+      const a=f+sd*PI/2,hand=this.act==='dance'?0.8:Math.sin(this.gait+sd)*0.45;
+      const sx=x+Math.cos(a)*0.65,sy=y+Math.sin(a)*0.65,ex=sx+Math.cos(f)*hand,ey=sy+Math.sin(f)*hand;
+      r.tube(sx,sy,0.23,z+1.3,ex+Math.cos(a)*0.6,ey+Math.sin(a)*0.6,0.19,z+1+hand,0.7,IMP_M.skin,id);
+    }
     r.tube(x - Math.cos(f) * 0.8, y - Math.sin(f) * 0.8, 0.25, z + 0.8, x - Math.cos(f) * 2.2, y - Math.sin(f) * 2.2, 0.15, z + 1.6 + st * 0.3, 1, IMP_M.skin, id); // the tail
     const hx = x + Math.cos(f) * 0.3, hy = y + Math.sin(f) * 0.3;
     r.ellipsoid(hx, hy, 0.8, 0.8, f, z + 1.8, 1, IMP_M.skin, id);
     for (const sd of [-1, 1]) { const a = f + sd * 0.9; r.tube(hx + Math.cos(a) * 0.5, hy + Math.sin(a) * 0.5, 0.2, z + 2.6, hx + Math.cos(a) * 0.9, hy + Math.sin(a) * 0.9, 0.1, z + 3.4, 1, IMP_M.horn, id); }
     for (const sd of [-1, 1]) r.dot(hx + Math.cos(f + sd * 0.5) * 0.7, hy + Math.sin(f + sd * 0.5) * 0.7, z + 2, IMP_M.eye, this.eyeId);
   }
-  doing() { return this.act === 'dance' ? 'dancing round the tribute' : this.act === 'come' ? 'coming down the beach to the tribute' : 'going back up into the jungle'; }
-  note() { return 'Something small and red, with horns, from the jungle up the beach. It came down for the tribute.'; }
+  doing() { return this.act === 'dance' ? 'dancing round the offering' : this.act === 'come' ? 'coming down the beach to the offering' : 'going back up into the jungle'; }
+  note() { return 'Something small and red, with horns, from the jungle up the beach. It came down for the '+(this.tribute?.kind==='impbowl'?'offering bowl':'tribute')+'.'; }
 }
 // What they leave at its feet.
 function impGift(world, s) {
   const S = impState(world);
   S.visits++;
+  if (world.game.wilds) world.game.wilds.trust = Math.min(20,(world.game.wilds.trust||0)+1);
   const cor = typeof gainCorruption === 'function' ? gainCorruption(world, 6 + 3 * Math.min(8, S.visits), 'the tribute', { quiet: true }) : 0;
   const k = pick(['essence', 'pearls', 'pearls', 'essence', 'fossil']);
   let what = '';

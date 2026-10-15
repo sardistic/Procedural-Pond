@@ -552,6 +552,7 @@ function applyShoreEdits(world) {
   if (typeof applyRiver === 'function') applyRiver(world); // the river cuts the beach, and through the sand (coast.js)
   if (typeof applyIslands === 'function') applyIslands(world);
   if (typeof applyErosion === 'function') applyErosion(world);
+  if (typeof stampHorizons === 'function') stampHorizons(world);
 }
 
 // ---- the tick ------------------------------------------------------------------------------

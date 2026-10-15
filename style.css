@@ -1542,3 +1542,11 @@ body.map-tall.map-open .mini-wrap .slice { height: auto; }
 .mind-known { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 3px; line-height: 1.4; }
 .creature .cr-acts { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin-top: 8px; }
 .creature .cr-acts button { min-height: 28px; padding: 4px 2px; font-size: 10px; white-space: nowrap; }
+/* A discovered place uses a small native modal: focus, Escape and touch stay in the scene. */
+.world-mystery{position:fixed;inset:0;max-width:min(380px,calc(100vw - 32px));max-height:calc(100dvh - 40px);overflow:auto;margin:auto;background:#091d25;color:#bfd7cf;border:1px solid #638d96;padding:22px;box-shadow:0 12px 60px #0009;font:13px/1.6 system-ui,sans-serif}
+.world-mystery::backdrop{background:#020a104d}
+.world-mystery h2{font:18px/1.4 Georgia,serif;color:#f5d66b;margin:0 0 14px}
+.world-mystery p{margin:0 0 18px}
+.world-mystery button{display:block;width:100%;padding:9px 12px;margin:7px 0;border:1px solid #466878;color:#d4e8df;background:#14323c;font:12px/1.5 system-ui,sans-serif;text-align:left;cursor:pointer}
+.world-mystery button:focus-visible{outline:2px solid #f5d66b;outline-offset:3px}
+.world-mystery button:disabled{opacity:.45;cursor:default}

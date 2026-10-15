@@ -1,6 +1,6 @@
 # What drives progression
 
-This describes the current local implementation, including the pending expansion.
+This describes the current implementation, including local expansion work.
 There is no single player XP level. Pond depth, habitat succession, species
 discoveries, bloodlines and individual growth advance alongside one another.
 
@@ -38,6 +38,25 @@ Depth is necessary for deep species, but habitat branch, discovery, mythic arriv
 odds and species unlocks can also apply. Structure and plant placement may need a
 minimum local water depth. Advancing a tier does not immediately spawn everything
 it makes eligible.
+
+The later horizon expansion names tiers 24–29 without changing their existing
+erosion thresholds. Twelve additional species use the same depth/discovery/essence
+gates. Natural island settlements appear in the new sea bands; at the pixel cap,
+the existing outer rim can carry the current habitat. Attuning a relay costs 20
+essence once, with at most 24 recorded signals. Relays yield 2 essence each per
+observed new pond day, capped at 12; missed days do not accumulate payouts.
+
+The extended forest has independent progress in `game.wilds`. Once the old jungle
+reaches its edge, the new reach starts at 440 world pixels and advances 0.42 pixels
+per pond day, plus a small bounded trust contribution, to 820. Five concealed
+places appear along the river only as the haze reaches them. Bell responses and
+trades build trust at most once per pond day. Trading spends 12 pearls for 18
+essence; it does not reduce points. Three completed imp outings reveal shore
+objects; visits to the offering bowl spend 4 essence, chimes make visits more
+likely and reduce pointer fright, and wick lanterns cast a warm light. Original
+curse/outing requirements remain. Native saves and the optional bounded p4
+exploration trailer preserve reveal, contact and transaction state; observed
+ponds do not advance these records or allow purchases.
 
 Discovery odds vary by pond seed and season. A fresh pond's first discovery is
 scheduled after 1.2 pond days; subsequent discoveries set a randomized gap based

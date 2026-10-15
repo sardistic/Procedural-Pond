@@ -142,6 +142,7 @@ function frontierReached(w) {
   const axis = deepAxisX(w.shoreSide), shifts = deepShifts(w.shoreSide), size = axis ? w.W : w.H;
   const lo = shifts ? 0 : Math.max(0,size-182), hi = shifts ? Math.min(size-1,182) : size-1;
   const rect = axis ? [lo,0,hi,w.H-1] : [0,lo,w.W-1,hi];
+  if (typeof stampHorizons === 'function') stampHorizons(w);
   if (typeof queueBake === 'function') queueBake(w,rect);
 }
 function frontierSampler(w) {
@@ -174,6 +175,7 @@ function frontierFloorFn(w) {
     else if (f.key==='ruins') ridge = ((xx + ((yy >> 5) & 1) * 16) & 31) < 2 || (yy & 31) < 2;
     else if (f.key==='mirror' || f.key==='unmade') ridge = ((xx + yy * 2) & 47) < 2;
     else if (f.key==='vents') ridge = ((xx - yy) % 43 + 43) % 43 < 2;
+    if (typeof horizonFloor === 'function' && HORIZON_BY_KEY[f.key]) return horizonFloor(c,f,xx,yy,grain);
     const col = mixColor(f.floor,f.ridge,ridge ? 0.6 : grain * 0.16);
     return mixColor(c,col, f.tier ? 0.82 : 0.24 + (w.depth?.[p] || 0)/850);
   };

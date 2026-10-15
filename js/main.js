@@ -677,6 +677,7 @@ function render(full = false) {
   for (const e of world.eggs) e.draw(r, t);
   world.motes.draw(r, world);
   if (typeof drawFrontierAtmosphere === 'function') drawFrontierAtmosphere(r, world, rect);
+  if (typeof drawHorizons === 'function') drawHorizons(r, world, rect);
   r.castShadows = false;
   for (const e of world.effects) e.draw(r, t);
   r.castShadows = true;
@@ -1482,10 +1483,11 @@ canvas.addEventListener('pointerdown', (e) => {
 // Right-click (or a long press) opens the card of an animal, plant or structure.
 canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); toWorld(e); openThingAt(world.pointer.x, world.pointer.y); });
 function openThingAt(x, y) {
+  if (typeof horizonClick === 'function' && horizonClick(world,x,y)) return true;
   const c = creatureAt(x, y);
   if (c && c.life) { showCreature(c); return true; }
   const st = structureAt(world, x, y);
-  if (st) { showObject(st); return true; }
+  if (st) { if (typeof wildsObjectClick !== 'function' || !wildsObjectClick(world,st)) showObject(st); return true; }
   const p = [...world.pads, ...world.plants].reverse().find((q) => q.hit(x, y));
   if (p) { showObject(p); return true; }
   return false;
@@ -1544,7 +1546,7 @@ function pointerEnd(e) {
   if (press && press.done) press = null; // a long press opened a card
   if (press && press.hinter && !press.panning && e.type === 'pointerup' && typeof hinterClick === 'function') hinterClick(world, press.x, press.y);
   const ambient = tap && tap.c && tap.c.noGrab; // (a beach animal that isn't the pond's: a click says what it is, and uses no tool)
-  if (press && !press.panning && !press.beyond && !ambient && e.type === 'pointerup') {
+  if (press && !press.panning && !press.beyond && !press.hinter && !ambient && e.type === 'pointerup') {
     closeWindows(); // (one window at a time: a click in the pond closes the one that's open)
     // Clicking the hatchery opens it (with any tool but the Net); feeding over
     // another structure tells you about it.
@@ -1558,7 +1560,8 @@ function pointerEnd(e) {
     else if (fo) collectFossil(world, fo);
     else if (rm) collectRemains(world, rm);
     else if (st && st.kind === 'hatchery') setHatchery(true);
-    else if (st && (world.tool === 'feed' || world.tool === 'pointer')) showObject(st);
+    else if (st && (world.tool === 'feed' || world.tool === 'pointer')) { if (typeof wildsObjectClick !== 'function' || !wildsObjectClick(world,st)) showObject(st); }
+    else if (!press.hinter && world.tool === 'pointer' && typeof horizonClick === 'function' && horizonClick(world,press.x,press.y)) { /* the buildings answer */ }
     else if (world.tool === 'pointer') {
       // The pointer looks: a plant's card (an animal's opens below), and nothing at all on open water.
       const p = [...world.pads, ...world.plants].reverse().find((q) => q.hit && q.hit(press.x, press.y));

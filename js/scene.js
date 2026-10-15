@@ -533,7 +533,7 @@ function bakeBackground(world, rect = null) {
   const [rx0, ry0, rx1, ry1] = part ? rect : [0, 0, W - 1, H - 1];
   // Include the shadow-casting geometry beyond a partial redraw, not only its
   // immediate outline neighbours. Tall frontier formations cast into the patch.
-  const margin = 32;
+  const margin = (world.erosion?.tier || 0) >= 29 ? 64 : 32;
   r.clip = part ? [Math.max(0, rx0 - margin), Math.max(0, ry0 - margin), Math.min(W - 1, rx1 + margin), Math.min(H - 1, ry1 + margin)] : [0, 0, W - 1, H - 1];
   if (part) for (let y = r.clip[1]; y <= r.clip[3]; y++) r.zBase.fill(0, r.clip[0] + y * W, r.clip[2] + 1 + y * W);
   else r.zBase.fill(0);
@@ -570,6 +570,7 @@ function bakeBackground(world, rect = null) {
   let sid = 5000;
   const nextS = (m) => { const i = Math.min(8190, sid++); outline[i] = outlineOf(m); return i; };
   if (typeof bakeFrontiers === 'function' && key !== 'tiles') bakeFrontiers(world, r, nextS, part ? r.clip : null);
+  if (typeof bakeHorizons === 'function') bakeHorizons(world, r, nextS, part ? r.clip : null);
   for (const s of world.structures || []) {
     if (s.anim) continue;
     const bx = part ? structureBox(world, s) : null;
