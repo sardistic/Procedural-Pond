@@ -124,6 +124,7 @@ function dividendOf(world) {
   const inv = (world.game && world.game.inv) || {};
   let v = 0;
   for (const [k, d] of Object.entries(INVEST)) v += (inv[k] || 0) * d.rate;
+  if (typeof offeringIncome === 'function') v *= offeringIncome(world);
   return [v, v / 25];
 }
 function payDividend(world) {

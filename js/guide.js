@@ -309,6 +309,7 @@ function chapterStart() {
       cur('Pearls', CLASS_COLOR.pearls, 'Every point pays a pearl, and so does each dawn. Pearls buy plants, food, structures and a hunter’s body.'),
       cur('Essence', CLASS_COLOR.essence, 'Buys animals from the dock, gene boosts, unlocks in the depths and deepening. It comes back when you recycle an animal with the Net, when one lives out its life, from the deep structures, and a little each dawn.'),
       cur('Corruption', '#3aff9a', 'Yielded by the marked as they change. It buys the eldritch paths, corrupted plants, the dark island and eldritch traits.'),
+      { key: 's:offerings', name: 'Offerings', text: 'Once wealth gathers, Score and the sun panel reveal repeatable pearl offerings. Hasten the whole pond for a time, call the next depth closer, or pay to still the void. Each costs a percentage of your current pearls, with a minimum. Calling the sun or deep raises void anger: investment income falls and the water grows tense. The panel shows the exact prices, timers and consequences before you offer. Points stay intact; offerings earn no investment credit.', here: () => offeringsAvailable(world) },
     ] },
   ];
 }

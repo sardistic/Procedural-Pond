@@ -96,9 +96,9 @@ void main() {
 const VOL_VIEW = VOL_COMMON + `
 uniform sampler3D u_dens, u_lit;
 uniform sampler2D u_shore, u_depth, u_light;
-uniform vec2 u_org, u_size, u_res, u_up, u_lorg, u_lsize, u_wind;
+uniform vec2 u_org, u_size, u_res, u_up, u_lorg, u_lsize, u_wind, u_worldSize;
 uniform vec3 u_sunCol, u_sky, u_water;
-uniform float u_block, u_t, u_tide, u_day, u_rain, u_glow, u_tilt;
+uniform float u_block, u_t, u_tide, u_day, u_rain, u_glow, u_tilt, u_landSide;
 uniform int u_emitterCount;
 uniform vec4 u_emitters[8], u_emitterColors[8];
 vec3 localGlow(vec3 p) {
@@ -184,7 +184,11 @@ void main() {
   vec4 v = vec4(u_emitterCount > 0 ? vec3(1.0) - exp(-scat) : min(scat, vec3(1.0)), 1.0 - T);
   if (v.a > 0.4) v *= 0.4 / v.a;
   vec4 r = rain(w, se <= u_tide);
-  o = r + v * (1.0 - r.a);
+  // The beach continues on a separate land canvas. Fade the complete premultiplied
+  // result at that world boundary, never at the moving viewport/tile boundary.
+  float edge = u_landSide < 0.5 ? w.x : u_landSide < 1.5 ? u_worldSize.x - w.x : u_landSide < 2.5 ? w.y : u_worldSize.y - w.y;
+  float join = u_landSide < 0.0 ? 1.0 : smoothstep(0.0, 32.0, edge);
+  o = (r + v * (1.0 - r.a)) * join;
 }`;
 
 function volLink(gl, fs) {
@@ -347,6 +351,7 @@ function drawVolumetric(w, state, rect, light) {
     ...vol, u_org: [x0, y0], u_size: [W, H], u_res: [cw, ch], u_up: [-Math.sin(th), -Math.cos(th)], u_wind: wind,
     u_lorg: G.lorg || [0, 0], u_lsize: G.lsize || [1, 1], u_sunCol: sunCol, u_sky: rgb(state.sky), u_water: rgb(w.waterColor || 0xff7c6a1b),
     u_block: B, u_t: t, u_tide: tide, u_day: V.day, u_rain: V.rain, u_glow: glow ? 1 : 0, u_tilt: VOL_TILT,
+    u_worldSize: [w.W, w.H], u_landSide: w.shore ? w.shoreSide : -1,
   });
   const emitters = w.opts.lights !== false && typeof exoticEmitters === 'function' ? exoticEmitters(w,rect) : [];
   const positions=new Float32Array(32), colors=new Float32Array(32);

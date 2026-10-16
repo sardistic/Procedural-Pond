@@ -35,7 +35,7 @@ void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }`;
 const SDF_FRAGMENT = `#version 300 es
 precision highp float;
 uniform sampler2D u_scene, u_shore, u_depth, u_state, u_sand;
-uniform vec2 u_size, u_origin, u_res, u_dir, u_world;
+uniform vec2 u_size, u_origin, u_res, u_dir, u_world, u_pondSize;
 uniform vec3 u_sky, u_water;
 uniform float u_block, u_t, u_height, u_choppy, u_tide, u_vis, u_day, u_rain, u_surf, u_scale;
 out vec4 color;
@@ -154,7 +154,11 @@ void main() {
     float wetK = smoothstep(5.0, 1.5, se - u_tide);
     vec3 c = under * mix(1.0, 0.9, wetK) * mix(1.0, shade, 0.45 + 0.55 * u_day);
     c += u_sky * STEPA(wetK * (0.04 + 0.1 * u_day) * pow(max(0.0, dot(reflect(vec3(0.0, 0.0, -1.0), nn), L)), 8.0), 6.0);
-    color = vec4(c, 1.0);
+    // The hinterland continues the ordinary dry floor. Its join must not expose
+    // Seascape's extra relief shading as a straight line across the sand.
+    vec2 wp = u_origin + px;
+    float edge = min(min(wp.x, wp.y), min(u_pondSize.x - wp.x, u_pondSize.y - wp.y));
+    color = vec4(mix(under, c, smoothstep(0.0, 24.0, edge)), 1.0);
     return;
   }
   float sse = texture(u_shore, suv).r * 255.0;
@@ -336,6 +340,7 @@ function drawSeascape(w, state, rect, img) {
   const U = G.uniforms || (G.uniforms = {}), loc = (name) => U[name] ?? (U[name] = gl.getUniformLocation(G.program, name));
   gl.uniform2f(loc('u_size'), W, H); gl.uniform2f(loc('u_origin'), x0, y0); gl.uniform2f(loc('u_res'), cw, ch); gl.uniform2f(loc('u_dir'), dir[0], dir[1]);
   gl.uniform2f(loc('u_world'), S.tw * SEA_CELL, S.th * SEA_CELL);
+  gl.uniform2f(loc('u_pondSize'), w.W, w.H);
   // Swell lifts the waves (higher on spring tides), wind and the tide's run chop them; calm water lies nearly flat.
   G.height = (0.12 + 0.75 * clamp(state.swell, 0, 1.1)) * (0.85 + 0.3 * spring);
   G.chop = 1 + sea.gust * 2.5 + (sea.surf || 0) * 0.8 + Math.abs(tide.flow || 0) * 0.6 + (sea.rain || 0) * 0.4;

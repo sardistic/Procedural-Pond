@@ -121,6 +121,7 @@ function updateZones(world, dt, instant = false) {
     for (let i = 0; i < cols; i++) {
       const k = j * cols + i, x = (i + 0.5) * ZONE, y = (j + 0.5) * ZONE;
       let a = D.aggression + tA[k] + z.heat[k] * 0.6 + Math.max(0, crowd[k] - 8) * 0.02;
+      if (typeof offeringTension === 'function') a += offeringTension(world, x, y);
       // Surf pounds the water near the waterline.
       if (world.shore) {
         const e = shoreAt(world, x, y);

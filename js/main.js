@@ -481,6 +481,7 @@ function populate() {
 // ---- simulation & render ------------------------------------------------------
 
 function update(dt) {
+  updateOfferings(world, dt);
   world.t += dt;
   const cur = world.current;
   const curMeta = typeof metaNow === 'function' ? metaNow(world, 'current') : null; // (the current stone)
@@ -819,7 +820,7 @@ function frame(now) {
   if (!world.paused) {
     world.waveTime = waveTime(world) + elapsed; // Wave periods follow real seconds even when the ecosystem is sped up.
     seaStep(world, Math.min(elapsed, 1));
-    update(dt * world.opts.speed * (hardMode(world) ? HARD_PACE : 1)); // (hard mode runs slower)
+    advanceOfferingTime(world, dt * world.opts.speed * (hardMode(world) ? HARD_PACE : 1), update); // (hard mode runs slower)
   }
   runJobs();
   bakeTick(8);

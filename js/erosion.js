@@ -60,7 +60,7 @@ const pondFathoms = (world) => fathomsOf(world.erosion ? world.erosion.e : 0, br
 // high-scoring pond can't run away with itself: 1,000 points add 0.6, 10,000
 // add 2.1, 100,000 add 4, 1,000,000 add 6.
 const pointsDepth = (p) => 2 * Math.log10(1 + Math.max(0, p) / 1000);
-const DEPTH_PARTS = { tide: 'the tides', time: 'time', built: 'your structures', growth: 'plant life', life: 'evolution', points: 'points', essence: 'essence spent' };
+const DEPTH_PARTS = { tide: 'the tides', time: 'time', built: 'your structures', growth: 'plant life', life: 'evolution', points: 'points', essence: 'essence spent', offerings: 'offerings' };
 
 // Evolution deepens the pond a step at a time: new generations, rare births,
 // discoveries and hatchery broods.

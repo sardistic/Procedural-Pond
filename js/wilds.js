@@ -6,12 +6,13 @@ function explorationState(G={}){
   const n=(v,max=1e9)=>typeof v==='number'&&Number.isFinite(v)?clamp(v,0,max):0,S=G.imps||{},F=G.wilds;
   const signals=Object.fromEntries(Object.entries(G.horizonSignals||{}).filter(([k,v])=>v&&/^(relay|neopolis|cascade|astral):-?\d{1,5}:-?\d{1,5}$/.test(k)).slice(0,24).map(([k])=>[k,true]));
   return {landReach:n(G.landReach,HINTER_MAX),impTrade:!!G.impTrade,tributeFound:!!G.tributeFound,
-    imps:{seen:n(S.seen,100000),visits:n(S.visits,100000),...(S.jungle!=null?{jungle:n(S.jungle)}:{}),...(S.last!=null?{last:n(S.last)}:{})},
+    imps:{seen:n(S.seen,100000),visits:n(S.visits,100000),...(S.jungle!=null?{jungle:n(S.jungle)}:{}),...(S.last!=null?{last:n(S.last)}:{}),...(S.interact?{interact:cleanImpInteractions(S.interact)}:{})},
     ...(F?{wilds:{since:n(F.since),reach:clamp(n(F.reach),WILD_EDGE,HINTER_MAX),trust:n(F.trust,20),found:[...new Set((Array.isArray(F.found)?F.found:[]).filter(v=>Number.isInteger(v)&&v>=0&&v<5))],lastTrade:F.lastTrade==null?-1:Math.max(-1,n(F.lastTrade)),...(F.bellDay!=null?{bellDay:n(F.bellDay)}:{}),whisper:!!F.whisper}}:{}),
+    ...(G.offerings?{offerings:cleanOfferings(G.offerings)}:{}),
     horizonSignals:signals,...(G.horizonDawn!=null?{horizonDawn:n(G.horizonDawn)}:{})};
 }
 function packExplorationTrailer(writer,w){
-  const G=w.game||{};if(!G.wilds&&!G.imps&&!G.horizonSignals)return;
+  const G=w.game||{};if(!G.wilds&&!G.imps&&!G.horizonSignals&&!G.offerings)return;
   const bytes=new TextEncoder().encode(JSON.stringify(explorationState(G)));if(bytes.length>8192)throw Error('Exploration state too large');
   writer.u8(0x57);writer.u8(1);writer.vu(bytes.length);for(const b of bytes)writer.u8(b);
 }
@@ -28,7 +29,7 @@ function wildsReach(w){return Math.min(HINTER_MAX,Math.max(WILD_EDGE,wildsState(
 function updateWilds(w,dt){
   if(!w.game||w.observe||dt<=0)return;
   const G=w.game,S=impState(w),now=wildsDay(w),oldReach=30+1.3*(w.days||0)+0.8*(w.erosion?.e||0)+240*curseLevel(w);
-  if(!G.wilds&&Math.max(G.landReach||0,oldReach)>=WILD_EDGE-2)G.wilds={since:now,reach:WILD_EDGE,trust:0,found:[],lastTrade:-1};
+  if(!G.wilds&&Math.max(G.landReach||0,oldReach)>=WILD_EDGE-2)G.wilds={since:now,reach:WILD_EDGE,trust:impInteractions(w).trust,found:[],lastTrade:-1};
   const F=G.wilds;if(!F)return;
   const age=Math.max(0,now-F.since),trust=Math.min(20,F.trust||0);
   F.reach=Math.max(F.reach||WILD_EDGE,Math.min(HINTER_MAX,WILD_EDGE+age*0.42+trust*1.2));
@@ -116,9 +117,9 @@ function showWorldMystery(w,{title,text,actions}){
 
 // Objects can be built only after repeated contact. A visit to the bowl consumes an actual offering.
 const WILD_OBJECTS={
-  impbowl:{label:'Offering bowl',pearls:45,essence:15,size:5,dry:true,unique:true,found:'impTrade',r:30,aura:{comfort:0.02},desc:'a bowl left for the forest visitors: a visit consumes 4 essence; in return they leave a gift and learn to trust the pond'},
-  impchimes:{label:'Knotted chimes',pearls:55,essence:12,size:5,dry:true,unique:true,found:'impTrade',r:35,aura:{aggression:-0.025},desc:'hollow seeds hung on red thread: visitors hear them from the trees and are less easily startled'},
-  wickpost:{label:'Wick lantern',pearls:30,essence:8,size:5,dry:true,found:'impTrade',r:25,aura:{comfort:0.025},desc:'a warm wick under a leaf hood: a small shore light, of the kind carried along the hidden river'},
+  impbowl:{label:'Offering bowl',pearls:45,essence:15,size:5,dry:true,unique:true,found:'impTrade',r:30,aura:{comfort:0.02},desc:'Fill this bowl with 4 essence and invite two imps. They follow a glowing trail, dance around the bowl and leave a gift. The glowing food stays until a gift is delivered; frightened or interrupted visits do not consume it.'},
+  impchimes:{label:'Knotted chimes',pearls:55,essence:12,size:5,dry:true,unique:true,found:'impTrade',r:35,aura:{aggression:-0.025},desc:'Call two imps once per pond day, for free. Watch them follow the firefly trail and dance at a filled bowl, your tribute, or these chimes. A filled bowl earns a gift; dancing at the chimes builds forest trust.'},
+  wickpost:{label:'Wick lantern',pearls:30,essence:8,size:5,dry:true,found:'impTrade',r:25,aura:{comfort:0.025},desc:'Light a bright firefly path for 20 pond seconds. Imps within 60 pixels of this lantern will not flee from your pointer while the path is lit. Its ordinary warm light stays on.'},
 };
 for(const [kind,def]of Object.entries(WILD_OBJECTS)){
   STRUCTURES[kind]=def;STRUCT_CODES.push(kind);BUILD[kind]=s=>{s.h=kind==='wickpost'?9:kind==='impchimes'?12:3;};
@@ -127,13 +128,23 @@ for(const [kind,def]of Object.entries(WILD_OBJECTS)){
     if(kind==='impbowl'){r.ellipsoid(s.x,s.y,4,3,0,0,2,wood,id);r.ellipsoid(s.x,s.y,2.8,2,0,1.6,0.2,IMP_M.horn,next(IMP_M.horn));}
     else{r.tube(s.x,s.y,0.65,0,s.x,s.y,0.4,s.h,1,wood,id);r.tube(s.x-3,s.y,0.35,s.h,s.x+3,s.y,0.35,s.h,1,wood,id);}
   };
-  DRAW[kind]=(r,s,t)=>{
-    if(kind==='impchimes')for(let k=0;k<3;k++)r.tube(s.x+k*2-2+Math.sin(t*0.8+k)*0.4,s.y,0.3,8-k%2,s.x+k*2-2,s.y,0.2,11,0.8,IMP_M.horn,s.id);
-    if(kind==='wickpost')r.ellipsoid(s.x,s.y,1.1,1.1,0,6,1.4,IMP_M.eye,horizonId());
+  DRAW[kind]=(r,s,t,w)=>{
+    const pulse=wildPulse(w,s),sway=pulse?Math.exp(-(w.t-pulse.since)*.25)*Math.sin((w.t-pulse.since)*12)*2:0;
+    if(kind==='impchimes')for(let k=0;k<3;k++){
+      r.tube(s.x+k*2-2+Math.sin(t*0.8+k)*.4+sway,s.y,.45,6-k%2,s.x+k*2-2,s.y,.25,11,.8,IMP_M.horn,s.id);
+      r.dot(s.x+k*2-2+sway,s.y,7-k%2,pulse?IMP_M.eye:IMP_M.skin,pulse?wildGlowId():s.id);
+    }
+    if(kind==='impbowl'&&wildBowlReady(w,s))for(let k=0;k<4;k++)r.ellipsoid(s.x+Math.cos(k*TAU/4)*1.8,s.y+Math.sin(k*TAU/4)*1.3,.7,.7,0,2,.6,IMP_M.eye,wildGlowId());
+    if(kind==='wickpost'){
+      r.tube(s.x-2,s.y,.35,8,s.x+2,s.y,.35,8,1,IMP_M.horn,s.id);
+      r.ellipsoid(s.x,s.y,1.1+(pulse ? .4 : 0),1.1,0,6,1.4,IMP_M.eye,wildGlowId());
+    }
   };
 }
 LIGHT_STRUCTS.wickpost={r:20,col:'#e9b969',k:0.65};
+LIGHT_STRUCTS.impbowl={r:14,col:'#e9b969',k:0.5};
+LIGHT_STRUCTS.impchimes={r:16,col:'#e9b969',k:0.45};
 function wildsObjectClick(w,s){
-  if(!WILD_OBJECTS[s.kind])return false;
-  showWorldMystery(w,{title:STRUCTURES[s.kind].label,text:STRUCTURES[s.kind].desc,actions:[{label:s.kind==='impchimes'?'Ring the chimes':'Watch quietly',run:()=>showTicker(s.kind==='impchimes'?'The hollow seeds click. A quieter rhythm answers from the trees.':'A shadow waits just beyond the light, then moves on.')} ]});return true;
+  if(!Object.hasOwn(WILD_OBJECTS,s.kind))return false;
+  setHud(false);showObject(s);return true;
 }

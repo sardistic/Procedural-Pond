@@ -52,9 +52,17 @@ per pond day, plus a small bounded trust contribution, to 820. Five concealed
 places appear along the river only as the haze reaches them. Bell responses and
 trades build trust at most once per pond day. Trading spends 12 pearls for 18
 essence; it does not reduce points. Three completed imp outings reveal shore
-objects; visits to the offering bowl spend 4 essence, chimes make visits more
-likely and reduce pointer fright, and wick lanterns cast a warm light. Original
-curse/outing requirements remain. Native saves and the optional bounded p4
+objects. Their cards show one action, an explicit cost and live visitor status.
+Chimes invite two imps for free once per pond day; they walk down, dance and
+build one forest trust if they dance at the chimes. Fill & invite at the bowl
+costs 4 essence with no investment credit; visible glowing food stays until a
+gift is delivered, and interrupted visits can resume without paying twice.
+Chimes prefer a filled bowl or tribute when present. A lantern brightens and
+opens a firefly path for 20 pond seconds, protecting imps within 60 world pixels
+from pointer fright. Invited imps always allow watching. Swaying chimes, glowing
+food, animated trails, actual visitors and gift sparks show each outcome in place.
+Natural outings retain their curse/forest requirements and random timing;
+invitations require established contact and the visible forest. Native saves and the optional bounded p4
 exploration trailer preserve reveal, contact and transaction state; observed
 ponds do not advance these records or allow purchases.
 
@@ -81,6 +89,39 @@ Points are cumulative achievement; pearls and essence are spendable balances.
 artifact modifiers). Spending pearls does not reduce the accumulated score.
 The save records the game state, erosion, known/unlocked species, succession,
 lineage and individual life/genetics; UI icons derive their values from that state.
+
+## Wealth and offerings
+
+Offerings appear in Score and the sun panel at 5,000 banked pearls, or at
+25,000 accumulated points with at least 1,000 pearls and lifetime investment
+worth below 25% of points. Discovery persists after the balance falls. Points
+remain cumulative; a large point total unlocks options but is never spent.
+
+| Offering | Pearl cost (rounded up, minimum) | Result | Void anger |
+| --- | --- | --- | --- |
+| Hasten the sun | 15% of current balance, at least 750 | Entire simulation ×2 for 3 pond days; cannot stack | +28 |
+| Call the deep | 20%, at least 1,000 | 8% of the full current tier gap, capped at the next edge; once per pond day | +26 |
+| Still the void | 10%, at least 500 | Remove up to 25 anger; available while anger remains | −25 |
+
+Anger is a separate 0–100 index, not spendable corruption. It fades by 3 per
+simulated pond day. At anger `a`, investment point/essence dividends are multiplied
+by `1 − .35a/100`. Local water tension gains `(a/100) × (.06 + .24 × depth)`;
+this flows through the existing comfort, breeding and departure rules. The dialog
+shows the live income reduction, surface/deep tension range, anger after purchase,
+price, remaining pearls, active duration and cooldowns.
+
+Ritual spending uses `spend` without an investment category: no immediate point
+refund, dividend principal, essence or corruption reward. Existing depth milestone
+rewards still apply when a tier is actually reached. Deep offerings cannot cross
+an unsettled next tier; living ecology must be enabled. Hastened time multiplies
+the existing Speed/hard-mode pace and uses bounded simulation steps, including
+aging, hunger, breeding, tides and dawn. Pause/host pause stop advancement; there
+is no offline catch-up. Observers cannot offer or mutate ritual progress.
+
+State lives in `game.offerings` (unlock, anger, expiry, cooldown, count and lifetime
+pearl sacrifice). Native saves retain it; the existing bounded optional p4
+exploration trailer carries validated fields. Earlier links still load.
+Implementation: `js/offerings.js`, `dividendOf`, `updateZones`, and the frame loop.
 
 ## Animal status metrics
 

@@ -37,7 +37,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=60">
+  <link rel="stylesheet" href="style.css?v=62">
   <style id="entry-css">
     /* The entry screen: painted before any script loads (inline, so nothing waits on style.css). It is opaque:
        the pond stays hidden until you enter. js/entry-water.js draws the moving water on #entry-bg (in a worker). */
@@ -401,6 +401,7 @@
       <p class="note" id="water-text"></p>
       <p class="note heavens-line" id="heavens-text" hidden></p>
       <div id="sky-artifacts" class="sky-artifacts" hidden></div>
+      <button type="button" id="sky-offerings" class="offerings-entry" hidden>Offerings</button>
       <div class="fields">
         <label>Light <select id="opt-light"></select></label>
         <label>Day length <input type="range" id="opt-day" min="60" max="600" step="30"><output></output></label>
@@ -447,6 +448,7 @@
       <p class="note" id="sp-flies"></p>
       <p class="note" id="sp-coast"></p>
       <p class="note" id="sp-invest"></p>
+      <button type="button" id="score-offerings" class="offerings-entry" hidden>Offerings</button>
       <p class="note best" id="sp-best"></p>
       <h3>Lately</h3>
       <ol class="earn-list" id="sp-recent"></ol>
@@ -587,9 +589,9 @@
   <script src="js/core.js?v=55"></script>
   <script src="js/waves.js?v=59"></script>
   <script src="js/water3d.js?v=62"></script>
-  <script src="js/water-sdf.js?v=9"></script>
+  <script src="js/water-sdf.js?v=10"></script>
   <script src="js/compose-gl.js?v=2"></script>
-  <script src="js/volumetric.js?v=11"></script>
+  <script src="js/volumetric.js?v=12"></script>
   <script src="js/raster.js?v=69"></script>
   <script src="js/creatures.js?v=63"></script>
   <script src="js/critters.js?v=56"></script>
@@ -604,10 +606,10 @@
   <script src="js/scene.js?v=60"></script>
   <script src="js/character.js?v=55"></script>
   <script src="js/structures.js?v=63"></script>
-  <script src="js/erosion.js?v=58"></script>
+  <script src="js/erosion.js?v=59"></script>
   <script src="js/sky.js?v=55"></script>
-  <script src="js/ecology.js?v=55"></script>
-  <script src="js/game.js?v=56"></script>
+  <script src="js/ecology.js?v=56"></script>
+  <script src="js/game.js?v=57"></script>
   <script src="js/deep.js?v=57"></script>
   <script src="js/remains.js?v=56"></script>
   <script src="js/eldritch.js?v=56"></script>
@@ -625,7 +627,7 @@
   <script src="js/artifacts.js?v=57"></script>
   <script src="js/story.js?v=55"></script>
   <script src="js/lineage.js?v=56"></script>
-  <script src="js/depths.js?v=64"></script>
+  <script src="js/depths.js?v=65"></script>
   <script src="js/sand.js?v=55"></script>
   <script src="js/heavens.js?v=55"></script>
   <script src="js/nature.js?v=58"></script>
@@ -645,24 +647,26 @@
   <script src="js/net.js?v=58"></script>
   <script src="js/account.js?v=55"></script>
   <script src="js/wander.js?v=55"></script>
-  <script src="js/hinterland.js?v=56"></script>
-  <script src="js/imps.js?v=56"></script>
+  <script src="js/hinterland.js?v=57"></script>
+  <script src="js/imps.js?v=57"></script>
   <script src="js/structures2.js?v=2"></script>
   <script src="js/beacons.js?v=6"></script>
   <script src="js/seas.js?v=3"></script>
   <script src="js/frontiers.js?v=2"></script>
   <script src="js/horizons.js?v=1"></script>
-  <script src="js/wilds.js?v=1"></script>
+  <script src="js/wilds.js?v=3"></script>
+  <script src="js/imp-interactions.js?v=1"></script>
+  <script src="js/offerings.js?v=1"></script>
   <script src="js/minds.js?v=16"></script>
   <script src="js/mindplay.js?v=9"></script>
   <script src="js/forage.js?v=3"></script>
   <script src="js/animal-status.js?v=1"></script>
-  <script src="js/hud.js?v=78"></script>
+  <script src="js/hud.js?v=80"></script>
   <script src="js/fine.js?v=55"></script>
-  <script src="js/main.js?v=97"></script>
+  <script src="js/main.js?v=98"></script>
   <script src="js/sfx.js?v=6"></script>
   <script src="js/visits.js?v=2"></script>
-  <script src="js/guide.js?v=61"></script>
+  <script src="js/guide.js?v=62"></script>
   <script src="js/music.js?v=57"></script>
   <script src="js/tips.js?v=56"></script>
 </body>

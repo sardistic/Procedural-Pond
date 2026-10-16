@@ -1550,3 +1550,26 @@ body.map-tall.map-open .mini-wrap .slice { height: auto; }
 .world-mystery button{display:block;width:100%;padding:9px 12px;margin:7px 0;border:1px solid #466878;color:#d4e8df;background:#14323c;font:12px/1.5 system-ui,sans-serif;text-align:left;cursor:pointer}
 .world-mystery button:focus-visible{outline:2px solid #f5d66b;outline-offset:3px}
 .world-mystery button:disabled{opacity:.45;cursor:default}
+.wild-action{width:100%;padding:10px;margin:9px 0;border:1px solid #b18d51;background:#26322c;color:#ffe6a4;font:inherit;text-align:left;cursor:pointer}
+.wild-action:focus-visible{outline:2px solid #f5d66b;outline-offset:3px}
+.wild-action:disabled{opacity:.55;cursor:default}
+.wild-status{color:#f1c879!important;margin:8px 0;font-variant-numeric:tabular-nums}
+.offerings-entry{display:block;width:100%;margin:10px 0;padding:9px 12px;border:1px solid #79628b;background:#211d31;color:#dfcaeb;text-align:left;font:inherit;cursor:pointer}
+.offerings-entry:focus-visible{outline:2px solid #f5d66b;outline-offset:3px}
+.world-mystery.offerings{box-sizing:border-box;width:460px;max-width:calc(100vw - 24px);padding:20px}
+.offerings h2{padding-right:30px}
+.offerings .offering-dismiss{position:absolute;right:12px;top:8px;width:30px;text-align:center;padding:4px;margin:0;font-size:18px}
+.offerings .offering-wallet{color:#f5d66b;font-variant-numeric:tabular-nums}
+.offering-anger{display:grid;grid-template-columns:1fr auto;gap:5px;color:#d6b4eb}
+.offering-anger meter{grid-column:1/-1;width:100%;height:12px;accent-color:#b783d8}
+.offering-anger meter::-webkit-meter-optimum-value{background:#b783d8}
+.offering-anger meter::-moz-meter-bar{background:#b783d8}
+.offerings .offering-consequence{margin:8px 0;color:#b3c5c7;font-size:12px}
+.offerings .offering-active{color:#f5d66b;margin-bottom:14px}
+.offering-choice{padding:14px 0 7px;border-top:1px solid #34515b}
+.offering-choice h3{margin:0 0 6px;color:#dfcaeb;font:16px Georgia,serif}
+.offering-choice p{margin-bottom:7px}
+.offerings .offering-price,.offerings .offering-reason,.offerings .offering-footnote{font-size:12px;color:#9fb8b9}
+.offerings .offering-reason{min-height:1.6em}
+.offerings .offering-footnote{border-top:1px solid #34515b;padding-top:12px;margin:10px 0}
+.offerings .offering-result{color:#dfcaeb;margin:8px 0}

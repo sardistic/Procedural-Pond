@@ -464,9 +464,23 @@ Old ponds begin the added forest slowly. Browser saves, named ponds and current 
 links preserve these exploration states. New links containing the exploration
 trailer require the current client.
 
+Forest objects use compact action cards with explicit prices and visitor status.
+Chimes invite two visible imps; a bowl reserves 4 essence until a gift is delivered;
+lanterns open a bright firefly path that keeps nearby imps from fleeing. Trails,
+swaying seeds, glowing food and the actual procession show what is happening.
+Volumetric weather and Seascape dry-ground relief blend into the adjoining beach
+instead of ending in a hard canvas seam. `python tools/test_beach_imps_browser.py`
+checks all four joins, real invitations/dances/gifts, persistence and phone layout.
+
 `python tools/test_horizons_browser.py` checks the new terrain, species gates,
 GPU programs, four shore orientations, capped worlds, transactions and persistence.
 
 Support Pond through [Ko-fi](https://ko-fi.com/pondnz) from the game menu.
+Rich ponds reveal repeatable Offerings in Score and the sun panel. Sacrifice a
+share of banked pearls to hasten the whole ecosystem or pull the next depth closer;
+the void answers with reduced investment income and more tense water. Another
+offering calms it. Prices and consequences are shown before purchase; points and
+investment balances are preserved. `node --test tools/offerings.test.js` and
+`python tools/test_offerings_browser.py` check the economy, time, ecology and saves.
 Build the standalone browser upload with `python tools/build_itch.py`;
 [itch/README.md](itch/README.md) has account upload steps and validation commands.

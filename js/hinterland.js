@@ -532,6 +532,7 @@ function hinterSprites(world) {
     }
   } else H.eyes.length = 0;
   if (typeof drawWildsSprites === 'function') drawWildsSprites(world,dot,css);
+  if (typeof drawImpTrail === 'function') drawImpTrail(world,dot,css);
   if (typeof impSprites === 'function') impSprites(world, dot, css); // (what comes out of the jungle: imps.js)
 }
 

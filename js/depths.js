@@ -164,9 +164,10 @@ function buildLights(world, rect) {
   for (const s of world.structures) {
     const def = LIGHT_STRUCTS[s.kind];
     if (s.anim) continue;
+    if (s.kind === 'impbowl' && !wildBowlReady(world,s) || s.kind === 'impchimes' && !wildPulse(world,s)) continue;
     if (def) {
       const R = def.r * (1 + 0.15 * ((s.lv && s.lv.reach) || 0)), col = colOf(world, def, s.seed & 3), k = (def.k || 1) * (0.85 + 0.15 * Math.sin(t * 0.9 + s.x));
-      splat(M, s.x, s.y, R, col, k, 0, 0, big, Math.min(10, (s.h || 8) * 0.5 + 2));
+      splat(M, s.x, s.y, R, col, k * (typeof wildLightBoost === 'function' ? wildLightBoost(world,s) : 1), 0, 0, big, Math.min(10, (s.h || 8) * 0.5 + 2));
       splat(M, s.x, s.y, R * 2, col, k * 0.09, 0, 0, big); // (and a faint ambience far round it, in the dark)
     }
     if (s.kind === 'island' && s.branch === 'life') splat(M, s.x, s.y, islandRadius(world, s) * 0.9, 0xff70d8ff, 0.2 + 0.05 * (s.blv || 1), 0, 0, big);

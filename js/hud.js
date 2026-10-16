@@ -2361,6 +2361,7 @@ const PLANT_DETAILS = {
 function renderObject() {
   const o = objUi.o, box = byId('object');
   if (!o) return;
+  if (typeof WILD_OBJECTS !== 'undefined' && Object.hasOwn(WILD_OBJECTS,o.kind)) { renderWildObjectCard(world,o,box); return; }
   const isS = !!(o.kind && STRUCTURES[o.kind]), parts = [], head = el('header', 'cr-head'), close = el('button', 'icon', '×');
   close.type = 'button';
   close.setAttribute('aria-label', 'Close');
@@ -2413,6 +2414,7 @@ function renderObject() {
 }
 
 function initHud() {
+  initOfferings();
   buildDock();
   addEventListener('resize', updateDockVisibility);
   buildJournalFilters();
@@ -2477,7 +2479,7 @@ function hudTick(dt) {
   skyUi.timer -= dt;
   if (skyUi.open && skyUi.timer <= 0) { skyUi.timer = 0.25; updateSkyPanel(); }
   scoreUi.timer -= dt;
-  if (scoreUi.timer <= 0) { scoreUi.timer = 0.4; updateScoreHud(); renderScorePanel(); }
+  if (scoreUi.timer <= 0) { scoreUi.timer = 0.4; updateScoreHud(); renderScorePanel(); refreshOfferings(world); refreshWildObjectCard(world); }
   lineUi.timer -= dt;
   if (lineUi.kind && lineUi.timer <= 0) { lineUi.timer = 1; renderLineage(); }
   spawnUi.timer -= dt;

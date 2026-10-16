@@ -96,7 +96,8 @@ def run():
           const objects=Object.keys(WILD_OBJECTS).map((k,i)=>makeStructure(k,world,16+i*20,60,911+i));
           world.structures.push(...objects);bakeBackground(world);render();
           const bowl=objects.find(s=>s.kind==='impbowl'),out={phase:'down',tribute:bowl,imps:[{u:60,gone:false}]};
-          const beforeOffering=world.game.essence;enterPond(world,out);check(out.phase==='pond'&&world.game.essence===beforeOffering-4,'Offering bowl did not consume its cost');
+          const beforeOffering=world.game.essence;enterPond(world,out);check(out.phase==='up'&&world.game.essence===beforeOffering,'Empty bowl silently charged essence');
+          impState(world).interact={callDay:-1,bowl:bowl.seed};enterPond(world,out);check(out.phase==='pond'&&world.game.essence===beforeOffering&&wildBowlReady(world,bowl),'Filled offering was not retained until delivery');
           world.structures=[];world.creatures=world.creatures.filter(c=>c.species!=='imp');
           return {nativeSave:true,link:code.slice(0,4),dailyTrade:true,dailyRelay:true};
         }''')

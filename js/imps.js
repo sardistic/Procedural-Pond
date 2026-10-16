@@ -75,7 +75,7 @@ function updateImps(world, dt) {
   for (const m of O.imps) {
     if (m.gone) { home++; continue; }
     // (Near the pointer, they turn and run.)
-    if (!O.shy && O.phase !== 'pond' && Math.abs(m.dd - pdd) + Math.abs(m.u - pu) < 22) { O.shy = true; O.phase = 'up'; }
+    if (!O.invited && !O.shy && O.phase !== 'pond' && Math.abs(m.dd - pdd) + Math.abs(m.u - pu) < 22) { O.shy = true; O.phase = 'up'; }
     let tdd = m.tdd, tu = m.tu, spd = m.spd;
     if (O.phase === 'up') { tdd = m.dd0; tu = m.u0; spd = m.spd * (O.shy ? 2.2 : 1); }
     else if (O.phase === 'look') { tdd = m.dd; tu = m.u; if (O.t > O.lookEnd) O.phase = 'up'; }
@@ -94,24 +94,25 @@ function updateImps(world, dt) {
   }
   if (O.phase === 'up' && home === O.imps.length) endOuting(world, S, O); // (all back under the trees)
 }
-function startOuting(world, S) {
+function startOuting(world, S, invitedTarget = null) {
   const H = HINTER, along = world.shoreSide < 2 ? world.H : world.W, cur = curseLevel(world);
-  const tribute = (world.structures || []).find((s) => s.kind === 'impbowl' && !s.anim && world.game.essence >= 4) || (world.structures || []).find((s) => s.kind === 'tribute' && !s.anim);
-  const visit = !!tribute && Math.random() < Math.min(0.85, 0.06 * (S.seen + 1) + ((world.structures || []).some(s=>s.kind==='impchimes')?0.12:0));
+  const tribute = invitedTarget || (world.structures || []).find((s) => s.kind === 'impbowl' && !s.anim && wildBowlReady(world,s)) || (world.structures || []).find((s) => s.kind === 'tribute' && !s.anim);
+  const visit = !!invitedTarget || (!!tribute && Math.random() < Math.min(0.85, 0.06 * (S.seen + 1) + ((world.structures || []).some(s=>s.kind==='impchimes')?0.12:0)));
   const [, tu] = tribute ? hinterWorldToLocal(world, tribute.x, tribute.y) : [0, 0];
   // From a dark gap at the jungle's edge (the nearest to the tribute, if they're going to it).
   const gaps = H.gaps.map((g) => hinterToLocal(H.geo.s, g[0], g[1])).filter(([dd]) => dd < HZ_SCRUB + 60 && dd < H.shown - 4);
-  if (!gaps.length) return;
+  if (!gaps.length) return false;
   const [gdd, gu] = visit ? gaps.reduce((a, b) => (Math.abs(b[1] - tu) < Math.abs(a[1] - tu) ? b : a)) : pick(gaps);
-  const n = clamp(1 + Math.floor(Math.random() * (1 + cur * 2 + S.seen * 0.1)), 1, visit ? 4 : 3);
+  const n = invitedTarget ? 2 : clamp(1 + Math.floor(Math.random() * (1 + cur * 2 + S.seen * 0.1)), 1, visit ? 4 : 3);
   const stop = visit ? 0.5 : Math.max(HZ_DUNE, gdd - rand(20, 70));
   IMPS.out = {
-    t: 0, phase: 'down', visit, tribute, shy: false,
+    t: 0, phase: 'down', visit, tribute, shy: false, invited: !!invitedTarget,
     imps: Array.from({ length: n }, (_, k) => {
       const u0 = clamp(gu + rand(-3, 3), 2, along - 3);
-      return { dd0: gdd, u0, dd: gdd, u: u0, tdd: stop + rand(-2, 4) * (visit ? 0 : 1), tu: visit ? tu + (k - (n - 1) / 2) * 3 : u0 + rand(-10, 10), spd: rand(4, 6.5), ph: rand(0, TAU), step: 0, walk: true };
+      return { dd0: gdd, u0, dd: gdd, u: u0, tdd: stop + rand(-2, 4) * (visit ? 0 : 1), tu: visit ? tu + (k - (n - 1) / 2) * 3 : u0 + rand(-10, 10), spd: invitedTarget ? 20 : rand(4, 6.5), ph: rand(0, TAU), step: 0, walk: true };
     }),
   };
+  return true;
 }
 function endOuting(world, S, O) {
   IMPS.out = null;
@@ -126,10 +127,11 @@ function enterPond(world, O) {
   O.phase = 'pond';
   const s = O.tribute && (world.structures.includes(O.tribute) ? O.tribute : world.structures.find((q) => q.seed === O.tribute.seed));
   if (!s || !world.structures.includes(s)) { O.phase = 'up'; return; }
-  if (s.kind === 'impbowl' && !spendEssence(world,4)) { O.phase='up'; return; }
+  if (s.kind === 'impbowl' && !wildBowlReady(world,s)) { O.phase='up'; return; }
   O.imps.forEach((m, k) => {
     const [x, y] = coastXY(world, 1, clamp(m.u, 1, (world.shoreSide < 2 ? world.H : world.W) - 2));
     const c = new Imp(world, x, y, s, k, O.imps.length);
+    c.welcomed = !!O.invited;
     world.creatures.push(c);
     m.gone = true; // (in the pond for now)
   });
@@ -150,7 +152,7 @@ class Imp extends Creature {
     if (!world.structures.includes(this.tribute)) this.tribute = world.structures.find((q) => q.seed === this.tribute.seed) || this.tribute; // (a new depth rebuilds the pond)
     const s = this.tribute, p = world.pointer;
     if (!world.structures.includes(s) && this.act !== 'leave') this.act = 'leave';
-    if (this.act !== 'leave' && p && p.inside && (p.x - this.x) ** 2 + (p.y - this.y) ** 2 < ((world.structures || []).some(q=>q.kind==='impchimes') ? 120 : 500)) { this.act = 'leave'; this.fled = true; } // (they shy from the pointer)
+    if (!this.welcomed && !wildLanternSafe(world,this.x,this.y) && this.act !== 'leave' && p && p.inside && (p.x - this.x) ** 2 + (p.y - this.y) ** 2 < ((world.structures || []).some(q=>q.kind==='impchimes') ? 120 : 500)) { this.act = 'leave'; this.fled = true; } // (invited or lantern-lit visitors let you watch)
     let gx, gy, spd = 7;
     if (this.act === 'come' || this.act === 'dance') {
       const a = (this.act === 'dance' ? this.t * 0.9 : 0) + this.k / this.n * TAU, R = 7.5;
@@ -185,7 +187,18 @@ class Imp extends Creature {
 }
 // What they leave at its feet.
 function impGift(world, s) {
+  if (world.observe) return;
   const S = impState(world);
+  if (s.kind === 'impchimes') {
+    if (world.game.wilds) world.game.wilds.trust = Math.min(20,(world.game.wilds.trust||0)+1);
+    else { S.interact=impInteractions(world); S.interact.trust=Math.min(20,S.interact.trust+1); }
+    const trust=world.game.wilds?.trust??S.interact.trust;
+    wildObjectSignal(world,s,'gift');showTicker(`They answer your rhythm. Forest trust ${trust}/20. Fill an offering bowl for a gift next time.`);world.gameDirty=true;return;
+  }
+  if (s.kind === 'impbowl') {
+    if (!wildBowlReady(world,s)) return;
+    S.interact = impInteractions(world); S.interact.bowl = -1;
+  }
   S.visits++;
   if (world.game.wilds) world.game.wilds.trust = Math.min(20,(world.game.wilds.trust||0)+1);
   const cor = typeof gainCorruption === 'function' ? gainCorruption(world, 6 + 3 * Math.min(8, S.visits), 'the tribute', { quiet: true }) : 0;
@@ -198,6 +211,7 @@ function impGift(world, s) {
   }
   logEvent(world, S.visits === 1 ? `✦ They came down out of the jungle to the tribute: ${plural('small red thing', 2)} with horns, round it in a ring, hopping. When they had gone back up, something lay at its feet (${what}${cor ? `, +${cor} corruption` : ''})`
     : `They came down to the tribute again and danced round it, and left something at its feet (${what}${cor ? `, +${cor} corruption` : ''})`, s, { cat: 'story', pri: S.visits === 1 ? 3 : 2 });
+  if (s.kind === 'impbowl') { wildObjectSignal(world,s,'gift');showTicker(`The bowl is empty. Your visitors left ${what}${cor?` and +${cor} corruption`:''}.`); }
 }
 
 // ---- drawn on the land up the beach (hinterland.js, a few frames a second) -----------------------------------------------
