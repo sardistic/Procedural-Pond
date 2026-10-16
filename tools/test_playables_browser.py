@@ -102,6 +102,10 @@ def run():
                 page.evaluate("world.game.pearls = 137; world.game.essence = 83; saveNow()")
                 page.wait_for_function("PondPlatform.saveStatus === 'saved'")
                 seed = page.evaluate('world.seed')
+                assert page.evaluate('''()=>{const b=document.getElementById('opt-performance'),waves=world.opts.waves;
+                  b.value='60fps';b.dispatchEvent(new Event('change'));render();
+                  const ok=world.opts.performance==='60fps'&&performanceOptions(world).waves==='classic'&&world.opts.waves===waves;
+                  b.value='quality';b.dispatchEvent(new Event('change'));return ok;}''')
                 assert saved[0] and len(saved[0].encode('utf-16-le')) < 3 * 1024 * 1024
                 # Host mute applies even to audio contexts created after the callback.
                 page.evaluate("setSound(true); setMusic(true)")

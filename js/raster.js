@@ -66,7 +66,7 @@ class Raster {
   put(x, y, h, m, nx, ny, nz, id) {
     const W = this.W;
     if (this.alpha < 1 && BAYER4[(x & 3) | ((y & 3) << 2)] + 0.5 >= this.alpha) return;
-    if (h > 1 && this.castShadows) {
+    if (h > 1 && this.castShadows && !this.skipShadows) {
       const sx = x + Math.round(h * SHADOW_X), sy = y + Math.round(h * SHADOW_Y);
       if (sx < W && sy < this.H) {
         const q = sx + sy * W;

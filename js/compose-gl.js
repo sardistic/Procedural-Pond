@@ -5,8 +5,8 @@
 // outlines, shadows, caustics, the dry and damp beach, refraction, the swell and its marks, chop, spindrift and
 // whitecaps, the sky in calm water, foam and surf at the shore, fog, the river's channel, the deep's dark and murk,
 // trenches, harbors, the bright coast, the islands' drain, the light's tint and the pools of light. It's drawn onto a
-// canvas laid over the pond's own (as the 3D water is). It steps aside (the CPU composes) for the 3D and Seascape
-// water, the bones view, the close-up layer, and whole-pond renders, all of which read the CPU's picture.
+// canvas laid over the pond's own (as the 3D water is). Seascape can read this canvas directly on the GPU.
+// The CPU composes for 3D water, bones, close-up recording and whole-pond renders.
 // Kept as close to Raster.compose as it can be, in integer steps where that does them so (see .agent/runtime/
 // gpu_compose_probe.py for the comparison).
 
@@ -18,7 +18,7 @@ const CGL_FS = `#version 300 es
 precision highp float; precision highp int; precision highp usampler2D;
 uniform sampler2D t_col, t_z, t_zb, t_sh, t_bg, t_ter, t_riv, t_cc, t_tab, t_light, t_outline, t_flags;
 uniform usampler2D t_id, t_isle;
-uniform ivec2 u_org, u_size, u_world, u_lsize, u_torg, u_tsize;
+uniform ivec2 u_org, u_size, u_world, u_lsize, u_lorg, u_torg, u_tsize;
 uniform int u_flags; // 1 caustics, 2 shadows, 4 outlines, 8 anyThick, 16 fog, 32 clouds, 64 lights, 128 tint, 256 river, 512 depth, 1024 trench, 2048 isles, 4096 void, 8192 isleEdge
 uniform float u_t, u_causticT, u_tideL, u_surf, u_wave, u_surfaceVis, u_swell, u_chop, u_spin, u_deepK, u_lvis, u_riverDeep, u_calm, u_fogAmt, u_fogK;
 uniform ivec2 u_o1, u_o2, u_vo; uniform int u_starT, u_hT;
@@ -293,7 +293,7 @@ void main() {
   }
   if ((u_flags & 64) != 0 && !((u_flags & 128) != 0 && em == 2)) {
     float bq = bay(x, y); int gx = int(float(x + 2) + bq * 3.6) >> 2, gy = int(float(y + 2) - bq * 3.6) >> 2;
-    vec3 L = texelFetch(t_light, ivec2(min(gx, u_lsize.x - 1), min(gy, u_lsize.y - 1)), 0).rgb;
+    vec3 L = texelFetch(t_light, clamp(ivec2(gx, gy) - u_lorg, ivec2(0), u_lsize - 1), 0).rgb;
     if (L.r + L.g + L.b > 0.004) {
       float vis = max(max(u_lvis, dd / 255.0 * 0.45), 0.06);
       float m0 = max(L.r, max(L.g, L.b)), mt = m0 / (1.0 + m0);
@@ -366,14 +366,14 @@ function cglPlain(gl, G, name, w, h, ifmt, fmt, type, data) {
 const cglHex = (c) => [c & 255, (c >> 8) & 255, (c >>> 16) & 255];
 
 // Compose the rect on the GPU from the raster and the state render() built for Raster.compose. False if it can't.
-function composeGL(r, s, rect, world) {
+function composeGL(r, s, rect, world, tile = null) {
   if (!composeGLAvailable()) return false;
   const G = CGL, gl = G.gl, W = r.W, H = r.H;
   // The tile: the rect and a margin (outlines and refraction read a few pixels round it), snapped so it doesn't
   // change size every frame.
   const m = 4, snap = 32;
-  const x0 = Math.max(0, Math.floor((rect[0] - m) / snap) * snap), y0 = Math.max(0, Math.floor((rect[1] - m) / snap) * snap);
-  const x1 = Math.min(W, Math.ceil((rect[2] + m + 1) / snap) * snap), y1 = Math.min(H, Math.ceil((rect[3] + m + 1) / snap) * snap);
+  const x0 = tile ? tile[0] : Math.max(0, Math.floor((rect[0] - m) / snap) * snap), y0 = tile ? tile[1] : Math.max(0, Math.floor((rect[1] - m) / snap) * snap);
+  const x1 = tile ? tile[2] : Math.min(W, Math.ceil((rect[2] + m + 1) / snap) * snap), y1 = tile ? tile[3] : Math.min(H, Math.ceil((rect[3] + m + 1) / snap) * snap);
   const tw = x1 - x0, th = y1 - y0, maxT = G.maxT || (G.maxT = gl.getParameter(gl.MAX_TEXTURE_SIZE));
   if (tw <= 0 || th <= 0 || tw > maxT || th > maxT) return false;
   if (G.W !== tw || G.H !== th) { G.cv.width = tw; G.cv.height = th; G.cv.style.width = `${tw}px`; G.cv.style.height = `${th}px`; G.W = tw; G.H = th; G.terrainKey = ''; }
@@ -433,7 +433,23 @@ function composeGL(r, s, rect, world) {
   cglPlain(gl, G, 't_tab', TW, 4, gl.R32F, gl.RED, gl.FLOAT, tab);
   // Lights.
   const LM = s.lights || null;
-  if (LM) { const L4 = G.lbuf && G.lbuf.length === LM.lw * LM.lh * 4 ? G.lbuf : (G.lbuf = new Float32Array(LM.lw * LM.lh * 4)); for (let k = 0, n = LM.lw * LM.lh; k < n; k++) { L4[k * 4] = LM.data[k * 3]; L4[k * 4 + 1] = LM.data[k * 3 + 1]; L4[k * 4 + 2] = LM.data[k * 3 + 2]; } cglPlain(gl, G, 't_light', LM.lw, LM.lh, gl.RGBA32F, gl.RGBA, gl.FLOAT, L4); }
+  if (LM) {
+    // Only the visible light cells, with one cell for the dithered sample at
+    // the edge. Uploading the whole pond cost ~10 MB every frame on a mature pond.
+    const lx = Math.max(0, Math.floor(x0 / LIGHT_CELL) - 1), ly = Math.max(0, Math.floor(y0 / LIGHT_CELL) - 1);
+    const lw = Math.min(LM.lw, Math.ceil(x1 / LIGHT_CELL) + 1) - lx, lh = Math.min(LM.lh, Math.ceil(y1 / LIGHT_CELL) + 1) - ly;
+    const L = G.lightTile;
+    if (G.lightMap !== LM || G.lightStamp !== LM.version || !L || L.x !== lx || L.y !== ly || L.w !== lw || L.h !== lh) {
+      const L4 = G.lbuf && G.lbuf.length === lw * lh * 4 ? G.lbuf : (G.lbuf = new Float32Array(lw * lh * 4));
+      for (let y = 0; y < lh; y++) for (let x = 0; x < lw; x++) {
+        const src = (lx + x + (ly + y) * LM.lw) * 3, dst = (x + y * lw) * 4;
+        L4[dst] = LM.data[src]; L4[dst+1] = LM.data[src+1]; L4[dst+2] = LM.data[src+2];
+      }
+      cglPlain(gl, G, 't_light', lw, lh, gl.RGBA32F, gl.RGBA, gl.FLOAT, L4);
+      G.lightMap = LM; G.lightStamp = LM.version;
+      G.lightTile = { x: lx, y: ly, w: lw, h: lh };
+    }
+  }
   // The per-id tables: outline colours and flags (refreshed every frame: cheap, and ids come and go).
   const OB = G.outlineBytes, FB = G.flagBytes, ol = s.outline, em = s.emissive, fd = s.fade, tk = s.thick, vd = s.voidSkin;
   for (let k = 0; k < 65536; k++) { const c = ol[k] || 0, q = k * 4; OB[q] = c & 255; OB[q + 1] = (c >> 8) & 255; OB[q + 2] = (c >>> 16) & 255; OB[q + 3] = 255; FB[q] = em[k]; FB[q + 1] = fd[k]; FB[q + 2] = tk ? tk[k] : 0; FB[q + 3] = vd ? vd[k] : 0; }
@@ -447,7 +463,8 @@ function composeGL(r, s, rect, world) {
   const isleOn = !!(s.isleDrain && s.islandGround), voidOn = !!s.voidSkin;
   const flags = (s.caustics ? 1 : 0) | (s.shadows ? 2 : 0) | (s.outlines ? 4 : 0) | (s.anyThick && s.thick ? 8 : 0) | (fog && fog.amount > 0 ? 16 : 0) | (s.clouds ? 32 : 0) | (LM ? 64 : 0) | (s.tint ? 128 : 0)
     | (RM ? 256 : 0) | (s.depth ? 512 : 0) | (s.trench ? 1024 : 0) | (isleOn ? 2048 : 0) | (voidOn ? 4096 : 0) | (s.islandEdge ? 8192 : 0);
-  i2('u_org', x0, y0); i2('u_size', tw, th); i2('u_torg', G.tx0, G.ty0); i2('u_tsize', G.ttw, G.tth); i2('u_world', W, H); i2('u_lsize', LM ? LM.lw : 1, LM ? LM.lh : 1); i1('u_flags', flags);
+  i2('u_org', x0, y0); i2('u_size', tw, th); i2('u_torg', G.tx0, G.ty0); i2('u_tsize', G.ttw, G.tth); i2('u_world', W, H);
+  i2('u_lsize', LM ? G.lightTile.w : 1, LM ? G.lightTile.h : 1); i2('u_lorg', LM ? G.lightTile.x : 0, LM ? G.lightTile.y : 0); i1('u_flags', flags);
   f1('u_t', t); f1('u_causticT', s.causticT || 0.09); f1('u_tideL', (s.tide ?? 1) * 255); f1('u_surf', s.surf || 0); f1('u_wave', s.wave || 0); f1('u_surfaceVis', s.surfaceVis ?? 1);
   f1('u_swell', s.waveMode === 'mesh' ? 0 : swell); f1('u_chop', s.chop || 0); f1('u_spin', s.spindrift || 0); f1('u_deepK', s.deepK ?? 1); f1('u_lvis', s.lightVis || 0); f1('u_riverDeep', s.riverDeep ?? 0.5);
   f1('u_calm', clamp(1 - swell * 1.5, 0, 1) * (s.skyK ?? 1)); f1('u_fogAmt', fog ? fog.amount : 0); f1('u_fogK', 64 / SURFACE_Z);

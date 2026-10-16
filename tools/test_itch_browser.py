@@ -76,10 +76,14 @@ def run():
                   saveNow();
                   const second=serializePond(world);second.seed='itch-second';storeSave(second);
                   openPond({seed:'itch-second'});
+                  const chosen=world.opts.waves,mode=document.getElementById('opt-performance');
+                  mode.value='60fps';mode.dispatchEvent(new Event('change'));render();
+                  const performanceMode=world.opts.performance==='60fps'&&performanceOptions(world).waves==='classic'&&world.opts.waves===chosen;
+                  mode.value='quality';mode.dispatchEvent(new Event('change'));
                   return {seed:world.seed,api:Net.base,kofi:document.querySelector('.pond-support a').href,overflow:document.documentElement.scrollWidth>innerWidth,
-                    highest:loadSave(world.seed).creatures.some(c=>c.k==='nightnurse'),looks:Object.keys(WAVE_LOOKS),nativeStorage:!!localStorage.getItem('procedural-pond.saves')};
+                    highest:loadSave(world.seed).creatures.some(c=>c.k==='nightnurse'),looks:Object.keys(WAVE_LOOKS),nativeStorage:!!localStorage.getItem('procedural-pond.saves'),performanceMode};
                 }''')
-                assert first['seed'] == 'itch-second' and first['highest'] and first['nativeStorage']
+                assert first['seed'] == 'itch-second' and first['highest'] and first['nativeStorage'] and first['performanceMode']
                 assert first['api'] is None and not first['overflow']
                 assert first['kofi'] == 'https://ko-fi.com/pondnz' and first['looks'] == ['classic', 'mesh']
                 assert '/dist/itch/index.html' in frame.url

@@ -429,6 +429,45 @@ add a new top-level asset, list it in the `Dockerfile`.
 own renderer. SEO lives in `index.html` (description, canonical, Open Graph and Twitter cards,
 JSON-LD) plus `robots.txt`, `sitemap.xml` and `manifest.webmanifest`.
 
+## Large-pond performance
+
+GPU rendering now composes the scene for Seascape as well as Classic water.
+Seascape reads that canvas directly; CPU rendering, photos, bones and close-up
+recording retain their image-buffer path. GPU lighting uploads only the visible
+tile, and broad light pools calculate only the cells needed for that view.
+
+`python tools/profile_large_pond.py --label local` profiles a frozen public-pond
+snapshot locally, with remote writes and analytics blocked. It records frame
+times and CPU samples under ignored `.agent/runtime/`; `--root` can serve an older
+checkout for comparison. On Thomas-Pond (1280×7804, about 350 animals, 4,192 plants
+and 179 structures), a warmed 1440×1000 island view on a GTX 1070 improved from
+50.1 to 30.6 ms median frame time (about 20 to 33 FPS), with GPU, Seascape and
+Volumetrics enabled. Rendering averaged 35.4 versus 16.0 ms. These short local
+measurements vary by hardware and simulation; occasional scenery/simulation
+hitches remain outside this rendering change.
+
+Scene → Performance → **60 FPS target** offers a lighter presentation: GPU
+Classic water, unshadowed light pools refreshed at 15 Hz, no cast shadows,
+Volumetrics or close-up layer, and adaptive detail on unfocused animals at a
+distance. The minimap refreshes at 4 Hz. Animals, plants, hunger, breeding,
+progression and time keep their normal updates; no population is removed.
+Your underlying visual choices are retained, restored by **Your settings**, and
+used for photos. The mode is a local device preference with a measured FPS
+readout. WebGL2 failure falls back to CPU rendering.
+
+The same frozen pond's ten-second warmed test averaged 60.4 FPS (15.8 ms median,
+23.6 ms p95) in this mode; rendering averaged 6.45 ms. This is a 60 FPS target,
+not a fixed rate or a guarantee across devices. Run
+`python tools/profile_large_pond.py --performance 60fps --label target60 --seconds 10`
+to measure it. `node --test tools/performance.test.js` and
+`python tools/test_performance_browser.py` cover adaptation, light caching,
+preference restoration, photos, fallback, phone layout and reload persistence.
+
+`node --test tools/lighting.test.js` checks light bounds and falloff.
+`python tools/test_gpu_seascape_browser.py` compares cropped lighting against a
+full-world upload and GPU scene transfer against the image-buffer reference,
+including rotation, panning, phone layout, photos and failure fallbacks.
+
 ## Third-party work
 
 For the separate YouTube Playables build, run `python tools/build_playables.py`.

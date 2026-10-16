@@ -10,6 +10,7 @@ class Quiet(SimpleHTTPRequestHandler):
     def log_message(self, *args): pass
 
 def run():
+    ThreadingHTTPServer.request_queue_size = 128
     server = ThreadingHTTPServer(('127.0.0.1', 0), partial(Quiet, directory=str(ROOT)))
     Thread(target=server.serve_forever, daemon=True).start()
     try:

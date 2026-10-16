@@ -292,15 +292,21 @@ function placeSeascape() {
     cv.style.transform = `translate(${x}px, ${y}px) scale(${view.k}) rotate(${view.r * 90}deg)`;
   }
 }
-// Draws the surface over the visible part of the pond (a tile around it, snapped so it doesn't move every frame).
-function drawSeascape(w, state, rect, img) {
-  if (!seascapeAvailable() || !img || img.width !== w.W) return false;
-  const G = SDF_GPU, gl = G.gl, B = G.B;
+// Shared with the GPU compositor: the transferred canvas must cover this exact tile.
+function seascapeTile(w, rect) {
   const margin = 16, snap = 64;
   const x0 = Math.max(0, Math.floor((rect[0] - margin) / snap) * snap), y0 = Math.max(0, Math.floor((rect[1] - margin) / snap) * snap);
   const x1 = Math.min(w.W, Math.ceil((rect[2] + margin + 1) / snap) * snap), y1 = Math.min(w.H, Math.ceil((rect[3] + margin + 1) / snap) * snap);
+  return [x0,y0,x1,y1];
+}
+// Draws the surface over the visible part of the pond (a tile around it, snapped so it doesn't move every frame).
+function drawSeascape(w, state, rect, img, scene = null) {
+  if (!seascapeAvailable() || (!scene && (!img || img.width !== w.W))) return false;
+  const G = SDF_GPU, gl = G.gl, B = G.B;
+  const [x0,y0,x1,y1] = seascapeTile(w,rect);
   const W = x1 - x0, H = y1 - y0, maxSize = G.maxSize || (G.maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE));
   if (!W || !H || W > maxSize || H > maxSize) { hideSeascape(); return false; }
+  if (scene && (scene.x !== x0 || scene.y !== y0 || scene.W !== W || scene.H !== H || scene.cv.hidden)) return false;
   const cw = W, ch = H;
   if (G.W !== W || G.H !== H || G.x !== x0 || G.y !== y0) {
     G.W = W; G.H = H; G.x = x0; G.y = y0; G.cv.width = cw; G.cv.height = ch; G.frames = 0; G.terrain = null;
@@ -309,12 +315,17 @@ function drawSeascape(w, state, rect, img) {
   gl.viewport(0, 0, cw, ch); gl.useProgram(G.program);
   gl.bindBuffer(gl.ARRAY_BUFFER, G.quad); gl.enableVertexAttribArray(G.position); gl.vertexAttribPointer(G.position, 2, gl.FLOAT, false, 0, 0);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-  // The pond's picture for this tile, straight from its image buffer.
+  // Keep GPU-rendered water on the GPU. Canvas-to-texture transfer avoids a CPU
+  // compose, full-world image readback, or an intermediate 2D draw on big ponds.
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, G.textures[0]);
-  const bytes = G.bytes && G.bytes.buffer === img.data.buffer ? G.bytes : (G.bytes = new Uint8Array(img.data.buffer, img.data.byteOffset, img.data.byteLength));
-  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, w.W); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, x0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, y0);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
-  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+  if (scene) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, scene.cv);
+  else {
+    const bytes = G.bytes && G.bytes.buffer === img.data.buffer ? G.bytes : (G.bytes = new Uint8Array(img.data.buffer, img.data.byteOffset, img.data.byteLength));
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, w.W); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, x0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, y0);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+  }
+  G.sceneGPU = !!scene;
   // Shore and depth, when they change (or every couple of seconds, as the beach erodes).
   if (G.terrain !== w.shore || G.depth !== w.depth || performance.now() - (G.terrainAt || 0) > 2000) {
     const flat = new Uint8Array(W * H);

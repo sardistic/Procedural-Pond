@@ -48,7 +48,7 @@ const FINE_NOISE = (() => {
   return T;
 })();
 
-const fineWanted = () => world.opts.fine !== false && view.k >= FINE_MIN_K && !world.bones && QUALITY.level < 2 && performance.now() > FINE.off;
+const fineWanted = () => world.opts.fine !== false && !performanceActive(world) && view.k >= FINE_MIN_K && !world.bones && QUALITY.level < 2 && performance.now() > FINE.off;
 // (Before the frame is drawn: the eyes are noted as they're drawn.)
 function fineBegin(overlay = true) {
   FINE.eyes.length = 0;

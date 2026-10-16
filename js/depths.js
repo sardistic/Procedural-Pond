@@ -44,6 +44,7 @@ const colOf = (world, d, i) => (d.col ? (typeof d.col === 'string' ? (d.col = he
 
 // The light map: a coarse grid (4 px cells) of added light, rebuilt each frame over what's on screen.
 const LIGHT_CELL = 4;
+const LIGHT_NEIGHBORS = new Int8Array([1,0,-1,0,0,1,0,-1,1,1,-1,-1,1,-1,-1,1]);
 function lightMap(world) {
   const lw = Math.ceil(world.W / LIGHT_CELL), lh = Math.ceil(world.H / LIGHT_CELL);
   let M = world.lightMap;
@@ -64,8 +65,8 @@ function occluders(world, M, rect) {
   M.ob = [gx0, gy0, gx1, gy1];
   for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
     let h = 0;
-    for (const [sx, sy] of [[1, 1], [3, 3]]) { // (two samples a cell)
-      const px = gx * cs + sx, py = gy * cs + sy;
+    for (let sample = 1; sample <= 3; sample += 2) { // two diagonal samples, without per-cell arrays
+      const px = gx * cs + sample, py = gy * cs + sample;
       if (px >= W || py >= world.H) continue;
       const p = px + py * W, v = id[p] ? Math.max(zB[p], z[p]) : zB[p];
       if (v > h) h = v;
@@ -75,8 +76,8 @@ function occluders(world, M, rect) {
   for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
     const i = gx + gy * M.lw, h = O[i];
     let a = 0;
-    for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
-      const nx = gx + ox, ny = gy + oy;
+    for (let j = 0; j < LIGHT_NEIGHBORS.length; j += 2) {
+      const nx = gx + LIGHT_NEIGHBORS[j], ny = gy + LIGHT_NEIGHBORS[j+1];
       if (nx < gx0 || ny < gy0 || nx > gx1 || ny > gy1) continue;
       const d = O[nx + ny * M.lw] - h;
       if (d > 0) a += Math.min(1, d / 12);
@@ -86,15 +87,16 @@ function occluders(world, M, rect) {
 }
 function splat(M, x, y, R, col, k, ang, beam, rect, lh) {
   if (R < 10) { k *= R / 10; R = 10; } // (small lights spread a little, or the grid shows as squares)
-  // (The occluders are built the first time a light that casts shadows needs them this frame.)
-  if (lh != null && !M.occReady && M.occWorld) { occluders(M.occWorld, M, M.occRect); M.occReady = true; }
-  const shade = lh != null && M.occ && M.ob, O = M.occ, AO = M.ao, lgx = x / LIGHT_CELL, lgy = y / LIGHT_CELL;
   const cs = LIGHT_CELL, ahead = beam ? R * beam : R;
   const ext = Math.max(R, ahead) + 2;
   if (x + ext < rect[0] || x - ext > rect[2] || y + ext < rect[1] || y - ext > rect[3]) return;
+  // Build shadows only for a lamp that can reach this tile. Large island lights
+  // must touch just the requested cells, not their entire world-sized radius.
+  if (!M.unshadowed && lh != null && !M.occReady && M.occWorld) { occluders(M.occWorld, M, M.occRect); M.occReady = true; }
+  const shade = !M.unshadowed && lh != null && M.occ && M.ob, O = M.occ, AO = M.ao, lgx = x / LIGHT_CELL, lgy = y / LIGHT_CELL;
   const cr = (col & 255) / 255, cg = ((col >> 8) & 255) / 255, cb = ((col >>> 16) & 255) / 255, ca = Math.cos(ang || 0), sa = Math.sin(ang || 0);
-  const gx0 = Math.max(0, Math.floor((x - ext) / cs)), gx1 = Math.min(M.lw - 1, Math.floor((x + ext) / cs));
-  const gy0 = Math.max(0, Math.floor((y - ext) / cs)), gy1 = Math.min(M.lh - 1, Math.floor((y + ext) / cs));
+  const gx0 = Math.max(0, Math.floor((x - ext) / cs), Math.floor(rect[0] / cs)), gx1 = Math.min(M.lw - 1, Math.floor((x + ext) / cs), Math.ceil(rect[2] / cs));
+  const gy0 = Math.max(0, Math.floor((y - ext) / cs), Math.floor(rect[1] / cs)), gy1 = Math.min(M.lh - 1, Math.floor((y + ext) / cs), Math.ceil(rect[3] / cs));
   const D = M.data;
   for (let gy = gy0; gy <= gy1; gy++) {
     for (let gx = gx0; gx <= gx1; gx++) {
@@ -126,8 +128,10 @@ function splat(M, x, y, R, col, k, ang, beam, rect, lh) {
 }
 
 // Gather this frame's lights (on screen, plus their reach).
-function buildLights(world, rect) {
+function buildLights(world, rect, shadows = true) {
   const M = lightMap(world), D = M.data, cs = LIGHT_CELL, night = world.darkness || 0, t = world.t;
+  M.unshadowed = !shadows;
+  M.version = (M.version || 0) + 1;
   const gx0 = Math.max(0, Math.floor((rect[0] - 90) / cs)), gx1 = Math.min(M.lw - 1, Math.ceil((rect[2] + 90) / cs));
   const gy0 = Math.max(0, Math.floor((rect[1] - 90) / cs)), gy1 = Math.min(M.lh - 1, Math.ceil((rect[3] + 90) / cs));
   for (let gy = gy0; gy <= gy1; gy++) D.fill(0, (gx0 + gy * M.lw) * 3, (gx1 + 1 + gy * M.lw) * 3);

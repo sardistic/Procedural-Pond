@@ -7,7 +7,7 @@ const OPTS_KEY = 'procedural-pond.opts';
 const DEFAULT_OPTS = {
   v: 5, world: 'auto', habitat: 'mixed', floor: 'sand', water: 'teal', light: 'cycle', dayLength: 180,
   current: 25, speed: 1, caustics: true, shadows: true, outlines: true, life: true, weather: true, sound: false,
-  music: false, musicLevel: 40, hard: false, neighbours: true, fine: true, waves: 'classic', hdWaves: false, bars: true, renderer: 'cpu', volumetrics: false,
+  music: false, musicLevel: 40, hard: false, neighbours: true, fine: true, waves: 'classic', hdWaves: false, bars: true, renderer: 'cpu', volumetrics: false, performance: 'quality',
 };
 // The water's look (the Waves button): the original pixel water, the 3D wave mesh (water3d.js), or Seascape, the
 // surface raymarched and pixelated (water-sdf.js). (hdWaves stays the switch the rest of the code reads for 3D.)
@@ -45,6 +45,7 @@ function loadOpts() {
     if (!stored.v || stored.v < 5) { stored.waves = 'classic'; stored.hdWaves = false; } // the original water is the default again
     if (!WAVE_LOOKS[stored.waves]) stored.waves = stored.hdWaves ? 'mesh' : 'classic';
     stored.hdWaves = stored.waves === 'mesh';
+    if (stored.performance !== '60fps') stored.performance = 'quality';
     if (FLOOR_ALIASES[stored.floor]) stored.floor = FLOOR_ALIASES[stored.floor];
     return { ...DEFAULT_OPTS, ...stored, v: 5 };
   } catch { return { ...DEFAULT_OPTS }; }
@@ -613,16 +614,19 @@ function visibleRect() {
 // back when there's room again.
 const QUALITY = { level: 0, ema: 12, at: 0 };
 function render(full = false) {
-  const r = world.raster, t = world.t, o = world.opts, t0 = performance.now();
+  const r = world.raster, t = world.t, o = performanceOptions(world, full), t0 = performance.now();
+  const fast = o !== world.opts, detail = fast && view.k < 6 ? PERFORMANCE.level : 0;
+  r.skipShadows = fast;
   const light = world.light || (world.light = lighting());
   const rect = full ? [0, 0, world.W - 1, world.H - 1] : visibleRect();
   if (typeof fineBegin === 'function') fineBegin(!full); // (close up: fine.js notes the eyes as they're drawn)
   // (On the GPU the light pools, caustics, chop and cloud glints cost next to nothing: they stay, whatever the
   // quality governor makes of the frame time.)
-  const gpuLikely = o.renderer === 'gpu' && !full && !world.bones && o.waves === 'classic' && !(typeof FINE !== 'undefined' && FINE.rec) && typeof CGL !== 'undefined' && !CGL.failed;
+  const gpuLikely = o.renderer === 'gpu' && !full && !world.bones && o.waves !== 'mesh' && !(typeof FINE !== 'undefined' && FINE.rec) && typeof CGL !== 'undefined' && !CGL.failed;
   const q = gpuLikely ? 0 : QUALITY.level;
+  const sceneTile = gpuLikely && o.waves === 'sdf' ? seascapeTile(world,rect) : null;
   // Rasterize a margin above/left of the view: shadows of things just off-screen still land on it.
-  r.setClip(rect[0] - 30, rect[1] - 30, rect[2] + 3, rect[3] + 3);
+  r.setClip((sceneTile?.[0] ?? rect[0]) - 30, (sceneTile?.[1] ?? rect[1]) - 30, (sceneTile ? sceneTile[2]-1 : rect[2]) + 3, (sceneTile ? sceneTile[3]-1 : rect[3]) + 3);
   r.begin();
   // (Only what could show: things well off screen aren't drawn at all. Big ponds have thousands.)
   const [vx0, vy0, vx1, vy1] = rect, near = (x, y, m) => x > vx0 - m && x < vx1 + m && y > vy0 - m && y < vy1 + m;
@@ -644,7 +648,7 @@ function render(full = false) {
   // segments, no small fins, fewer tentacles. What you follow or point at stays whole.
   let onScreen = 0;
   for (const c of world.creatures) if (near(c.x, c.y, 20)) onScreen++;
-  const crowd = onScreen > CROWD_LOD ? (onScreen > CROWD_LOD * 2 ? 2 : 1) : 0;
+  const crowd = Math.max(detail, onScreen > CROWD_LOD ? (onScreen > CROWD_LOD * 2 ? 2 : 1) : 0);
   for (const c of world.creatures) {
     if (!near(c.x, c.y, DEEP[c.species] && DEEP[c.species].mythic ? 220 : 110)) continue;
     r.lod = crowd && c !== cam.follow && c !== world.hover && c !== world.grab && !(DEEP[c.species] && DEEP[c.species].mythic) ? crowd : 0;
@@ -707,15 +711,15 @@ function render(full = false) {
     depth: world.depth, deepColor: typeof deepTint === 'function' ? deepTint(world) : DEEP_COLOR.mixed,
     voidSkin: world.eldMarks && world.eldMarks.length || world.plants.some((p) => p.tr && p.tr.eld) ? VOID_SKIN : null,
     swell, swellDir: world.shore ? world.shoreN : [0.8, 0.6], clouds: q < 1 ? world.clouds : null, sky: skyColor, skyK: glass ? 1.4 : typeof heavenNow === 'function' && heavenNow(world, 'aurora') ? 1.6 : 1 - world.weather.rain * 0.7,
-    lights: q < 2 ? buildLights(world, rect) : null, lightVis: light.darkness || 0, deepColor2: 0xff000000, trench: world.trench, trenchGlow: TRENCH_GLOW[branchOf(world)],
+    lights: q < 2 ? performanceLights(world, rect, full) : null, lightVis: light.darkness || 0, deepColor2: 0xff000000, trench: world.trench, trenchGlow: TRENCH_GLOW[branchOf(world)],
     chop: q < 1 && !glass ? clamp(0.12 + seaOf(world).gust * 0.6 + seaOf(world).surf * 0.25, 0, 0.9) * surfaceVis : 0, spindrift: q < 1 ? clamp((swell - 0.75) * 2.5, 0, 1) * surfaceVis : 0,
     seaCoast: typeof seaCoastSpans === 'function' ? seaCoastSpans(world) : null,
     isleDrain: world.isleDrain || null, islandGround: world.islandGround || null, islandEdge: world.islandEdgeOf === world.islandGround ? world.islandEdge : null, harbors: typeof beaconZones === 'function' ? (beaconZones(world), BEACON.harbors) : null,
     waveMode: o.hdWaves ? 'mesh' : 'classic', waveT: waveTime(world), wavePh: world.wavePh, gust: glass ? 0 : seaOf(world).gust, rain: seaOf(world).rain,
   };
-  // The compose: on the GPU if that's chosen and it can (compose-gl.js), else here. (The 3D and Seascape water, the
-  // bones, the close-up layer and whole-pond pictures read the CPU's picture, so they keep it.)
-  const gpu = o.renderer === 'gpu' && !full && !world.bones && o.waves === 'classic' && !(typeof FINE !== 'undefined' && FINE.rec) && typeof composeGL === 'function' && composeGL(r, st, rect, world);
+  // Compose on the GPU when available; Seascape reads its canvas directly.
+  // 3D water, bones, close-up recording and whole-pond pictures need the CPU image.
+  const gpu = gpuLikely && typeof composeGL === 'function' && composeGL(r, st, rect, world, sceneTile);
   if (!gpu) { r.compose(out, st, rect); if (typeof hideComposeGL === 'function') hideComposeGL(); }
   const waterState = { swell, sky: skyColor, darkness: light.darkness, visibility: surfaceVis, time: waveTime(world) };
   const meshReady = o.hdWaves && surfaceVis > 0.025 && typeof waterMeshAvailable === 'function' && waterMeshAvailable();
@@ -735,7 +739,7 @@ function render(full = false) {
     }
   } else if (typeof hideWaterMesh === 'function') hideWaterMesh();
   // Seascape: the raymarched surface over the classic water (water-sdf.js).
-  if (!(o.waves === 'sdf' && surfaceVis > 0.025 && typeof drawSeascape === 'function' && drawSeascape(world, waterState, full ? visibleRect() : rect, image)) && typeof hideSeascape === 'function') hideSeascape();
+  if (!(o.waves === 'sdf' && surfaceVis > 0.025 && typeof drawSeascape === 'function' && drawSeascape(world, waterState, full ? visibleRect() : rect, image, gpu ? CGL : null)) && typeof hideSeascape === 'function') hideSeascape();
   // Volumetrics: the weather's mist, cloud and rain over it, and the sun's shafts in the water (volumetric.js).
   if (!(o.volumetrics && !full && typeof drawVolumetric === 'function' && drawVolumetric(world, waterState, rect, light)) && typeof hideVolumetric === 'function') hideVolumetric();
   if (!full) {
@@ -813,6 +817,7 @@ function queueFrame() { if (!frameId && !PondPlatform.paused) frameId = requestA
 function frame(now) {
   frameId = 0;
   if (PondPlatform.paused) return; // Resume schedules one fresh frame; no simulation or rendering while host-paused.
+  const workStart = performance.now();
   // The first rAF timestamp can predate the load-time performance.now(); never step backwards.
   const elapsed = Math.max(0, (now - last) / 1000);
   const dt = Math.min(elapsed, 0.05);
@@ -847,7 +852,8 @@ function frame(now) {
   statusTimer -= dt;
   if (statusTimer <= 0) { statusTimer = 1; updateSaveStatus(); if(typeof renderGuideMinds==='function')renderGuideMinds(now); }
   mapTimer -= dt;
-  if (mapTimer <= 0) { mapTimer = 0.12; drawMinimap(); }
+  if (mapTimer <= 0) { mapTimer = performanceActive(world) ? .25 : .12; drawMinimap(); }
+  performanceFrame(world, performance.now() - workStart, elapsed, now);
   queueFrame();
 }
 PondPlatform.onPause(() => { cancelAnimationFrame(frameId); frameId = 0; if (world.raster) saveNow(); });
@@ -2833,7 +2839,29 @@ bindRange('opt-current', 'current', (v) => `${v}%`);
 bindRange('opt-speed', 'speed', (v) => `${v}×`);
 bindRange('opt-day', 'dayLength', (v) => `${v / 60}m`);
 
-// The Renderer button: the pond composed here (CPU) or by a shader (GPU: compose-gl.js; with the Classic water).
+function syncPerformanceControls() {
+  const fast = performanceActive(world), o = performanceOptions(world);
+  $('opt-performance').value = fast ? '60fps' : 'quality';
+  $('performance-readout').hidden = !fast;
+  for (const id of ['opt-renderer','opt-volumetrics','opt-waves']) $(id).disabled = fast;
+  for (const key of ['shadows','fine']) document.querySelector(`[data-toggle="${key}"]`).disabled = fast;
+  $('opt-renderer').textContent = `Renderer: ${o.renderer === 'gpu' ? 'GPU' : 'CPU'}`;
+  $('opt-volumetrics').textContent = `Volumetrics: ${o.volumetrics ? 'On' : 'Off'}`;
+  $('opt-waves').textContent = `Waves: ${WAVE_LOOKS[o.waves]}`;
+  $('opt-renderer').setAttribute('aria-pressed', String(o.renderer === 'gpu'));
+  $('opt-volumetrics').setAttribute('aria-pressed', String(!!o.volumetrics));
+  $('opt-waves').setAttribute('aria-label', `Waves: ${WAVE_LOOKS[o.waves]}`);
+  for (const key of ['shadows','fine']) document.querySelector(`[data-toggle="${key}"]`).setAttribute('aria-pressed', String(!!o[key]));
+}
+$('opt-performance').addEventListener('change', (e) => {
+  setOpt('performance', e.target.value === '60fps' ? '60fps' : 'quality'); resetPerformance(); syncPerformanceControls();
+  if (performanceActive(world)) {
+    $('performance-fps').textContent = '60 FPS target · measuring…';
+    if (!composeGLAvailable()) showTicker('GPU rendering is unavailable; performance mode will use the CPU');
+  }
+});
+
+// The Renderer button: compose Classic and Seascape on the GPU, or use the CPU.
 {
   const b = $('opt-renderer'), show = () => { const g = world.opts.renderer === 'gpu'; b.textContent = `Renderer: ${g ? 'GPU' : 'CPU'}`; b.setAttribute('aria-pressed', String(g)); };
   show();
@@ -2841,7 +2869,7 @@ bindRange('opt-day', 'dayLength', (v) => `${v / 60}m`);
     setOpt('renderer', world.opts.renderer === 'gpu' ? 'cpu' : 'gpu'); show();
     if (world.opts.renderer === 'gpu') {
       if (typeof composeGLAvailable === 'function' && !composeGLAvailable()) showTicker('The GPU renderer needs WebGL2: staying on the CPU');
-      else if (world.opts.waves !== 'classic') showTicker('The GPU renderer works with the Classic waves (3D and Seascape stay on the CPU)');
+      else if (world.opts.waves === 'mesh') showTicker('3D water uses the CPU compositor');
     }
   });
 }
@@ -3198,6 +3226,7 @@ function syncControls() {
   $('opt-water').value = world.opts.water;
   $('opt-world').value = world.opts.world;
   $('opt-light').value = world.opts.light;
+  syncPerformanceControls();
 }
 
 // Which pond opens:
