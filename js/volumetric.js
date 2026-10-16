@@ -7,9 +7,8 @@
 // (Frostbite, SIGGRAPH 2015). (Written here from those techniques; no code from either.)
 // The medium, from the floor up:
 //  - in the water, a thin haze, thicker over the deep;
-//  - over it, a humid breath lying on all the water (heavier at dawn, after rain and in the fog), and mist and spray
-//    billowing up where the waves break, along the beaches and round every island, rising and drifting downwind;
-//  - shaped by one domain-warped noise through both, so it's one body, not layers.
+//  - over it, sparse low wisps at dawn, after rain and in fog, with a little spray where surf breaks;
+//  - slow continuous advection, independent of pond age; the underwater haze stays steady.
 // Lit by the sun (or moon) through itself, so the mist shades the water under it; by the sky; and by the pond's
 // lamps (the light map, depths.js) glowing up into it. The view leans a little (as if the camera were tipped toward
 // the bottom of the screen), so what rises is seen rising. Rain falls over it lightly.
@@ -40,20 +39,18 @@ vec3 voxel() { return vec3(u_vorg + gl_FragCoord.xy * (u_vsize / u_dims), ZB + (
 // Pass 1, a layer at a time: the density of the medium.
 const VOL_DENS = VOL_COMMON + `
 uniform sampler2D u_shore, u_depth;
-uniform vec2 u_org, u_size, u_wind;
-uniform float u_t, u_tide, u_hum, u_surf, u_storm;
+uniform vec2 u_org, u_size, u_wind, u_drift;
+uniform float u_phase, u_tide, u_hum, u_surf, u_storm;
 out vec4 o;
 vec2 tile(vec2 w) { return clamp((w - u_org) / u_size, vec2(0.0), vec2(1.0)); }
 float fbm(vec3 p) { return vn(p) * 0.5 + vn(p * 2.03 + 7.1) * 0.3 + vn(p * 4.07 + 3.7) * 0.2; }
-// The billows: noise whose coordinates are pushed round by a second noise, rising and drifting with the wind, then
-// sharpened, so it comes in rounded clumps with thin gaps between.
+// Broad, soft wisps. Drift integrates wind instead of multiplying a changing wind
+// by total pond age (which made mature ponds' clouds race and jump).
 float billow(vec3 p) {
-  // (Stretched up and down: from above, a column is in a clump or clear, so the clumps read as clumps.)
-  vec3 q = vec3((p.xy - u_wind * u_t * 6.0) * 0.035, p.z * 0.018 - u_t * 0.06);
-  float warp = fbm(q * 0.7 + vec3(0.0, 0.0, u_t * 0.04));
-  float d = fbm(q + 1.8 * vec3(cos(warp * 6.2832), sin(warp * 6.2832), warp));
-  d = pow(d, 2.2);
-  return 1.1 * smoothstep(0.04, 0.5, d);
+  vec3 q = vec3((p.xy - u_drift) * 0.018, p.z * 0.03 - u_phase);
+  float warp = fbm(q * 0.6 + vec3(0.0, 0.0, u_phase * 0.2));
+  float d = fbm(q + 0.65 * vec3(cos(warp * 6.2832), sin(warp * 6.2832), warp * 0.5));
+  return 0.7 * smoothstep(0.38, 0.78, d);
 }
 void main() {
   vec3 p = voxel();
@@ -61,18 +58,19 @@ void main() {
   float se = texture(u_shore, uv).r * 255.0, depth = texture(u_depth, uv).r;
   float ground = se > u_tide ? (se - u_tide) * 0.12 : -32.0 * max(depth, 0.15);
   if (p.z < ground) { o = vec4(0.0); return; } // (under the floor, or inside the land)
-  float b = billow(p), d;
+  float d;
   if (p.z < 0.0) {
-    // The water: a thin haze, the deeper the thicker, barely clumped.
-    d = (0.03 + 0.08 * depth) * (0.6 + 0.4 * min(b, 1.0));
+    // Steady depth haze, so an airborne wisp cannot paint a moving cloud on the floor.
+    d = 0.005 + 0.018 * depth;
   } else {
     float h = p.z - max(ground, 0.0);
     // Leaned downwind as it rises (the source of the mist at this height lies upwind).
-    float se2 = texture(u_shore, tile(p.xy - u_wind * h * 1.2)).r * 255.0;
-    float brk = se2 > 0.5 ? smoothstep(26.0 + 30.0 * u_surf, 0.0, abs(u_tide - se2)) : 0.0;
-    float breath = u_hum * 0.45 * exp(-h / 8.0);
-    float spray = brk * (0.4 + 1.2 * u_surf + 0.5 * u_storm) * 0.9 * exp(-h / (12.0 + 14.0 * u_surf));
-    d = (breath + spray) * b;
+    float se2 = texture(u_shore, tile(p.xy - u_wind * h * 0.5)).r * 255.0;
+    float brk = se2 > 0.5 ? 1.0 - smoothstep(0.0, 14.0 + 16.0 * u_surf, abs(u_tide - se2)) : 0.0;
+    float overWater = 1.0 - smoothstep(u_tide, u_tide + 12.0, se);
+    float breath = u_hum * 0.16 * exp(-h / 5.5) * overWater;
+    float spray = brk * (0.03 + 0.45 * u_surf + 0.18 * u_storm) * 0.4 * exp(-h / (6.0 + 7.0 * u_surf));
+    d = (breath + spray) * billow(p);
   }
   o = vec4(clamp(d, 0.0, 1.0), 0.0, 0.0, 1.0);
 }`;
@@ -98,7 +96,7 @@ uniform sampler3D u_dens, u_lit;
 uniform sampler2D u_shore, u_depth, u_light;
 uniform vec2 u_org, u_size, u_res, u_up, u_lorg, u_lsize, u_wind, u_worldSize;
 uniform vec3 u_sunCol, u_sky, u_water;
-uniform float u_block, u_t, u_tide, u_day, u_rain, u_glow, u_tilt, u_landSide;
+uniform float u_block, u_t, u_tide, u_day, u_rain, u_glow, u_tilt, u_landSide, u_veilCap;
 uniform int u_emitterCount;
 uniform vec4 u_emitters[8], u_emitterColors[8];
 vec3 localGlow(vec3 p) {
@@ -155,7 +153,7 @@ void main() {
   float dz = (ZT - floorZ) / float(N), seg = dz * sqrt(1.0 + u_tilt * u_tilt);
   vec3 amb = u_sky * (0.14 + 0.4 * u_day), wamb = u_water * (0.2 + 0.35 * u_day);
   float sunI = 0.12 + 0.88 * u_day;
-  vec3 scat = vec3(0.0); float T = 1.0;
+  vec3 scat = vec3(0.0), emission = vec3(0.0); float T = 1.0;
   for (int i = 0; i < N; i++) {
     float z = ZT - (float(i) + jit) * dz;
     if (z < floorZ || T < 0.02) break;
@@ -163,26 +161,27 @@ void main() {
     vec3 t3 = uvw(p);
     float sigma = texture(u_dens, t3).r * SIG, ds = z > 0.0 ? seg : dz;
     // (The lamps light even clear air and water a little, as a glow round them that adds light and hides nothing.)
-    if (u_glow > 0.0) scat += T * glowAt(p, floorZ) * 0.006 * ds;
+    vec3 lamps = u_glow > 0.0 ? glowAt(p, floorZ) : vec3(0.0);
+    emission += T * lamps * 0.006 * ds;
     // Local emissive volumes are integrated along the same rays, never painted as screen-space bloom.
     vec3 exotic=localGlow(p);
-    scat += T * exotic * 0.018 * ds;
+    emission += T * exotic * 0.018 * ds;
     if (sigma < 1e-5) continue;
     float sun = texture(u_lit, t3).r;
     // What this bit of medium sends toward the eye: the sun through the medium between, the sky (under water, the
     // water's own colour), and the lamps; integrated over the step against its own extinction.
-    vec3 lit = u_sunCol * sunI * sun + (z > 0.0 ? amb : wamb) + (u_glow > 0.0 ? glowAt(p, floorZ) * 2.5 : vec3(0.0));
-    // (Coloured a little by how dense it is: thin wisps cool, thick cores warm.)
-    float dn = sigma / SIG;
-    vec3 tone = 0.5 + 0.5 * cos(6.2832 * (0.8 + 0.5 * dn + vec3(0.0, 0.1, 0.2)));
-    vec3 albedo = z > 0.0 ? mix(vec3(0.95), tone, 0.3) : mix(u_water, vec3(1.0), 0.35);
+    vec3 lit = u_sunCol * sunI * sun + (z > 0.0 ? amb : wamb);
+    vec3 albedo = z > 0.0 ? vec3(0.76, 0.81, 0.85) : mix(u_water, vec3(1.0), 0.35);
     float ext = exp(-sigma * ds);
     scat += T * lit * albedo * (1.0 - ext);
+    emission += T * lamps * 2.5 * albedo * (1.0 - ext);
     T *= ext;
   }
-  // (Never more than a veil: the pond always shows through.)
-  vec4 v = vec4(u_emitterCount > 0 ? vec3(1.0) - exp(-scat) : min(scat, vec3(1.0)), 1.0 - T);
-  if (v.a > 0.4) v *= 0.4 / v.a;
+  // Weather cannot whiten the pond. Keep its premultiplied color bounded by
+  // opacity; local luminous species/lamps have their own additive contribution.
+  float alpha = 1.0 - T, veil = min(alpha, u_veilCap);
+  vec3 weather = min(scat, vec3(alpha * 0.8)) * (veil / max(alpha, 1e-5));
+  vec4 v = vec4(weather + (vec3(1.0) - exp(-emission)), veil);
   vec4 r = rain(w, se <= u_tide);
   // The beach continues on a separate land canvas. Fade the complete premultiplied
   // result at that world boundary, never at the moving viewport/tile boundary.
@@ -234,13 +233,23 @@ function volumeWeather(w, light) {
   const W = w.weather || {}, fog = typeof metaNow === 'function' ? metaNow(w, 'fog') : null, d = w.darkness || 0;
   const clock = w.clock ?? 0.5, dawn = Math.max(0, 1 - Math.abs(clock - 0.27) / 0.08), dusk = Math.max(0, 1 - Math.abs(clock - 0.73) / 0.08);
   const rain = clamp(W.rain || 0, 0, 1), gust = Math.max(0, W.gust || 0), surf = w.tide ? w.tide.surf || 0 : 0;
-  // (The humidity: a little always, more at dawn and in the fog, and after rain; dried off by the wind.)
-  w.volWet = clamp((w.volWet || 0) + (rain - (w.volWet || 0)) * 0.002, 0, 1);
+  // Residual moisture follows simulation time, never the number of rendered frames.
+  const dt = w.volWetAt == null ? 0 : clamp((w.t || 0) - w.volWetAt, 0, 5);
+  w.volWetAt = w.t || 0;
+  w.volWet = clamp(rain + ((w.volWet || 0) - rain) * Math.exp(-dt / 45), 0, 1);
   return {
     rain, day: 1 - d, surf: clamp(surf + gust * 0.5, 0, 1.5), storm: clamp(rain * 0.7 + gust * 0.5, 0, 1),
-    hum: clamp(0.3 + 0.9 * dawn + 0.4 * dusk + 0.6 * w.volWet + 0.4 * rain + (fog === 'thick' ? 1.3 : fog === 'clear' ? -0.25 : 0) - gust * 0.35, 0, 2),
+    hum: clamp(0.08 + 0.35 * dawn + 0.12 * dusk + 0.25 * w.volWet + 0.18 * rain + (fog === 'thick' ? 0.75 : fog === 'clear' ? -0.08 : 0) - gust * 0.2, 0, 1.8),
+    veilCap: fog === 'thick' ? 0.22 : 0.12 + rain * 0.06,
     warm: Math.max(dawn, dusk),
   };
+}
+function volumeMotion(w, time, wind) {
+  let M = w.volMotion;
+  if (!M || time < M.at) M = w.volMotion = { at: time, x: 0, y: 0, phase: 0 };
+  const dt = clamp(time - M.at, 0, 0.25), speed = Math.hypot(...wind), k = 0.8 / Math.max(1, speed);
+  M.x += wind[0] * k * dt; M.y += wind[1] * k * dt; M.phase += dt * 0.003; M.at = time;
+  return M;
 }
 // The light map under the tile (and a margin), as a small mipmapped texture of its 4 px cells, soft-saturated into
 // 0–1. The pond builds the map each frame only while it can afford its light pools; when it can't (or it was built
@@ -334,6 +343,7 @@ function drawVolumetric(w, state, rect, light) {
   const glow = volumeLights(G, gl, w, x0, y0, x1, y1, rect);
   const V = volumeWeather(w, light), t = state.time ?? w.t, tide = w.tide.level * 255;
   const wind = [(w.current ? w.current.x : 0) + (w.weather.gust || 0) * 0.6, (w.current ? w.current.y : 0) + (w.weather.gust || 0) * 0.3];
+  const motion = volumeMotion(w, t, wind);
   // The sun (or moon): from the upper left, as the pond's shadows fall; lower and warmer at dawn and dusk.
   const elev = 0.55 + 0.35 * (1 - V.warm), sun = [-SHADOW_X, -SHADOW_Y, elev], sl = Math.hypot(...sun);
   const tint = light && light.tint ? light.tint : [1, 1, 1];
@@ -341,7 +351,7 @@ function drawVolumetric(w, state, rect, light) {
   const rgb = (c) => [(c & 255) / 255, ((c >> 8) & 255) / 255, ((c >>> 16) & 255) / 255];
   // Passes 1 and 2: the density, then the sunlight through it, into the 3D textures.
   gl.bindFramebuffer(gl.FRAMEBUFFER, G.fbo); gl.viewport(0, 0, nx, ny);
-  volLayers(G, gl, volUse(G, gl, G.dens, { ...vol, u_org: [x0, y0], u_size: [W, H], u_wind: wind, u_t: t, u_tide: tide, u_hum: V.hum, u_surf: V.surf, u_storm: V.storm }), G.tex[3], nz);
+  volLayers(G, gl, volUse(G, gl, G.dens, { ...vol, u_org: [x0, y0], u_size: [W, H], u_wind: wind, u_drift: [motion.x, motion.y], u_phase: motion.phase, u_t: t, u_tide: tide, u_hum: V.hum, u_surf: V.surf, u_storm: V.storm }), G.tex[3], nz);
   volLayers(G, gl, volUse(G, gl, G.lit, { ...vol, u_sun: [sun[0] / sl, sun[1] / sl, sun[2] / sl] }), G.tex[4], nz);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   // Pass 3: the view.
@@ -350,7 +360,7 @@ function drawVolumetric(w, state, rect, light) {
   volUse(G, gl, G.view, {
     ...vol, u_org: [x0, y0], u_size: [W, H], u_res: [cw, ch], u_up: [-Math.sin(th), -Math.cos(th)], u_wind: wind,
     u_lorg: G.lorg || [0, 0], u_lsize: G.lsize || [1, 1], u_sunCol: sunCol, u_sky: rgb(state.sky), u_water: rgb(w.waterColor || 0xff7c6a1b),
-    u_block: B, u_t: t, u_tide: tide, u_day: V.day, u_rain: V.rain, u_glow: glow ? 1 : 0, u_tilt: VOL_TILT,
+    u_block: B, u_t: t, u_tide: tide, u_day: V.day, u_rain: V.rain, u_glow: glow ? 1 : 0, u_tilt: VOL_TILT, u_veilCap: V.veilCap,
     u_worldSize: [w.W, w.H], u_landSide: w.shore ? w.shoreSide : -1,
   });
   const emitters = w.opts.lights !== false && typeof exoticEmitters === 'function' ? exoticEmitters(w,rect) : [];

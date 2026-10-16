@@ -510,6 +510,11 @@ swaying seeds, glowing food and the actual procession show what is happening.
 Volumetric weather and Seascape dry-ground relief blend into the adjoining beach
 instead of ending in a hard canvas seam. `python tools/test_beach_imps_browser.py`
 checks all four joins, real invitations/dances/gifts, persistence and phone layout.
+Volumetrics use sparse low mist, restrained shoreline spray and steady underwater
+haze. Wind drift accumulates continuously, so changing breezes cannot fling
+clouds across an old pond. Weather has a low opacity budget; local neon glows
+remain separately visible. `python tools/test_volumetric_browser.py` checks
+coverage, old-pond movement and emission in the actual GPU shaders.
 
 `python tools/test_horizons_browser.py` checks the new terrain, species gates,
 GPU programs, four shore orientations, capped worlds, transactions and persistence.

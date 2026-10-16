@@ -38,7 +38,9 @@ def run():
                     const read=(d)=>{const p=side===0?[d,edge[1]]:side===1?[world.W-d,edge[1]]:side===2?[edge[0],d]:[edge[0],world.H-d];
                       const x=Math.floor((p[0]-VOL.x)/VOL.B),y=VOL.cv.height-1-Math.floor((p[1]-VOL.y)/VOL.B),v=new Uint8Array(4);
                       check(x>=0&&y>=0&&x<VOL.cv.width&&y<VOL.cv.height,'Sample outside volume');VOL.gl.readPixels(x,y,1,1,VOL.gl.RGBA,VOL.gl.UNSIGNED_BYTE,v);return [...v];};
-                    const border=read(.25),inside=read(36);
+                    // Sparse mist need not occupy one particular dry beach pixel.
+                    // Sample through the beach into water to verify the interior survives.
+                    const border=read(.25),inside=[36,64,96,128].map(read).sort((a,b)=>b[3]-a[3])[0];
                     check(Math.max(...border)<=1,'Hard volume edge on side '+side+': '+border);
                     check(inside[3]>border[3],'Mist disappeared instead of blending on side '+side);
                     check(VOL.gl.getError()===VOL.gl.NO_ERROR,'Volume GL error');
