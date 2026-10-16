@@ -292,12 +292,15 @@ void main() {
     c = ivec3((c.r * tt.r) >> 8, (c.g * tt.g) >> 8, (c.b * tt.b) >> 8);
   }
   if ((u_flags & 64) != 0 && !((u_flags & 128) != 0 && em == 2)) {
-    float bq = bay(x, y); int gx = int(float(x + 2) + bq * 3.6) >> 2, gy = int(float(y + 2) - bq * 3.6) >> 2;
-    vec3 L = texelFetch(t_light, clamp(ivec2(gx, gy) - u_lorg, ivec2(0), u_lsize - 1), 0).rgb;
+    // (Blended between the four nearest cells and shaded continuously, as in raster.js: no lattice of dots.)
+    vec2 f = max(vec2(float(x) - 2.0, float(y) - 2.0), vec2(0.0)) * 0.25;
+    ivec2 g = ivec2(floor(f)) - u_lorg, hi = u_lsize - 1; vec2 tf = fract(f);
+    vec3 L = mix(mix(texelFetch(t_light, clamp(g, ivec2(0), hi), 0).rgb, texelFetch(t_light, clamp(g + ivec2(1, 0), ivec2(0), hi), 0).rgb, tf.x),
+                 mix(texelFetch(t_light, clamp(g + ivec2(0, 1), ivec2(0), hi), 0).rgb, texelFetch(t_light, clamp(g + ivec2(1, 1), ivec2(0), hi), 0).rgb, tf.x), tf.y);
     if (L.r + L.g + L.b > 0.004) {
       float vis = max(max(u_lvis, dd / 255.0 * 0.45), 0.06);
       float m0 = max(L.r, max(L.g, L.b)), mt = m0 / (1.0 + m0);
-      float q = float(min(4, int(mt * vis * 5.0 + 0.5 + bq))) / 4.0;
+      float q = min(1.0, mt * vis * 1.25);
       if (q > 0.0) {
         float s = q / max(m0, 0.001); vec3 c0 = vec3(c);
         c = ivec3(min(vec3(255.0), c0 + floor(c0 * L * s * 1.6 + L * s * 46.0)));

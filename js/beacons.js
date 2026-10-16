@@ -46,8 +46,13 @@ Object.assign(BUILD, {
 // The tower: a tapered white column banded in dark steel-blue, a gallery, the lantern room of glass.
 function bakeTower(r, s, next, h, base, top) {
   const id = next(BM.tower);
+  // (A straight-up tube only rasterizes at its foot, so the gallery and lantern stand in the air: cast as solid
+  // columns, their shadows run unbroken from the tower's foot instead of landing apart from it.)
+  const was = r.columnShadows;
+  r.columnShadows = true;
   r.tube(s.x, s.y, base, 2, s.x, s.y, top, h, 1, (u) => ((u * 6) % 1 < 0.16 ? BM.band : BM.tower), id);
   r.ellipsoid(s.x, s.y, top + 2.2, top + 2.2, 0, h, 0.35, BM.deck, next(BM.deck));
+  r.columnShadows = was;
 }
 Object.assign(BAKE, {
   beacon(r, s, next) {
@@ -65,8 +70,11 @@ Object.assign(BAKE, {
 // The lantern: glass round a white-hot lamp, lens bars turning, a red light blinking on the gallery.
 function drawLantern(r, s, t, h, top) {
   if (s.gid == null) { s.gid = newId(hexToInt('#04141a')); EMISSIVE[s.gid] = 2; }
+  const was = r.columnShadows;
+  r.columnShadows = true; // (on its tower: see bakeTower)
   r.ellipsoid(s.x, s.y, top + 0.6, top + 0.6, 0, h + 0.3, 1.6, BM.glass, s.gid);
   r.ellipsoid(s.x, s.y, top * 0.6, top * 0.6, 0, h + 1.4, 1.2, BM.lamp, s.gid);
+  r.columnShadows = was;
   const a = t * (0.9 + 0.1 * ((s.lv && s.lv.lens) || 0));
   for (const k of [0, PI]) r.dot(s.x + Math.cos(a + k) * (top + 0.8), s.y + Math.sin(a + k) * (top + 0.8), h + 2, BM.lamp, s.gid);
   if (Math.sin(t * 2.4 + s.seed) > 0.6) r.dot(s.x + top + 2.4, s.y, h + 0.6, BM.red, s.gid);
@@ -77,15 +85,24 @@ Object.assign(DRAW, {
     if (s.tid == null) { s.tid = newId(hexToInt('#05070a')); EMISSIVE[s.tid] = 2; }
     r.ellipsoid(s.x, s.y, 11, 11, 0, 4, 0.5, BM.lit, s.tid);
     for (let k = 0; k < 6; k++) { const a = k / 6 * TAU; r.tube(s.x + Math.cos(a) * 6, s.y + Math.sin(a) * 6, 1.1, 4.5, s.x + Math.cos(a) * 10.5, s.y + Math.sin(a) * 10.5, 1.1, 4.5, 0.6, BM.litBand, s.tid); }
+    const was = r.columnShadows;
+    r.columnShadows = true; // (the tower, gallery and mast stand solid: see bakeTower)
     r.tube(s.x, s.y, 5.6, 4.5, s.x, s.y, 3.2, s.h, 1, (u) => ((u * 6) % 1 < 0.16 ? BM.litBand : BM.litTower), s.tid);
     r.ellipsoid(s.x, s.y, 5.4, 5.4, 0, s.h, 0.35, BM.lit, s.tid);
     r.tube(s.x, s.y, 0.5, s.h + 3, s.x, s.y, 0.3, s.h + 9, 1, BM.lit, s.tid);
+    r.columnShadows = was;
     drawLantern(r, s, t, s.h, 3.2);
     // Perimeter lights running round the deck in sequence, and the beams laid across the water.
     const n = 16, on = Math.floor(t * 6) % n;
     for (let k = 0; k < n; k++) if ((k - on + n) % n < 4) r.dot(s.x + Math.cos(k / n * TAU) * 11.5, s.y + Math.sin(k / n * TAU) * 11.5, 5, BM.strip, s.gid);
     const a = t * 0.55 + (s.seed % 7), L = BEACON_R * (1 + 0.15 * ((s.lv && s.lv.lens) || 0));
-    for (const k of [0, PI]) for (let d = 16; d < L * 1.4; d += 5) if (((d / 5) | 0) % 2) r.dot(s.x + Math.cos(a + k) * d, s.y + Math.sin(a + k) * d, 30, BM.glass, s.gid);
+    // (Unbroken near the lamp, thinning out toward its tip: a ray that fades, not a dashed line.)
+    const end = L * 1.4, shadows = r.castShadows;
+    r.castShadows = false; // (light casts no shadow)
+    for (const k of [0, PI]) for (let d = 16, j = 0; d < end; d += 1.25, j++) {
+      if (((j * 0.618034) % 1) < Math.min(1, 1.35 - 1.1 * (d - 16) / (end - 16))) r.dot(s.x + Math.cos(a + k) * d, s.y + Math.sin(a + k) * d, 30, BM.glass, s.gid);
+    }
+    r.castShadows = shadows;
   },
   lighthouse(r, s, t) { drawLantern(r, s, t, s.h, 1.8); },
 });

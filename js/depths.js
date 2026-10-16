@@ -109,17 +109,20 @@ function splat(M, x, y, R, col, k, ang, beam, rect, lh) {
       const ci = gx + gy * M.lw, i = ci * 3;
       if (shade) {
         // The shadow: march from this cell to the lamp; anything standing higher than the ray blocks some light.
+        // A lamp is not a point: the further the blocker stands from this cell, the softer its edge, so a shadow
+        // fans out from its caster with a widening penumbra instead of stepping cell by cell.
         const ddx = lgx - (gx + 0.5), ddy = lgy - (gy + 0.5), dist = Math.hypot(ddx, ddy), n = Math.min(28, Math.ceil(dist));
-        let block = 0;
+        let lit = 1;
         for (let s = 1; s < n; s++) {
           const fr = s / n;
           if (dist * (1 - fr) < 1.6) break; // (not the lamp's own body)
           const sx = Math.floor(gx + 0.5 + ddx * fr), sy = Math.floor(gy + 0.5 + ddy * fr);
           if (sx < M.ob[0] || sy < M.ob[1] || sx > M.ob[2] || sy > M.ob[3]) continue;
-          const ray = 0.5 + (lh - 0.5) * fr, over = O[sx + sy * M.lw] - ray;
-          if (over > 0.4) { block += Math.min(1, over / 3) * 0.7; if (block >= 1) break; }
+          const over = O[sx + sy * M.lw] - (0.5 + (lh - 0.5) * fr) - 0.4;
+          if (over > 0) { const v = 1 - over / (1.2 + dist * fr * 0.2); if (v < lit) { lit = v; if (lit <= 0) break; } }
         }
-        f *= Math.max(0.08, 1 - block) * (1 - AO[ci]);
+        lit = lit < 0 ? 0 : lit > 1 ? 1 : lit;
+        f *= Math.max(0.08, lit * lit * (3 - 2 * lit)) * (1 - AO[ci]);
       }
       D[i] += cr * f; D[i + 1] += cg * f; D[i + 2] += cb * f;
     }

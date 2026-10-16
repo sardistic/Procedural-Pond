@@ -27,6 +27,7 @@ class Raster {
     this.rowMin = new Int32Array(H).fill(W); this.rowMax = new Int32Array(H).fill(-1);
     this.alpha = 1;                   // < 1 draws an ordered-dither fraction of pixels (fades)
     this.castShadows = true;
+    this.columnShadows = false;       // true while drawing something that stands solid from the floor (see put)
     this.clip = [0, 0, W - 1, H - 1]; // only this rectangle is rasterized (the visible part)
     this.k = 1; this.kz = 1; this.kzo = 0; this.kx = 0; this.ky = 0; this.scaled = false; // draw scaled by k about (kx, ky): see setScale
     this.posed = false; this.qx = 0; this.qy = 0; // (and posed: see setPose)
@@ -67,10 +68,14 @@ class Raster {
     const W = this.W;
     if (this.alpha < 1 && BAYER4[(x & 3) | ((y & 3) << 2)] + 0.5 >= this.alpha) return;
     if (h > 1 && this.castShadows && !this.skipShadows) {
-      const sx = x + Math.round(h * SHADOW_X), sy = y + Math.round(h * SHADOW_Y);
-      if (sx < W && sy < this.H) {
-        const q = sx + sy * W;
-        if (h > this.sh[q]) this.sh[q] = h > 255 ? 255 : h;
+      // (A solid column, such as a tower, stands from the floor up: it casts the whole streak from its foot to its
+      // top, not one point per height, which would leave the shadow in separate steps.)
+      for (let hh = h, lo = this.columnShadows ? 1.5 : h; hh >= lo; hh -= 1.6) {
+        const sx = x + Math.round(hh * SHADOW_X), sy = y + Math.round(hh * SHADOW_Y);
+        if (sx < W && sy < this.H) {
+          const q = sx + sy * W;
+          if (hh > this.sh[q]) this.sh[q] = hh > 255 ? 255 : hh;
+        }
       }
     }
     const p = x + y * W;
@@ -632,15 +637,23 @@ class Raster {
           const tr = e ? sr : mr, tgn = e ? sg : mg, tb = e ? sb : mb;
           c = (0xff000000 | ((((c >>> 16) & 255) * tb >> 8) << 16) | ((((c >>> 8) & 255) * tgn >> 8) << 8) | ((c & 255) * tr >> 8)) >>> 0;
         }
-        // Light cast by glowing things: pools, in dithered steps, seen at night and in the deep.
+        // Light cast by glowing things: smooth pools, seen at night and in the deep.
         if (LD) {
-          // (One cell per pixel, the cell picked with an ordered dither near its edges: soft pools for a single read.)
-          const bq = BAYER4[(x & 3) | ((y & 3) << 2)], gx = ((x + 2 + bq * 3.6) >> 2), gy = ((y + 2 - bq * 3.6) >> 2);
-          const li = ((gx < lw ? gx : lw - 1) + (gy < lh ? gy : lh - 1) * lw) * 3, lr = LD[li], lg = LD[li + 1], lb = LD[li + 2];
+          // (Blended between the four nearest cells and shaded continuously: dim light, such as a beam's reach,
+          // stays a soft wash rather than breaking into a lattice of dithered dots.)
+          const fx = x > 2 ? (x - 2) * 0.25 : 0, fy = y > 2 ? (y - 2) * 0.25 : 0;
+          let gx = fx | 0, gy = fy | 0;
+          if (gx > lw - 1) gx = lw - 1;
+          if (gy > lh - 1) gy = lh - 1;
+          const tx = fx - gx < 1 ? fx - gx : 1, ty = fy - gy < 1 ? fy - gy : 1, ox = gx < lw - 1 ? 3 : 0, oy = gy < lh - 1 ? lw * 3 : 0;
+          const li = (gx + gy * lw) * 3, w00 = (1 - tx) * (1 - ty), w10 = tx * (1 - ty), w01 = (1 - tx) * ty, w11 = tx * ty;
+          const lr = LD[li] * w00 + LD[li + ox] * w10 + LD[li + oy] * w01 + LD[li + ox + oy] * w11;
+          const lg = LD[li + 1] * w00 + LD[li + ox + 1] * w10 + LD[li + oy + 1] * w01 + LD[li + ox + oy + 1] * w11;
+          const lb = LD[li + 2] * w00 + LD[li + ox + 2] * w10 + LD[li + oy + 2] * w01 + LD[li + ox + oy + 2] * w11;
           if (lr + lg + lb > 0.004) {
             const dd = depthMap ? depthMap[p] : 0, vis = Math.max(lvis, dd / 255 * 0.45, 0.06);
             const m0 = lr > lg ? (lr > lb ? lr : lb) : (lg > lb ? lg : lb), mt = m0 / (1 + m0); // overlapping lights saturate softly
-            const q = Math.min(4, (mt * vis * 5 + 0.5 + bq) | 0) / 4;
+            const q = Math.min(1, mt * vis * 1.25); // (the same mean as the old four dithered steps)
             if (q > 0) {
               const s = q / Math.max(m0, 0.001), cr0 = c & 255, cg0 = (c >> 8) & 255, cb0 = (c >>> 16) & 255;
               // Lit: the floor brightened in the light's colour, plus a little of the colour itself.
