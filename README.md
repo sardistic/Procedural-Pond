@@ -129,6 +129,7 @@ visitors, litter and the risk of a blight, what you earned lately, the leaderboa
 - **Tooltips:** point at almost anything for a little pixel-art tooltip saying what it does: every button, tool and build (with its price), the pond bar, the dock, the spawn card, the sky, and in the pond itself plants, rocks, structures, fossils, litter, remains, eggs and trenches (animals have their own hover card).
 - **Big crowds:** when more than about 140 animals are on screen, the crowd is drawn coarser (no small fins, fewer tentacles; what you follow or point at stays whole), and if frames still run slow, the costliest surface touches (sky glints, murk, chop, then light pools and caustics) step down until there's room again.
 - **Keys:** **B** shows the bones (spine chains, joint radii, leg IK), **Space** pauses, **L** switches light modes, **F** follows, **T** tours, **M** toggles sound, **N** music, **P** opens the score, **G** opens the guide (Esc closes it), **H** hides the panel. *Photo* saves a PNG.
+- **Timelapse:** each pond day, at midday, the pond keeps a small picture of the whole of itself, in this browser only (IndexedDB, by seed: never in the save or the link). *▶ Timelapse of this pond* in the score panel (**P**) plays them back with the day, the depth and its name, scrubbed or at three speeds, each picture set against the beach side so the pond is seen to grow out into the deep. *Save as video* records the playback as an MP4 or WebM to share. Up to 240 pictures are kept; past that, every other one of the older half goes, so the whole history stays, more thinly. A very big pond (over 8 million pixels) keeps every third day. Deleting a pond from *Your ponds* deletes its pictures.
 
 ## Depth, points, pearls and the leaderboard
 
@@ -424,6 +425,8 @@ Signing in is off unless the API has `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SEC
 
 When you change a script or the stylesheet, bump the `?v=N` on its tag in `index.html`. When you
 add a new top-level asset, list it in the `Dockerfile`.
+
+`python tools/record_timelapse.py` records a trailer-style timelapse MP4 of a pond growing, for posts and adverts: it runs the pond far faster than real time in headless Chrome, played by a simple keeper (feeding the hungry, planting, building, adding kinds that have arrived), with the interface hidden, the camera sliding toward the deep as the pond grows, a caption at each new depth and new kind, and a pond.nz end card. `--seed`, `--habitat`, `--to-tier` (2 twilight, 3 midnight, 4 abyss), `--light day`, `--size`, `--no-autoplay` and `--no-captions` shape it; videos go to `timelapses/` (ignored by git). It needs Playwright and ffmpeg. Seed misty-reed-42 in salt water reaches the abyss in about a minute of video and four minutes of recording.
 
 `node tools/make-icons.js` regenerates the favicon and app icons by rendering a koi with the pond's
 own renderer. SEO lives in `index.html` (description, canonical, Open Graph and Twitter cards,

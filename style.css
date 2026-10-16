@@ -1573,3 +1573,19 @@ body.map-tall.map-open .mini-wrap .slice { height: auto; }
 .offerings .offering-reason{min-height:1.6em}
 .offerings .offering-footnote{border-top:1px solid #34515b;padding-top:12px;margin:10px 0}
 .offerings .offering-result{color:#dfcaeb;margin:8px 0}
+
+/* ---- the timelapse (timelapse.js) ---- */
+.timelapse-entry{display:block;width:100%;margin:10px 0 0;padding:9px 12px;border:1px solid #466878;background:#14323c;color:#d4e8df;text-align:left;font:inherit;cursor:pointer}
+.timelapse-entry:focus-visible{outline:2px solid #f5d66b;outline-offset:3px}
+.world-mystery.timelapse{box-sizing:border-box;width:fit-content;max-width:calc(100vw - 24px);padding:18px 20px}
+.timelapse .tl-dismiss{position:absolute;right:12px;top:8px;width:30px;text-align:center;padding:4px;margin:0;font-size:18px}
+.timelapse h2{margin-bottom:10px}
+.timelapse .tl-stage{background:#050d12;border:1px solid #2c4b55;line-height:0}
+.timelapse .tl-canvas{display:block;max-width:100%;height:auto}
+.timelapse .tl-controls{display:flex;align-items:center;gap:10px;margin:10px 0 4px}
+.timelapse .tl-controls .tl-play{width:44px;flex:none;margin:0;text-align:center}
+.timelapse .tl-scrub{flex:1;min-width:0;accent-color:#f5d66b}
+.timelapse .tl-speed{flex:none;background:#14323c;color:#d4e8df;border:1px solid #466878;font:12px system-ui,sans-serif;padding:6px}
+.timelapse .tl-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);margin:0} /* (burned into the picture; read out for screen readers) */
+.timelapse .tl-save{text-align:center;margin-top:8px}
+.timelapse .tl-note{margin:6px 0 0;font-size:12px;color:#8fb0a8}

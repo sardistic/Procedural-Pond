@@ -442,6 +442,7 @@ function updateGame(world, dt) {
   const dawn = Math.floor(world.days - 0.27);
   if (G.dawn == null || dawn < G.dawn) G.dawn = dawn;
   else if (dawn > G.dawn) { G.dawn = dawn; dawnIncome(world); dawnStructures(world); if (typeof callWanderer === 'function') callWanderer(world); if (typeof dawnAlien === 'function') dawnAlien(world); }
+  if (typeof timelapseTick === 'function') timelapseTick(world); // (a picture each midday: timelapse.js)
 }
 
 // Each dawn pays a pearl per species in the pond, plus up to 5 for how comfortable everyone is,

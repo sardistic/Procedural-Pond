@@ -16,3 +16,6 @@ server/*.db
 server/*.db-*
 
 __pycache__/
+
+# timelapse videos (tools/record_timelapse.py)
+timelapses/

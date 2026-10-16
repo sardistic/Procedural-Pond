@@ -56,6 +56,7 @@ const isSave = (d) => !!d && d.v === SAVE_VERSION && typeof d.seed === 'string' 
 function deleteSave(seed) {
   try {
     localStorage.removeItem(SAVE_PREFIX + seed);
+    if (typeof timelapseForget === 'function') timelapseForget(seed); // (and its pictures: timelapse.js)
     localStorage.setItem(SAVE_INDEX, JSON.stringify(readIndex().filter((s) => s.seed !== seed)));
     if (typeof PondPlatform !== 'undefined') PondPlatform.changed();
   } catch { /* storage unavailable */ }
