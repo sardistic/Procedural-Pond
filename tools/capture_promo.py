@@ -4,6 +4,7 @@
   python tools/capture_promo.py stills --pond thomas-pond
   python tools/capture_promo.py clips --only tour,closeup
   python tools/capture_promo.py trailer --track subaquatic-matrix
+  python tools/capture_promo.py shorts                # three upright videos for TikTok and Shorts
 
 The pond is a saved copy (tools/promo_page.py: fetched once as a peek, never written back). Clips are stepped a
 frame of pond time at a time, so they play smoothly whatever the capture costs. The trailer also uses the
@@ -138,29 +139,40 @@ def clips(page, out, only=None):
         film(page, out, 'fastforward', 10, lambda: page.evaluate('a=>PR.look(a[0],a[1],2)', isle), sim=36, light='cycle')
 
 
-# ---- the trailer ---------------------------------------------------------------------------------------------------
+# ---- cutting: the trailer and the shorts --------------------------------------------------------------------------
 CARD_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
-<style>html,body{margin:0;width:1920px;height:1080px;background:transparent;overflow:hidden}
+<style>html,body{margin:0;width:__W__px;height:__H__px;background:transparent;overflow:hidden}
 body{font-family:Silkscreen,monospace;color:#fff;display:grid}
-.cap{position:absolute;left:0;right:0;bottom:96px;text-align:center;font-size:64px;letter-spacing:2px;text-shadow:0 4px 0 #021014,0 0 26px #021014}
+.cap{position:absolute;left:0;right:0;bottom:96px;text-align:center;font-size:64px;letter-spacing:2px;text-shadow:0 4px 0 #021014,0 0 26px #021014;padding:0 60px}
 .cap small{display:block;font-size:28px;color:#bfe6dc;margin-top:10px}
-.card{place-self:stretch;display:grid;place-items:center;text-align:center;background:#071a1f}
+.card{place-self:stretch;display:grid;place-items:center;text-align:center;background:#071a1f;padding:0 60px}
 .card h1{font-size:140px;font-weight:400;margin:0;letter-spacing:4px;text-transform:none}
 .card p{font-size:34px;color:#bfe6dc;margin:18px 0 0}
 .card .url{color:#f5d66b;font-size:44px;margin-top:40px}
-</style></head><body>__BODY__</body></html>"""
+/* Upright (TikTok, Shorts): bigger words, kept clear of the apps' own buttons along the bottom and right. */
+.tall .cap{bottom:auto;top:58%;font-size:78px;line-height:1.15;padding:0 110px 0 70px}
+.tall .cap small{font-size:36px;margin-top:16px}
+.tall .card h1{font-size:150px}
+.tall .card p{font-size:44px}
+.tall .card .url{font-size:56px}
+</style></head><body class="__CLS__">__BODY__</body></html>"""
+
+TITLE_CARD = '<div class="card"><div><h1>pond.nz</h1><p>a living pixel-art aquarium</p></div></div>'
+END_CARD = '<div class="card"><div><h1>pond.nz</h1><p>Free, in your browser. Nothing to install.</p><p class="url">Play at pond.nz</p></div></div>'
 
 
-def overlays(out, items):
+def overlays(out, items, size=(1920, 1080)):
     """Caption and card images, drawn by the browser in the game's own pixel font."""
     from playwright.sync_api import sync_playwright
     out.mkdir(parents=True, exist_ok=True)
+    W, H = size
+    html = CARD_HTML.replace('__W__', str(W)).replace('__H__', str(H)).replace('__CLS__', 'tall' if H > W else 'wide')
     with sync_playwright() as p:
         b = p.chromium.launch(executable_path=r'C:\Program Files\Google\Chrome\Application\chrome.exe', headless=True)
-        page = b.new_page(viewport={'width': 1920, 'height': 1080})
+        page = b.new_page(viewport={'width': W, 'height': H})
         for name, body in items:
-            page.set_content(CARD_HTML.replace('__BODY__', body), wait_until='networkidle')
+            page.set_content(html.replace('__BODY__', body), wait_until='networkidle')
             page.evaluate('document.fonts.ready')
             page.screenshot(path=str(out / f'{name}.png'), omit_background=True)
         b.close()
@@ -177,65 +189,151 @@ def music(track, seconds, out):
     return out / 'music.m4a'
 
 
-def trailer(info, out, track):
-    clips_dir, tmp = out / 'clips', out / 'trailer-parts'
+def cut(plan, outfile, tmp, size, track):
+    """Join a plan's pieces into one video with music. Each piece is a card (card=html) or a stretch of a clip
+    (src, start, secs, speed), with an optional caption (cap, sub), faded in and out unless fin/fout say not."""
     tmp.mkdir(parents=True, exist_ok=True)
-    grow = sorted((ROOT / 'timelapses').glob('*.mp4'))
-    title = info.get('title') or 'Thomas-Pond'
-    # (name, source, seconds, start, speed, caption title, caption line)
-    plan = [('card-title', None, 3.5, 0, 1, None, None)]
-    if grow:
-        plan.append(('grow', grow[0], 9, 2, 3, 'Start with a bare pond', 'it fills in on its own'))
-    plan += [
-        ('tour', clips_dir / 'tour.mp4', 7, 1, 1, 'It lives without you', 'and remembers what you did'),
-        ('closeup', clips_dir / 'closeup.mp4', 6, 1, 1, 'Breed rare lines', 'every animal has its own genes'),
-        ('islands', clips_dir / 'islands.mp4', 5, 1, 1, 'Build, plant, raise islands', None),
-        ('pan', clips_dir / 'pan.mp4', 9, 2, 1, 'It wears deeper', 'day after day, into the dark'),
-        ('glow', clips_dir / 'glow.mp4', 6, 1, 1, 'Things down there glow', None),
-        ('fastforward', clips_dir / 'fastforward.mp4', 6, 2, 1, f'{title}, day {int(info["days"]) + 1}', f'{info["fathoms"]:,} fathoms down'),
-        ('card-end', None, 4.5, 0, 1, None, None),
-    ]
-    plan = [p for p in plan if p[1] is None or Path(p[1]).exists()]
-    cards = [('card-title', '<div class="card"><div><h1>pond.nz</h1><p>a living pixel-art aquarium</p></div></div>'),
-             ('card-end', '<div class="card"><div><h1>pond.nz</h1><p>Free, in your browser. Nothing to install.</p><p class="url">Play at pond.nz</p></div></div>')]
-    caps = [(f'cap-{p[0]}', f'<div class="cap">{p[5]}{f"<small>{p[6]}</small>" if p[6] else ""}</div>') for p in plan if p[5]]
-    overlays(tmp, cards + caps)
+    W, H = size
+    plan = [p for p in plan if 'card' in p or Path(p['src']).exists()]
+    imgs = []
+    for i, p in enumerate(plan):
+        if 'card' in p:
+            imgs.append((f'p{i}', p['card']))
+        elif p.get('cap'):
+            sub = f'<small>{p["sub"]}</small>' if p.get('sub') else ''
+            imgs.append((f'p{i}', f'<div class="cap">{p["cap"]}{sub}</div>'))
+    overlays(tmp, imgs, size)
+    enc = ['-c:v', 'libx264', '-preset', 'slow', '-tune', 'animation', '-crf', '18', '-pix_fmt', 'yuv420p', '-r', FPS]
     parts = []
-    for name, src, secs, start, speed, cap, _ in plan:
-        part = tmp / f'{len(parts):02d}-{name}.mp4'
-        fade = f'fade=t=in:d=0.4,fade=t=out:st={secs - 0.4}:d=0.4'
-        if src is None:
-            ff('-loop', '1', '-framerate', FPS, '-t', secs, '-i', tmp / f'{name}.png', '-vf', f'format=yuv420p,{fade}', '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-r', FPS, part)
+    for i, p in enumerate(plan):
+        secs, part = p['secs'], tmp / f'{i:02d}.mp4'
+        fl = []
+        if p.get('fin', True):
+            fl.append('fade=t=in:d=0.35')
+        if p.get('fout', True):
+            fl.append(f'fade=t=out:st={secs - 0.35}:d=0.35')
+        fades = ','.join(fl) or 'null'
+        if 'card' in p:
+            ff('-loop', '1', '-framerate', FPS, '-t', secs, '-i', tmp / f'p{i}.png', '-vf', f'scale={W}:{H},format=yuv420p,{fades}', *enc, part)
         else:
-            v = f'[0:v]setpts=PTS/{speed},scale=1920:1080:flags=lanczos,fps={FPS},trim=duration={secs},setpts=PTS-STARTPTS[v]'
-            if cap:
-                v += f';[v][1:v]overlay=0:0:enable=1,{fade}[o]'
-                ff('-ss', start, '-i', src, '-loop', '1', '-i', tmp / f'cap-{name}.png', '-filter_complex', v, '-map', '[o]', '-t', secs, '-an',
-                   '-c:v', 'libx264', '-preset', 'slow', '-tune', 'animation', '-crf', '18', '-pix_fmt', 'yuv420p', part)
+            # (Cover the frame: scaled up to fill it, then centred and cropped.)
+            v = (f'[0:v]setpts=PTS/{p.get("speed", 1)},scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H},'
+                 f'fps={FPS},trim=duration={secs},setpts=PTS-STARTPTS[v]')
+            if p.get('cap'):
+                ff('-ss', p.get('start', 0), '-i', p['src'], '-loop', '1', '-i', tmp / f'p{i}.png', '-filter_complex', v + f';[v][1:v]overlay=0:0,{fades}[o]',
+                   '-map', '[o]', '-t', secs, '-an', *enc, part)
             else:
-                ff('-ss', start, '-i', src, '-filter_complex', v + f';[v]{fade}[o]', '-map', '[o]', '-t', secs, '-an',
-                   '-c:v', 'libx264', '-preset', 'slow', '-tune', 'animation', '-crf', '18', '-pix_fmt', 'yuv420p', part)
+                ff('-ss', p.get('start', 0), '-i', p['src'], '-filter_complex', v + f';[v]{fades}[o]', '-map', '[o]', '-t', secs, '-an', *enc, part)
         parts.append(part)
-    total = sum(p[2] for p in plan)
+    total = sum(p['secs'] for p in plan)
     lst = tmp / 'parts.txt'
-    lst.write_text(''.join(f"file '{p.as_posix()}'\n" for p in parts), encoding='utf-8')
+    lst.write_text(''.join(f"file '{q.as_posix()}'\n" for q in parts), encoding='utf-8')
     ff('-f', 'concat', '-safe', '0', '-i', lst, '-c', 'copy', tmp / 'video.mp4')
     audio = music(track, total, tmp)
-    ff('-i', tmp / 'video.mp4', '-i', audio, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'copy', '-shortest', '-movflags', '+faststart', out / 'trailer.mp4')
+    ff('-i', tmp / 'video.mp4', '-i', audio, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'copy', '-shortest', '-movflags', '+faststart', outfile)
+    print(f'  {outfile.name} ({total:.0f}s, {W}x{H}, music {track})', flush=True)
+    return total
+
+
+def trailer(info, out, track):
+    C = out / 'clips'
+    grow = sorted(g for g in (ROOT / 'timelapses').glob('*.mp4') if not g.stem.startswith('tall-'))
+    title = info.get('title') or 'Thomas-Pond'
+    plan = [{'card': TITLE_CARD, 'secs': 3.5}]
+    if grow:
+        plan.append({'src': grow[0], 'start': 2, 'secs': 9, 'speed': 3, 'cap': 'Start with a bare pond', 'sub': 'it fills in on its own'})
+    plan += [
+        {'src': C / 'tour.mp4', 'start': 1, 'secs': 7, 'cap': 'It lives without you', 'sub': 'and remembers what you did'},
+        {'src': C / 'closeup.mp4', 'start': 1, 'secs': 6, 'cap': 'Breed rare lines', 'sub': 'every animal has its own genes'},
+        {'src': C / 'islands.mp4', 'start': 1, 'secs': 5, 'cap': 'Build, plant, raise islands'},
+        {'src': C / 'pan.mp4', 'start': 2, 'secs': 9, 'cap': 'It wears deeper', 'sub': 'day after day, into the dark'},
+        {'src': C / 'glow.mp4', 'start': 1, 'secs': 6, 'cap': 'Things down there glow'},
+        {'src': C / 'fastforward.mp4', 'start': 2, 'secs': 6, 'cap': f'{title}, day {int(info["days"]) + 1}', 'sub': f'{info["fathoms"]:,} fathoms down'},
+        {'card': END_CARD, 'secs': 4.5},
+    ]
+    cut(plan, out / 'trailer.mp4', out / 'trailer-parts', (1920, 1080), track)
     # A lighter copy for the web page, and its poster frame.
     ff('-i', out / 'trailer.mp4', '-vf', 'scale=1280:720:flags=lanczos', '-c:v', 'libx264', '-preset', 'slow', '-tune', 'animation', '-crf', '24',
        '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', out / 'trailer-720.mp4')
     ff('-ss', 4.5, '-i', out / 'trailer.mp4', '-frames:v', '1', '-vf', 'scale=1280:-1', '-q:v', '3', out / 'trailer-poster.jpg')
-    print(f'  trailer.mp4 ({total:.0f}s, music {track}) and trailer-720.mp4', flush=True)
+
+
+# ---- shorts: upright, for TikTok and YouTube Shorts ----------------------------------------------------------------
+TALL = (1080, 1920)
+
+
+def tall_clips(page, out):
+    """Clips filmed upright: the dive from the beach to the deepest water, residents close up, islands, a glow."""
+    out.mkdir(parents=True, exist_ok=True)
+    P = prepare(page)
+    picks = []
+    for c in page.evaluate('()=>PR.notable({shallow:0.3})'):
+        if c['species'] not in {q['species'] for q in picks}:
+            picks.append(c)
+        if len(picks) == 5:
+            break
+    (out / 'residents.json').write_text(json.dumps(picks, indent=1), encoding='utf-8')
+    a, b = P['beach'], P['deepest']
+    film(page, out, 'dive', 32, lambda: (page.evaluate('a=>PR.look(a[0],a[1],2)', a), page.evaluate('a=>PR.panFrames(a[0],a[1],a[2],a[3],a[4])', [a[0], a[1], b[0], b[1], 32 * FPS])),
+         per_frame='()=>PR.panStep(1/30)')
+    for n, c in enumerate(picks):
+        film(page, out, f'res-{n}', 4.5, lambda c=c: page.evaluate('a=>PR.follow(PR.creature(a[0]),a[1])', [c['i'], 8]))
+    if P['isles']:
+        isle = P['isles'][len(P['isles']) // 2]
+        film(page, out, 'isles', 6, lambda: page.evaluate('a=>PR.look(a[0],a[1],3)', isle))
+    glow = page.evaluate('()=>PR.notable({night:true,glowOnly:true})')
+    if glow:
+        film(page, out, 'glow', 6, lambda: page.evaluate('a=>PR.follow(PR.creature(a[0]),a[1])', [glow[0]['i'], 5]), light='night')
+    film(page, out, 'tour', 8, lambda: page.evaluate('()=>PR.tour(5)'))
+
+
+def tall_growth(seed='misty-reed-42'):
+    """A fresh pond's growth, upright (tools/record_timelapse.py), for the before-and-after short."""
+    f = ROOT / 'timelapses' / f'tall-{seed}-salt.mp4'
+    if not f.exists():
+        subprocess.run([sys.executable, '-I', str(ROOT / 'tools' / 'record_timelapse.py'), '--seed', seed, '--habitat', 'salt', '--size', '1080x1920',
+                        '--to-tier', '3', '--max-seconds', '40', '--no-captions', '--end-card', '0', '--light', 'day', '--out', str(f)], check=True)
+    return f
+
+
+def shorts(info, out):
+    T, S = out / 'tall', out / 'shorts'
+    S.mkdir(parents=True, exist_ok=True)
+    day, fathoms, title = int(info['days']) + 1, f'{info["fathoms"]:,}', info.get('title') or 'Thomas-Pond'
+
+    def dive(st, secs, cap, sub=None, fin=False, fout=False):
+        return {'src': T / 'dive.mp4', 'start': st, 'secs': secs, 'cap': cap, 'sub': sub, 'fin': fin, 'fout': fout}
+    # 1. The dive: one unbroken move from the beach down into the deepest water.
+    cut([dive(0, 6, f'This pond is {day} days old', fin=True), dive(6, 7, 'It started as a puddle', 'by the beach'),
+         dive(13, 9, 'Every day it wears', 'a little deeper'), dive(22, 9.5, f'{fathoms} fathoms', 'down', fout=True),
+         {'card': END_CARD, 'secs': 3.5}], S / 'short-dive.mp4', S / 'parts-dive', TALL, 'subdued-progression')
+    # 2. Day 1 and day N: a fresh pond growing, then the old one.
+    g = tall_growth()
+    cut([{'src': g, 'start': 0, 'secs': 3.5, 'cap': 'Day 1', 'sub': 'a bare pond', 'fout': False},
+         {'src': g, 'start': 3.5, 'secs': 8, 'speed': 2.5, 'cap': 'It fills in on its own', 'fin': False},
+         {'src': T / 'isles.mp4', 'start': 0.5, 'secs': 5, 'cap': f'Day {day}', 'sub': title},
+         {'src': T / 'res-0.mp4', 'start': 0.5, 'secs': 3.5, 'cap': f'{info["animals"]} animals', 'sub': f'{info["species"]} kinds'},
+         {'src': T / 'glow.mp4', 'start': 0.5, 'secs': 4.5, 'cap': f'{fathoms} fathoms', 'sub': 'down'},
+         {'card': END_CARD, 'secs': 3.5}], S / 'short-day1.mp4', S / 'parts-day1', TALL, 'copper-corrosion-and-wire')
+    # 3. Meet the residents: who lives here, close up.
+    res = json.loads((T / 'residents.json').read_text(encoding='utf-8'))
+    plan = [{'src': T / 'tour.mp4', 'start': 0.5, 'secs': 4, 'cap': 'Meet the residents', 'sub': f'of {title}'}]
+    for n, c in enumerate(res[:5]):
+        rare = c.get('tierName') or ''
+        plan.append({'src': T / f'res-{n}.mp4', 'start': 0.5, 'secs': 3.6, 'cap': c['name'] or c['label'],
+                     'sub': f'{rare + " " if rare and rare != "Common" else ""}{c["label"].lower()}'})
+    plan.append({'card': END_CARD, 'secs': 3.5})
+    cut(plan, S / 'short-residents.mp4', S / 'parts-residents', TALL, 'subaquatic-matrix')
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('what', choices=['stills', 'clips', 'trailer', 'all'])
+    ap.add_argument('what', choices=['stills', 'clips', 'trailer', 'shorts', 'all'])
     ap.add_argument('--pond', default='thomas-pond')
     ap.add_argument('--refresh', action='store_true', help='fetch the pond again (as a peek)')
     ap.add_argument('--only', default='', help='clips to film, comma separated (tour,closeup,closeup2,glow,pan,islands,fastforward)')
     ap.add_argument('--track', default='subaquatic-matrix', help='music in audio/music for the trailer')
+    ap.add_argument('--refilm', action='store_true', help='shorts: film the upright clips again')
     a = ap.parse_args()
     out = PROMO / a.pond
     out.mkdir(parents=True, exist_ok=True)
@@ -254,6 +352,14 @@ def main():
                 print('page errors:', page.errors[:5], file=sys.stderr)
     if a.what in ('trailer', 'all'):
         trailer(json.loads(info_f.read_text(encoding='utf-8')), out, a.track)
+    if a.what in ('shorts', 'all'):
+        if a.refilm or not (out / 'tall' / 'dive.mp4').exists():
+            with open_pond(a.pond, size=TALL) as page:
+                page.evaluate(DRIVER)
+                if not info_f.exists():
+                    info_f.write_text(json.dumps(page.evaluate('()=>PR.info()'), indent=1), encoding='utf-8')
+                tall_clips(page, out / 'tall')
+        shorts(json.loads(info_f.read_text(encoding='utf-8')), out)
     print('done:', out)
 
 

@@ -73,7 +73,7 @@
       if (opts.kind && c.species !== opts.kind) continue;
       if (opts.shallow && depthAt(world, c.x, c.y) > opts.shallow) continue; // (the deep swallows the light: for day shots)
       if (opts.glowOnly && !glow) continue;
-      out.push({ i: world.creatures.indexOf(c), score, species: c.species, label: SPECIES[c.species] ? SPECIES[c.species].label : c.species, tier, mythic: !!(D && D.mythic), glow, x: c.x, y: c.y, name: c.life.name });
+      out.push({ i: world.creatures.indexOf(c), score, species: c.species, label: SPECIES[c.species] ? SPECIES[c.species].label : c.species, tier, tierName: typeof TIERS !== 'undefined' ? TIERS[tier] || '' : '', mythic: !!(D && D.mythic), glow, x: c.x, y: c.y, name: c.life.name });
     }
     return out.sort((a, b) => b.score - a.score);
   };
