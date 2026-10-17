@@ -19,3 +19,6 @@ __pycache__/
 
 # timelapse videos (tools/record_timelapse.py)
 timelapses/
+
+# promo footage and stills (tools/capture_promo.py)
+promo/

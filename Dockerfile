@@ -10,5 +10,6 @@ COPY index.html 404.html style.css robots.txt sitemap.xml manifest.webmanifest \
      /usr/share/nginx/html/
 COPY js/ /usr/share/nginx/html/js/
 COPY audio/ /usr/share/nginx/html/audio/
+COPY store/ /usr/share/nginx/html/store/
 
 EXPOSE 80

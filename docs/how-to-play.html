@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="How to play Pond: controls, money, animals, breeding, building and how your pond gets deeper.">
+<title>Pond: How to Play</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#efe6cf;--panel:#f8f1de;--ink:#1d2a2a;--soft:#4c5a57;--rule:#cdbf9c;
+  --water:#123f47;--water2:#0c2d34;--foam:#d9f2ea;--pearl:#2f7f8a;--ess:#7a4bb0;--pts:#a86a12;--key:#fffaf0;
+  --pixel:'Silkscreen',ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1c1f;--panel:#16272b;--ink:#e3ece6;--soft:#a3b5ae;--rule:#2c4446;
+  --water:#0a2a31;--water2:#061b20;--pearl:#6cc5cf;--ess:#b893ea;--pts:#e3a74b;--key:#21363a;
+}}
+:root[data-theme="dark"]{
+  --bg:#0f1c1f;--panel:#16272b;--ink:#e3ece6;--soft:#a3b5ae;--rule:#2c4446;
+  --water:#0a2a31;--water2:#061b20;--pearl:#6cc5cf;--ess:#b893ea;--pts:#e3a74b;--key:#21363a;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.6 ui-rounded,'Trebuchet MS',Verdana,sans-serif}
+a{color:var(--pearl)}
+.wrap{max-width:860px;margin:0 auto;padding:0 20px}
+h1,h2,h3,.px{font-family:var(--pixel);font-weight:400;letter-spacing:.02em}
+h2{font-size:26px;line-height:1.2;margin:56px 0 14px;padding-top:18px;border-top:3px solid var(--ink)}
+h3{font-size:17px;margin:28px 0 6px}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 16px;padding-left:24px}
+li{margin:5px 0}
+b{font-weight:700}
+
+/* top */
+.top{background:var(--water);color:var(--foam);border-bottom:6px solid var(--water2)}
+.top .wrap{display:flex;gap:22px;align-items:center;padding-top:36px;padding-bottom:34px}
+.top img{width:84px;height:84px;image-rendering:pixelated;flex:none}
+.top h1{font-size:44px;line-height:1;margin:0 0 10px}
+.top p{margin:0;max-width:560px;color:#b9d6cf}
+.top a{color:#fff}
+nav{background:var(--water2);font-family:var(--pixel);font-size:13px}
+nav .wrap{display:flex;flex-wrap:wrap;gap:4px 18px;padding-top:10px;padding-bottom:10px}
+nav a{color:#9fd0c6;text-decoration:none}
+nav a:hover{color:#fff;text-decoration:underline}
+
+kbd{font:13px/1 var(--pixel);background:var(--key);color:var(--ink);border:2px solid var(--ink);border-bottom-width:4px;border-radius:3px;padding:3px 6px 2px;display:inline-block;white-space:nowrap}
+
+.box{background:var(--panel);border:2px solid var(--ink);box-shadow:5px 5px 0 var(--rule);padding:18px 22px;margin:20px 0}
+.box > :last-child{margin-bottom:0}
+.box h3:first-child{margin-top:0}
+.tip{border-left:6px solid var(--pearl);background:var(--panel);padding:12px 16px;margin:18px 0}
+.tip b:first-child{font-family:var(--pixel);font-weight:400;margin-right:6px}
+
+ol.steps{counter-reset:s;list-style:none;padding:0}
+ol.steps li{counter-increment:s;position:relative;padding-left:48px;margin:0 0 16px}
+ol.steps li::before{content:counter(s);position:absolute;left:0;top:0;width:32px;height:32px;display:grid;place-items:center;font:16px var(--pixel);background:var(--water);color:var(--foam)}
+
+table{width:100%;border-collapse:collapse;margin:8px 0 18px;font-size:15px}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--rule)}
+th{font:13px var(--pixel);border-bottom:2px solid var(--ink)}
+td:first-child{white-space:nowrap}
+
+.money{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:18px 0}
+.coin{background:var(--panel);border:2px solid var(--ink);padding:14px 16px}
+.coin h3{margin:0 0 6px;font-size:18px}
+.coin p{font-size:15px;margin:0 0 8px}
+.coin p:last-child{margin:0}
+.pearl h3{color:var(--pearl)}.ess h3{color:var(--ess)}.pts h3{color:var(--pts)}
+
+.screen{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:auto auto auto;gap:6px;background:var(--water);padding:8px;margin:18px 0;color:var(--foam);font-size:13px;line-height:1.35}
+.screen div{border:2px dashed #4e8a8a;padding:8px;min-height:62px}
+.screen b{display:block;font:12px var(--pixel);font-weight:400;color:#fff;margin-bottom:2px}
+.s-bar{grid-column:2}.s-sky{grid-column:3}.s-rail{grid-column:1;grid-row:1/4}.s-pond{grid-column:2;grid-row:2;border-style:solid!important;border-color:#2a6a6a!important;display:grid;place-items:center;text-align:center;color:#8fbcb3}
+.s-map{grid-column:3;grid-row:2/4}.s-journal{grid-column:2;grid-row:3}
+
+.dive{list-style:none;margin:18px 0;padding:0;border:3px solid var(--ink)}
+.tier{margin:0;padding:12px 16px 14px;color:#e6f2ee}
+.t-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.t-num{font:14px var(--pixel);color:#f1cc77;min-width:38px}
+.t-name{font:17px var(--pixel);color:#fff;flex:1}
+.t-name i{font-style:normal;color:#9fc4bb;margin-left:8px;font-size:13px}
+.t-when{font:12px var(--pixel);color:#9fc4bb}
+.t-body{font-size:15px;line-height:1.5;color:#cfe2dc;margin:4px 0 0 50px}
+.t-body b{color:#fff}
+.spoil{border:3px dashed var(--soft)!important;padding:10px 14px!important;margin:0 0 18px}
+.spoil summary{font:14px var(--pixel);font-weight:400}
+.spoil .dive{margin-bottom:4px}
+
+details{border-top:1px solid var(--rule);padding:10px 0}
+details:last-of-type{border-bottom:1px solid var(--rule)}
+summary{cursor:pointer;font-weight:700}
+details p{margin:8px 0 0}
+
+footer{margin-top:60px;padding:24px 0 40px;border-top:3px solid var(--ink);font-size:14px;color:var(--soft)}
+
+
+/* game loop strip */
+.loop{background:var(--water);border:3px solid var(--ink);box-shadow:6px 6px 0 var(--rule);margin:30px 0 8px;padding:22px 18px 16px;color:var(--foam)}
+.loop-row{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:28px}
+.step{position:relative;margin:0;text-align:center;display:flex;flex-direction:column;align-items:center}
+.step:not(:last-child)::after{content:'';position:absolute;right:-24px;top:34px;border:10px solid transparent;border-left:14px solid #f1cc77;border-right:0}
+.ico{width:76px;height:76px;background:var(--water2);border:2px solid #4e8a8a;display:grid;place-items:center;margin-bottom:10px}
+.ico svg{width:60px;height:60px;display:block}
+.step b{font:22px var(--pixel);font-weight:400;color:#fff;letter-spacing:.04em;text-transform:uppercase}
+.step .cap{font-size:14px;line-height:1.4;color:#b9d6cf;margin-top:4px;max-width:170px}
+.loop-back{margin:18px 0 0;padding-top:12px;border-top:2px dashed #4e8a8a;text-align:center;font:14px var(--pixel);color:#f1cc77}
+.loop-back span{font-size:20px;margin-right:6px;vertical-align:-2px}
+@media (max-width:640px){
+  .loop-row{grid-template-columns:1fr 1fr;gap:22px 14px}
+  .step:not(:last-child)::after{display:none}
+  .ico{width:64px;height:64px}.ico svg{width:50px;height:50px}
+  .step b{font-size:19px}
+  .loop-back{font-size:12px}
+}
+@media (max-width:640px){
+  .t-body{margin-left:0}.t-num{min-width:0}.t-name{font-size:15px}.t-name i{display:block;margin:2px 0 0}
+  body{font-size:16px}
+  .wrap{padding:0 16px}
+  .top .wrap{gap:14px;padding-top:24px;padding-bottom:22px}
+  .top img{width:56px;height:56px}
+  .top h1{font-size:32px}
+  h2{font-size:22px;margin-top:44px}
+  .money{grid-template-columns:1fr}
+  .screen{display:flex;flex-direction:column}
+  .s-pond{display:none!important}
+  td:first-child{white-space:normal}
+  table{font-size:14px}
+  th,td{padding:7px 6px}
+}
+@media print{nav{display:none}.top{background:none;color:inherit}.top p{color:inherit}.box{box-shadow:none}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <img src="../icon-192.png" alt="">
+    <div>
+      <h1>How to Play</h1>
+      <p>Pond is a pond you keep. It runs on its own whether you touch it or not. You feed it, plant it, build in it and breed what lives there, and over time the water wears deeper and stranger things move in. Play it at <a href="https://pond.nz">pond.nz</a>.</p>
+    </div>
+  </div>
+</header>
+<nav aria-label="Sections"><div class="wrap">
+  <a href="#start">First 10 minutes</a>
+  <a href="#screen">The screen</a>
+  <a href="#controls">Controls</a>
+  <a href="#money">Money</a>
+  <a href="#animals">Animals</a>
+  <a href="#breeding">Breeding</a>
+  <a href="#build">Building</a>
+  <a href="#depth">Going deeper</a>
+  <a href="#stuck">Stuck?</a>
+</div></nav>
+
+<main class="wrap">
+
+<section class="loop" aria-label="The game loop">
+  <ol class="loop-row"><li class="step"><span class="ico"><svg viewBox="0 0 12 12" aria-hidden="true" shape-rendering="crispEdges"><rect x="5" y="0" width="1" height="1" fill="#7cc56a"/><rect x="6" y="0" width="1" height="1" fill="#7cc56a"/><rect x="4" y="1" width="1" height="1" fill="#7cc56a"/><rect x="5" y="1" width="1" height="1" fill="#7cc56a"/><rect x="6" y="1" width="1" height="1" fill="#7cc56a"/><rect x="7" y="1" width="1" height="1" fill="#7cc56a"/><rect x="9" y="1" width="1" height="1" fill="#7cc56a"/><rect x="10" y="1" width="1" height="1" fill="#7cc56a"/><rect x="1" y="2" width="1" height="1" fill="#7cc56a"/><rect x="2" y="2" width="1" height="1" fill="#7cc56a"/><rect x="5" y="2" width="1" height="1" fill="#7cc56a"/><rect x="6" y="2" width="1" height="1" fill="#7cc56a"/><rect x="8" y="2" width="1" height="1" fill="#7cc56a"/><rect x="9" y="2" width="1" height="1" fill="#7cc56a"/><rect x="10" y="2" width="1" height="1" fill="#7cc56a"/><rect x="11" y="2" width="1" height="1" fill="#7cc56a"/><rect x="0" y="3" width="1" height="1" fill="#7cc56a"/><rect x="1" y="3" width="1" height="1" fill="#7cc56a"/><rect x="2" y="3" width="1" height="1" fill="#7cc56a"/><rect x="3" y="3" width="1" height="1" fill="#7cc56a"/><rect x="5" y="3" width="1" height="1" fill="#7cc56a"/><rect x="6" y="3" width="1" height="1" fill="#7cc56a"/><rect x="9" y="3" width="1" height="1" fill="#7cc56a"/><rect x="10" y="3" width="1" height="1" fill="#7cc56a"/><rect x="1" y="4" width="1" height="1" fill="#7cc56a"/><rect x="2" y="4" width="1" height="1" fill="#7cc56a"/><rect x="3" y="4" width="1" height="1" fill="#7cc56a"/><rect x="5" y="4" width="1" height="1" fill="#7cc56a"/><rect x="6" y="4" width="1" height="1" fill="#7cc56a"/><rect x="8" y="4" width="1" height="1" fill="#7cc56a"/><rect x="9" y="4" width="1" height="1" fill="#7cc56a"/><rect x="3" y="5" width="1" height="1" fill="#7cc56a"/><rect x="4" y="5" width="1" height="1" fill="#7cc56a"/><rect x="5" y="5" width="1" height="1" fill="#7cc56a"/><rect x="6" y="5" width="1" height="1" fill="#7cc56a"/><rect x="7" y="5" width="1" height="1" fill="#7cc56a"/><rect x="8" y="5" width="1" height="1" fill="#7cc56a"/><rect x="5" y="6" width="1" height="1" fill="#7cc56a"/><rect x="6" y="6" width="1" height="1" fill="#7cc56a"/><rect x="5" y="7" width="1" height="1" fill="#7cc56a"/><rect x="6" y="7" width="1" height="1" fill="#7cc56a"/><rect x="2" y="8" width="1" height="1" fill="#a8743f"/><rect x="3" y="8" width="1" height="1" fill="#a8743f"/><rect x="4" y="8" width="1" height="1" fill="#a8743f"/><rect x="5" y="8" width="1" height="1" fill="#a8743f"/><rect x="6" y="8" width="1" height="1" fill="#a8743f"/><rect x="7" y="8" width="1" height="1" fill="#a8743f"/><rect x="8" y="8" width="1" height="1" fill="#a8743f"/><rect x="9" y="8" width="1" height="1" fill="#a8743f"/><rect x="2" y="9" width="1" height="1" fill="#a8743f"/><rect x="3" y="9" width="1" height="1" fill="#a8743f"/><rect x="4" y="9" width="1" height="1" fill="#a8743f"/><rect x="5" y="9" width="1" height="1" fill="#a8743f"/><rect x="6" y="9" width="1" height="1" fill="#a8743f"/><rect x="7" y="9" width="1" height="1" fill="#a8743f"/><rect x="8" y="9" width="1" height="1" fill="#a8743f"/><rect x="9" y="9" width="1" height="1" fill="#a8743f"/><rect x="3" y="10" width="1" height="1" fill="#a8743f"/><rect x="4" y="10" width="1" height="1" fill="#a8743f"/><rect x="5" y="10" width="1" height="1" fill="#a8743f"/><rect x="6" y="10" width="1" height="1" fill="#a8743f"/><rect x="7" y="10" width="1" height="1" fill="#a8743f"/><rect x="8" y="10" width="1" height="1" fill="#a8743f"/><rect x="4" y="11" width="1" height="1" fill="#a8743f"/><rect x="5" y="11" width="1" height="1" fill="#a8743f"/><rect x="6" y="11" width="1" height="1" fill="#a8743f"/><rect x="7" y="11" width="1" height="1" fill="#a8743f"/></svg></span><b>Grow</b><span class="cap">Feed your animals and fill the water with plants.</span></li><li class="step"><span class="ico"><svg viewBox="0 0 12 12" aria-hidden="true" shape-rendering="crispEdges"><rect x="2" y="1" width="1" height="1" fill="#f08a3c"/><rect x="3" y="1" width="1" height="1" fill="#f08a3c"/><rect x="4" y="1" width="1" height="1" fill="#f08a3c"/><rect x="1" y="2" width="1" height="1" fill="#f08a3c"/><rect x="2" y="2" width="1" height="1" fill="#f08a3c"/><rect x="3" y="2" width="1" height="1" fill="#f08a3c"/><rect x="4" y="2" width="1" height="1" fill="#f08a3c"/><rect x="5" y="2" width="1" height="1" fill="#f08a3c"/><rect x="9" y="2" width="1" height="1" fill="#f08a3c"/><rect x="10" y="2" width="1" height="1" fill="#f08a3c"/><rect x="0" y="3" width="1" height="1" fill="#f08a3c"/><rect x="1" y="3" width="1" height="1" fill="#f08a3c"/><rect x="2" y="3" width="1" height="1" fill="#f08a3c"/><rect x="3" y="3" width="1" height="1" fill="#f08a3c"/><rect x="4" y="3" width="1" height="1" fill="#f08a3c"/><rect x="5" y="3" width="1" height="1" fill="#f08a3c"/><rect x="6" y="3" width="1" height="1" fill="#f08a3c"/><rect x="8" y="3" width="1" height="1" fill="#f08a3c"/><rect x="9" y="3" width="1" height="1" fill="#f08a3c"/><rect x="10" y="3" width="1" height="1" fill="#f08a3c"/><rect x="0" y="4" width="1" height="1" fill="#f08a3c"/><rect x="1" y="4" width="1" height="1" fill="#f08a3c"/><rect x="2" y="4" width="1" height="1" fill="#f08a3c"/><rect x="3" y="4" width="1" height="1" fill="#ffffff"/><rect x="4" y="4" width="1" height="1" fill="#f08a3c"/><rect x="5" y="4" width="1" height="1" fill="#f08a3c"/><rect x="6" y="4" width="1" height="1" fill="#f08a3c"/><rect x="7" y="4" width="1" height="1" fill="#f08a3c"/><rect x="8" y="4" width="1" height="1" fill="#f08a3c"/><rect x="9" y="4" width="1" height="1" fill="#f08a3c"/><rect x="0" y="5" width="1" height="1" fill="#f08a3c"/><rect x="1" y="5" width="1" height="1" fill="#f08a3c"/><rect x="2" y="5" width="1" height="1" fill="#f08a3c"/><rect x="3" y="5" width="1" height="1" fill="#f08a3c"/><rect x="4" y="5" width="1" height="1" fill="#f08a3c"/><rect x="5" y="5" width="1" height="1" fill="#f08a3c"/><rect x="6" y="5" width="1" height="1" fill="#f08a3c"/><rect x="8" y="5" width="1" height="1" fill="#f08a3c"/><rect x="9" y="5" width="1" height="1" fill="#f08a3c"/><rect x="10" y="5" width="1" height="1" fill="#f08a3c"/><rect x="1" y="6" width="1" height="1" fill="#f08a3c"/><rect x="2" y="6" width="1" height="1" fill="#f08a3c"/><rect x="3" y="6" width="1" height="1" fill="#f08a3c"/><rect x="4" y="6" width="1" height="1" fill="#f08a3c"/><rect x="5" y="6" width="1" height="1" fill="#f08a3c"/><rect x="9" y="6" width="1" height="1" fill="#f08a3c"/><rect x="10" y="6" width="1" height="1" fill="#f08a3c"/><rect x="2" y="7" width="1" height="1" fill="#f08a3c"/><rect x="3" y="7" width="1" height="1" fill="#f08a3c"/><rect x="4" y="7" width="1" height="1" fill="#f08a3c"/><rect x="7" y="8" width="1" height="1" fill="#f3c6d6"/><rect x="8" y="8" width="1" height="1" fill="#f3c6d6"/><rect x="6" y="9" width="1" height="1" fill="#f3c6d6"/><rect x="7" y="9" width="1" height="1" fill="#f3c6d6"/><rect x="8" y="9" width="1" height="1" fill="#f3c6d6"/><rect x="9" y="9" width="1" height="1" fill="#f3c6d6"/><rect x="7" y="10" width="1" height="1" fill="#f3c6d6"/><rect x="8" y="10" width="1" height="1" fill="#f3c6d6"/></svg></span><b>Breed</b><span class="cap">Happy animals pair up. Rare babies pay big.</span></li><li class="step"><span class="ico"><svg viewBox="0 0 12 12" aria-hidden="true" shape-rendering="crispEdges"><rect x="5" y="0" width="1" height="1" fill="#e8d27a"/><rect x="6" y="0" width="1" height="1" fill="#e8d27a"/><rect x="5" y="1" width="1" height="1" fill="#e8d27a"/><rect x="4" y="2" width="1" height="1" fill="#e8d27a"/><rect x="5" y="2" width="1" height="1" fill="#e8d27a"/><rect x="3" y="3" width="1" height="1" fill="#d9d0bd"/><rect x="4" y="3" width="1" height="1" fill="#d9d0bd"/><rect x="5" y="3" width="1" height="1" fill="#d9d0bd"/><rect x="6" y="3" width="1" height="1" fill="#d9d0bd"/><rect x="7" y="3" width="1" height="1" fill="#d9d0bd"/><rect x="3" y="4" width="1" height="1" fill="#d9d0bd"/><rect x="5" y="4" width="1" height="1" fill="#d9d0bd"/><rect x="7" y="4" width="1" height="1" fill="#d9d0bd"/><rect x="0" y="5" width="1" height="1" fill="#8a5a35"/><rect x="1" y="5" width="1" height="1" fill="#8a5a35"/><rect x="2" y="5" width="1" height="1" fill="#8a5a35"/><rect x="3" y="5" width="1" height="1" fill="#8a5a35"/><rect x="4" y="5" width="1" height="1" fill="#8a5a35"/><rect x="5" y="5" width="1" height="1" fill="#8a5a35"/><rect x="6" y="5" width="1" height="1" fill="#8a5a35"/><rect x="7" y="5" width="1" height="1" fill="#8a5a35"/><rect x="8" y="5" width="1" height="1" fill="#8a5a35"/><rect x="9" y="5" width="1" height="1" fill="#8a5a35"/><rect x="10" y="5" width="1" height="1" fill="#8a5a35"/><rect x="1" y="6" width="1" height="1" fill="#8a5a35"/><rect x="2" y="6" width="1" height="1" fill="#8a5a35"/><rect x="3" y="6" width="1" height="1" fill="#8a5a35"/><rect x="4" y="6" width="1" height="1" fill="#8a5a35"/><rect x="5" y="6" width="1" height="1" fill="#8a5a35"/><rect x="6" y="6" width="1" height="1" fill="#8a5a35"/><rect x="7" y="6" width="1" height="1" fill="#8a5a35"/><rect x="8" y="6" width="1" height="1" fill="#8a5a35"/><rect x="9" y="6" width="1" height="1" fill="#8a5a35"/><rect x="2" y="7" width="1" height="1" fill="#8a5a35"/><rect x="3" y="7" width="1" height="1" fill="#8a5a35"/><rect x="4" y="7" width="1" height="1" fill="#8a5a35"/><rect x="5" y="7" width="1" height="1" fill="#8a5a35"/><rect x="6" y="7" width="1" height="1" fill="#8a5a35"/><rect x="7" y="7" width="1" height="1" fill="#8a5a35"/><rect x="8" y="7" width="1" height="1" fill="#8a5a35"/><rect x="1" y="9" width="1" height="1" fill="#e2c98f"/><rect x="2" y="9" width="1" height="1" fill="#e2c98f"/><rect x="3" y="9" width="1" height="1" fill="#e2c98f"/><rect x="4" y="9" width="1" height="1" fill="#e2c98f"/><rect x="5" y="9" width="1" height="1" fill="#e2c98f"/><rect x="6" y="9" width="1" height="1" fill="#e2c98f"/><rect x="7" y="9" width="1" height="1" fill="#e2c98f"/><rect x="8" y="9" width="1" height="1" fill="#e2c98f"/><rect x="9" y="9" width="1" height="1" fill="#e2c98f"/><rect x="10" y="9" width="1" height="1" fill="#e2c98f"/><rect x="0" y="10" width="1" height="1" fill="#e2c98f"/><rect x="1" y="10" width="1" height="1" fill="#e2c98f"/><rect x="2" y="10" width="1" height="1" fill="#e2c98f"/><rect x="3" y="10" width="1" height="1" fill="#e2c98f"/><rect x="4" y="10" width="1" height="1" fill="#e2c98f"/><rect x="5" y="10" width="1" height="1" fill="#e2c98f"/><rect x="6" y="10" width="1" height="1" fill="#e2c98f"/><rect x="7" y="10" width="1" height="1" fill="#e2c98f"/><rect x="8" y="10" width="1" height="1" fill="#e2c98f"/><rect x="9" y="10" width="1" height="1" fill="#e2c98f"/><rect x="10" y="10" width="1" height="1" fill="#e2c98f"/><rect x="11" y="10" width="1" height="1" fill="#e2c98f"/></svg></span><b>Build</b><span class="cap">Spend pearls on ships, islands and nests.</span></li><li class="step"><span class="ico"><svg viewBox="0 0 12 12" aria-hidden="true" shape-rendering="crispEdges"><rect x="5" y="0" width="1" height="1" fill="#9fd8e6"/><rect x="6" y="0" width="1" height="1" fill="#9fd8e6"/><rect x="4" y="1" width="1" height="1" fill="#9fd8e6"/><rect x="7" y="1" width="1" height="1" fill="#9fd8e6"/><rect x="5" y="2" width="1" height="1" fill="#9fd8e6"/><rect x="6" y="2" width="1" height="1" fill="#9fd8e6"/><rect x="5" y="3" width="1" height="1" fill="#9fd8e6"/><rect x="6" y="3" width="1" height="1" fill="#9fd8e6"/><rect x="2" y="4" width="1" height="1" fill="#9fd8e6"/><rect x="3" y="4" width="1" height="1" fill="#9fd8e6"/><rect x="4" y="4" width="1" height="1" fill="#9fd8e6"/><rect x="5" y="4" width="1" height="1" fill="#9fd8e6"/><rect x="6" y="4" width="1" height="1" fill="#9fd8e6"/><rect x="7" y="4" width="1" height="1" fill="#9fd8e6"/><rect x="8" y="4" width="1" height="1" fill="#9fd8e6"/><rect x="9" y="4" width="1" height="1" fill="#9fd8e6"/><rect x="5" y="5" width="1" height="1" fill="#9fd8e6"/><rect x="6" y="5" width="1" height="1" fill="#9fd8e6"/><rect x="5" y="6" width="1" height="1" fill="#9fd8e6"/><rect x="6" y="6" width="1" height="1" fill="#9fd8e6"/><rect x="1" y="7" width="1" height="1" fill="#9fd8e6"/><rect x="5" y="7" width="1" height="1" fill="#9fd8e6"/><rect x="6" y="7" width="1" height="1" fill="#9fd8e6"/><rect x="10" y="7" width="1" height="1" fill="#9fd8e6"/><rect x="1" y="8" width="1" height="1" fill="#9fd8e6"/><rect x="2" y="8" width="1" height="1" fill="#9fd8e6"/><rect x="5" y="8" width="1" height="1" fill="#9fd8e6"/><rect x="6" y="8" width="1" height="1" fill="#9fd8e6"/><rect x="9" y="8" width="1" height="1" fill="#9fd8e6"/><rect x="10" y="8" width="1" height="1" fill="#9fd8e6"/><rect x="2" y="9" width="1" height="1" fill="#9fd8e6"/><rect x="3" y="9" width="1" height="1" fill="#9fd8e6"/><rect x="4" y="9" width="1" height="1" fill="#9fd8e6"/><rect x="5" y="9" width="1" height="1" fill="#9fd8e6"/><rect x="6" y="9" width="1" height="1" fill="#9fd8e6"/><rect x="7" y="9" width="1" height="1" fill="#9fd8e6"/><rect x="8" y="9" width="1" height="1" fill="#9fd8e6"/><rect x="9" y="9" width="1" height="1" fill="#9fd8e6"/><rect x="4" y="10" width="1" height="1" fill="#9fd8e6"/><rect x="5" y="10" width="1" height="1" fill="#9fd8e6"/><rect x="6" y="10" width="1" height="1" fill="#9fd8e6"/><rect x="7" y="10" width="1" height="1" fill="#9fd8e6"/></svg></span><b>Sink</b><span class="cap">A living pond wears itself deeper.</span></li></ol>
+  <p class="loop-back"><span aria-hidden="true">↺</span> Deeper water brings new animals. Then do it all again.</p>
+</section>
+
+<h2 id="goal">The goal</h2>
+<p><b>Make your pond as deep as you can.</b> Depth, measured in fathoms, is your score, and it's what the leaderboard ranks. A new pond is a few fathoms deep. A good pond is hundreds. Ponds that have been kept a long time go much, much further down.</p>
+<p>You don't dig. The pond wears itself deeper, and how fast depends on how alive it is. A pond full of plants, healthy animals, births and buildings erodes faster than a bare one. So really, the goal is to keep a thriving pond, and the depth follows.</p>
+<p>Every time the pond reaches a new depth, new animals, plants, foods and buildings become possible. What they are is for you to find out.</p>
+
+<h2 id="start">Your first 10 minutes</h2>
+<p>A new pond is nearly empty: a few seedlings, some snails, shrimp and crabs, <b>30 pearls</b> and <b>15 essence</b>. That's on purpose.</p>
+<ol class="steps">
+  <li><b>Look around.</b> Click any animal to open its card. Drag to move around, scroll to zoom. Point at anything for a tooltip.</li>
+  <li><b>Feed them.</b> Open the item bar at the bottom, pick <b>Pellets</b> (free) and click the water. Hungry animals leave, don't breed and eventually starve.</li>
+  <li><b>Plant something.</b> Plants cost 2 to 15 pearls. Each one is liked by certain animals, and its tooltip says which. Plants spread on their own, and a pond with grown-up plant life is what draws new kinds of animals in.</li>
+  <li><b>Wait for dawn.</b> Every dawn pays out pearls: one for every species in the pond, plus up to 5 more for how comfortable they all are. More kinds of animals, kept happy, means more money.</li>
+  <li><b>Watch the journal</b> (bottom left). Births, arrivals and discoveries show up there. Your first new species usually turns up after a pond day or so.</li>
+</ol>
+<div class="tip"><b>Tip</b> Don't spend all your pearls on the first thing you see. Plants are the best early buy: they're cheap, they keep growing, and they're what makes the pond ready for new arrivals.</div>
+
+<h2 id="screen">The screen</h2>
+<div class="screen" aria-label="Rough layout of the game screen">
+  <div class="s-rail"><b>Animals</b>Left side. The kinds you have, and ones you could get. Click one to spawn it.</div>
+  <div class="s-bar"><b>Pond bar</b>Name, depth ⚓, pearls, essence. Click it (<kbd>P</kbd>) for the full score.</div>
+  <div class="s-sky"><b>Sky + ☰</b>Time of day, moon, tide. The menu has your ponds and settings.</div>
+  <div class="s-pond">your pond</div>
+  <div class="s-map"><b>Map + side view</b>The side view shows how deep you are and how close the next depth is.</div>
+  <div class="s-journal"><b>Journal + item bar</b>News on the left. Food, plants, tools and builds along the bottom.</div>
+</div>
+<p>Pick a food, plant or building from the item bar, then click the pond to use it. A little chip shows what you're holding and what it costs. Press <kbd>Esc</kbd> to put it down and go back to just looking. Hover any item and press <kbd>+</kbd> to pin it to the bar.</p>
+
+<h2 id="controls">Controls</h2>
+<table>
+  <thead><tr><th>Do this</th><th>Mouse / keys</th><th>Phone</th></tr></thead>
+  <tbody>
+    <tr><td>Look at something</td><td>Click it (right-click a plant)</td><td>Tap it (long-press a plant)</td></tr>
+    <tr><td>Move around</td><td>Drag empty water, or <kbd>WASD</kbd> / arrows</td><td>Drag</td></tr>
+    <tr><td>Zoom</td><td>Scroll, or <kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd></td><td>Pinch</td></tr>
+    <tr><td>Follow an animal</td><td>Double-click it, or hover and <kbd>F</kbd></td><td>Follow button on its card</td></tr>
+    <tr><td>Move an animal</td><td>Drag it</td><td>Drag it</td></tr>
+    <tr><td>Stop using a tool</td><td><kbd>Esc</kbd></td><td>Tap <b>Look</b> on the chip</td></tr>
+    <tr><td>Pause</td><td><kbd>Space</kbd></td><td></td></tr>
+    <tr><td>Journal / Score / Guide</td><td><kbd>J</kbd> / <kbd>P</kbd> / <kbd>G</kbd></td><td>Tap them</td></tr>
+    <tr><td>Camera tour</td><td><kbd>T</kbd></td><td></td></tr>
+    <tr><td>Sound / Music</td><td><kbd>M</kbd> / <kbd>N</kbd></td><td>In the menu</td></tr>
+    <tr><td>Day, dusk, night lighting</td><td><kbd>L</kbd></td><td>Sky tracker</td></tr>
+  </tbody>
+</table>
+<p>On a phone, press and hold any button to see what it does without pressing it.</p>
+
+<h2 id="money">Money</h2>
+<p>There are three numbers to keep track of. They do different jobs.</p>
+<div class="money">
+  <div class="coin pearl"><h3>● Pearls</h3><p><b>For the pond itself:</b> plants, rocks, special food, buildings and upgrades.</p><p><b>From:</b> dawn payouts, births, rare finds, hauling out litter.</p></div>
+  <div class="coin ess"><h3>◆ Essence</h3><p><b>For life:</b> spawning animals, improving their genes, unlocking deep species, deepening the pond by hand.</p><p><b>From:</b> recycling animals, old ones dying, bones and fossils, a bit each dawn.</p></div>
+  <div class="coin pts"><h3>✦ Points</h3><p><b>Your record.</b> They never go down, spending doesn't touch them, and every point also pays you a pearl.</p><p><b>From:</b> births (rare ones pay a lot more), new species, milestones, new depths.</p></div>
+</div>
+<p>Spending on things that last (buildings, plants, animals, gene upgrades) also counts as an investment: you get a tenth back as points right away, and a small dividend every dawn after. Food doesn't count. The score panel (<kbd>P</kbd>) shows what you've invested and what it's paying.</p>
+<div class="tip"><b>Tip</b> Fresh water is the easy mode and pays normal points. Salt pays 1.3×, both together pays 1.6×. Hard mode pays half again on top.</div>
+
+<h2 id="animals">Animals</h2>
+<h3>Getting new kinds</h3>
+<p>You can't buy an animal your pond hasn't met yet. New kinds find their own way in, <b>one at a time</b>, with a wait after each one that gets longer the more you already know. A kind turns up when:</p>
+<ul>
+  <li>the pond's <b>plant life</b> is grown enough for it,</li>
+  <li>the <b>water</b> suits it (fresh, salt or both, and warm or cold),</li>
+  <li>the pond is <b>deep enough</b> for it,</li>
+  <li>and the wait since the last new kind is over.</li>
+</ul>
+<p>Click the <b>?</b> on the animal rail to open <b>Wildlife</b>. It lists every kind that could still come, how likely each one is in your pond, whether the pond is ready for it, and when the next one can arrive. A <b>lure</b> (pearls) makes one kind much more likely to be next and shortens the wait. Once a kind has arrived, you can spawn more of it from the rail with essence.</p>
+
+<h3>Keeping them</h3>
+<p>Unhappy animals age faster and wander off. An animal's card shows how it's doing. The ones that matter most:</p>
+<table>
+  <tbody>
+    <tr><td><b>Fullness</b></td><td>Feed them. Well-fed animals heal, age slower and are half as likely to leave.</td></tr>
+    <tr><td><b>Comfort</b></td><td>Put the plants and rocks they like near them. Comfort also raises your dawn pearls.</td></tr>
+    <tr><td><b>Tension</b></td><td>How aggressive the water around them is. Crowding and predators raise it. Shelter, like a sunken ship, calms it.</td></tr>
+    <tr><td><b>Water match</b></td><td>In a mixed pond, freshwater animals want fresh water and saltwater animals want salt.</td></tr>
+  </tbody>
+</table>
+
+<h3>Growing them</h3>
+<p>Animals get bigger every time they eat, with no hard limit. When one animal eats another, it can pick up any of the prey's genes that were better than its own and pass them on to its young. You can also improve any animal's genes directly from its card with essence, up to ten levels each. Max one out and it shows on the animal.</p>
+
+<h2 id="breeding">Breeding</h2>
+<p>Breeding is where most of your points come from, and it's how you get rare animals. Two animals of a kind will breed on their own when all of this is true:</p>
+<ul>
+  <li>they're <b>adults</b> and close to each other,</li>
+  <li>they're more than <b>65% full</b> (Brine shrimp gets them there fast),</li>
+  <li>they haven't bred too recently,</li>
+  <li>there's <b>room</b> in the pond (the census count shows it) and the water isn't too tense.</li>
+</ul>
+<p>Some kinds only breed at a <b>breeding habitat</b> you build, like spawning gravel or an amphibian pool. The card for each habitat tells you who breeds there.</p>
+
+<h3>Rare animals</h3>
+<p>Babies get a mix of both parents' genes. Some looks, like <b>albino</b>, <b>piebald</b> and <b>melanistic</b>, are hidden: an animal can carry one copy without showing it. Breed two carriers and some of the babies will show it. Others, like <b>shiny</b>, <b>glow</b> and <b>ghost</b>, just turn up now and then and often pass down. Rare animals get a thick colored outline.</p>
+<table>
+  <thead><tr><th>Rarity</th><th>Points per birth</th></tr></thead>
+  <tbody>
+    <tr><td>Common</td><td>1</td></tr>
+    <tr><td>Uncommon</td><td>3</td></tr>
+    <tr><td>Rare</td><td>8</td></tr>
+    <tr><td>Epic</td><td>20</td></tr>
+    <tr><td>Legendary</td><td>50</td></tr>
+    <tr><td>Mythic</td><td>150</td></tr>
+  </tbody>
+</table>
+<p>Breeding the same rare again pays 25% more each time, up to 3×. The first one of its kind in your pond pays 20 extra.</p>
+
+<h3>Paragons</h3>
+<p>Keep breeding the same rare line and you'll earn a <b>Paragon</b>: a free, top-quality animal of that line with a crown of light. You get one at 3, 8, 20 and 50 rare births in a line, and also when a species has scored enough points for you. Claim them from the <b>♛</b> on the rail.</p>
+
+<h3>The hatchery</h3>
+<p>If you want to breed on purpose, build a <b>hatchery</b>. Put a pair in a pen, feed it, pick a trait to breed toward (size, speed, longevity, glow...), and each brood's best baby replaces the weaker parent. It's a little idle game of its own, and it keeps running while you're away.</p>
+
+<h2 id="build">Building</h2>
+<p>Buildings cost pearls (a few also need essence), sit in the pond and affect everything around them. Click one to upgrade its <b>reach</b> and <b>strength</b>. Some you'll have from the start:</p>
+<table>
+  <tbody>
+    <tr><td><b>Sunken ship</b></td><td>Shelter that calms the water. Pays salvage every dawn.</td></tr>
+    <tr><td><b>Island</b></td><td>Dry land for frogs, turtles and other things that come up for air. Build on it again to raise it.</td></tr>
+    <tr><td><b>Vent / Spring</b></td><td>Warm or clear water. Animals near it breed more.</td></tr>
+    <tr><td><b>Aerator</b></td><td>Animals near it age slower. Makes blights rarer.</td></tr>
+    <tr><td><b>Seed bed</b></td><td>Plants take root around it.</td></tr>
+    <tr><td><b>Breeding habitats</b></td><td>Where certain kinds breed, and they lay more there.</td></tr>
+    <tr><td><b>Hatchery</b></td><td>Controlled breeding (see above).</td></tr>
+  </tbody>
+</table>
+<p>More buildings unlock as the pond gets deeper. Built out over deep water, they also let the pond hold more animals.</p>
+
+<h2 id="depth">Going deeper</h2>
+<p>The pond erodes a little all the time. The side view next to the map shows how far you are to the next depth. What wears it down:</p>
+<ul>
+  <li><b>Tides.</b> They do most of the work. Salt water has big tides, fresh water barely any, so <b>salt deepens about three times faster than fresh</b>.</li>
+  <li><b>Plant life.</b> A pond grown thick with plants erodes faster.</li>
+  <li><b>Buildings.</b> The ground around them scours away.</li>
+  <li><b>Life happening.</b> New generations, rare births, new species and fossils all push it along.</li>
+  <li><b>Points</b> count a little too, but on a curve, so you can't just farm your way down.</li>
+  <li><b>Essence.</b> You can pay to deepen the pond directly. It costs a bit more every time.</li>
+</ul>
+<p>Here's every depth in order. Salt-water names come first, fresh-water names after the slash. Times are rough, for a salt pond at normal speed. <b>Fresh water takes about three times as long.</b></p>
+<ol class="dive">
+  <li class="tier" style="background:#2f8088"><div class="t-head"><span class="t-num">0</span><span class="t-name">The reef<i>/ The pond</i></span><span class="t-when">start</span></div><div class="t-body">A few pioneers (snails, shrimp, crabs, starfish, jellies) and some seedlings. Plants fill in, and new kinds find their way in one at a time.</div></li>
+  <li class="tier" style="background:#256c74"><div class="t-head"><span class="t-num">1</span><span class="t-name">Tide pools<i>/ Marsh pools</i></span><span class="t-when">~30 min</span></div><div class="t-body">Pools get scoured into the beach and cut off at low tide. <b>Sand sharks</b> start turning up in the shallows.</div></li>
+  <li class="tier" style="background:#1c5960"><div class="t-head"><span class="t-num">2</span><span class="t-name">The twilight zone<i>/ The deep lake</i></span><span class="t-when">~1–2 h</span></div><div class="t-body">The far edge falls away past a drop-off and <b>the pond gets bigger</b>, growing out into deep water. Reef sharks or giant catfish move in, with lanternfish, sturgeon and more. New build: <b>kelp forest</b> / <b>drowned forest</b> (shelter and a nursery). New food: krill / bloodworms.</div></li>
+  <li class="tier" style="background:#13454c"><div class="t-head"><span class="t-num">3</span><span class="t-name">The midnight zone<i>/ The sunless cave</i></span><span class="t-when">a few hours</span></div><div class="t-body">The light runs out, so only things that glow stay bright. Anglerfish with lures, gulper eels, vampire squid, blind cavefish, olms. New builds: <b>black smoker</b> / <b>crystal grotto</b> (pay essence every dawn), the <b>brood chamber</b> where deep species breed, and the <b>oil rig</b> (rich, but it leaks).</div></li>
+  <li class="tier" style="background:#0d353b"><div class="t-head"><span class="t-num">4</span><span class="t-name">The abyss<i>/ The drowned cathedral</i></span><span class="t-when">many hours</span></div><div class="t-body">The first <b>mythic</b> animals. They're huge, rare, and the whole pond scatters when one arrives. New builds: <b>whale fall</b> (a feast for deep life) and the <b>drowned idol</b> (draws the mythic up, but nothing near it rests easy).</div></li>
+</ol>
+<details class="spoil"><summary>Spoilers: what's below the abyss</summary>
+<ol class="dive">
+  <li class="tier" style="background:#0a2a30"><div class="t-head"><span class="t-num">5</span><span class="t-name">The hadal trench<i>/ The flooded crypts</i></span><span class="t-when">days</span></div><div class="t-body">Snailfish, frilled sharks, brine pools and tube worms, or crypt eels and an ossuary. A canyon opens across the deep floor. New food: chum.</div></li>
+  <li class="tier" style="background:#092328"><div class="t-head"><span class="t-num">6</span><span class="t-name">The black below<i>/ The roots of the world</i></span></div><div class="t-body">Siphonophores like lit necklaces, giant squid. The spire of teeth / root cathedral. Lure lanterns.</div></li>
+  <li class="tier" style="background:#0b2420"><div class="t-head"><span class="t-num">7</span><span class="t-name">The drowned city<i>/ The sunken city</i></span></div><div class="t-body">The Deep Ones walk the streets. The Cyclopean gate (one per pond, and vast). Offerings for the marked. <b>Corruption</b>, a fourth currency that comes from marked animals, matters a lot down here.</div></li>
+  <li class="tier" style="background:#1c0f18"><div class="t-head"><span class="t-num">8</span><span class="t-name">The dreaming dark</span></div><div class="t-body">The Sleeper's cradle, very expensive, and the Sleeper itself.</div></li>
+  <li class="tier" style="background:#1c160c"><div class="t-head"><span class="t-num">9–11</span><span class="t-name">The deep past</span></div><div class="t-body">The Cambrian sea, the Devonian dark, the Permian deep: trilobites, anomalocaris, dunkleosteus, coelacanths, plesiosaurs, mosasaurs. Fresh water gets sea scorpions, lungfish, giant amphibians and Hyneria.</div></li>
+  <li class="tier" style="background:#140c22"><div class="t-head"><span class="t-num">12–14</span><span class="t-name">Where it stops being of this world</span></div><div class="t-body">The Starfall trench, the Glass garden, the Other sea. Alien artifacts land on the floor and leak parasites that ride your animals and change them. Some of their young come out as something new.</div></li>
+  <li class="tier" style="background:#050608"><div class="t-head"><span class="t-num">15+</span><span class="t-name">…and on</span></div><div class="t-body">New depths keep getting named as you reach them, each half again as far as the last. There's no bottom, only more room.</div></li>
+</ol>
+</details>
+<h3>Every time you reach a new depth</h3>
+<ul>
+  <li>You get a lump of points: <b>150 × the depth number²</b> (depth 4 pays 2,400).</li>
+  <li>The pond grows outward, and the new part is darker and deeper than the last.</li>
+  <li>New animals become able to arrive on their own. You can also unlock that depth's species early with essence from the <b>evolution tree</b> (click the side view).</li>
+  <li>New plants, foods and buildings show up in the item bar with a <b>NEW</b> badge.</li>
+  <li>The narrator's notes get a little less calm.</li>
+</ul>
+
+<h2 id="stuck">Stuck?</h2>
+<details><summary>No new animals are showing up.</summary><p>Open <b>Wildlife</b> (the <b>?</b> on the animal rail). It tells you whether the pond is ready for each kind and when the next one can come. Usually you need more established plant life, or you just need to wait out the gap. A lure speeds it up.</p></details>
+<details><summary>My animals keep leaving.</summary><p>Check their card. Low comfort, high tension, the wrong water or an empty belly all make them wander off. Feed them, put things they like nearby, and don't overcrowd. Spirulina keeps them well fed five times longer than pellets.</p></details>
+<details><summary>Nothing is breeding.</summary><p>They need to be adults, near each other, more than 65% full, and not too recently bred. Check the census count for room. Some kinds (eels, rays, turtles, crabs, jellies, octopus and others) only breed at a breeding habitat, so build the right one.</p></details>
+<details><summary>Depth is barely moving.</summary><p>Fresh water is slow, that's normal. Grow more plants, put up some buildings, and keep animals breeding. If you have spare essence, deepen by hand from the side view. Or switch to salt for your next pond.</p></details>
+<details><summary>I'm out of pearls.</summary><p>Wait for dawn. Then put the pearls into more species and better comfort, since that's what raises your dawn pay. Pick up any litter on the beach; each piece is worth a pearl or more.</p></details>
+<details><summary>Will I lose my pond if I close the tab?</summary><p>No. It saves itself every few seconds and picks up where you left off. Sign in with Discord from <b>Your ponds</b> to get it on other devices too. Every pond also gets its own address you can share; anyone who opens it gets their own copy to play with.</p></details>
+
+</main>
+
+<footer><div class="wrap">Written for the current version of Pond. Some things have been left out on purpose, so you can find them yourself.</div></footer>
+</body>
+</html>

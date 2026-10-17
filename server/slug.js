@@ -3,7 +3,7 @@
 // hyphens, 3 to 32 long, accents dropped, and never one of the site's own paths. A name in another script (nothing
 // left once it's written in Latin letters) has no address of its own: the pond keeps its seed name's, or its id.
 
-const RESERVED = new Set(['api', 'js', 'audio', 'deploy', 'docs', 'server', 'tools', 'index', 'favicon', 'robots', 'sitemap', 'manifest', 'og', 'icon',
+const RESERVED = new Set(['api', 'js', 'audio', 'store', 'deploy', 'docs', 'server', 'tools', 'index', 'favicon', 'robots', 'sitemap', 'manifest', 'og', 'icon',
   'apple-touch-icon', 'admin', 'administrator', 'root', 'www', 'mail', 'static', 'assets', 'login', 'logout', 'auth', 'signin', 'signup', 'me', 'board',
   'leaderboard', 'neighbours', 'neighbors', 'wanderers', 'health', 'help', 'about', 'privacy', 'terms', 'pond', 'ponds', 'new', 'share', 'observe', 'official',
   'moderator', 'mod', 'null', 'undefined', 'nan', 'true', 'false', 'style', 'guide']);
