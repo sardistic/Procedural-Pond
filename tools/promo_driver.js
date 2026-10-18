@@ -10,7 +10,7 @@
     world.opts.bars = false;
     const css = document.createElement('style');
     css.id = 'pr-hide';
-    css.textContent = 'body.pr-clean > *:not(canvas) { visibility: hidden !important; } #observe-bar { display: none !important; }';
+    css.textContent = 'body.pr-clean > *:not(canvas) { visibility: hidden !important; } #observe-bar, #bar-name { display: none !important; }';
     document.head.appendChild(css);
     PR.ui(false);
     PR.clearSky(true);

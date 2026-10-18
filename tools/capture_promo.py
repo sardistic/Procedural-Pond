@@ -1,13 +1,14 @@
 """Film a real pond for the store page and promo videos: screenshots, clips and a cut trailer with music.
 
-  python tools/capture_promo.py all                   # everything, from thomas-pond
-  python tools/capture_promo.py stills --pond thomas-pond
+  python tools/capture_promo.py all                   # everything, from the default pond
+  python tools/capture_promo.py stills --pond <address>
   python tools/capture_promo.py clips --only tour,closeup
   python tools/capture_promo.py trailer --track subaquatic-matrix
   python tools/capture_promo.py shorts                # three upright videos for TikTok and Shorts
 
 The pond is a saved copy (tools/promo_page.py: fetched once as a peek, never written back). Clips are stepped a
-frame of pond time at a time, so they play smoothly whatever the capture costs. The trailer also uses the
+frame of pond time at a time, so they play smoothly whatever the capture costs. The pond's name is never shown
+or said: the interface shots hide it, and captions give only its day, depth and life. The trailer also uses the
 growth timelapse from tools/record_timelapse.py when one exists in timelapses/. Everything goes to promo/
 (ignored by git). Needs Playwright (Chrome) and ffmpeg.
 """
@@ -238,7 +239,6 @@ def cut(plan, outfile, tmp, size, track):
 def trailer(info, out, track):
     C = out / 'clips'
     grow = sorted(g for g in (ROOT / 'timelapses').glob('*.mp4') if not g.stem.startswith('tall-'))
-    title = info.get('title') or 'Thomas-Pond'
     plan = [{'card': TITLE_CARD, 'secs': 3.5}]
     if grow:
         plan.append({'src': grow[0], 'start': 2, 'secs': 9, 'speed': 3, 'cap': 'Start with a bare pond', 'sub': 'it fills in on its own'})
@@ -248,7 +248,7 @@ def trailer(info, out, track):
         {'src': C / 'islands.mp4', 'start': 1, 'secs': 5, 'cap': 'Build, plant, raise islands'},
         {'src': C / 'pan.mp4', 'start': 2, 'secs': 9, 'cap': 'It wears deeper', 'sub': 'day after day, into the dark'},
         {'src': C / 'glow.mp4', 'start': 1, 'secs': 6, 'cap': 'Things down there glow'},
-        {'src': C / 'fastforward.mp4', 'start': 2, 'secs': 6, 'cap': f'{title}, day {int(info["days"]) + 1}', 'sub': f'{info["fathoms"]:,} fathoms down'},
+        {'src': C / 'fastforward.mp4', 'start': 2, 'secs': 6, 'cap': f'Day {int(info["days"]) + 1}', 'sub': f'{info["fathoms"]:,} fathoms down'},
         {'card': END_CARD, 'secs': 4.5},
     ]
     cut(plan, out / 'trailer.mp4', out / 'trailer-parts', (1920, 1080), track)
@@ -299,7 +299,7 @@ def tall_growth(seed='misty-reed-42'):
 def shorts(info, out):
     T, S = out / 'tall', out / 'shorts'
     S.mkdir(parents=True, exist_ok=True)
-    day, fathoms, title = int(info['days']) + 1, f'{info["fathoms"]:,}', info.get('title') or 'Thomas-Pond'
+    day, fathoms = int(info['days']) + 1, f'{info["fathoms"]:,}'
 
     def dive(st, secs, cap, sub=None, fin=False, fout=False):
         return {'src': T / 'dive.mp4', 'start': st, 'secs': secs, 'cap': cap, 'sub': sub, 'fin': fin, 'fout': fout}
@@ -311,13 +311,13 @@ def shorts(info, out):
     g = tall_growth()
     cut([{'src': g, 'start': 0, 'secs': 3.5, 'cap': 'Day 1', 'sub': 'a bare pond', 'fout': False},
          {'src': g, 'start': 3.5, 'secs': 8, 'speed': 2.5, 'cap': 'It fills in on its own', 'fin': False},
-         {'src': T / 'isles.mp4', 'start': 0.5, 'secs': 5, 'cap': f'Day {day}', 'sub': title},
+         {'src': T / 'isles.mp4', 'start': 0.5, 'secs': 5, 'cap': f'Day {day}', 'sub': 'one pond, kept going'},
          {'src': T / 'res-0.mp4', 'start': 0.5, 'secs': 3.5, 'cap': f'{info["animals"]} animals', 'sub': f'{info["species"]} kinds'},
          {'src': T / 'glow.mp4', 'start': 0.5, 'secs': 4.5, 'cap': f'{fathoms} fathoms', 'sub': 'down'},
          {'card': END_CARD, 'secs': 3.5}], S / 'short-day1.mp4', S / 'parts-day1', TALL, 'copper-corrosion-and-wire')
     # 3. Meet the residents: who lives here, close up.
     res = json.loads((T / 'residents.json').read_text(encoding='utf-8'))
-    plan = [{'src': T / 'tour.mp4', 'start': 0.5, 'secs': 4, 'cap': 'Meet the residents', 'sub': f'of {title}'}]
+    plan = [{'src': T / 'tour.mp4', 'start': 0.5, 'secs': 4, 'cap': 'Meet the residents', 'sub': 'of one long-kept pond'}]
     for n, c in enumerate(res[:5]):
         rare = c.get('tierName') or ''
         plan.append({'src': T / f'res-{n}.mp4', 'start': 0.5, 'secs': 3.6, 'cap': c['name'] or c['label'],

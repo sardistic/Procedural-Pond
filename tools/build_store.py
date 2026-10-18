@@ -1,6 +1,6 @@
 """Build the store page, pond.nz/store: trailer, screenshots, a Play button, features, then the how-to-play guide.
 
-  python tools/build_store.py [--pond thomas-pond]
+  python tools/build_store.py [--pond <address>]
 
 It takes the footage from tools/capture_promo.py (promo/<pond>/), makes web-sized copies of it in store/media/,
 and writes store/index.html with its script in store/store.js (the site's CSP allows no inline script). The
@@ -146,7 +146,7 @@ feat_html = ''.join(f'''<div class="feature"><video src="media/{v}.mp4" muted lo
 top = f'''<div class="store">
 <header class="store-head">
   <div><h1>pond.nz</h1><div class="by">a living pixel-art aquarium · by <a href="https://github.com/sardistic">sardistic</a></div></div>
-  <div class="links"><a class="chip" href="#about">About</a><a class="chip" href="#how">How to play</a><a class="chip" href="https://pond.nz/thomas-pond">Watch Thomas-Pond</a></div>
+  <div class="links"><a class="chip" href="#about">About</a><a class="chip" href="#how">How to play</a><a class="chip" href="https://pond.nz">Play</a></div>
 </header>
 
 <section class="hero" aria-label="Trailer and screenshots">
@@ -172,17 +172,13 @@ top = f'''<div class="store">
   <div><h2>Play pond.nz</h2><p>Free · in your browser · nothing to install · your pond saves itself</p></div>
   <div class="act"><span class="price">Free</span><a class="play" href="https://pond.nz">▶ Play now</a></div>
 </section>
-<section class="buy alt" aria-label="Watch a pond">
-  <div><h2>Watch Thomas-Pond</h2><p>The pond in this footage: day {day}, {info['zone']}, {fathoms} fathoms deep, {info['animals']} animals of {info['species']} kinds. Look only.</p></div>
-  <div class="act"><a class="play" href="https://pond.nz/thomas-pond">▶ Watch</a></div>
-</section>
 
 <div class="cols">
   <div>
     <h2 class="sec-title" id="about">About this game</h2>
 {feat_html}  </div>
   <aside>
-    <div class="aside-box"><h3>In the footage</h3><p class="big">Day {day}</p><p>{fathoms} fathoms down, in {info['zone']}. {info['animals']} animals of {info['species']} kinds, filmed from a saved copy of a real pond.</p></div>
+    <div class="aside-box"><h3>In the footage</h3><p class="big">Day {day}</p><p>{fathoms} fathoms down, in {info['zone']}. {info['animals']} animals of {info['species']} kinds, from a real pond, kept for {day} days.</p></div>
     <div class="aside-box"><h3>Features</h3><ul>
       <li>Procedurally animated animals with their own genes</li>
       <li>Rare morphs, mutations, gifts and curses that breed true</li>
@@ -274,7 +270,7 @@ html = f'''<!doctype html>
 <main class="wrap guide-wrap">
 {guide}</main>
 
-<footer><div class="wrap">Footage and screenshots are from Thomas-Pond, a real pond on pond.nz, filmed from a saved copy. The guide is written for the current version; some things are left out on purpose, so you can find them yourself.</div></footer>
+<footer><div class="wrap">Footage and screenshots are from a real, long-kept pond on pond.nz. The guide is written for the current version; some things are left out on purpose, so you can find them yourself.</div></footer>
 <script src="store.js"></script>
 </body>
 </html>
