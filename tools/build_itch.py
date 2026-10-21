@@ -13,6 +13,8 @@ ZIP = ROOT / 'dist' / 'pond-itch.zip'
 def html_for_itch(html):
     html = html.replace('<html lang="en">', '<html lang="en" data-platform="itch">', 1)
     html = re.sub(r'<script\b[^>]*\bdata-website-id="[^"]+"[^>]*></script>\s*', '', html)
+    # Website navigation/analytics scripts do not belong in the standalone package.
+    html = re.sub(r'<script\b[^>]*\bsrc="https?://[^"]+"[^>]*></script>\s*', '', html)
     html = re.sub(r'<script src="js/water-sdf\.js[^\"]*"></script>\s*', '', html)
     html = re.sub(r'<link\b[^>]*(?:https?://|manifest.webmanifest)[^>]*>\s*', '', html)
     html = re.sub(r'<script type="application/ld\+json">.*?</script>', '', html, flags=re.S)

@@ -12,6 +12,21 @@ leaderboard need the small API in `server/`; without it the pond runs as before 
 
 ## Using it
 
+**Pond care** offers four optional first steps in a new pond: inspect a resident,
+offer food, place habitat it likes nearby, and review its comfort. Dismiss it any
+time and reopen it from the menu. You can instead pin one ambition: reach the next
+depth or welcome a new species. Guidance is remembered in this browser for each
+pond; it grants no rewards and does not change the simulation. Existing ponds
+can open it from the menu. It stays hidden while observing someone else's pond.
+
+Animal cards include **Care & breeding**, with current comfort contributions,
+the next breeding blocker, and buttons to select free pellets or a usable liked
+habitat tool. Selecting a tool moves the camera to the animal; you choose where
+to place it and pay the normal cost. Seedlings count toward comfort at 40%
+growth. The species rail shows current residents; Animals keeps the full list
+and discovery actions. The menu starts closed, and the phone score bar leaves
+room for the menu and sky controls.
+
 Opening the page shows an **entry screen** at once: fish swim past, bubbles rise and a line fills as the
 pond loads. When it's ready, a card shows the pond's name, day, depth, water and animals, a small map of
 the whole pond with its animals as points, and **Dive in** (Enter, Space or Esc work too). Tick *Skip this
@@ -533,3 +548,7 @@ investment balances are preserved. `node --test tools/offerings.test.js` and
 `python tools/test_offerings_browser.py` check the economy, time, ecology and saves.
 Build the standalone browser upload with `python tools/build_itch.py`;
 [itch/README.md](itch/README.md) has account upload steps and validation commands.
+
+`python tools/test_care_browser.py` checks the optional first steps, failed
+purchases, ambition tracking, reloads, observer isolation, actual breeding
+boundaries, comfort contributions, keyboard focus and four viewport sizes.

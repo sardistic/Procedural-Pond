@@ -1259,6 +1259,7 @@ function useTool(x, y) {
     for (let i = tool.n || (tool.food === 'pellet' ? 4 : 3); i > 0; i--) world.food.push(new Food(x + rand(-spread, spread), y + rand(-spread, spread), 40, tool.food));
     addRipple(world, x, y, 1);
   }
+  if (typeof careEvent === 'function') careEvent('tool', null, world.tool, x, y);
 }
 
 // What's under the pointer: the pond's animals before the gnats and fireflies drifting over them.
@@ -3376,10 +3377,10 @@ async function boot() {
   if (pathKey && !found) {
     showTicker(`No pond called ${pathKey} was found (links left unused for a long while are cleared), so here is yours`);
   }
-  // The menu opens by itself (at Your ponds) only the very first time; after that ☰ opens it.
+  // Start with the pond in view; optional first steps live in Pond care.
   let firstVisit = false;
   try { firstVisit = !localStorage.getItem('pond.visited'); localStorage.setItem('pond.visited', '1'); } catch { /* storage unavailable */ }
-  if (innerWidth < 600 || !firstVisit || observe) setHud(false); else $('ponds').open = true;
+  setHud(false);
   if (typeof saveReset !== 'undefined' && saveReset && !observe) logEvent(world, '✦ A fresh start: every pond was reset, so the ones this browser kept are gone. This one is new', null, { cat: 'pond', pri: 3 });
   // A word about signing in, once the pond has had a little while (and not again for a few days if put off).
   setTimeout(() => { if (typeof maybeNudgeSignIn === 'function') maybeNudgeSignIn(); }, firstVisit ? 90000 : 20000);

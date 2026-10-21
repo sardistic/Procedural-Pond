@@ -1201,6 +1201,20 @@ function pondPopulation(world) {
   return world.creatures.reduce((n, c) => n + (c.ambient ? 0 : 1), 0);
 }
 
+// Shared with the animal's care card: keep the displayed blockers and simulation identical.
+function breedingBlock(world, c) {
+  const L = c.life;
+  if (!L || !BREED[c.species]) return 'species';
+  if (c.leaving) return 'leaving';
+  if (c.grabbed) return 'held';
+  if (L.scale < 0.95 || L.age <= matureAt(L)) return 'young';
+  if (typeof canBreedHere === 'function' && !canBreedHere(world, c)) return 'habitat';
+  if (L.energy <= 0.65) return 'food';
+  if (L.cooldown > 0) return 'rest';
+  if (aggressionAt(world, c.x, c.y) >= 0.75) return 'tension';
+  return null;
+}
+
 function breed(world) {
   // Birds, lizards, seals and other ambient island life do not take the
   // swimming population's breeding room.
@@ -1208,8 +1222,7 @@ function breed(world) {
   const counts = {};
   for (const c of world.creatures) if (!c.leaving) counts[breedKey(c)] = (counts[breedKey(c)] || 0) + 1;
   for (const e of world.eggs) counts[e.key] = (counts[e.key] || 0) + e.cells.length;
-  const ready = (c) => c.life && BREED[c.species] && !c.leaving && !c.grabbed && c.life.scale >= 0.95 && (typeof canBreedHere !== 'function' || canBreedHere(world, c)) &&
-    c.life.age > matureAt(c.life) && c.life.energy > 0.65 && c.life.cooldown <= 0 && aggressionAt(world, c.x, c.y) < 0.75;
+  const ready = (c) => breedingBlock(world, c) === null;
   for (const c of world.creatures) {
     if (!ready(c)) continue;
     const key = breedKey(c), rule = BREED[c.species];

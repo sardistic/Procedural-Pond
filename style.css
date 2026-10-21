@@ -1146,7 +1146,7 @@ body.observing #hatch-btn, body.observing #clear, body.observing #evo-deepen, bo
   .sky { top: 12px; right: 12px; }
   #hud { z-index: 3; }
   /* No transform here: it would trap the fixed score panel inside the bar. */
-  .score { top: 12px; left: 64px; right: 72px; transform: none; display: flex; justify-content: center; pointer-events: none; }
+  .score { top: 12px; left: 64px; right: 116px; transform: none; display: flex; justify-content: center; pointer-events: none; }
   .score-btn { max-width: 100%; gap: 8px; padding: 6px 8px; pointer-events: auto; }
   .score-btn .caret, .score-btn .rk { display: none; }
   .score-panel { position: fixed; top: 60px; left: 12px; right: 12px; transform: none; width: auto; max-height: calc(100vh - 230px); pointer-events: auto; }
@@ -1522,6 +1522,43 @@ body.map-tall.map-open .mini-wrap .slice { height: auto; }
 .cr-states.compact .cr-state-label { display: none; }
 .cr-states.compact .cr-state-value { font-size: 9px; }
 @media (max-width: 400px) { .cr-states:not(.compact) { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Present residents get the shortcuts; the full census retains discovery actions. */
+#animals .ani.none { display: none; }
+#open-care { grid-column: 1 / -1; }
+#pond-care { position: fixed; top: 78px; left: 76px; width: 300px; max-width: calc(100vw - 92px);
+  z-index: 5; padding: 12px; background: rgb(8, 26, 34); color: var(--text); border: 2px solid var(--edge);
+  box-shadow: 3px 3px 0 var(--ink); font: 13px/1.5 system-ui, sans-serif; }
+#pond-care[hidden], #pond-care [hidden], .cr-care [hidden] { display: none; }
+#pond-care header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+#pond-care header button { min-width: 32px; min-height: 32px; padding: 0; }
+.care-kicker { color: var(--muted); font-size: 12px; }
+#pond-care h2 { margin: 4px 0 6px; color: var(--hot); font: 600 16px/1.35 system-ui, sans-serif; }
+#pond-care p, .cr-care p { margin: 6px 0; }
+#pond-care.compact .care-text, #pond-care.compact .care-actions,
+#pond-care.compact .care-choices, #pond-care.compact .care-change { display: none; }
+#pond-care.compact h2 { font-size: 13px; margin-bottom: 0; }
+.care-actions, .care-choices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+#pond-care button, .cr-care button { font: 12px/1.4 system-ui, sans-serif; white-space: normal; min-height: 36px; }
+#pond-care .care-change { margin-top: 8px; border: 0; background: transparent; padding: 3px 0; box-shadow: none; color: var(--muted); text-decoration: underline; }
+.cr-care { padding: 10px; margin: 8px 0; background: #102d35; border-left: 3px solid var(--hot); font: 13px/1.45 system-ui, sans-serif; }
+.cr-care > b { color: var(--hot); }
+.cr-care details { margin-top: 6px; }
+.cr-care summary { cursor: pointer; color: #a2dcd4; }
+.care-factors { color: var(--muted); }
+@media (max-width: 760px) {
+  .score { right: max(116px, calc(env(safe-area-inset-right) + 104px)); }
+  .score-btn { min-width: 0; flex: 1; flex-wrap: wrap; justify-content: center; gap: 4px 7px; padding: 5px; }
+  .score-btn .nm { flex: 1 0 100%; text-align: center; }
+  .score-btn span { font-size: 10px; gap: 3px; }
+  .score-btn .hard-tag { font-size: 9px; }
+  #pond-care { top: 100px; left: 76px; width: min(300px, calc(100vw - 88px)); padding: 10px; max-height: 34vh; overflow-y: auto; }
+  #pond-care h2 { font-size: 15px; }
+  .banner { top: 86px; }
+}
+@media (max-height: 500px) {
+  #pond-care { top: 70px; left: 58px; max-height: calc(100vh - 150px); overflow-y: auto; }
+}
 .cr-tabs { display: flex; gap: 0; margin: 10px -2px 0; border-bottom: 1px solid var(--btn-edge); overflow-x: auto; }
 .cr-tabs button { flex: 1 0 auto; min-height: 30px; padding: 4px 8px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; box-shadow: none; font-size: 10px; color: var(--muted); }
 .cr-tabs button[aria-selected="true"] { color: var(--hot); border-bottom-color: var(--hot); }

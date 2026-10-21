@@ -241,7 +241,7 @@ function updateDockVisibility() {
   dockUi.capacity = dockCapacity();
   let shown = 0;
   for (const b of box.children) {
-    const overflow = !b.hidden && shown++ >= dockUi.capacity;
+    const overflow = !b.hidden && !b.classList.contains('none') && shown++ >= dockUi.capacity;
     b.classList.toggle('dock-overflow', overflow);
   }
 }
@@ -294,16 +294,16 @@ function updateCounts() {
       : `${SPECIES[kind].label}: not discovered. Click to lure or summon it.`;
   }
   const now = performance.now();
-  if (now > dockSortAt && !box.matches(':hover') && !spawnUi.kind) {
+  if (now > dockSortAt && !box.matches(':hover') && !box.contains(document.activeElement) && !spawnUi.kind) {
     dockSortAt = now + 3000;
     const btns = [...box.children], order = btns.slice().sort((a, b) =>
       (+b.dataset.value || 0) - (+a.dataset.value || 0)
       || Number(typeof spawnable === 'function' && spawnable(world, b.dataset.spawn)) - Number(typeof spawnable === 'function' && spawnable(world, a.dataset.spawn))
       || DOCK_KINDS.indexOf(a.dataset.spawn) - DOCK_KINDS.indexOf(b.dataset.spawn));
     if (order.some((b, i) => b !== btns[i])) box.append(...order);
-    updateDockVisibility();
   }
   byId('census-count').textContent = total;
+  updateDockVisibility();
 }
 
 // ---- family trees: hover a dock icon ------------------------------------------------------------
@@ -1297,6 +1297,7 @@ function showCreature(c, auto = false, inList = false) {
   creatureUi.rec = world.lineage && world.lineage.get(c.seed);
   if (inList) { census.expanded.add(c.species); renderCensus(); }
   byId('creature').hidden = false;
+  if (!auto && typeof careEvent === 'function') careEvent('inspect', c);
   renderCreature();
 }
 
@@ -1655,6 +1656,7 @@ function renderCreature() {
     vitals.append(size);
     parts.push(vitals);
     parts.push(animalStateStrip(world, c, false, box.querySelector('.cr-states:not(.compact)')));
+    if (typeof animalCareCard === 'function') parts.push(animalCareCard(world, c, box.querySelector('.cr-care')));
     if (!world.observe) parts.push(crActions(c, d));
   }
   // The tabs it has something for.
@@ -2470,6 +2472,7 @@ function initHud() {
 
 let hudCountTimer = 0;
 function hudTick(dt) {
+  if (typeof careTick === 'function') careTick();
   if ((hudTick.pt = (hudTick.pt || 0) - dt) <= 0) { hudTick.pt = 1; refreshAnimalsBadge(); }
   hudCountTimer -= dt;
   if (hudCountTimer <= 0) { hudCountTimer = 0.5; updateCounts(); }

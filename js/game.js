@@ -306,28 +306,34 @@ function updateComfort(world) {
   spots.detritus = world.detritus || [];
   spots.river = world.river ? [world.river.spot] : [];
   world.likeSpots = spots;
-  const litter = (world.litter && world.litter.length) || (world.slicks && world.slicks.length), blight = world.blight;
   const lights = world.darkness > 0.5 ? world.creatures.filter((c) => geneBuffs(c).light > 0.3) : [];
-  const R2 = COMFORT_R * COMFORT_R;
   for (const c of world.creatures) {
     const L = c.life;
     if (!L) continue;
-    const likes = likesOf(c);
-    let n = likes ? 0 : 1.8; // drifters don't mind
-    if (likes) {
-      for (const k of likes) {
-        for (const s of spots[k] || []) if ((s.growth ?? 1) >= 0.4 && (s.x - c.x) ** 2 + (s.y - c.y) ** 2 < R2 && ++n >= 3) break;
-        if (n >= 3) break;
-      }
-    }
     L.aura = auraAt(world, c.x, c.y);
-    let target = n / 3 + L.aura.comfort - aggressionAt(world, c.x, c.y) * 0.3 - mismatch(world, c) * (1 - L.buffs.tolerance) * 0.6;
-    for (const l of lights) if (l !== c && (l.x - c.x) ** 2 + (l.y - c.y) ** 2 < 1600) { target += 0.15; break; }
-    if (litter) target -= 0.8 * pollutionAt(world, c.x, c.y); // litter spoils the water
-    if (blight) target -= blightComfort(world, c);
-    if (typeof landComfort === 'function') target += landComfort(world, c);
-    L.comfort += (clamp(target, 0, 1) - L.comfort) * 0.2;
+    L.comfort += (comfortFactors(world, c, lights).target - L.comfort) * 0.2;
   }
+}
+
+// The same contribution calculation powers the simulation and its explanation.
+function comfortFactors(world, c, lights = null) {
+  const likes = likesOf(c), spots = world.likeSpots || {}, R2 = COMFORT_R * COMFORT_R;
+  let cover = likes ? 0 : 1.8;
+  if (likes) for (const k of likes) {
+    for (const s of spots[k] || []) if ((s.growth ?? 1) >= 0.4 && (s.x - c.x) ** 2 + (s.y - c.y) ** 2 < R2 && ++cover >= 3) break;
+    if (cover >= 3) break;
+  }
+  const aura = (c.life.aura || auraAt(world, c.x, c.y)).comfort;
+  const tension = aggressionAt(world, c.x, c.y) * 0.3;
+  const water = mismatch(world, c) * (1 - c.life.buffs.tolerance) * 0.6;
+  const litter = (world.litter && world.litter.length) || (world.slicks && world.slicks.length);
+  const pollution = litter ? 0.8 * pollutionAt(world, c.x, c.y) : 0;
+  const blight = world.blight ? blightComfort(world, c) : 0;
+  const land = typeof landComfort === 'function' ? landComfort(world, c) : 0;
+  if (!lights) lights = world.darkness > 0.5 ? world.creatures.filter((a) => geneBuffs(a).light > 0.3) : [];
+  const light = lights.some((l) => l !== c && (l.x - c.x) ** 2 + (l.y - c.y) ** 2 < 1600) ? 0.15 : 0;
+  return { cover, tension, water, pollution, blight, aura, land, light,
+    target: clamp(cover / 3 + aura - tension - water + light - pollution - blight + land, 0, 1) };
 }
 
 // ---- natural rhythms and favourite places ---------------------------------------------------
