@@ -15,7 +15,14 @@ leaderboard need the small API in `server/`; without it the pond runs as before 
 **Pond care** offers four optional first steps in a new pond: inspect a resident,
 offer food, place habitat it likes nearby, and review its comfort. Dismiss it any
 time and reopen it from the menu. You can instead pin one ambition: reach the next
-depth or welcome a new species. Guidance is remembered in this browser for each
+depth, welcome a new species, help a chosen resident reach 70% fullness and comfort,
+create a spot with three mature habitat objects it likes, or welcome offspring
+from its family. Choose the resident for the three care ambitions; the card shows
+progress and opens its care details. Natural and hatchery broods count after
+pinning, including eggs already waiting to hatch. Completed ambitions stay
+completed, even if the resident's condition later changes or it leaves. Unfinished
+goals keep their chosen resident and explain departures instead of silently
+switching targets. Guidance is remembered in this browser for each
 pond; it grants no rewards and does not change the simulation. Existing ponds
 can open it from the menu. It stays hidden while observing someone else's pond.
 
@@ -572,6 +579,11 @@ Build the standalone browser upload with `python tools/build_itch.py`;
 `python tools/test_care_browser.py` checks the optional first steps, failed
 purchases, ambition tracking, reloads, observer isolation, actual breeding
 boundaries, comfort contributions, keyboard focus and four viewport sizes.
+
+`python tools/test_ambitions_browser.py` checks the three resident ambitions,
+actual brood hatching, habitat maturity/radius, unchanged care rules, completion
+and dismissal persistence, observer/pond isolation, transformation identity and
+four viewport sizes.
 
 `python tools/test_album_browser.py` checks portraits without simulation changes,
 individual memories before journal merging, offspring and transformation records,

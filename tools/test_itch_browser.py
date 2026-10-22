@@ -91,6 +91,11 @@ def run():
                 frame.get_by_role('button', name='Confirm', exact=True).click()
                 assert frame.evaluate('() => window.confirmed===true')
                 assert frame.evaluate('''()=>{
+                  const c=world.creatures.find(c=>c.life);c.life.energy=.3;c.life.comfort=.3;
+                  carePin('comfort',c.seed);c.life.energy=.8;c.life.comfort=.8;careTick(true);
+                  const done=careState(world).goal.done;careState(world).hidden=true;careSave();return done;
+                }''')
+                assert frame.evaluate('''()=>{
                   const b=document.getElementById('opt-performance');b.value='auto';b.dispatchEvent(new Event('change'));
                   world.paused=false;let now=performance.now();
                   for(let i=0;i<900;i++)performanceFrame(world,30,1/60,now+=1000/60);
@@ -115,6 +120,7 @@ def run():
                 frame.locator('#entry-enter').click()
                 frame.wait_for_function("() => typeof world !== 'undefined' && !!world.erosion && !document.getElementById('entry')", timeout=60000)
                 assert frame.evaluate("() => listSaves().some(s=>s.seed==='itch-second')")
+                assert frame.evaluate("careState(world).goal.kind==='comfort'&&careState(world).goal.done")
                 assert not forbidden, forbidden
                 assert not errors, errors
                 frame.locator('#show-hud').click()

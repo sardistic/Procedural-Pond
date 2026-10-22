@@ -1,7 +1,7 @@
 'use strict';
 // Browser-local guidance. Simulation rules remain in game.js and life.js.
 const CARE_KEY = 'pond.care.v1';
-const CARE = { key: null, state: null, records: {}, choosing: false, timer: 0 };
+const CARE = { key: null, state: null, records: {}, choosing: false, target: null, timer: 0 };
 try {
   const saved = JSON.parse(localStorage.getItem(CARE_KEY) || '{}');
   if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
@@ -9,7 +9,8 @@ try {
       if (!value || typeof value.seed !== 'string' || !Number.isInteger(value.step) || value.step < 0 || value.step > 4) continue;
       const g = value.goal;
       if (g && !(g.kind === 'depth' && Number.isInteger(g.tier) && g.tier > 0)
-          && !(g.kind === 'discovery' && Array.isArray(g.known) && g.known.every((k) => typeof k === 'string'))) value.goal = null;
+          && !(g.kind === 'discovery' && Array.isArray(g.known) && g.known.every((k) => typeof k === 'string'))
+          && !(['comfort','habitat','family'].includes(g.kind) && Number.isFinite(g.subject) && typeof g.name === 'string')) value.goal = null;
       CARE.records[key] = value;
     }
   }
@@ -24,6 +25,7 @@ function careState(w) {
     CARE.state = old && Number.isInteger(old.step) && old.step >= 0 && old.step <= 4 ? old
       : { step: 0, hidden: w.days >= 1, seed: w.seed, subject: null, goal: null };
     CARE.choosing = false;
+    CARE.target = null;
   }
   return CARE.state;
 }
@@ -130,27 +132,81 @@ function animalCareCard(w, c, existing = null) {
   return box;
 }
 
-function carePin(kind) {
+function careChoose() {
   const s = careState(world);
   if (!s) return;
+  const inspected = typeof creatureUi !== 'undefined' && creatureUi.c;
+  CARE.target = (inspected && careResident(world, inspected.seed) || careSubject(world, s))?.seed ?? null;
+  CARE.choosing = true;
+}
+function careEligible(w, c, kind) {
+  if (!c) return false;
+  if (kind === 'habitat') return !!likesOf(c)?.length && (!!carePlant(w, c) || comfortFactors(w, c).cover >= 3);
+  if (kind === 'family') return !!BREED[c.species];
+  return kind === 'comfort';
+}
+function carePin(kind, subject = CARE.target) {
+  const s = careState(world);
+  if (!s) return;
+  if (!['depth','discovery','comfort','habitat','family'].includes(kind)) return;
   if (kind === 'depth' && !DEPTH_TIERS[world.erosion.tier + 1]) return;
+  const c = careResident(world, subject);
+  if (['comfort','habitat','family'].includes(kind) && !careEligible(world, c, kind)) return;
   s.goal = kind === 'depth' ? { kind, tier: world.erosion.tier + 1 }
-    : { kind: 'discovery', known: [...(knownList(world) || [])] };
+    : kind === 'discovery' ? { kind, known: [...(knownList(world) || [])] }
+    : { kind, subject: c.seed, name: c.life.name };
   s.hidden = false; CARE.choosing = false; careSave(); careTick(true);
 }
+function careComplete(w, goal, text) {
+  if (goal.done) return;
+  goal.done = true; goal.day = Math.floor(w.days) + 1; goal.result = text.slice(0, 600); careSave();
+}
+// Called only for actual broods, never when restoring lineage or spawning arrivals.
+function careBirths(w, babies) {
+  if (w !== world) return;
+  const goal = careState(w)?.goal;
+  if (!goal || goal.kind !== 'family' || goal.done) return;
+  const baby = babies.find((c) => c.life?.parents?.includes(goal.subject));
+  if (baby) careComplete(w, goal, `${goal.name}'s family welcomed ${baby.life.name}, generation ${baby.life.gen}.`);
+}
+function careRekey(w, from, to) {
+  if (w !== world) return;
+  const s = careState(w);
+  if (!s) return;
+  if (s.goal?.subject === from.seed) { s.goal.subject = to.seed; careSave(); }
+  if (s.subject === from.seed) { s.subject = to.seed; careSave(); }
+  if (CARE.target === from.seed) CARE.target = to.seed;
+}
 function careGoal(w, goal) {
+  const titles = { comfort: 'Help a resident thrive', habitat: 'Create a favorite spot', family: 'Welcome offspring' };
+  if (titles[goal.kind]) {
+    const c = careResident(w, goal.subject), title = titles[goal.kind];
+    if (goal.done) return { title, done: true, text: goal.result || `${goal.name}'s ambition was reached.`, action: c ? 'Review resident' : 'View animals' };
+    if (!c && w.hatchery?.stock.some((r) => r.s === goal.subject)) return { title, done: false,
+      text: `${goal.name} is in the hatchery. ${goal.kind === 'family' ? 'A hatchery brood from this resident also counts; review its pair and nutrients.' : 'Release this resident into the pond to continue its care ambition.'}`, action: 'View hatchery' };
+    if (!c) return { title, done: false, text: `${goal.name} is no longer in the pond. ${goal.kind === 'family' ? 'Any eggs already laid can still complete this ambition. ' : ''}Choose another resident or change ambition whenever you like.`, action: 'View animals' };
+    if (goal.kind === 'comfort') return { title, done: c.life.comfort >= .7 && c.life.energy >= .7,
+      text: `${goal.name}: fullness ${Math.floor(c.life.energy * 100)}% / 70%, comfort ${Math.floor(c.life.comfort * 100)}% / 70%. Reach both together. Food, mature liked habitat and suitable water help; comfort changes gradually.`, action: 'Review care' };
+    if (goal.kind === 'habitat') {
+      const cover = comfortFactors(w, c).cover;
+      return { title, done: cover >= 3, text: `${goal.name}: ${cover}/3 mature liked habitat objects nearby. Seedlings count from 40% growth. The resident must be near the spot when it is ready.`, action: 'Review care' };
+    }
+    const eggs = w.eggs.filter((e) => e.parent?.seed === c.seed || e.mate?.seed === c.seed).length;
+    return { title, done: false, text: `${goal.name}: ${eggs ? `${eggs} clutch${eggs === 1 ? '' : 'es'} waiting to hatch. Eggs may not all survive.` : careBreeding(w, c)} Complete when at least one offspring hatches after pinning this ambition.`, action: 'Review breeding' };
+  }
   if (goal.kind === 'depth' && DEPTH_TIERS[goal.tier]) {
     const tier = DEPTH_TIERS[goal.tier], before = DEPTH_TIERS[Math.max(0, goal.tier - 1)].erosion;
-    return { title: 'Reach the next depth', done: w.erosion.tier >= goal.tier,
+    return { title: 'Reach the next depth', done: !!goal.done || w.erosion.tier >= goal.tier,
       text: `${Math.floor(clamp((w.erosion.e - before) / (tier.erosion - before), 0, 1) * 100)}% toward ${tierName(w, goal.tier)}. Living plants, structures and tides deepen the pond.`, action: 'View depths' };
   }
-  return { title: 'Welcome a new kind', done: (knownList(w) || []).some((k) => !(goal.known || []).includes(k)),
+  return { title: 'Welcome a new kind', done: !!goal.done || (knownList(w) || []).some((k) => !(goal.known || []).includes(k)),
     text: 'Grow the habitat and allow time for arrivals. Animals lists eligible newcomers and their lures; arrival is not guaranteed immediately.', action: 'View animals' };
 }
 function careOpen() {
   const s = careState(world);
   if (!s) return;
-  s.hidden = false; CARE.choosing = s.step >= 4 && !s.goal;
+  s.hidden = false; CARE.choosing = false;
+  if (s.step >= 4 && !s.goal) careChoose();
   setHud(false); careSave(); careTick(true);
 }
 function careTick(force = false) {
@@ -158,13 +214,35 @@ function careTick(force = false) {
   CARE.timer = performance.now() + 500;
   const s = careState(world), box = document.getElementById('pond-care');
   if (!box) return;
+  const goal = s?.goal && careGoal(world, s.goal);
+  if (goal?.done && !s.goal.done) careComplete(world, s.goal, goal.text);
+  if (s?.goal?.done) goal.text = `Reached on day ${s.goal.day ?? Math.floor(world.days) + 1}. ${s.goal.result || goal.text}`;
   document.getElementById('open-care').hidden = !!world.observe;
   box.hidden = !s || s.hidden || !!document.getElementById('entry') || world.bones || !document.getElementById('banner').hidden;
   if (box.hidden) return;
   box.classList.toggle('compact', WINDOWS.some(([id]) => !document.getElementById(id).hidden));
   const c = !s.goal && careSubject(world, s), plant = c && carePlant(world, c);
-  const step = Math.min(4, s.step), goal = s.goal && careGoal(world, s.goal);
+  const step = Math.min(4, s.step);
   const choosing = CARE.choosing || (!goal && step === 4);
+  box.classList.toggle('choosing', choosing);
+  const targetBox = box.querySelector('.care-target'), select = box.querySelector('#care-resident');
+  targetBox.hidden = !choosing;
+  if (choosing) {
+    const residents = world.creatures.filter((a) => a.life && !a.leaving && !a.dying);
+    if (CARE.target === null) CARE.target = careSubject(world, s)?.seed ?? null;
+    const signature = JSON.stringify(residents.map((a) => [a.seed, a.life.name]));
+    if (select.dataset.residents !== signature) {
+      select.replaceChildren(new Option('Choose a current resident', ''));
+      for (const a of residents) select.add(new Option(`${a.life.name} · ${describe(a).label}`, String(a.seed)));
+      select.dataset.residents = signature;
+    }
+    select.value = careResident(world, CARE.target) ? String(CARE.target) : '';
+    const target = careResident(world, CARE.target);
+    for (const kind of ['comfort','habitat','family']) box.querySelector(`[data-care="${kind}"]`).disabled = !careEligible(world, target, kind);
+    box.querySelector('.care-target-note').textContent = !target ? 'Choose a resident for the three care ambitions.'
+      : [`These goals follow ${target.life.name}.`, !careEligible(world, target, 'habitat') ? 'No placeable liked habitat for this resident yet.' : '',
+        !careEligible(world, target, 'family') ? 'This kind does not breed in pairs.' : ''].filter(Boolean).join(' ');
+  }
   const titles = ['Meet a resident', 'Offer a first meal', 'Make a comfortable spot', 'See what changed', 'Make this pond your own'];
   const texts = [
     'Look at an animal to see its fullness, comfort and breeding needs.',
@@ -189,20 +267,27 @@ function careTick(force = false) {
 
 function initCare() {
   const box = document.createElement('aside'); box.id = 'pond-care'; box.hidden = true; box.setAttribute('aria-label', 'Pond care');
-  box.innerHTML = '<header><span class="care-kicker"></span><button type="button" data-care="dismiss" aria-label="Dismiss pond care">×</button></header><h2></h2><p class="care-text"></p><div class="care-actions"><button type="button" data-care="act"></button><button type="button" data-care="finish">Finish first steps</button></div><div class="care-choices"><button type="button" data-care="depth">Reach the next depth</button><button type="button" data-care="discovery">Welcome a new kind</button></div><button type="button" class="care-change" data-care="choose">Choose an ambition instead</button>';
+  box.innerHTML = '<header><span class="care-kicker"></span><button type="button" data-care="dismiss" aria-label="Dismiss pond care">×</button></header><h2></h2><p class="care-text"></p><div class="care-actions"><button type="button" data-care="act"></button><button type="button" data-care="finish">Finish first steps</button></div><div class="care-choices"><button type="button" data-care="depth">Reach the next depth</button><button type="button" data-care="discovery">Welcome a new kind</button></div><div class="care-target"><label for="care-resident">Resident for care ambitions</label><select id="care-resident"></select><p class="care-target-note"></p><div class="care-actions"><button type="button" data-care="comfort">Help a resident thrive</button><button type="button" data-care="habitat">Create a favorite spot</button><button type="button" data-care="family">Welcome offspring</button></div></div><button type="button" class="care-change" data-care="choose">Choose an ambition instead</button>';
   document.body.append(box);
   const open = document.createElement('button'); open.id = 'open-care'; open.type = 'button'; open.textContent = 'Pond care';
   document.getElementById('open-guide').after(open);
   open.addEventListener('click', careOpen);
+  box.querySelector('#care-resident').addEventListener('change', (e) => { CARE.target = e.target.value === '' ? null : Number(e.target.value); careTick(true); });
   box.addEventListener('click', (event) => {
     const action = event.target.closest('[data-care]')?.dataset.care, s = careState(world);
     if (!s || !action) return;
     if (action === 'dismiss') { s.hidden = true; careSave(); document.getElementById('show-hud').focus({ preventScroll: true }); }
-    else if (action === 'choose') CARE.choosing = true;
-    else if (action === 'finish') { s.step = 4; careSave(); CARE.choosing = true; }
-    else if (action === 'depth' || action === 'discovery') carePin(action);
+    else if (action === 'choose') careChoose();
+    else if (action === 'finish') { s.step = 4; careSave(); careChoose(); }
+    else if (['depth','discovery','comfort','habitat','family'].includes(action)) carePin(action);
     else if (action === 'act') {
-      if (s.goal) { if (s.goal.kind === 'depth') setEvo(true); else setCensus(true); }
+      if (s.goal) {
+        const target = careResident(world, s.goal.subject);
+        if (s.goal.kind === 'depth') setEvo(true);
+        else if (target) { centerOn(target.x, target.y); showCreature(target); }
+        else if (world.hatchery?.stock.some((r) => r.s === s.goal.subject)) setHatchery(true);
+        else setCensus(true);
+      }
       else {
         const c = careSubject(world, s), plant = c && carePlant(world, c);
         if (s.step === 1 && c) careSelectTool(c, 'feed');
@@ -212,6 +297,8 @@ function initCare() {
       }
     }
     careTick(true);
+    if (action === 'choose' || action === 'finish') box.querySelector('#care-resident').focus({ preventScroll: true });
+    else if (['depth','discovery','comfort','habitat','family'].includes(action)) box.querySelector('[data-care="act"]').focus({ preventScroll: true });
   });
 }
 initCare();

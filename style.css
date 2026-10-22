@@ -1527,6 +1527,7 @@ body.map-tall.map-open .mini-wrap .slice { height: auto; }
 #animals .ani.none { display: none; }
 #open-care { grid-column: 1 / -1; }
 #pond-care { position: fixed; top: 78px; left: 76px; width: 300px; max-width: calc(100vw - 92px);
+  max-height: calc(100dvh - 170px); overflow-y: auto;
   z-index: 5; padding: 12px; background: rgb(8, 26, 34); color: var(--text); border: 2px solid var(--edge);
   box-shadow: 3px 3px 0 var(--ink); font: 13px/1.5 system-ui, sans-serif; }
 #pond-care[hidden], #pond-care [hidden], .cr-care [hidden] { display: none; }
@@ -1536,9 +1537,13 @@ body.map-tall.map-open .mini-wrap .slice { height: auto; }
 #pond-care h2 { margin: 4px 0 6px; color: var(--hot); font: 600 16px/1.35 system-ui, sans-serif; }
 #pond-care p, .cr-care p { margin: 6px 0; }
 #pond-care.compact .care-text, #pond-care.compact .care-actions,
-#pond-care.compact .care-choices, #pond-care.compact .care-change { display: none; }
+#pond-care.compact .care-choices, #pond-care.compact .care-change, #pond-care.compact .care-target { display: none; }
 #pond-care.compact h2 { font-size: 13px; margin-bottom: 0; }
 .care-actions, .care-choices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.care-target { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--edge); }
+.care-target label { display: block; margin-bottom: 4px; }
+#care-resident { width: 100%; min-width: 0; min-height: 36px; font: inherit; }
+.care-target-note { color: var(--muted); font-size: 12px; }
 #pond-care button, .cr-care button { font: 12px/1.4 system-ui, sans-serif; white-space: normal; min-height: 36px; }
 #pond-care .care-change { margin-top: 8px; border: 0; background: transparent; padding: 3px 0; box-shadow: none; color: var(--muted); text-decoration: underline; }
 .cr-care { padding: 10px; margin: 8px 0; background: #102d35; border-left: 3px solid var(--hot); font: 13px/1.45 system-ui, sans-serif; }
@@ -1577,6 +1582,7 @@ body.map-tall.map-open .mini-wrap .slice { height: auto; }
   .score-btn span { font-size: 10px; gap: 3px; }
   .score-btn .hard-tag { font-size: 9px; }
   #pond-care { top: 100px; left: 76px; width: min(300px, calc(100vw - 88px)); padding: 10px; max-height: 34vh; overflow-y: auto; }
+  #pond-care.choosing { max-height: min(65vh, calc(100dvh - 180px)); }
   #pond-care h2 { font-size: 15px; }
   .banner { top: 86px; }
 }

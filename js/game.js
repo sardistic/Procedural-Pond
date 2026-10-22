@@ -216,6 +216,7 @@ const rareKey = (c) => `${c.species === 'wild' ? `wild:${c.sp.id}` : c.species =
 const withArticle = (s) => `${/^[aeiou]/i.test(s) ? 'An' : 'A'} ${s}`;
 
 function scoreBirths(world, babies) {
+  if (typeof careBirths === 'function') careBirths(world, babies);
   let common = 0;
   for (const b of babies) {
     const tier = tierOf(b.life.traits);
@@ -435,6 +436,7 @@ function rekeyLineage(world, t, f) {
   Object.assign(r, { s: f.seed, k: 'frog' });
   world.lineage.set(f.seed, r);
   if (typeof albumRekey === 'function') albumRekey(world, t, f);
+  if (typeof careRekey === 'function') careRekey(world, t, f);
 }
 
 // Saves from before family trees: start one from whoever is here.
