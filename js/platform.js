@@ -5,6 +5,7 @@
 (() => {
   const playables = document.documentElement.dataset.platform === 'youtube';
   const itch = document.documentElement.dataset.platform === 'itch';
+  const android = document.documentElement.dataset.platform === 'android';
   const sdk = playables && typeof ytgame !== 'undefined' && ytgame.IN_PLAYABLES_ENV ? ytgame : null;
   function memoryStorage() {
     const cache = Object.create(null);
@@ -104,9 +105,9 @@
     first = true; sdk.game.firstFrameReady();
   }
   const platform = window.PondPlatform = {
-    playables, itch, offline: playables || itch, storage, session, load, flush, storePond,
+    playables, itch, android, offline: playables || itch || android, storage, session, load, flush, storePond,
     get paused() { return paused; },
-    get hidden() { return playables ? paused : document.hidden; },
+    get hidden() { return playables || android ? paused : document.hidden; },
     get audioAllowed() { return audio && !paused; },
     get bestDepth() { return bestDepth; },
     get saveStatus() { return !sdk ? 'preview' : error ? 'error' : savedRevision < revision ? 'pending' : 'saved'; },
@@ -123,7 +124,7 @@
       });
     },
     ask(message, accepted, cancelled = () => {}) {
-      if (!playables && !itch) return window.confirm(message);
+      if (!playables && !itch && !android) return window.confirm(message);
       if (paused || document.getElementById('pond-confirm')) return false;
       const focus = document.activeElement, wasPaused = world.paused;
       setPaused(true);
@@ -149,7 +150,7 @@
       return false;
     },
     audioOutput(ctx, wanted = () => true) {
-      if (!playables) return ctx.destination;
+      if (!playables && !android) return ctx.destination;
       const gain = ctx.createGain(); gain.gain.value = audio && !paused ? 1 : 0;
       gain.connect(ctx.destination); outputs.push({ ctx, gain, wanted });
       if (!audio || paused) ctx.suspend().catch(() => {});
@@ -161,6 +162,15 @@
       a.play().catch(() => media.delete(a));
     },
   };
+  // The bundled Android host owns suspension; never alter the player's pause choice.
+  if (android) {
+    platform.setHostPaused = (value) => {
+      if (paused === !!value) return;
+      paused = !!value; updateAudio();
+      for (const fn of [...(paused ? pauseListeners : resumeListeners)]) fn();
+    };
+    document.addEventListener('visibilitychange', () => platform.setHostPaused(document.hidden));
+  }
   if (sdk) {
     sdk.system.onAudioEnabledChange((on) => { audio = on; updateAudio(); });
     sdk.system.onPause(() => {

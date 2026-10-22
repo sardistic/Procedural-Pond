@@ -597,3 +597,11 @@ writes intercepted. See [the progression audit](docs/progression-audit.md) for
 results, idle comparisons and limitations. Depth estimates account for Hard mode,
 speed, pause and expiring sun offerings; `node --test tools/progression.test.js`
 and `python tools/test_progression_browser.py` verify the clock and UI refresh.
+
+For Android and Google Play, see [android/README.md](android/README.md).
+`python tools/build_android.py` builds a signed App Bundle and APK using an
+external upload key. The offline Android edition bundles the existing game,
+saves on the device, supports portrait/landscape, pauses safely in the background
+and exports pond photos through Android's file picker. Website accounts and
+online services stay on the website. `python tools/test_android_device.py`
+checks the debug edition on an adb-connected test device or emulator.

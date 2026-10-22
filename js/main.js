@@ -11,7 +11,7 @@ const DEFAULT_OPTS = {
 };
 // The water's look (the Waves button): the original pixel water, the 3D wave mesh (water3d.js), or Seascape, the
 // surface raymarched and pixelated (water-sdf.js). (hdWaves stays the switch the rest of the code reads for 3D.)
-const WAVE_LOOKS = { classic: 'Classic', mesh: '3D', ...(!PondPlatform.itch ? { sdf: 'Seascape' } : {}) };
+const WAVE_LOOKS = { classic: 'Classic', mesh: '3D', ...(!PondPlatform.itch && !PondPlatform.android ? { sdf: 'Seascape' } : {}) };
 // The pond is a fixed-size world, larger than the screen at the default zoom.
 // "Fit screen" makes it the window at 2x pixels, so zoom 2 fills the screen exactly.
 const WORLD_SIZES = {

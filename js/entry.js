@@ -231,7 +231,7 @@
         const b = node('button', null, s.seed); b.type = 'button';
         b.addEventListener('click', () => { done(false); openPond(s); }); out.push(b);
       }
-      out.push(node('p', 'note', saves.length ? 'Choose a pond to carry on, or enter the pond on the left.' : PondPlatform.itch ? 'Feed, plant and build. Your pond saves in this browser on this device.' : 'Feed, plant and build. YouTube keeps your pond so you can return to it.'));
+      out.push(node('p', 'note', saves.length ? 'Choose a pond to carry on, or enter the pond on the left.' : PondPlatform.android ? 'Feed, plant and build. Your pond saves in this app on this device.' : PondPlatform.itch ? 'Feed, plant and build. Your pond saves in this browser on this device.' : 'Feed, plant and build. YouTube keeps your pond so you can return to it.'));
       box.replaceChildren(...out); return;
     }
     rowBgs = [];

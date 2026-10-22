@@ -11,5 +11,6 @@ COPY index.html 404.html style.css robots.txt sitemap.xml manifest.webmanifest \
 COPY js/ /usr/share/nginx/html/js/
 COPY audio/ /usr/share/nginx/html/audio/
 COPY store/ /usr/share/nginx/html/store/
+COPY android/privacy.html /usr/share/nginx/html/android-privacy.html
 
 EXPOSE 80

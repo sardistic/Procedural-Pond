@@ -1,0 +1,54 @@
+plugins { id 'com.android.application' }
+
+// Secrets come from an external, access-controlled properties file, never the repo.
+def signingPath = System.getenv('POND_SIGNING_PROPERTIES')
+def signing = new Properties()
+if (signingPath) file(signingPath).withInputStream { signing.load(it) }
+
+android {
+    namespace 'nz.pond.game'
+    compileSdk 36
+    buildToolsVersion '36.1.0'
+    defaultConfig {
+        applicationId 'nz.pond.game'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '1.0.0'
+    }
+    buildFeatures { buildConfig true }
+    signingConfigs {
+        if (signingPath) {
+            upload {
+                storeFile file(signing['storeFile'])
+                storePassword signing['storePassword']
+                keyAlias signing['keyAlias']
+                keyPassword signing['keyPassword']
+            }
+        }
+    }
+    buildTypes {
+        debug { applicationIdSuffix '.debug' }
+        release {
+            if (signingPath) signingConfig signingConfigs.upload
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    lint { abortOnError true }
+}
+dependencies { implementation 'androidx.webkit:webkit:1.14.0' }
+
+tasks.register('prepareGame', Exec) {
+    workingDir rootProject.projectDir.parentFile
+    commandLine System.getenv('POND_PYTHON') ?: 'python', 'tools/build_android_assets.py'
+}
+tasks.named('preBuild').configure { dependsOn 'prepareGame' }
+gradle.taskGraph.whenReady { graph ->
+    if (graph.allTasks.any { it.name in ['bundleRelease', 'assembleRelease'] } && !signingPath) {
+        throw new GradleException('Release requires POND_SIGNING_PROPERTIES pointing to your external upload-key properties file.')
+    }
+}

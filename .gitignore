@@ -17,6 +17,15 @@ server/*.db-*
 
 __pycache__/
 
+# Android build output and local signing material
+android/.gradle/
+android/**/build/
+android/local.properties
+android/app/src/main/assets/
+*.jks
+*.keystore
+keystore.properties
+
 # timelapse videos (tools/record_timelapse.py)
 timelapses/
 
