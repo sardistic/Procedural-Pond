@@ -2034,11 +2034,12 @@ function setEvo(open) {
 function renderEvo() {
   if (!evoUi.open) return;
   const E = world.erosion || newErosion(), G = world.game, next = DEPTH_TIERS[E.tier + 1];
-  const sig = JSON.stringify([E.tier, Math.floor(E.e * 10), G.unlocked || [], Math.floor((G.essence || 0) / 5), Math.floor(G.corruption || 0), G.eldPaths || {}]);
+  const eta = tierEta(world), etaText = eta > 0 ? etaLabel(eta) : '';
+  const stopped = world.paused || world.opts.life === false;
+  const sig = JSON.stringify([E.tier, Math.floor(E.e * 10), G.unlocked || [], Math.floor((G.essence || 0) / 5), Math.floor(G.corruption || 0), G.eldPaths || {}, etaText, stopped]);
   if (sig === evoUi.sig) return;
   evoUi.sig = sig;
-  const eta = tierEta(world);
-  byId('evo-status').replaceChildren(colorize(next ? `Now: ${tierName(world, E.tier)}. Erosion ${E.e.toFixed(1)} of ${next.erosion} to reach ${tierName(world, E.tier + 1).toLowerCase()}${eta ? `, ${etaLabel(eta)} at the recent pace` : ''}. Surf and big tides wear the pond fastest (salt water most, fresh least); a faster speed or shorter days speed it up.`
+  byId('evo-status').replaceChildren(colorize(next ? `Now: ${tierName(world, E.tier)}. Erosion ${E.e.toFixed(1)} of ${next.erosion} to reach ${tierName(world, E.tier + 1).toLowerCase()}${etaText ? `, ${etaText} at the recent pace` : ''}.${stopped ? ' Progression is paused.' : ''} Surf and big tides wear the pond fastest (salt water most, fresh least); a faster speed or shorter days speed it up.`
     : `Now: ${tierName(world, E.tier)}, the deepest the pond can go.`));
   const prev = DEPTH_TIERS[E.tier].erosion;
   byId('evo-fill').style.width = next ? `${Math.round(clamp((E.e - prev) / (next.erosion - prev), 0, 1) * 100)}%` : '100%';

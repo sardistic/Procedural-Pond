@@ -276,8 +276,15 @@ function carveLagoon(world) {
 // Roughly how long until the next tier at the recent pace, in real seconds.
 function tierEta(world) {
   const E = world.erosion, next = E && DEPTH_TIERS[E.tier + 1];
-  if (!next || !E.pace) return null;
-  return (next.erosion - E.e) / E.pace / Math.max(0.25, world.opts.speed);
+  if (!next || !Number.isFinite(E.pace) || E.pace <= 0 || world.paused || world.opts.life === false) return null;
+  const speed = world.opts.speed * (typeof hardMode === 'function' && hardMode(world) ? HARD_PACE : 1);
+  if (!Number.isFinite(speed) || speed <= 0) return null;
+  const needed = Math.max(0, next.erosion - E.e) / E.pace;
+  // E.pace is per simulation second. Only the part before the sun offering
+  // expires runs at twice the chosen speed; the remainder returns to normal.
+  const boosted = typeof offeringTimeRate === 'function' && offeringTimeRate(world) === 2
+    ? Math.min(needed, Math.max(0, (offeringState(world).sunUntil - world.days) * world.opts.dayLength)) : 0;
+  return (needed - boosted / 2) / speed;
 }
 const etaLabel = (s) => (s == null ? '' : s < 90 ? 'about a minute' : s < 3600 ? `about ${Math.round(s / 60)} minutes` : `about ${(s / 3600).toFixed(s < 36000 ? 1 : 0)} hours`);
 
