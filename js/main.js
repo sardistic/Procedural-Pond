@@ -45,7 +45,7 @@ function loadOpts() {
     if (!stored.v || stored.v < 5) { stored.waves = 'classic'; stored.hdWaves = false; } // the original water is the default again
     if (!WAVE_LOOKS[stored.waves]) stored.waves = stored.hdWaves ? 'mesh' : 'classic';
     stored.hdWaves = stored.waves === 'mesh';
-    if (stored.performance !== '60fps') stored.performance = 'quality';
+    if (!['60fps', 'auto'].includes(stored.performance)) stored.performance = 'quality';
     if (FLOOR_ALIASES[stored.floor]) stored.floor = FLOOR_ALIASES[stored.floor];
     return { ...DEFAULT_OPTS, ...stored, v: 5 };
   } catch { return { ...DEFAULT_OPTS }; }
@@ -2769,6 +2769,7 @@ fontChoice.addEventListener('change', () => setTextStyle(fontChoice.value));
 
 function setOpt(key, value) {
   world.opts[key] = value;
+  if (world.opts.performance === 'auto' && ['renderer','waves','volumetrics','fine','shadows'].includes(key)) { resetPerformance(); syncPerformanceControls(); }
   saveOpts();
 }
 const rebake = () => { bakeBackground(world); paintMinimapBackground(); };
@@ -2841,10 +2842,12 @@ bindRange('opt-speed', 'speed', (v) => `${v}×`);
 bindRange('opt-day', 'dayLength', (v) => `${v / 60}m`);
 
 function syncPerformanceControls() {
-  const fast = performanceActive(world), o = performanceOptions(world);
-  $('opt-performance').value = fast ? '60fps' : 'quality';
-  $('performance-readout').hidden = !fast;
-  for (const id of ['opt-renderer','opt-volumetrics','opt-waves']) $(id).disabled = fast;
+  const fast = performanceActive(world), tier = performanceTier(world), o = performanceOptions(world);
+  $('opt-performance').value = world.opts.performance;
+  $('performance-readout').hidden = world.opts.performance === 'quality';
+  performanceReadout(world);
+  for (const id of ['opt-renderer','opt-volumetrics']) $(id).disabled = fast;
+  $('opt-waves').disabled = tier >= 2;
   for (const key of ['shadows','fine']) document.querySelector(`[data-toggle="${key}"]`).disabled = fast;
   $('opt-renderer').textContent = `Renderer: ${o.renderer === 'gpu' ? 'GPU' : 'CPU'}`;
   $('opt-volumetrics').textContent = `Volumetrics: ${o.volumetrics ? 'On' : 'Off'}`;
@@ -2855,7 +2858,7 @@ function syncPerformanceControls() {
   for (const key of ['shadows','fine']) document.querySelector(`[data-toggle="${key}"]`).setAttribute('aria-pressed', String(!!o[key]));
 }
 $('opt-performance').addEventListener('change', (e) => {
-  setOpt('performance', e.target.value === '60fps' ? '60fps' : 'quality'); resetPerformance(); syncPerformanceControls();
+  setOpt('performance', ['60fps','auto'].includes(e.target.value) ? e.target.value : 'quality'); resetPerformance(); syncPerformanceControls();
   if (performanceActive(world)) {
     $('performance-fps').textContent = '60 FPS target · measuring…';
     if (!composeGLAvailable()) showTicker('GPU rendering is unavailable; performance mode will use the CPU');

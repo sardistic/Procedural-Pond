@@ -66,18 +66,49 @@ def run():
           page.select_option('#opt-performance','quality')
           restored=page.evaluate('''()=>{render();return {cpu:!CGL.cv||CGL.cv.hidden,sdf:!SDF_GPU.cv.hidden,volume:!VOL.cv.hidden,shadows:!world.raster.skipShadows,controls:!document.querySelector('#opt-waves').disabled,chosen:world.opts.renderer==='cpu'&&world.opts.waves==='sdf'&&world.opts.volumetrics};}''')
           assert all(restored.values()), restored
+          page.select_option('#opt-performance','auto')
+          automatic=page.evaluate('''expected=>{
+            const check=(v,m)=>{if(!v)throw Error(m)};
+            let now=performance.now();
+            const step=(seconds,cost)=>{for(let i=0;i<seconds*60;i++)performanceFrame(world,cost,1/60,now+=1000/60)};
+            world.paused=false;
+            try {
+              check(performanceOptions(world)===world.opts,'Auto did not start at chosen quality');
+              step(7,30);render();
+              check(PERFORMANCE.autoTier===1,'Effects did not adapt first');
+              check(!SDF_GPU.cv.hidden&&(!VOL.cv||VOL.cv.hidden),'First stage did not preserve water and reduce weather');
+              check(!document.querySelector('#opt-waves').disabled&&document.querySelector('#opt-volumetrics').disabled,'First-stage controls disagree');
+              step(7,30);render();
+              check(PERFORMANCE.autoTier===2&&!CGL.cv.hidden&&SDF_GPU.cv.hidden,'Second stage did not use Classic');
+              check(document.querySelector('#opt-performance').value==='auto'&&document.querySelector('#opt-waves').disabled,'Auto selection lost on transition');
+              check(world.opts.renderer==='cpu'&&world.opts.waves==='sdf'&&world.opts.volumetrics,'Auto changed preferences');
+              render(true);check(!world.raster.skipShadows,'Auto photo lost chosen shadows');render();
+              CGL.failed=true;render();check(CGL.cv.hidden,'Auto fallback failed');CGL.failed=false;
+              step(25,6);render();check(PERFORMANCE.autoTier===1&&!SDF_GPU.cv.hidden,'Water did not recover');
+              step(25,6);render();check(PERFORMANCE.autoTier===0&&!VOL.cv.hidden,'Effects did not recover');
+              step(7,30);check(PERFORMANCE.autoTier===1,'Second slowdown missed');
+              setOpt('waves','mesh');check(PERFORMANCE.autoTier===0&&!document.querySelector('#opt-volumetrics').disabled,'Manual preference did not restart sampling');
+              setOpt('waves','sdf');
+              check(JSON.stringify({points:world.game.points,pearls:world.game.pearls,days:world.days,pop:world.creatures.length,speed:world.opts.speed,life:world.opts.life})===expected,'Auto changed ecosystem');
+              return {staged:true,recovery:true,preferences:true,photo:true,fallback:true,ecosystemIntact:true};
+            } finally {world.paused=true;resetPerformance();syncPerformanceControls();}
+          }''',original)
           page.select_option('#opt-performance','60fps')
           page.evaluate('world.paused=false'); page.wait_for_timeout(1500)
           assert page.evaluate("PERFORMANCE.fps>0&&world.t>0"), 'No running simulation/FPS measurement'
           page.reload();page.wait_for_function("()=>typeof world!=='undefined'&&!!world.game&&!document.getElementById('entry')",timeout=60000)
           assert page.evaluate("world.opts.performance==='60fps'&&world.opts.renderer==='cpu'&&world.opts.waves==='sdf'&&world.opts.volumetrics&&document.querySelector('#opt-performance').value==='60fps'"), 'Device preference or original settings lost on reload'
+          page.evaluate("setHud(true);document.querySelector('#opt-performance').closest('details').open=true")
+          page.select_option('#opt-performance','auto')
+          page.reload();page.wait_for_function("()=>typeof world!=='undefined'&&!!world.game&&!document.getElementById('entry')",timeout=60000)
+          assert page.evaluate("world.opts.performance==='auto'&&world.opts.renderer==='cpu'&&world.opts.waves==='sdf'&&world.opts.volumetrics&&document.querySelector('#opt-performance').value==='auto'"), 'Automatic preference lost on reload'
           page.set_viewport_size({'width':390,'height':844})
           page.evaluate("world.noSave=true;world.paused=true;setHud(true);document.querySelector('#opt-performance').closest('details').open=true")
           page.locator('#opt-performance').scroll_into_view_if_needed()
           assert page.evaluate("document.documentElement.scrollWidth<=innerWidth"), 'Phone overflow'
           (ROOT/'dist').mkdir(exist_ok=True);page.screenshot(path=str(ROOT/'dist/performance-phone.png'))
           assert not errors,errors
-          print(json.dumps({**result,'restored':restored,'persistence':True,'measuredFPS':True,'phone':True,'errors':errors},indent=2))
+          print(json.dumps({**result,'restored':restored,'automatic':automatic,'persistence':True,'measuredFPS':True,'phone':True,'errors':errors},indent=2))
         except Exception:
           print(json.dumps({'errors':errors,'entry':page.locator('#entry').inner_text() if page.locator('#entry').count() else None},indent=2))
           raise

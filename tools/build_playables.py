@@ -29,6 +29,8 @@ def source_for_playables(source):
 def html_for_playables(html):
     html = html.replace('<html lang="en">', '<html lang="en" data-platform="youtube">')
     html = re.sub(r"<title>.*?</title>", "<title>Procedural Pond</title>", html)
+    # Remove website navigation/analytics before adding the only permitted external script.
+    html = re.sub(r'<script\b[^>]*\bsrc="https?://[^"]+"[^>]*></script>\s*', '', html)
     # SDK is the first script, including before our platform adapter.
     html = html.replace("<head>", f'<head>\n  <script src="{SDK}"></script>', 1)
     html = re.sub(r'<script type="application/ld\+json">.*?</script>', '', html, flags=re.S)

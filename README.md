@@ -485,6 +485,16 @@ Your underlying visual choices are retained, restored by **Your settings**, and
 used for photos. The mode is a local device preference with a measured FPS
 readout. WebGL2 failure falls back to CPU rendering.
 
+**Automatic** starts with your chosen visuals. After sustained slow frames it
+first lightens lighting and detail while retaining your water style, then uses
+Classic water if needed. It cautiously restores each stage after sustained spare
+capacity, waiting longer if a restoration makes frames slow again. Startup,
+background tabs, paused simulation and isolated long stalls do not trigger
+changes. The current stage and measured FPS appear below the selector. Changing
+a visual preference or opening a new pond starts fresh measurements; only the
+mode and your own visual preferences are saved. **Your settings** remains the
+default. Automatic changes only presentation and is not a guaranteed frame rate.
+
 The same frozen pond's ten-second warmed test averaged 60.4 FPS (15.8 ms median,
 23.6 ms p95) in this mode; rendering averaged 6.45 ms. This is a 60 FPS target,
 not a fixed rate or a guarantee across devices. Run

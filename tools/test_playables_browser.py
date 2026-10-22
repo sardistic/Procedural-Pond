@@ -106,6 +106,13 @@ def run():
                   b.value='60fps';b.dispatchEvent(new Event('change'));render();
                   const ok=world.opts.performance==='60fps'&&performanceOptions(world).waves==='classic'&&world.opts.waves===waves;
                   b.value='quality';b.dispatchEvent(new Event('change'));return ok;}''')
+                assert page.evaluate('''()=>{
+                    const b=document.getElementById('opt-performance');b.value='auto';b.dispatchEvent(new Event('change'));
+                    world.paused=false;let now=performance.now();
+                    for(let i=0;i<900;i++)performanceFrame(world,30,1/60,now+=1000/60);
+                    render();world.paused=true;
+                    const ok=PERFORMANCE.autoTier===2&&b.value==='auto'&&performanceOptions(world).waves==='classic';
+                    b.value='quality';b.dispatchEvent(new Event('change'));return ok;}''')
                 assert saved[0] and len(saved[0].encode('utf-16-le')) < 3 * 1024 * 1024
                 # Host mute applies even to audio contexts created after the callback.
                 page.evaluate("setSound(true); setMusic(true)")

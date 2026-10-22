@@ -90,6 +90,14 @@ def run():
                 frame.evaluate("() => PondPlatform.ask('Test save confirmation',()=>{window.confirmed=true})")
                 frame.get_by_role('button', name='Confirm', exact=True).click()
                 assert frame.evaluate('() => window.confirmed===true')
+                assert frame.evaluate('''()=>{
+                  const b=document.getElementById('opt-performance');b.value='auto';b.dispatchEvent(new Event('change'));
+                  world.paused=false;let now=performance.now();
+                  for(let i=0;i<900;i++)performanceFrame(world,30,1/60,now+=1000/60);
+                  render();world.paused=true;
+                  const ok=PERFORMANCE.autoTier===2&&b.value==='auto'&&performanceOptions(world).waves==='classic';
+                  b.value='quality';b.dispatchEvent(new Event('change'));return ok;
+                }''')
                 frame.evaluate('''()=>{
                   const c=world.creatures.find(c=>c.life);toggleAlbumFavorite(c);openAlbum();
                 }''')

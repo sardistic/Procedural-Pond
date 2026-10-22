@@ -296,11 +296,11 @@
         <label>Floor <select id="opt-floor"></select></label>
         <label>Water <select id="opt-water"></select></label>
         <label>World <select id="opt-world"></select></label>
-        <label>Performance <select id="opt-performance" aria-describedby="performance-readout"><option value="quality">Your settings</option><option value="60fps">60 FPS target</option></select></label>
+        <label>Performance <select id="opt-performance" aria-describedby="performance-readout"><option value="quality">Your settings</option><option value="auto">Automatic</option><option value="60fps">60 FPS target</option></select></label>
         <label>Text <select id="opt-font" title="Try the readable beta font, or switch back to the pixel font"><option value="readable">Readable (beta)</option><option value="pixel">Pixel (classic)</option></select></label>
         <label title="Music level&#10;How loud the music is when it's on (the Music button, or N)">Music <input type="range" id="opt-music" min="0" max="100" step="5"><output></output></label>
       </div>
-      <p class="note" id="performance-readout" hidden title="Targets 60 FPS using GPU Classic water, softer light pools, fewer background details and no volumetrics or close-up detail. The ecosystem keeps its normal speed. Actual FPS depends on your device and pond. Switching back restores your visual settings."><span id="performance-fps">60 FPS target · measuring…</span><br>Classic water · lighter lighting and detail</p>
+      <p class="note" id="performance-readout" hidden title="Automatic gradually lightens effects, then water, after sustained slow frames, and restores detail cautiously when there is room. 60 FPS target always uses GPU Classic water and lighter effects. These modes preserve your chosen settings and the ecosystem's speed. Actual FPS depends on your device and pond."><span id="performance-fps">60 FPS target · measuring…</span><br><span id="performance-detail">Classic water · lighter lighting and detail</span></p>
       <div class="grid3">
         <button type="button" data-toggle="caustics">Caustics</button>
         <button type="button" data-toggle="shadows">Shadows</button>
@@ -667,8 +667,8 @@
   <script src="js/animal-status.js?v=1"></script>
   <script src="js/hud.js?v=82"></script>
   <script src="js/fine.js?v=56"></script>
-  <script src="js/performance.js?v=1"></script>
-  <script src="js/main.js?v=101"></script>
+  <script src="js/performance.js?v=2"></script>
+  <script src="js/main.js?v=102"></script>
   <script src="js/care.js?v=1"></script>
   <script src="js/album.js?v=1"></script>
   <script src="js/timelapse.js?v=1"></script>
