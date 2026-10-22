@@ -90,6 +90,17 @@ def run():
                 frame.evaluate("() => PondPlatform.ask('Test save confirmation',()=>{window.confirmed=true})")
                 frame.get_by_role('button', name='Confirm', exact=True).click()
                 assert frame.evaluate('() => window.confirmed===true')
+                frame.evaluate('''()=>{
+                  const c=world.creatures.find(c=>c.life);toggleAlbumFavorite(c);openAlbum();
+                }''')
+                assert frame.locator('.album-resident img').evaluate('e=>e.complete&&e.naturalWidth>0')
+                frame.get_by_role('button', name='Forget', exact=True).click()
+                frame.get_by_role('button', name='Cancel', exact=True).click()
+                assert frame.locator('.album-resident').count() == 1
+                frame.get_by_role('button', name='Forget', exact=True).click()
+                frame.get_by_role('button', name='Confirm forget', exact=True).click()
+                assert frame.locator('.album-resident').count() == 0
+                frame.get_by_role('button', name='Close resident album', exact=True).click()
                 page.reload(wait_until='load')
                 frame = page.frames[1]
                 frame.wait_for_selector('#entry.ready', timeout=60000)

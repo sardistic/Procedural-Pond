@@ -1546,6 +1546,30 @@ body.map-tall.map-open .mini-wrap .slice { height: auto; }
 .cr-care details { margin-top: 6px; }
 .cr-care summary { cursor: pointer; color: #a2dcd4; }
 .care-factors { color: var(--muted); }
+.cr-acts .favorite { grid-column: 1 / -1; }
+.world-mystery.resident-album { width: 760px; max-width: calc(100vw - 24px); max-height: min(85vh, 900px); overflow: auto; box-sizing: border-box; }
+.resident-album header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.world-mystery.resident-album h2 { color: var(--hot); font: 600 18px/1.4 system-ui, sans-serif; margin: 12px 0; }
+.resident-album h3 { font: 600 16px/1.4 system-ui, sans-serif; margin: 0 0 4px; color: var(--text); }
+.world-mystery.resident-album p { font: 13px/1.5 system-ui, sans-serif; margin: 4px 0; }
+.album-note, .album-status, .album-moment-label { color: var(--muted); }
+.album-residents { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px; }
+.album-resident { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--edge); background: #102d35; min-width: 0; }
+.album-resident > div { min-width: 0; overflow-wrap: anywhere; }
+.album-resident img { width: 48px; height: 48px; object-fit: contain; image-rendering: pixelated; flex: none; }
+.album-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.world-mystery.resident-album button { display: inline-flex; width: auto; min-height: 36px; padding: 6px 10px; margin: 0; font: 12px/1.4 system-ui, sans-serif; white-space: normal; }
+.resident-album .album-close { min-width: 36px; justify-content: center; flex: none; }
+.album-actions button[aria-pressed="true"] { color: var(--hot); border-color: var(--hot); }
+.album-moments { list-style: none; padding: 0; margin: 0; }
+.album-moments li { border-top: 1px solid var(--edge); padding: 10px 0; overflow-wrap: anywhere; }
+.album-moments button { margin-top: 6px; }
+#journal .journal-go, #journal .journal-save { font: 12px/1.4 system-ui, sans-serif; min-height: 32px; justify-self: start; }
+.journal-actions { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+@media (max-width: 600px) {
+  .album-residents { grid-template-columns: minmax(0, 1fr); }
+  .world-mystery.resident-album { padding: 12px; max-height: 90vh; }
+}
 @media (max-width: 760px) {
   .score { right: max(116px, calc(env(safe-area-inset-right) + 104px)); }
   .score-btn { min-width: 0; flex: 1; flex-wrap: wrap; justify-content: center; gap: 4px 7px; padding: 5px; }

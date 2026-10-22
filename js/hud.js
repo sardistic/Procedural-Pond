@@ -828,9 +828,16 @@ function renderJournal() {
     const li = el('li', `cat-${e.cat}`);
     li.append(el('i', 'dot'), el('time', null, entryTime(e)), colored('span', null, journalText(e)));
     if (e.subject) {
-      li.classList.add('link');
-      li.title = 'Follow';
-      li.addEventListener('click', () => { if (alive(e.subject)) follow(e.subject); else showTicker('They are no longer in the pond'); });
+      const actions = el('div', 'journal-actions');
+      const go = el('button', 'journal-go', 'Go to resident'); go.type = 'button';
+      go.disabled = !alive(e.subject);
+      go.addEventListener('click', () => { if (alive(e.subject)) { setJournal(false); centerOn(e.subject.x, e.subject.y); follow(e.subject); showCreature(e.subject); } });
+      actions.append(go);
+      if (!world.observe && typeof albumRemember === 'function') {
+        const remember = el('button', 'journal-save', 'Save moment'); remember.type = 'button';
+        remember.addEventListener('click', () => albumRemember(e)); actions.append(remember);
+      }
+      li.append(actions);
     }
     return li;
   }));
@@ -1411,6 +1418,12 @@ function crActions(c, d) {
   r.title = 'Return this animal to the pond for essence';
   r.disabled = isSafe(c);
   acts.append(f, keep, r);
+  if (typeof albumFavorite === 'function') {
+    const favorite = crButton(albumFavorite(world, c) ? '★ Favorite' : '☆ Favorite', 'favorite', 'act:favorite', () => toggleAlbumFavorite(c));
+    favorite.title = 'Favorite\nKeep a portrait and remember this animal’s milestones in your resident album on this device. This does not protect it from harm or recycling.';
+    favorite.setAttribute('aria-pressed', String(albumFavorite(world, c)));
+    acts.append(favorite);
+  }
   if (world.hatchery && BREED[c.species === 'tadpole' ? 'frog' : c.species] && c.species !== 'tadpole') {
     const h = crButton('To hatchery', 'to-hatch', 'act:hatch', () => {
       const why = stockHatchery(world, c);
@@ -2473,6 +2486,7 @@ function initHud() {
 let hudCountTimer = 0;
 function hudTick(dt) {
   if (typeof careTick === 'function') careTick();
+  if (typeof albumTick === 'function') albumTick();
   if ((hudTick.pt = (hudTick.pt || 0) - dt) <= 0) { hudTick.pt = 1; refreshAnimalsBadge(); }
   hudCountTimer -= dt;
   if (hudCountTimer <= 0) { hudCountTimer = 0.5; updateCounts(); }

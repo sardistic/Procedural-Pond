@@ -412,6 +412,7 @@ function noteBorn(world, c, how) {
     s: c.seed, k: c.species, w: c.species === 'wild' ? c.sp.id : null, n: c.life.name, g: c.life.gen, p: c.life.parents || null,
     t: c.life.traits.slice(), c: swatchOf(c), b: Math.round(world.days * 100) / 100, how, d: null, why: null, pts: 0,
   });
+  if (typeof albumBirth === 'function') albumBirth(world, c, how);
   if (world.lineage.size > LINEAGE_MAX) {
     const gone = [...world.lineage.values()].filter((r) => r.d != null).sort((a, b) => a.d - b.d);
     for (const r of gone.slice(0, world.lineage.size - LINEAGE_KEEP)) world.lineage.delete(r.s);
@@ -420,7 +421,10 @@ function noteBorn(world, c, how) {
 
 function noteGone(world, c, why) {
   const r = world.lineage && c.seed != null ? world.lineage.get(c.seed) : null;
-  if (r && r.d == null) { r.d = Math.round(world.days * 100) / 100; r.why = why; }
+  if (r && r.d == null) {
+    r.d = Math.round(world.days * 100) / 100; r.why = why;
+    if (typeof albumDeparture === 'function') albumDeparture(world, c, why);
+  }
 }
 
 // A tadpole's record carries on as the frog it becomes.
@@ -430,6 +434,7 @@ function rekeyLineage(world, t, f) {
   world.lineage.delete(t.seed);
   Object.assign(r, { s: f.seed, k: 'frog' });
   world.lineage.set(f.seed, r);
+  if (typeof albumRekey === 'function') albumRekey(world, t, f);
 }
 
 // Saves from before family trees: start one from whoever is here.

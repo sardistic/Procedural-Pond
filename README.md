@@ -27,6 +27,16 @@ growth. The species rail shows current residents; Animals keeps the full list
 and discovery actions. The menu starts closed, and the phone score bar leaves
 room for the menu and sky controls.
 
+**Resident album** (in the menu) keeps portraits and moments from individual
+animals. Favorite an animal from its card to remember growth, rare moments,
+offspring and departures while you play, or use **Save moment** in the journal.
+Find living residents from the album; portraits and memories remain after they
+leave. Favorites do not protect animals; **Keep safe** separately prevents recycling.
+Albums stay in this browser and are not included in cloud saves or shared links.
+Each holds up to 12 favorites, 24 residents and 80 recent moments; the browser
+keeps the 8 most recently updated pond albums. Forget removes a resident's
+portrait and moments after confirmation, and deleting a pond removes its album.
+
 Opening the page shows an **entry screen** at once: fish swim past, bubbles rise and a line fills as the
 pond loads. When it's ready, a card shows the pond's name, day, depth, water and animals, a small map of
 the whole pond with its animals as points, and **Dive in** (Enter, Space or Esc work too). Tick *Skip this
@@ -552,3 +562,9 @@ Build the standalone browser upload with `python tools/build_itch.py`;
 `python tools/test_care_browser.py` checks the optional first steps, failed
 purchases, ambition tracking, reloads, observer isolation, actual breeding
 boundaries, comfort contributions, keyboard focus and four viewport sizes.
+
+`python tools/test_album_browser.py` checks portraits without simulation changes,
+individual memories before journal merging, offspring and transformation records,
+departures, reloads, storage failure, observer isolation, limits and confirmed
+removal on desktop and phone. The itch browser test also exercises album controls
+inside the sandboxed offline iframe.

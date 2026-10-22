@@ -342,6 +342,7 @@ function paceEntry(world, e, pace, pri, merged = false) {
 }
 
 function logEvent(world, text, subject = null, opts = {}) {
+  if (typeof albumLog === 'function') albumLog(world, text, subject, opts);
   const { cat = 'pond', key = null, merge = null, data } = opts, pri = opts.pri ?? CAT_PRI[cat] ?? 1;
   const now = world.t || 0;
   const pace = minorNews(cat, pri) ? paceNews(world, text, key, cat) : null;
