@@ -35,7 +35,7 @@ Suggested category: Simulation (Game).
 
 Support website: https://github.com/sardistic/Procedural-Pond/issues
 
-Support email: **Owner to supply before submission.**
+Support email: pond@sardistic.com
 
 Privacy policy: https://pond.nz/android-privacy.html
 
@@ -45,6 +45,9 @@ Welcome to Pond on Android. Create a living pixel-art ecosystem, care for its
 residents, discover new depths and save favorite memories. Play offline with
 local saves, portrait/landscape support and pond photo export.
 
+The owner confirmed permission to distribute the existing music and recorded
+sound effects in the Android app on 22 October 2026.
+
 Owner decisions still needed: distribution countries, free/paid pricing,
-intended audience/content rating and confirmation of recorded-audio rights.
+and intended audience/content rating.
 This text is a draft for review, not an assertion that Google has approved it.

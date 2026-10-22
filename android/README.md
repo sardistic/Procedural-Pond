@@ -75,13 +75,14 @@ An emulator check is not a hardware performance guarantee.
 2. In an internal testing release, enable Play App Signing and upload the `.aab`.
    Let Google manage the app-signing key; this local key signs uploads.
 3. Use the listing draft and graphics in `dist/google-play/listing/`. Supply your
-   public support email. Privacy URL: `https://pond.nz/android-privacy.html`.
+   public support email: `pond@sardistic.com`. Privacy URL: `https://pond.nz/android-privacy.html`.
 4. Complete app access (no login), ads (none), and Data safety based on this
    offline edition: no developer collection/sharing. Review the questionnaire
    yourself; Google Play's own processing is separate.
 5. Complete the content rating and audience forms truthfully. The game includes
    animal predation/death and later dark fantasy creatures; do not assume a
-   children's rating. Confirm redistribution rights for the included audio.
+   children's rating. The owner confirmed distribution permission for the
+   included music and recorded sound effects on 22 October 2026.
 6. Install through the internal test link on real phones, check startup/audio,
    pause/resume, saves after relaunch, portrait/landscape, long sessions and photos.
    Resolve Play's pre-launch findings, then request the desired rollout.
