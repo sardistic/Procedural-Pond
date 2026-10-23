@@ -202,14 +202,7 @@ class Duckweed {
   hit(x, y) { return Math.hypot(x - this.x, y - this.y) < 12; }
 
   update(dt, world) {
-    const [wx, wy] = typeof waveOrbit === 'function' ? waveOrbit(world, this.x, this.y) : [0, 0];
-    this.x += (world.current.x * 3 + this.vx + wx) * dt;
-    this.y += (world.current.y * 3 + this.vy + wy) * dt;
-    if (this.x < 10 || this.x > world.W - 10) this.vx = -this.vx;
-    if (this.y < 10 || this.y > world.H - 10) this.vy = -this.vy;
-    this.x = clamp(this.x, 10, world.W - 10);
-    this.y = clamp(this.y, 10, world.H - 10);
-    floatOffBeach(this, world, dt);
+    driftFloat(this, world, dt, 10, 3);
   }
 
   draw(r, t) {
@@ -218,6 +211,29 @@ class Duckweed {
         l.s, l.s * 0.8, l.a, 44, 0.5, PAL.duckweed, this.id);
     }
   }
+}
+
+// Reflect the whole drift at the pond boundary, including current and wave motion.
+// Reversing only vx/vy lets a stronger outward current pin every raft to one edge.
+function driftFloat(o, world, dt, margin, currentScale) {
+  const [wx, wy] = typeof waveOrbit === 'function' ? waveOrbit(world, o.x, o.y) : [0, 0];
+  driftFloatAxis(o, 'x', 'vx', world.current.x * currentScale + wx, dt, world.W, margin);
+  driftFloatAxis(o, 'y', 'vy', world.current.y * currentScale + wy, dt, world.H, margin);
+  floatOffBeach(o, world, dt);
+  // Shore gradients can also push a raft across the world boundary.
+  const mx = Math.min(margin, world.W / 2), my = Math.min(margin, world.H / 2);
+  o.x = clamp(o.x, mx, world.W - mx); o.y = clamp(o.y, my, world.H - my);
+}
+
+function driftFloatAxis(o, axis, velocity, flow, dt, size, margin) {
+  const low = Math.min(margin, size / 2), high = size - low, speed = o[velocity] + flow;
+  let next = o[axis] + speed * dt;
+  if ((next < low && speed < 0) || (next > high && speed > 0)) {
+    const limit = 2 * Math.abs(flow) + 0.6;
+    o[velocity] = clamp(-o[velocity] - 2 * flow, -limit, limit);
+    next = next < low ? low + (low - next) : high - (next - high);
+  }
+  o[axis] = clamp(next, low, high);
 }
 
 // Floating plants drift back off the beach as the tide goes out.
@@ -254,15 +270,8 @@ class LilyPad {
   hit(x, y) { return Math.hypot(x - this.x, y - this.y) < this.r; }
 
   update(dt, world) {
-    const [wx, wy] = typeof waveOrbit === 'function' ? waveOrbit(world, this.x, this.y) : [0, 0];
-    this.x += (this.vx + world.current.x * 1.5 + wx) * dt;
-    this.y += (this.vy + world.current.y * 1.5 + wy) * dt;
+    driftFloat(this, world, dt, this.r, 1.5);
     this.ang += this.spin * dt;
-    if (this.x < this.r || this.x > world.W - this.r) this.vx = -this.vx;
-    if (this.y < this.r || this.y > world.H - this.r) this.vy = -this.vy;
-    this.x = clamp(this.x, this.r, world.W - this.r);
-    this.y = clamp(this.y, this.r, world.H - this.r);
-    floatOffBeach(this, world, dt);
   }
 
   draw(r) {

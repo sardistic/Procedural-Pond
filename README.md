@@ -605,3 +605,7 @@ saves on the device, supports portrait/landscape, pauses safely in the backgroun
 and exports pond photos through Android's file picker. Website accounts and
 online services stay on the website. `python tools/test_android_device.py`
 checks the debug edition on an adb-connected test device or emulator.
+
+`node --test tools/floating-plants.test.js` and
+`python tools/test_floating_plants_browser.py` check floating plants escaping
+pond edges under current and waves, rendering and save restoration.

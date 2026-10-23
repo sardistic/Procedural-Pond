@@ -31,15 +31,15 @@ properties file with `storeFile`, `storePassword`, `keyAlias`, `keyPassword`.
 
 Outputs in `dist/google-play/`:
 
-- `pond-1.0.0.aab`: signed Google Play upload, package `nz.pond.game`, version code 1.
-- `pond-1.0.0.apk`: signed direct-install test build; do not upload it instead of the AAB.
+- `pond-1.0.1.aab`: signed Google Play upload, package `nz.pond.game`, version code 2.
+- `pond-1.0.1.apk`: signed direct-install test build; do not upload it instead of the AAB.
 - `upload-certificate.pem`: public upload certificate, safe to provide to Play Console.
 - `build-report.json`: sizes and SHA-256 digests of the artifacts.
 
 The app targets API 36 and supports API 26+. It contains no native `.so` libraries;
 the system supplies WebView. New releases must increment `versionCode` and
-`versionName` in `app/build.gradle` and the output metadata/names in
-`tools/build_android.py` before rebuilding. Use the same upload key.
+`versionName` in `app/build.gradle` before rebuilding. The build script reads both
+values for the output names and metadata. Use the same upload key.
 
 The first edition uses system WebView with a secure local HTTPS asset origin.
 All requests are intercepted; missing assets and remote resources are denied.

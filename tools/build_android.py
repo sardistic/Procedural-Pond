@@ -12,6 +12,7 @@ import secrets
 import shutil
 import subprocess
 import json
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -54,8 +55,11 @@ def run():
     wrapper = ROOT / 'android' / ('gradlew.bat' if os.name == 'nt' else 'gradlew')
     subprocess.run([str(wrapper), '-p', str(ROOT / 'android'), 'bundleRelease', 'assembleRelease', 'lintRelease', '--console=plain'], env=env, check=True)
     out = ROOT / 'dist/google-play'; out.mkdir(parents=True, exist_ok=True)
+    gradle = (ROOT / 'android/app/build.gradle').read_text(encoding='utf-8')
+    version = re.search(r"versionName '([0-9]+\.[0-9]+\.[0-9]+)'", gradle).group(1)
+    code = int(re.search(r'versionCode (\d+)', gradle).group(1))
     artifacts = {}
-    for src, dst in [('bundle/release/app-release.aab', 'pond-1.0.0.aab'), ('apk/release/app-release.apk', 'pond-1.0.0.apk')]:
+    for src, dst in [('bundle/release/app-release.aab', f'pond-{version}.aab'), ('apk/release/app-release.apk', f'pond-{version}.apk')]:
         dest = out / dst
         shutil.copyfile(ROOT / 'android/app/build/outputs' / src, dest)
         artifacts[dst] = {'bytes': dest.stat().st_size, 'sha256': hashlib.sha256(dest.read_bytes()).hexdigest()}
@@ -64,7 +68,7 @@ def run():
     certenv = dict(env, POND_CERT_PASSWORD=signing['storePassword'])
     subprocess.run(['keytool', '-exportcert', '-rfc', '-keystore', signing['storeFile'], '-storepass:env', 'POND_CERT_PASSWORD',
                     '-alias', signing['keyAlias'], '-file', str(out / 'upload-certificate.pem')], env=certenv, check=True, capture_output=True)
-    report = {'applicationId': 'nz.pond.game', 'versionCode': 1, 'versionName': '1.0.0', 'targetSdk': 36,
+    report = {'applicationId': 'nz.pond.game', 'versionCode': code, 'versionName': version, 'targetSdk': 36,
               'minSdk': 26, 'artifacts': artifacts, 'websiteRevision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
               'workingTreeChanges': bool(subprocess.check_output(['git', 'diff', '--name-only'], cwd=ROOT, text=True).strip())}
     (out / 'build-report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')

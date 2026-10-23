@@ -39,11 +39,11 @@ Support email: pond@sardistic.com
 
 Privacy policy: https://pond.nz/android-privacy.html
 
-First release notes:
+Release notes (1.0.1):
 
-Welcome to Pond on Android. Create a living pixel-art ecosystem, care for its
-residents, discover new depths and save favorite memories. Play offline with
-local saves, portrait/landscape support and pond photo export.
+Fixed lily pads and duckweed getting stuck against the pond's edge. Floating
+plants now turn back into the water when the current or waves push them into
+a boundary, including plants already stuck in a saved pond.
 
 The owner confirmed permission to distribute the existing music and recorded
 sound effects in the Android app on 22 October 2026.
